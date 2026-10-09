@@ -172,6 +172,9 @@ def run_probe(img_bytes, seed_byte, steps=7_000_000, send=True):
                     seen_sram = True
                 elif seen_sram:
                     after += 1
+                # the PEC6 wire receiver runs per step inside rig.run(); this
+                # loop steps the CPU itself, so it must deliver the bytes too
+                rig.wire_step()
                 cpu.step()
         except S.Trap:
             pass

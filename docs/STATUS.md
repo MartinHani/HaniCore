@@ -96,12 +96,12 @@ TunerStudio's full request mix at 115200 baud:
 
 | quantity | worst case | limit |
 |---|---|---|
-| executor edge lateness | 89 µs | 100 µs (later ON edges are refused) |
+| executor edge lateness | 83 µs | 100 µs (later ON edges are refused) |
 | interrupt-masked critical section | 46.8 µs | 50 µs |
 | compare-interrupt execution | 136.5 µs | 160 µs |
 | planner execution | 814.5 µs cold | 1200 µs |
-| watchdog service gap | 16.1 ms (stress matrix), 20.7 ms (transient below) | 200.7 ms watchdog; gates use 10 % |
-| throttle-control step gap | 19.6 ms | 20 ms |
+| watchdog service gap | 16.0 ms (stress matrix), 18.0 ms (transient below) | 200.7 ms watchdog; gates use 10 % |
+| throttle-control step gap | 18.7 ms | 20 ms |
 | static stack bound | user 84 %, system 85 % | 85 % |
 
 The steady-state and ramp matrix holds every budget, with no capture
@@ -110,9 +110,9 @@ overflow, no quiesce and no lost cycle. Transients with K-line traffic
 a top speed of 7000 and 8500 rpm. **At 9600 rpm one run is not clean:** near
 9400 rpm, at full acceleration with the injectors at their duty limit, a cold
 planner run (up to 0.8 ms) outlasts the 7-tooth capture ring. The executor
-quiesces as designed: 5 of 1048 injector openings are not executed, no edge
+quiesces as designed: 3 of 1049 injector openings are not executed, no edge
 is late and no output is left on. The same run also exceeds the gate's
-crank-interrupt and watchdog fractions. 9600 rpm is headroom above the
+crank-interrupt fraction. 9600 rpm is headroom above the
 AWT's ~6800 rpm; a deeper ring or a bounded planner pass would restore
 margin there.
 
@@ -128,6 +128,22 @@ and the wasted-spark fallback merged events. Both masks are now widened
 before the complement; `me711_port_mask_proof` scans the image for any byte
 complement that reaches a 16-bit AND, and the runtime gates require that the
 simulated cam never loses the cycle. The car never ran this executor.
+
+**Fixed: two diagnostics that always read wrong.** `cfgRouteMismatch`
+reported every routed sensor as disagreeing with its configured pin, from
+boot until the next configuration change (the check counted "no sample yet"
+as a disagreement and ran before the inputs were bound); measured 0x00F0 on
+the bench, 0 since the fix. The status word always carried the "bench-safe
+build, no outputs" bit, so TunerStudio showed a permanent warning; it is now
+set only by a build that really has no output back ends.
+
+**A request sent during a Burn is dropped.** The flash writer masks the
+serial receive interrupt during its programming windows, so a request that
+arrives while a Burn is committing is lost: no reply, and the host times out
+and retries. The session-fatal reply that once forced TunerStudio to
+reconnect does not occur. Whether real TunerStudio, which keeps polling
+during a Burn, recovers without a visible hiccup still needs a session on the
+ECU.
 
 **Main-loop pass length.** With the engine stopped, a main-loop pass takes
 2.4 ms (median) and up to 9–10.7 ms when several services and the telemetry
@@ -148,7 +164,8 @@ item.
    its 85 % limit: new hot-path features need code moved out first.
 6. No CAN, tacho output, oil-pressure input or firmware update without
    opening the ECU.
-7. Changing the baud rate on a live link: the ECU's rate hunt can pass the
+7. A request sent while a Burn commits gets no reply (above).
+8. Changing the baud rate on a live link: the ECU's rate hunt can pass the
    host's rate once before it locks (simulation). Connecting at a fixed rate,
    as the plugin does, is unaffected.
-8. Red gates: [TESTING.md](TESTING.md#current-results).
+9. Red gates: [TESTING.md](TESTING.md#current-results).

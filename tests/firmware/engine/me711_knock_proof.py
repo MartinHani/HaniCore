@@ -56,6 +56,7 @@ import hcpaths  # noqa: F401,E402  (puts every tools/ and tests/ module on sys.p
 import me711_trigger_test as PT          # noqa: E402
 import me711_trigger_scheduler_proof as V      # noqa: E402
 import me711_sequential_proof as SQ      # noqa: E402
+import me711_image as PI                 # noqa: E402
 
 KN = 0x380000 + 0x1A00                   # TGT_RAM_KNOCK
 OCH2 = 0x380000 + 0x1800                 # TGT_RAM_OCH2 (OCH offset 1024)
@@ -174,7 +175,7 @@ class KnockRig(SQ.SeqRig):
         return self.x.m.r8(KN + off)
 
     def och2(self, off, n=2):
-        a = OCH2 + off - 1024
+        a = PI.och_addr(off)                 # OCH2 moved (hctarget.h)
         if n == 1:
             return self.x.m.r8(a)
         return (self.x.m.r8(a) << 8) | self.x.m.r8(a + 1)

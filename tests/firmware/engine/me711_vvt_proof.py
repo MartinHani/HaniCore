@@ -38,6 +38,7 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "tools" / "lib"))
 import hcpaths  # noqa: F401,E402  (puts every tools/ and tests/ module on sys.path)
 
+import me711_image as PI                             # noqa: E402
 import me711_trigger_test as T                       # noqa: E402
 
 GEN = (ROOT / "firmware/generated/hc_config_generated.h").read_text()
@@ -150,7 +151,7 @@ class Rig:
             self.x.call("hc_vvt_service", self.ms)
 
     def och(self, b, k):
-        a = OCH2 + 1112 + 10 * b + 2 * k - 1024
+        a = PI.och_addr(1112 + 10 * b + 2 * k)      # OCH2 moved (hctarget.h)
         v = (self.x.m.r8(a) << 8) | self.x.m.r8(a + 1)
         return v - 0x10000 if k in (0, 1, 2) and v >= 0x8000 else v
 

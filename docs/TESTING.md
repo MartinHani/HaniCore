@@ -48,29 +48,41 @@ level-condition skips to what the directory tree already defines.
 
 ## Current results
 
-Development tree, 2026-10-09.
+Image `484F9753…` (the development build of 2026-10-09; layout `5AB824FA`).
+Every number below was measured on that exact image.
 
 | check | result |
 |---|---|
 | build from a fresh clone | pass, byte-identical image |
-| generators and repository checks | pass |
-| `run_gates.py fast`, fresh public clone | **70 pass, 9 red, 6 skipped** (85 gates) |
-| runtime qualification gates (stress 1000–9600 rpm, fault injection, K-line under load, executor, DBW readiness, stack and resource budgets) | see [STATUS.md](STATUS.md#runtime-timing) |
-| boot region (`me711_owned_boot_proof`) | pass; also bench-proven |
-| Tier 1 and the full set | not run on this exact tree |
+| generators, repository paths, documentation links | pass |
+| `run_gates.py fast` | pass; six gates skip in a public clone (below) |
+| `run_gates.py tier1` | **14/14** |
+| runtime qualification (stress 1000–9600 rpm, fault injection + control, deadline executor + control, DBW readiness + control, stack and resource budgets + controls, owned boot region) | pass; one transient case at 9600 rpm, see [STATUS.md](STATUS.md#runtime-timing) |
+| K-line under engine load, 115200 baud | 9600 rpm steady 6/6; transients to 7000 and 8500 rpm 6/6; transient to 9600 rpm 4/6 (one capture overflow) |
+| `run_gates.py full` (214 gates) | run gate by gate; the reds that remain are listed below |
+| bench, real ECU | flashed and read back, cold boots, Burn, restore from flash |
 
-Red gates in the fast set:
+### Red gates in the full set
 
-| gate | cause | kind |
+None is silenced. Each is in one of these classes:
+
+| gate | why it is red | class |
 |---|---|---|
-| `test_config_access_types` | firmware reads whose accessor does not match the field's declared type (e.g. `hc_cal_u16` on signed or table fields); some may be deliberate read-then-cast | open issue |
-| `test_config_source_of_truth` | a temperature axis (`CAL_CLT_ENR_AX`) is not declared signed | open issue |
-| `ts_pin_dropdown_agreement_proof` | the cam-solenoid cavity list in TunerStudio differs from what the validator accepts | open issue (UI) |
-| `ts_ini_terminology_proof` | four load-panel texts use Bosch signal names | open issue (UI wording) |
-| `test_hw_descriptor_evidence` | the evidence test and the hardware descriptor are out of step | needs review |
-| `ts_ini_command_shape_proof` | the gate's rule about plain characters in command strings contradicts TunerStudio practice | gate defect |
-| `test_plan_cost_gate` | per-tooth planning cost over the 12 000 rpm headroom budget | known limitation |
-| `me711_vehicle_capture_test`, `me711_commission_tools_test` | expectations lag the current output-channel block and messages | stale tests |
+| `me711_kline_mixed_proof` | transient to 9600 rpm with TunerStudio traffic: one capture-ring overflow, the executor quiesces, 3 of 1049 injector openings are not executed, no edge late | known limitation above the AWT's ~6800 rpm |
+| `me711_pinwrite_gap_proof`, `me711_preset_gap_proof`, `me711_ts_gap_proof`, `me711_wideband_ssc_bound_proof` | the longest main-loop pass is 9–10.6 ms against a gate limit of 6.5 ms (a fraction of the S5500's 10 ms raster); no supervision reset seen on the bench | known limitation |
+| `me711_link_rate_proof` | the host-baud-rate hunt laps the receive ring in 4 of its rate-change cases | known limitation (rate changes only) |
+| `me711_burn_session_proof` | a request sent *during* a Burn is dropped (no reply) instead of being answered after it; the session-fatal `0x83` frame does not occur | known limitation, needs a real-TunerStudio check |
+| `me711_boot_cost_proof`, `near_ram_hazard_proof` | deliberate tripwires at their limit | tripwire |
+| `me711_burn_two_in_session_proof` | the simulator rig stops delivering received bytes after the Burn's flash window; a direct reproduction with the same rig and the real ECU both answer after a Burn | rig defect |
+| `me711_knock_proof` | its rig opens no knock window since the planner moved to its own interrupt level | stale fixture (knock is MONITOR-only in every preset) |
+| `me711_trigger_test`, `me711_trigger_adversarial_test`, `me711_tooth_deadline_proof`, `me711_overdwell_proof`, `me711_output_arming_proof`, `me711_output_backend_proof` (hot-path checks), `me711_bench_output_proof`, `me711_dbw_bench_proof` | written for the polled executor: they expect engine outputs to switch from task-level calls or from `trg_service()`. Coils and injectors now switch only from the compare interrupt; the same properties are covered by `me711_deadline_proof`, `me711_planner_geometry_proof`, `me711_gap_scheduler_proof`, `me711_sequential_proof`, `me711_trigger_scheduler_proof`, `me711_group_off_release_proof`, `me711_port_mask_proof` and `me711_runtime_fault_proof` | stale fixture |
+| `me711_v89_ui_ini_pair_proof`, `me711_v89_ui2_ini_pair_proof`, `me711_v91_ui_ini_pair_proof`, `v44_release_gate` | compare against frozen historical releases, or require a committed tree | needs the maintainer's records |
+
+Gates that skip by design: `me711_plan_cost_proof` and `test_plan_cost_gate`
+(the planner is its own interrupt level; its budget is the stress proof),
+`me711_bootsum_coverage_proof` (owned boot region), `me711_rx_drain_rearm_proof`
+(PEC receive), the burn-forensics gates (compiled out) and the two V37
+compatibility gates.
 
 Six gates skip in a public clone because they read material that is not in
 the repository: the target's OEM flash and ASIC reads, the reference A2L, the
@@ -79,15 +91,3 @@ rusEFI `.ini` corpus and older release files.
 The gates that compare HaniCore with the OEM firmware run when a 1 MiB
 read of your own ECU's flash is present: set `HANICORE_OEM_READ` to its path.
 Never commit it.
-
-Outside the fast set, these are known to be red: `me711_kline_mixed_proof`
-(transient scenario, see [STATUS.md](STATUS.md#runtime-timing)),
-`me711_page_migration_proof`
-(a committed record of the previous page layout is not migrated at boot —
-the ECU falls back to defaults), `me711_alphan_start_proof`,
-`me711_engine_control_proof`, `me711_table_order_proof`,
-`me711_trigger_angle_proof`, `me711_sensor_fallback_proof`,
-`me711_awt_first_start_page_proof` and `me711_preset_gap_proof` (fixtures
-written for an earlier load model and executor). `near_ram_hazard_proof`,
-`me711_boot_cost_proof` and `me711_plan_cost_proof` are deliberate tripwires
-at their limits.

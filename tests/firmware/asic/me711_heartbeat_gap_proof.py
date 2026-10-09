@@ -274,7 +274,12 @@ class Rig:
             if a == S0RIC:
                 if (s_.sfr.get(S0RIC, 0) & 0x7F) == S0RIC_PEC6:
                     return S0RIC_PEC6 | (0x80 if h._rbuf_full else 0)
-                return 0x80 if h.rxq else 0x00
+                # The REGISTER reads back whole (IE/ILVL/GLVL as written) with
+                # the request bit. Returning the request bit alone made the
+                # flash routine's restore `S0RIC |= IE` (after its masked
+                # window) write 0xC0 over 0x7E: PEC6 never re-armed and the
+                # rig stopped receiving after every Burn (2026-10-09).
+                return (s_.sfr.get(S0RIC, 0) & 0x7F) | (0x80 if h.rxq else 0x00)
             if a == S0TIC:
                 t7 = h.cpu._sget(S.TIMERS["T7"][0])
                 if (h._tx_evt_at is not None
