@@ -1,0 +1,309 @@
+$MOD167
+$CASE
+$SEGMENTED
+$INCLUDE (REG167.INC)
+
+; V49 first-NMI retained snapshot.  The first-level Bosch vector route and
+; this code remain flash-backed; partial markers deliberately expose a fetch
+; or reset interruption instead of pretending the capture is guaranteed.
+NAME    HCNMI_V49
+PUBLIC  hc_v02
+; Both symbols are near internal RAM and therefore use the SYSTEM DPP3 page.
+; Declaring them through DPP2 would silently read 38:BAxx instead of 00:FAxx.
+EXTRN   DPP3:hc_tick_ms:WORD
+EXTRN   DPP3:hc_asic_state:BYTE
+EXTRN   DPP3:hc_lf_fast_active:BYTE
+
+?C_MAINREGISTERS REGDEF R0 - R15
+?PR?HCNMI_V49 SECTION CODE WORD 'NCODE'
+ASSUME  DPP3:SYSTEM
+
+?C_NMI_V49 PROC TASK C_NMI INTNO HC_TRAP2 = 2
+hc_v02: LABEL NEAR
+        PUSH    R1
+        PUSH    R2
+        PUSH    R3
+        PUSH    R4
+
+        MOV     R3,#0038H
+        MOV     R1,#069C0H             ; record word 96, NMI-start marker
+        EXTS    R3,#1
+        MOV     R2,[R1]
+        CMP     R2,#00000H
+        JMPA    cc_NZ,nmi_repeat
+
+        MOV     R2,#04E31H
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        ADD     R1,#2                  ; word 97 is written last
+
+        ; Set STARTED|FROZEN immediately in header flags (word 4).
+        MOV     R4,R1
+        MOV     R1,#06908H
+        EXTS    R3,#1
+        MOV     R2,[R1]
+        OR      R2,#00044H
+        EXTS    R3,#1
+        MOV     [R1],R2
+        MOVB    hc_lf_fast_active,ZEROS ; stop ISR fast stamps after first NMI
+        MOV     R1,R4
+
+        ; words 98..121: CPU and peripheral state, straight line.
+        MOV     R2,TFR
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R2,T7
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R2,WDT
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R2,WDTCON
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R2,SP
+        ADD     R2,#8                  ; SP at entry, before four saves
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R2,CP
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+
+        MOV     R4,SP
+        ADD     R4,#8                  ; hardware frame: IP,CSP,old PSW
+        MOV     R2,[R4]
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R2,[R4+#2]
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R2,[R4+#4]
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R2,PSW
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R2,P3
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R2,P6
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R2,CC7IC
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R2,T8IC
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R2,SSCTIC
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R2,SSCRIC
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R2,SSCEIC
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R2,SSCCON
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R2,T8REL
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R2,T8
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R2,T0
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R2,CC7
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R2,PECC0
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R2,PECC4
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+
+        ; words 122..125: retained transaction and runtime ownership.
+        MOV     R4,R1
+        MOV     R1,#06874H
+        EXTS    R3,#1
+        MOV     R2,[R1]
+        MOV     R1,R4
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R4,R1
+        MOV     R1,#06804H
+        EXTS    R3,#1
+        MOV     R2,[R1]
+        MOV     R1,R4
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R4,R1
+        MOV     R1,#06812H
+        EXTS    R3,#1
+        MOV     R2,[R1]
+        MOV     R1,R4
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOVBZ   R2,hc_asic_state
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+
+        ; words 126..141: interrupted register bank.  R1..R4 come from the
+        ; system-stack saves; the other registers have not been touched.
+        MOV     R2,R0
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R4,SP
+        MOV     R2,[R4+#6]
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R2,[R4+#4]
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R2,[R4+#2]
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R2,[R4]
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R2,R5
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R2,R6
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R2,R7
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R2,R8
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R2,R9
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R2,R10
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R2,R11
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R2,R12
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R2,R13
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R2,R14
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R2,R15
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+
+        ; word 142: software tick.  Word 143 is the writer command sequence.
+        MOV     R2,hc_tick_ms
+        EXTS    R3,#1
+        MOV     [R1],R2
+        ADD     R1,#2
+        MOV     R4,R1
+        MOV     R1,#06930H             ; LF_COMMAND_SEQ, word 24
+        EXTS    R3,#1
+        MOV     R2,[R1]
+        MOV     R1,R4
+        EXTS    R3,#1
+        MOV     [R1],R2
+
+        ; Existing RESETDIAG compatibility: vector 2 and its software tick.
+        ;
+        ; THE RESET LOG IS BIG-ENDIAN AND THIS CORE IS NOT.  hcconfig.c's
+        ; rst_u16() reads RAM[off]<<8 | RAM[off+1], so a native MOV of 0x0002
+        ; into 38:240A leaves rstPreviousTrap reading 0x0200 and the trap
+        ; timestamp byte-swapped - and the whole point of these two words is
+        ; that the V49 record can be compared with the V48 PHYSICAL numbers
+        ; (trap 2 at 37807 ms).  Store the swapped words so the reader that
+        ; already exists gets the values it has always got.  The constant is
+        ; pre-swapped; the tick is swapped with ROL, which costs one
+        ; instruction and no register the snapshot still needs - R2's original
+        ; value is already in the record, and R4's with it.
+        MOV     R1,#0240AH
+        MOV     R2,#00200H             ; big-endian 0x0002 for rst_u16()
+        EXTS    R3,#1
+        MOV     [R1],R2
+        MOV     R1,#02440H
+        MOV     R2,hc_tick_ms
+        ROL     R2,#8                  ; native -> reset-log byte order
+        EXTS    R3,#1
+        MOV     [R1],R2
+
+        ; Set COMPLETE first.  The completion marker is the final snapshot
+        ; store, so a reset between these writes remains recognisably torn.
+        MOV     R1,#06908H
+        EXTS    R3,#1
+        MOV     R2,[R1]
+        OR      R2,#00008H
+        EXTS    R3,#1
+        MOV     [R1],R2
+        MOV     R1,#069C2H
+        MOV     R2,#04E32H
+        EXTS    R3,#1
+        MOV     [R1],R2
+
+nmi_repeat:
+        POP     R4
+        POP     R3
+        POP     R2
+        POP     R1
+        RETI
+
+?C_NMI_V49 ENDP
+?PR?HCNMI_V49 ENDS
+END

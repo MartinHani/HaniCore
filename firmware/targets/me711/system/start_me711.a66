@@ -1,0 +1,302 @@
+$MOD167
+$CASE
+$SEGMENTED
+$INCLUDE (REG167.INC)
+
+;-------------------------------------------------------------------------------
+; start_me711.a66 - HaniCore's OWN reset path for the Bosch ME7.1.1.
+;
+; This is not a copy of Bosch's second-stage entry. It is HaniCore source that
+; happens to write some of the same REGISTER VALUES, because those values are
+; the board's bus timing and the board has not changed. Reusing a proven
+; BUSCON is engineering; keeping Bosch's code to get it would be laziness with
+; an unbounded tail.
+;
+; WHERE THIS IS ENTERED FROM
+; --------------------------
+; A reset path runs first and jumps here through the entry pointer at flash
+; 0x008000 (ROMSYS header), which the build writes. Which reset path depends
+; on SYSCON.ROMEN at reset (docs/PLATFORM.md):
+;
+;   ROMEN set   - the CPU's internal mask ROM: clock/bus setup, RAM test and
+;                 clear, ROMSYS header and checksum check, then the entry
+;                 pointer (EXTP page 0x0202 -> 0x808000, far jump via
+;                 PUSH R5 / PUSH R4 / RETS).
+;   ROMEN clear - the code at flash 0x000000. With the extracted OEM boot
+;                 block that is Bosch's copy of the same path; with the
+;                 HaniCore-owned boot region (tools/build/me711_owned_boot.py)
+;                 it is a short HaniCore prologue: T0 = WDTCON, RSTCON and
+;                 SYSCON2, zeroed XRAM/IRAM, then a jump here.
+;
+; THE STATE WE ARE ENTERED IN
+; ---------------------------
+; On every path: RAM tested or zeroed, T0 holding WDTCON as it was at reset,
+; and EINIT NOT executed, so the protected registers are still writable
+; exactly once - which is why everything below is in this order. The OEM path
+; has also set CP, a first-stage BUSCON/CS1/CS2, DPP0..3 and the stacks; this
+; file sets all of them itself and assumes none of it.
+;
+; The on-chip watchdog is RUNNING and DISWDT will not stop it (the boot block
+; already used its one EINIT-free window differently on some paths). Bosch's
+; normal application services it through 0x8076C2 with R12=0CF01H, i.e.
+; MOV WDTCON,R12 immediately followed by SRVWDT. RESETDIAG_V1 uses that exact
+; policy from its first instruction onward instead of inheriting the boot
+; block's reset-mode-dependent WDTREL value.
+;-------------------------------------------------------------------------------
+
+NAME    ?C_STARTUP
+PUBLIC  ?C_STARTUP
+PUBLIC  ?C_USRSTKBOT
+EXTRN   main:NEAR
+EXTRN   ?C_PAGEDPP0:DATA16
+EXTRN   ?C_PAGEDPP1:DATA16
+EXTRN   ?C_PAGEDPP2:DATA16
+
+?C_USERSTACK    SECTION DATA PUBLIC 'NDATA'
+; 512 bytes at 0xF380-0xF57F (linker_me711.lnp pins it). Keil ISRs keep their
+; LOCALS here too; only return frames and saved registers go on the system
+; stack. The runtime audit measured 256 bytes overflowing under engine +
+; TunerStudio load (272 measured) into the system stack's return addresses.
+; The stack now sits BELOW the system stack, so an overflow runs into the
+; unused guard band at 0xF340-0xF37F (hcsafety.h), never into return frames.
+?C_USRSTKBOT:   DSB 0200H
+?C_USERSTKTOP:  LABEL BYTE
+?C_USERSTACK    ENDS
+
+?C_MAINREGISTERS REGDEF R0 - R15
+
+?C_STARTUP_CODE SECTION CODE WORD 'ICODE'
+
+?C_RESET PROC TASK C_STARTUP INTNO RESET = 0
+?C_STARTUP: LABEL NEAR
+
+        MOV     R12,#00B01H     ; the boot block's own ~400 ms window.
+                                ; MUST MATCH TGT_WDTCON_SERVICE in hctarget.h -
+                                ; A166 cannot read a C header, so
+                                ; tools/me711_wdt_audit.py checks the EMITTED
+                                ; bytes agree instead of trusting that they do.
+        DB      0F6H,0FCH,0AEH,0FFH ; MOV WDTCON,R12, exact OEM encoding
+        SRVWDT                  ; before anything else, and before any wait
+
+;-------------------------------------------------------------------------------
+; 1. The bus, and the chip-dependent half of it.
+;
+; The boot block reads IDCHIP (0xF07C) and picks one of two BUSCON sets. It is
+; the same test here, for the same reason: this ECU family shipped with more
+; than one silicon revision and the timing differs. Values are the ones the
+; OEM ME7.1.1 image itself writes, at 0x8076D0-0x807710 (first stage) and 0x8C0A20
+; onwards (second stage). HaniCore writes the SECOND-STAGE values, because
+; those are the ones a running ME7.1.1 uses:
+;
+;     BUSCON0  = 0x04AE            program flash, 1 MB at 0x800000
+;     ADDRSEL1 = 0x3803  BUSCON1 = 0x040D    external RAM, 32 KB at 0x380000
+;     ADDRSEL2 = 0x1007  BUSCON2 = 0x05AE
+;     ADDRSEL3/4 and BUSCON3/4 disabled
+;
+; ADDRSEL1 widens CS1 from the boot block's 8 KB (0x3801) to the full 32 KB
+; (0x3803). That is not cosmetic: the calibration page, the output-channel
+; block and the reset log all live above 8 KB.
+;-------------------------------------------------------------------------------
+        MOV     BUSCON0,#04AEH
+
+        ; SYSCON: PRESERVE the incoming ROMEN state, exactly as both the boot
+        ; block and the OEM second stage do. Forcing it either way changes the
+        ; segment-0 memory map underneath a running system for no reason, and
+        ; the boot block behaves DIFFERENTLY depending on it (at 0x7826 it
+        ; forces the normal-boot mode byte only when ROMEN is clear).
+        ; XPEN is set in both values, which is what makes the XRAM at 0xE000
+        ; - where the ASIC frame buffer lives - exist at all.
+        JNB     ROMEN,HC_SYSCON_LO
+        MOV     SYSCON,#0E644H
+        JMPR    cc_UC,HC_SYSCON_DONE
+HC_SYSCON_LO:
+        MOV     SYSCON,#0E244H
+HC_SYSCON_DONE:
+
+        MOV     ADDRSEL1,#3803H
+        MOV     BUSCON1,#040DH
+        MOV     ADDRSEL2,#1007H
+        MOV     BUSCON2,#05AEH
+        MOV     ADDRSEL3,#0000H
+        MOV     BUSCON3,#0000H
+        MOV     ADDRSEL4,#0000H
+        MOV     BUSCON4,#0000H
+
+        MOV     R12,#00B01H
+        DB      0F6H,0FCH,0AEH,0FFH ; MOV WDTCON,R12, exact OEM encoding
+        SRVWDT
+
+;-------------------------------------------------------------------------------
+; 2. EVERY DANGEROUS OUTPUT OFF, and off BEFORE it becomes an output.
+;
+; Order matters and it is the only order that is safe: write the LATCH first,
+; then the DIRECTION. A pin switched to output while its latch holds whatever
+; the reset left there is a pin that drives that value - and on this board
+; P2.0-P2.7 are eight ignition coil drivers and P7.4-P7.7/P8.3-P8.7 are eight
+; injectors. [BOSCH-PM, sheet FR, ME7.1.1 columns]
+;
+; This is done in the STARTUP rather than in C because C runs after the data
+; initialisation, and there is no reason for a coil driver to spend that long
+; holding an unknown level.
+;
+; The whole-port writes below are safe HERE and only here: nothing is running
+; yet, so there is no interrupt to lose a read-modify-write against. Once
+; main() starts, the rule is the ME7.5 one - bit-addressed access only.
+;-------------------------------------------------------------------------------
+        ; THE LATCH VALUES ARE THE OEM'S, AND THAT MATTERS. [BIN seg8C:0DCC]
+        ; the OEM's power-on port init - which runs before the engine can turn -
+        ; writes P2=0xC7FF, P7=0x00F4, P8=0x00FF with those pins as OUTPUTS.
+        ; An ECU does not energise eight coils and eight injectors at key-on,
+        ; so on this board those drivers are ACTIVE LOW and HIGH is off.
+        ;
+        ; Earlier HaniCore images latched 0 here, which is the ASSERTED level.
+        ; That was harmless only because the direction stays INPUT - but it
+        ; meant one stray DPx write away from energising everything. Latching
+        ; the deasserted value costs nothing and removes that.
+        MOV     P2,#00FFH       ; ZDG1..ZDG8 HIGH = all eight coils OFF
+        MOV     DP2,#0000H      ; ... and still left as INPUTS
+        MOV     P7,#00F4H       ; OEM value: DVE1/DVE2, NWS1/NWS2, EV1..EV3 off
+        MOV     DP7,#0000H
+        MOV     P8,#00FFH       ; OEM value: EV4..EV8 off
+        ; P8.1 and P8.2 are NOT spare: on THIS ECU's software they are the
+        ; chip selects of the two CJ120 wideband ICs on the SAME SSC wires as
+        ; the S5500 link. [BIN seg8B:FF5E] latches both HIGH and makes them
+        ; outputs; [BIN seg8C:0734] drops one LOW around an SSCTB write whose
+        ; command bytes 0x48/0x56/0x6C are the CJ120's IDENT/INIT_REG1 set.
+        ; Left as inputs they float on the bus exactly as P6.3/P6.4 did.
+        ; Deselected, driven, like the OEM. Latch (above) before direction.
+        MOV     DP8,#0006H      ; P8.1, P8.2 OUT HIGH; EV4..EV8 stay inputs
+
+        ; P6: CS0/CS1 belong to the external bus unit, which drives them
+        ; regardless of DP6. But P6.3 and P6.4 are PLAIN GPIOs here, and they
+        ; are the two SPI CHIP SELECTS on a SHARED bus:
+        ;
+        ;   [BOSCH-PM sheet FR]  P6.3 = CS_EEPR  -> S5300, an ST95040 EEPROM
+        ;                        P6.4 = CS-ASIC  -> the second C167 (S5500)
+        ;   [BOSCH-PM sheet ASIC] MRST/MTSR/SCLK (P3.8/9/13) = SSDI/SSDO/SSCLK,
+        ;                        the SAME three wires for both devices.
+        ;
+        ; Every image up to ASICSEM_V6 left BOTH of them as INPUTS. A CMOS chip
+        ; select with no external pull-up - and the BOM shows S5300 has only a
+        ; decoupling cap C5300 beside it, no R53xx at all - is indeterminate.
+        ; So while HaniCore clocked 1536 bits of SCLK and MTSR at the ASIC, the
+        ; EEPROM's select was floating on the same three wires and could have
+        ; been answering too. That fits every symptom the bench reported:
+        ; structured, repeatable, family-varying reply data that satisfies NO
+        ; checksum convention, with intermittent SSCPE, while the PEC block
+        ; itself completes perfectly.
+        ;
+        ; The OEM does not leave them floating: [BIN seg8C:0DFC] MOV P6,#0098h
+        ; then MOV DP6,#007Bh - bits 3 and 4 latched HIGH and driven as
+        ; OUTPUTS, i.e. both devices explicitly DESELECTED, before anything
+        ; touches the bus. This reproduces exactly that, latch before direction.
+        MOV     DP6,#0000H
+        BSET    P6.3            ; CS_EEPR  deasserted
+        BSET    P6.4            ; CS-ASIC  deasserted
+        BSET    DP6.3           ; ... and now actually driven
+        BSET    DP6.4
+
+        ; P3: the K-line and the SSC. TXD0 idles HIGH - a K-line at rest is
+        ; recessive, and driving it low would look like a break condition to
+        ; anything listening. Everything else on P3 stays an input.
+        MOV     DP3,#0000H
+        MOV     P3,#0400H       ; P3.10 = TXD0 latch high
+        BSET    DP3.10          ; ... now make it an output
+
+;-------------------------------------------------------------------------------
+; 2b. RESETDIAG_V3: NLEN_FR (P3.12) on the NLEN half of the A/B.
+;
+; NLEN_FR is the ECU's own power hold. Bosch's port map has it on P3.12 / CPU
+; pin 79 in BOTH ME7.1.1 columns; it is ANDed with the ASIC's NLEN_AS in a
+; 74AC00 and the result is NL, which is pin 26 of the CJ910 - the device that
+; makes VCC and can pull RESET. See docs/ARCHITECTURE.md.
+;
+; THE OEM SEQUENCE, re-read from OEM ME7.1.1 machine code at seg8C:0DDA:
+;       D1 80             EXTR #1
+;       E6 E3 01 0B       MOV ODP3,#0B01h    bit 12 = 0  -> PUSH-PULL
+;       E6 E2 01 BF       MOV P3,  #BF01h    bit 12 = 1  -> latch HIGH
+;       E6 E3 FE 35       MOV DP3, #35FEh    bit 12 = 1  -> output
+; called from seg8C:0B4A, four calls BEFORE its EINIT at seg8C:0B62.
+;
+; So: push-pull, latch before direction, before EINIT. This block reproduces
+; that. ODP3 needs no write - its reset value is 0x0000 (push-pull on every
+; pin) and HaniCore never writes ODP3 anywhere, which the audit checks.
+;
+; RESETDIAG_V3 made this conditional to A/B it. The hardware answered: no
+; effect either way, because the net is externally HIGH already (BASE reported
+; NL=0001/0000 - an input reading 1). So the conditional is gone and the line
+; is simply asserted, unconditionally and before EINIT, because that is what
+; the OEM does and correct platform state costs nothing to keep.
+;-------------------------------------------------------------------------------
+        BSET    P3.12           ; latch HIGH   ... exactly the OEM order
+        BSET    DP3.12          ; ... then drive it
+
+        MOV     R12,#00B01H
+        DB      0F6H,0FCH,0AEH,0FFH ; MOV WDTCON,R12, exact OEM encoding
+        SRVWDT
+
+;-------------------------------------------------------------------------------
+; 3. Data pages, stack and the register bank.
+;
+; DPP0..DPP2 come from the LINKER (?C_PAGEDPPn), not from Bosch: they have to
+; describe where HaniCore's own data actually is. DPP3 is 3, the SFR page, on
+; every C166 program there has ever been.
+;
+; STKOV was the OEM second-stage value (0xF606). The system stack has to sit
+; below the C data and inside the RAM the boot block has PROVEN by testing it -
+; 0x00F200..0x00FDFF. Getting this backwards is not subtle: an SP above STKUN
+; is an immediate stack-underflow trap on the first CALL, and this project has
+; made exactly that mistake once already.
+;
+; STKUN/SP 0xF800, STKOV 0xF586 (formerly 0xF700 / 0xF606). The system
+; stack takes the 256 bytes the user stack used to occupy and 128 below them
+; (0xF580-0xF7FF, 634 usable above STKOV; the static worst-case nest is in
+; tools/analysis/me711_stack_static.py) and the user stack moved below it
+; into 0xF380-0xF57F - OEM RAM (the Porsche
+; application itself keeps variables at 0xF230/0xF238/0xF23C, seg88:160E,
+; 88:F6A4, 89:4FC0; the sibling ME7.1.1 A2L declares SY_C167CS = 1).
+;-------------------------------------------------------------------------------
+        MOV     STKOV,#0F586H
+        MOV     STKUN,#0F800H
+        MOV     SP,#0F800H
+
+        MOV     DPP0,#?C_PAGEDPP0
+        MOV     DPP1,#?C_PAGEDPP1
+        MOV     DPP2,#?C_PAGEDPP2
+        MOV     DPP3,#0003H
+
+        MOV     CP,#?C_MAINREGISTERS
+        MOV     R0,#DPP2:?C_USERSTKTOP
+
+        MOV     PSW,#0000H      ; ILVL 0, and interrupts still globally off
+
+        MOV     R12,#00B01H
+        DB      0F6H,0FCH,0AEH,0FFH ; MOV WDTCON,R12, exact OEM encoding
+        SRVWDT
+
+;-------------------------------------------------------------------------------
+; 4. EINIT, and it is the last protected write.
+;
+; After this BUSCON/SYSCON/ADDRSEL are read-only until the next reset. That is
+; a feature: a wild pointer can no longer unmap the memory it is running from.
+;-------------------------------------------------------------------------------
+        EINIT
+
+        MOV     R12,#00B01H
+        DB      0F6H,0FCH,0AEH,0FFH ; MOV WDTCON,R12, exact OEM encoding
+        SRVWDT
+
+;-------------------------------------------------------------------------------
+; 5. Hand over.
+;
+; NOTE, and it is the same note the ME7.5 startup carries: this does NOT run
+; Keil's ?C_INIT, so no C global is guaranteed to start at a known value.
+; Everything that matters is assigned explicitly inside main() and inside
+; hcts_init(). The ME7.5 bench read cfgWrites as 3 out of reset before that
+; rule was made, so it is not theoretical.
+;-------------------------------------------------------------------------------
+        JMP     main
+
+?C_RESET ENDP
+?C_STARTUP_CODE ENDS
+END

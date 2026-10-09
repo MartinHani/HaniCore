@@ -1,0 +1,195 @@
+processor,cpu_pin,port,peripheral_fn,module,me711_signal,me711_all_variants,agreement,meaning,bosch_note
+MAIN CPU,79,P3.12,BHE,EBC,NLEN_FR,"Belegung ME7.1.1 B-Muster (VW)=NLEN_FR | Belegung ME7.1.1 C-Muster, AUDI=NLEN_FR",both ME7.1.1 columns agree,,"frei für HI-Byte 16 Bit RAM, freihalten wird für ETK benötigt"
+MAIN CPU,81,P3.15,CLKOUT,EBC,SF,"Belegung ME7.1.1 B-Muster (VW)=SF | Belegung ME7.1.1 C-Muster, AUDI=SF",both ME7.1.1 columns agree,,
+MAIN CPU,1,P6.0,CS0,EBC,CS Flash,"Belegung ME7.1.1 B-Muster (VW)=CS Flash | Belegung ME7.1.1 C-Muster, AUDI=CS Flash",both ME7.1.1 columns agree,,
+MAIN CPU,2,P6.1,CS1,EBC,CS RAM,"Belegung ME7.1.1 B-Muster (VW)=CS RAM | Belegung ME7.1.1 C-Muster, AUDI=CS RAM",both ME7.1.1 columns agree,,
+MAIN CPU,3,P6.2,CS2,EBC,KL15_STAT,"Belegung ME7.1.1 B-Muster (VW)=KL15_STAT | Belegung ME7.1.1 C-Muster, AUDI=KL15_STAT",both ME7.1.1 columns agree,,
+MAIN CPU,4,P6.3,CS3,EBC,CS_EEPR,"Belegung ME7.1.1 B-Muster (VW)=CS_EEPR | Belegung ME7.1.1 C-Muster, AUDI=CS_EEPR",both ME7.1.1 columns agree,,"Flash Prog. Enable, CJ910 ON"
+MAIN CPU,5,P6.4,CS4,EBC,CS-ASIC,"Belegung ME7.1.1 B-Muster (VW)=CS-ASIC | Belegung ME7.1.1 C-Muster, AUDI=CS-ASIC",both ME7.1.1 columns agree,,Sel. Leitung f. ASIC
+MAIN CPU,6,P6.5,HOLD,EBC,ED_CLK,"Belegung ME7.1.1 B-Muster (VW)=ED_CLK | Belegung ME7.1.1 C-Muster, AUDI=ED_CLK",both ME7.1.1 columns agree,,
+MAIN CPU,7,P6.6,HLDA,EBC,ED_SYN,"Belegung ME7.1.1 B-Muster (VW)=ED_SYN | Belegung ME7.1.1 C-Muster, AUDI=ED_SYN",both ME7.1.1 columns agree,,
+MAIN CPU,8,P6.7,BREQ,EBC,ED_SER,"Belegung ME7.1.1 B-Muster (VW)=ED_SER | Belegung ME7.1.1 C-Muster, AUDI=ED_SER",both ME7.1.1 columns agree,,
+MAIN CPU,118,P1L.0,A0,EBC,A0,"Belegung ME7.1.1 B-Muster (VW)=A0 | Belegung ME7.1.1 C-Muster, AUDI=A0",both ME7.1.1 columns agree,,
+MAIN CPU,119,P1L.1,A1,EBC,A1,"Belegung ME7.1.1 B-Muster (VW)=A1 | Belegung ME7.1.1 C-Muster, AUDI=A1",both ME7.1.1 columns agree,,
+MAIN CPU,120,P1L.2,A2,EBC,A2,"Belegung ME7.1.1 B-Muster (VW)=A2 | Belegung ME7.1.1 C-Muster, AUDI=A2",both ME7.1.1 columns agree,,
+MAIN CPU,121,P1L.3,A3,EBC,A3,"Belegung ME7.1.1 B-Muster (VW)=A3 | Belegung ME7.1.1 C-Muster, AUDI=A3",both ME7.1.1 columns agree,,
+MAIN CPU,122,P1L.4,A4,EBC,A4,"Belegung ME7.1.1 B-Muster (VW)=A4 | Belegung ME7.1.1 C-Muster, AUDI=A4",both ME7.1.1 columns agree,,
+MAIN CPU,123,P1L.5,A5,EBC,A5,"Belegung ME7.1.1 B-Muster (VW)=A5 | Belegung ME7.1.1 C-Muster, AUDI=A5",both ME7.1.1 columns agree,,
+MAIN CPU,124,P1L.6,A6,EBC,A6,"Belegung ME7.1.1 B-Muster (VW)=A6 | Belegung ME7.1.1 C-Muster, AUDI=A6",both ME7.1.1 columns agree,,
+MAIN CPU,125,P1L.7,A7,EBC,A7,"Belegung ME7.1.1 B-Muster (VW)=A7 | Belegung ME7.1.1 C-Muster, AUDI=A7",both ME7.1.1 columns agree,,
+MAIN CPU,128,P1H.0,A8,EBC,A8,"Belegung ME7.1.1 B-Muster (VW)=A8 | Belegung ME7.1.1 C-Muster, AUDI=A8",both ME7.1.1 columns agree,,
+MAIN CPU,129,P1H.1,A9,EBC,A9,"Belegung ME7.1.1 B-Muster (VW)=A9 | Belegung ME7.1.1 C-Muster, AUDI=A9",both ME7.1.1 columns agree,,
+MAIN CPU,130,P1H.2,A10,EBC,A10,"Belegung ME7.1.1 B-Muster (VW)=A10 | Belegung ME7.1.1 C-Muster, AUDI=A10",both ME7.1.1 columns agree,,
+MAIN CPU,131,P1H.3,A11,EBC,A11,"Belegung ME7.1.1 B-Muster (VW)=A11 | Belegung ME7.1.1 C-Muster, AUDI=A11",both ME7.1.1 columns agree,,
+MAIN CPU,85,P4.0,A16,EBC,A16,"Belegung ME7.1.1 B-Muster (VW)=A16 | Belegung ME7.1.1 C-Muster, AUDI=A16",both ME7.1.1 columns agree,,
+MAIN CPU,86,P4.1,A17,EBC,A17,"Belegung ME7.1.1 B-Muster (VW)=A17 | Belegung ME7.1.1 C-Muster, AUDI=A17",both ME7.1.1 columns agree,,
+MAIN CPU,87,P4.2,A18,EBC,A18,"Belegung ME7.1.1 B-Muster (VW)=A18 | Belegung ME7.1.1 C-Muster, AUDI=A18",both ME7.1.1 columns agree,,
+MAIN CPU,88,P4.3,A19,EBC,A19,"Belegung ME7.1.1 B-Muster (VW)=A19 | Belegung ME7.1.1 C-Muster, AUDI=A19",both ME7.1.1 columns agree,,
+MAIN CPU,100,P0L.0,AD0,EBC,D0,"Belegung ME7.1.1 B-Muster (VW)=D0 | Belegung ME7.1.1 C-Muster, AUDI=D0",both ME7.1.1 columns agree,,
+MAIN CPU,101,P0L.1,AD1,EBC,D1,"Belegung ME7.1.1 B-Muster (VW)=D1 | Belegung ME7.1.1 C-Muster, AUDI=D1",both ME7.1.1 columns agree,,
+MAIN CPU,102,P0L.2,AD2,EBC,D2,"Belegung ME7.1.1 B-Muster (VW)=D2 | Belegung ME7.1.1 C-Muster, AUDI=D2",both ME7.1.1 columns agree,,
+MAIN CPU,103,P0L.3,AD3,EBC,D3,"Belegung ME7.1.1 B-Muster (VW)=D3 | Belegung ME7.1.1 C-Muster, AUDI=D3",both ME7.1.1 columns agree,,
+MAIN CPU,104,P0L.4,AD4,EBC,D4,"Belegung ME7.1.1 B-Muster (VW)=D4 | Belegung ME7.1.1 C-Muster, AUDI=D4",both ME7.1.1 columns agree,,
+MAIN CPU,105,P0L.5,AD5,EBC,D5,"Belegung ME7.1.1 B-Muster (VW)=D5 | Belegung ME7.1.1 C-Muster, AUDI=D5",both ME7.1.1 columns agree,,
+MAIN CPU,106,P0L.6,AD6,EBC,D6,"Belegung ME7.1.1 B-Muster (VW)=D6 | Belegung ME7.1.1 C-Muster, AUDI=D6",both ME7.1.1 columns agree,,
+MAIN CPU,107,P0L.7,AD7,EBC,D7,"Belegung ME7.1.1 B-Muster (VW)=D7 | Belegung ME7.1.1 C-Muster, AUDI=D7",both ME7.1.1 columns agree,,
+MAIN CPU,108,P0H.0,AD8,EBC,D8,"Belegung ME7.1.1 B-Muster (VW)=D8 | Belegung ME7.1.1 C-Muster, AUDI=D8",both ME7.1.1 columns agree,,bei 8-bit MUX Bus A8
+MAIN CPU,111,P0H.1,AD9,EBC,D9,"Belegung ME7.1.1 B-Muster (VW)=D9 | Belegung ME7.1.1 C-Muster, AUDI=D9",both ME7.1.1 columns agree,,bei 8-bit MUX Bus A9
+MAIN CPU,112,P0H.2,AD10,EBC,D10,"Belegung ME7.1.1 B-Muster (VW)=D10 | Belegung ME7.1.1 C-Muster, AUDI=D10",both ME7.1.1 columns agree,,bei 8-bit MUX Bus A10
+MAIN CPU,113,P0H.3,AD11,EBC,D11,"Belegung ME7.1.1 B-Muster (VW)=D11 | Belegung ME7.1.1 C-Muster, AUDI=D11",both ME7.1.1 columns agree,,bei 8-bit MUX Bus A11
+MAIN CPU,114,P0H.4,AD12,EBC,D12,"Belegung ME7.1.1 B-Muster (VW)=D12 | Belegung ME7.1.1 C-Muster, AUDI=D12",both ME7.1.1 columns agree,,bei 8-bit MUX Bus A12
+MAIN CPU,115,P0H.5,AD13,EBC,D13,"Belegung ME7.1.1 B-Muster (VW)=D13 | Belegung ME7.1.1 C-Muster, AUDI=D13",both ME7.1.1 columns agree,,bei 8-bit MUX Bus A13
+MAIN CPU,116,P0H.6,AD14,EBC,D14,"Belegung ME7.1.1 B-Muster (VW)=D14 | Belegung ME7.1.1 C-Muster, AUDI=D14",both ME7.1.1 columns agree,,bei 8-bit MUX Bus A14
+MAIN CPU,117,P0H.7,AD15,EBC,D15,"Belegung ME7.1.1 B-Muster (VW)=D15 | Belegung ME7.1.1 C-Muster, AUDI=D15",both ME7.1.1 columns agree,,bei 8-bit MUX Bus A15
+MAIN CPU,132,P1H.4,A12,EBC,A12,"Belegung ME7.1.1 B-Muster (VW)=A12 | Belegung ME7.1.1 C-Muster, AUDI=A12",both ME7.1.1 columns agree,,Nur Capture Funktion
+MAIN CPU,133,P1H.5,A13,EBC,A13,"Belegung ME7.1.1 B-Muster (VW)=A13 | Belegung ME7.1.1 C-Muster, AUDI=A13",both ME7.1.1 columns agree,,Nur Capture Funktion
+MAIN CPU,134,P1H.6,A14,EBC,A14,"Belegung ME7.1.1 B-Muster (VW)=A14 | Belegung ME7.1.1 C-Muster, AUDI=A14",both ME7.1.1 columns agree,,Nur Capture Funktion
+MAIN CPU,135,P1H.7,A15,EBC,A15,"Belegung ME7.1.1 B-Muster (VW)=A15 | Belegung ME7.1.1 C-Muster, AUDI=A15",both ME7.1.1 columns agree,,Nur Capture Funktion
+MAIN CPU,89,P4.4,A20,EBC,CAN2RXD,"Belegung ME7.1.1 B-Muster (VW)=CAN2RXD | Belegung ME7.1.1 C-Muster, AUDI=CAN2RXD *",variants differ,,"bei CAN Betrieb nur Port, alt. VAN_RxD1"
+MAIN CPU,90,P4.5,A21,EBC,CAN1RXD,"Belegung ME7.1.1 B-Muster (VW)=CAN1RXD | Belegung ME7.1.1 C-Muster, AUDI=CAN1RXD",both ME7.1.1 columns agree,,Alt. VAN_RxD
+MAIN CPU,91,P4.6,A22,EBC,CAN1TXD,"Belegung ME7.1.1 B-Muster (VW)=CAN1TXD | Belegung ME7.1.1 C-Muster, AUDI=CAN1TXD",both ME7.1.1 columns agree,,Alt. VAN_TxD
+MAIN CPU,92,P4.7,A23,EBC,CAN2TXD,"Belegung ME7.1.1 B-Muster (VW)=CAN2TXD | Belegung ME7.1.1 C-Muster, AUDI=CAN2TXD *",variants differ,,"bei CAN Betrieb nur Port, alt. VAN_RxD2"
+MAIN CPU,19,P7.0,POUT0,PWM,NWS1,"Belegung ME7.1.1 B-Muster (VW)=NWS1 | Belegung ME7.1.1 C-Muster, AUDI=KNWS1",variants differ,,
+MAIN CPU,20,P7.1,POUT1,PWM,NWS2,"Belegung ME7.1.1 B-Muster (VW)=NWS2 | Belegung ME7.1.1 C-Muster, AUDI=KNWS2",variants differ,,
+MAIN CPU,21,P7.2,POUT2,PWM,DVE1,"Belegung ME7.1.1 B-Muster (VW)=DVE1 | Belegung ME7.1.1 C-Muster, AUDI=DVE1",both ME7.1.1 columns agree,,alt. LL-Stepper
+MAIN CPU,22,P7.3,POUT3,PWM,VANOS,"Belegung ME7.1.1 B-Muster (VW)=VANOS | Belegung ME7.1.1 C-Muster, AUDI=ETH",variants differ,,
+MAIN CPU,47,P2.0,CC0IO,CAPCOM,ZDG1,"Belegung ME7.1.1 B-Muster (VW)=ZDG1 | Belegung ME7.1.1 C-Muster, AUDI=ZDG1",both ME7.1.1 columns agree,,
+MAIN CPU,48,P2.1,CC1IO,CAPCOM,ZDG2,"Belegung ME7.1.1 B-Muster (VW)=ZDG2 | Belegung ME7.1.1 C-Muster, AUDI=ZDG2",both ME7.1.1 columns agree,,
+MAIN CPU,49,P2.2,CC2IO,CAPCOM,ZDG3,"Belegung ME7.1.1 B-Muster (VW)=ZDG3 | Belegung ME7.1.1 C-Muster, AUDI=ZDG3",both ME7.1.1 columns agree,,
+MAIN CPU,50,P2.3,CC3IO,CAPCOM,ZDG4,"Belegung ME7.1.1 B-Muster (VW)=ZDG4 | Belegung ME7.1.1 C-Muster, AUDI=ZDG4",both ME7.1.1 columns agree,,
+MAIN CPU,51,P2.4,CC4IO,CAPCOM,ZDG5,"Belegung ME7.1.1 B-Muster (VW)=ZDG5 | Belegung ME7.1.1 C-Muster, AUDI=ZDG5",both ME7.1.1 columns agree,,
+MAIN CPU,52,P2.5,CC5IO,CAPCOM,ZDG6,"Belegung ME7.1.1 B-Muster (VW)=ZDG6 | Belegung ME7.1.1 C-Muster, AUDI=ZDG6",both ME7.1.1 columns agree,,
+MAIN CPU,53,P2.6,CC6IO,CAPCOM,ZDG7,"Belegung ME7.1.1 B-Muster (VW)=ZDG7 | Belegung ME7.1.1 C-Muster, AUDI=ZDG7",both ME7.1.1 columns agree,,
+MAIN CPU,54,P2.7,CC7IO,CAPCOM,ZDG8,"Belegung ME7.1.1 B-Muster (VW)=ZDG8 | Belegung ME7.1.1 C-Muster, AUDI=ZDG8",both ME7.1.1 columns agree,,
+MAIN CPU,57,P2.8,CC8IO,CAPCOM,NWDG,"Belegung ME7.1.1 B-Muster (VW)=NWDG | Belegung ME7.1.1 C-Muster, AUDI=NWDG1",variants differ,,
+MAIN CPU,58,P2.9,CC9IO,CAPCOM,NWDG2,"Belegung ME7.1.1 B-Muster (VW)=NWDG2 | Belegung ME7.1.1 C-Muster, AUDI=NWDG2",both ME7.1.1 columns agree,,
+MAIN CPU,59,P2.10,CC10IO,CAPCOM,KVA,"Belegung ME7.1.1 B-Muster (VW)=KVA | Belegung ME7.1.1 C-Muster, AUDI=NWDG4",variants differ,Kraftstoffverbrauchsanzeige normiert,
+MAIN CPU,60,P2.11,CC11IO,CAPCOM,EGENFR,"Belegung ME7.1.1 B-Muster (VW)=EGENFR | Belegung ME7.1.1 C-Muster, AUDI=EGENFR",both ME7.1.1 columns agree,,
+MAIN CPU,61,P2.12,CC12IO,CAPCOM,EKP,"Belegung ME7.1.1 B-Muster (VW)=EKP | Belegung ME7.1.1 C-Muster, AUDI=EKP",both ME7.1.1 columns agree,EKP-Ansteuerung,
+MAIN CPU,62,P2.13,CC13IO,CAPCOM,TN,"Belegung ME7.1.1 B-Muster (VW)=TN | Belegung ME7.1.1 C-Muster, AUDI=TN",both ME7.1.1 columns agree,tN-Signal (Drehzahlausgang),
+MAIN CPU,63,P2.14,CC14IO,CAPCOM,Codierpin M/S,"Belegung ME7.1.1 B-Muster (VW)=Codierpin M/S | Belegung ME7.1.1 C-Muster, AUDI=NWDG3",variants differ,,
+MAIN CPU,64,P2.15,CC15IO,CAPCOM,KWDG,"Belegung ME7.1.1 B-Muster (VW)=KWDG | Belegung ME7.1.1 C-Muster, AUDI=KWDG",both ME7.1.1 columns agree,,T7IN Ext. Count Input
+MAIN CPU,9,P8.0,CC16IO,CAPCOM,MF,"Belegung ME7.1.1 B-Muster (VW)=MF | Belegung ME7.1.1 C-Muster, AUDI=MF",both ME7.1.1 columns agree,,
+MAIN CPU,10,P8.1,CC17IO,CAPCOM,ZAS1,"Belegung ME7.1.1 B-Muster (VW)=ZAS1 | Belegung ME7.1.1 C-Muster, AUDI=CS_CJ120/ZAS1",variants differ,Zylinderabschaltung 1,
+MAIN CPU,11,P8.2,CC18IO,CAPCOM,ZAS2,"Belegung ME7.1.1 B-Muster (VW)=ZAS2 | Belegung ME7.1.1 C-Muster, AUDI=CS_CJ120/ZAS1",variants differ,Zylinderabschaltung 2,
+MAIN CPU,12,P8.3,CC19IO,CAPCOM,EV8,"Belegung ME7.1.1 B-Muster (VW)=EV8 | Belegung ME7.1.1 C-Muster, AUDI=EV8",both ME7.1.1 columns agree,Einspritzventil 8,
+MAIN CPU,13,P8.4,CC20IO,CAPCOM,EV7,"Belegung ME7.1.1 B-Muster (VW)=EV7 | Belegung ME7.1.1 C-Muster, AUDI=EV7",both ME7.1.1 columns agree,Einspritzventil 7,
+MAIN CPU,14,P8.5,CC21IO,CAPCOM,EV6,"Belegung ME7.1.1 B-Muster (VW)=EV6 | Belegung ME7.1.1 C-Muster, AUDI=EV6",both ME7.1.1 columns agree,Einspritzventil 6,
+MAIN CPU,15,P8.6,CC22IO,CAPCOM,EV5,"Belegung ME7.1.1 B-Muster (VW)=EV5 | Belegung ME7.1.1 C-Muster, AUDI=EV5",both ME7.1.1 columns agree,Einspritzventil 5,
+MAIN CPU,16,P8.7,CC23IO,CAPCOM,EV4,"Belegung ME7.1.1 B-Muster (VW)=EV4 | Belegung ME7.1.1 C-Muster, AUDI=EV4",both ME7.1.1 columns agree,Einspritzventil 4,
+MAIN CPU,23,P7.4,CC28IO,CAPCOM,EV3,"Belegung ME7.1.1 B-Muster (VW)=EV3 | Belegung ME7.1.1 C-Muster, AUDI=EV3",both ME7.1.1 columns agree,Einspritzventil 3,
+MAIN CPU,24,P7.5,CC29IO,CAPCOM,EV2,"Belegung ME7.1.1 B-Muster (VW)=EV2 | Belegung ME7.1.1 C-Muster, AUDI=EV2",both ME7.1.1 columns agree,Einspritzventil 2,
+MAIN CPU,25,P7.6,CC30IO,CAPCOM,EV1,"Belegung ME7.1.1 B-Muster (VW)=EV1 | Belegung ME7.1.1 C-Muster, AUDI=EV1",both ME7.1.1 columns agree,Einspritzventil 1,
+MAIN CPU,26,P7.7,CC31IO,CAPCOM,DVE2,"Belegung ME7.1.1 B-Muster (VW)=DVE2 | Belegung ME7.1.1 C-Muster, AUDI=DVE2",both ME7.1.1 columns agree,,alt. LL-Stepper
+MAIN CPU,65,P3.0,T0IN,CAPCOM,KWDG,"Belegung ME7.1.1 B-Muster (VW)=KWDG | Belegung ME7.1.1 C-Muster, AUDI=KWDG",both ME7.1.1 columns agree,,
+MAIN CPU,74,P3.7,T2IN,GPT1,KSA2,"Belegung ME7.1.1 B-Muster (VW)=KSA2 | Belegung ME7.1.1 C-Muster, AUDI=KSA2",both ME7.1.1 columns agree,,
+MAIN CPU,73,P3.6,T3IN,GPT1,KSA3,"Belegung ME7.1.1 B-Muster (VW)=KSA3 | Belegung ME7.1.1 C-Muster, AUDI=KSA3",both ME7.1.1 columns agree,,
+MAIN CPU,70,P3.5,T4IN,GPT1,KTI,"Belegung ME7.1.1 B-Muster (VW)=KTI | Belegung ME7.1.1 C-Muster, AUDI=KTI",both ME7.1.1 columns agree,,
+MAIN CPU,69,P3.4,T3EUD,GPT1,KSA1,"Belegung ME7.1.1 B-Muster (VW)=KSA1 | Belegung ME7.1.1 C-Muster, AUDI=KSA1",both ME7.1.1 columns agree,,
+MAIN CPU,68,P3.3,T3OUT,GPT1,G2,"Belegung ME7.1.1 B-Muster (VW)=G2 | Belegung ME7.1.1 C-Muster, AUDI=G2",both ME7.1.1 columns agree,,
+MAIN CPU,67,P3.2,CAPIN,GPT2,G1,"Belegung ME7.1.1 B-Muster (VW)=G1 | Belegung ME7.1.1 C-Muster, AUDI=G1",both ME7.1.1 columns agree,,
+MAIN CPU,66,P3.1,T6OUT,GPT2,G0,"Belegung ME7.1.1 B-Muster (VW)=G0 | Belegung ME7.1.1 C-Muster, AUDI=G0",both ME7.1.1 columns agree,,
+MAIN CPU,27,P5.0,AN0,ADC,HFM/P,"Belegung ME7.1.1 B-Muster (VW)=HFM/P | Belegung ME7.1.1 C-Muster, AUDI=HFM",variants differ,,Port nur Input
+MAIN CPU,28,P5.1,AN1,ADC,IP1S,"Belegung ME7.1.1 B-Muster (VW)=IP1S | Belegung ME7.1.1 C-Muster, AUDI=IP1S",both ME7.1.1 columns agree,Istwertpoti 1 (EGAS),Port nur Input
+MAIN CPU,29,P5.2,AN2,ADC,IPV,"Belegung ME7.1.1 B-Muster (VW)=IPV | Belegung ME7.1.1 C-Muster, AUDI=IPV",both ME7.1.1 columns agree,,Port nur Input
+MAIN CPU,30,P5.3,AN3,ADC,IP2S,"Belegung ME7.1.1 B-Muster (VW)=IP2S | Belegung ME7.1.1 C-Muster, AUDI=IP2S",both ME7.1.1 columns agree,Istwertpoti 1 (EGAS),Port nur Input
+MAIN CPU,31,P5.4,AN4,ADC,LS2VK,"Belegung ME7.1.1 B-Muster (VW)=LS2VK | Belegung ME7.1.1 C-Muster, AUDI=LS2VK",both ME7.1.1 columns agree,LSF vor Kat. 2,Port nur Input
+MAIN CPU,32,P5.5,AN5,ADC,UBAT,"Belegung ME7.1.1 B-Muster (VW)=UBAT | Belegung ME7.1.1 C-Muster, AUDI=UBAT",both ME7.1.1 columns agree,,Port nur Input
+MAIN CPU,33,P5.6,AN6,ADC,LS1VK,"Belegung ME7.1.1 B-Muster (VW)=LS1VK | Belegung ME7.1.1 C-Muster, AUDI=LS1VK",both ME7.1.1 columns agree,LSF vor Kat. 1,Port nur Input
+MAIN CPU,34,P5.7,AN7,ADC,LS1HK,"Belegung ME7.1.1 B-Muster (VW)=LS1HK | Belegung ME7.1.1 C-Muster, AUDI=LS1HK",both ME7.1.1 columns agree,LSF hinter Kat. 1,Port nur Input
+MAIN CPU,35,P5.8,AN8,ADC,SPS1/DKG,"Belegung ME7.1.1 B-Muster (VW)=SPS1/DKG | Belegung ME7.1.1 C-Muster, AUDI=SPS1/DKG",both ME7.1.1 columns agree,,Port nur Input
+MAIN CPU,36,P5.9,AN9,ADC,SPS2,"Belegung ME7.1.1 B-Muster (VW)=SPS2 | Belegung ME7.1.1 C-Muster, AUDI=SPS2",both ME7.1.1 columns agree,,Port nur Input
+MAIN CPU,39,P5.10,AN10,ADC,LS2HK,"Belegung ME7.1.1 B-Muster (VW)=LS2HK | Belegung ME7.1.1 C-Muster, AUDI=LS2HK",both ME7.1.1 columns agree,LSF hinter Kat. 2,Port nur Input
+MAIN CPU,40,P5.11,AN11,ADC,IAGR,"Belegung ME7.1.1 B-Muster (VW)=IAGR | Belegung ME7.1.1 C-Muster, AUDI=CP",variants differ,,Port nur Input
+MAIN CPU,41,P5.12,AN12,ADC,DMTL,"Belegung ME7.1.1 B-Muster (VW)=DMTL | Belegung ME7.1.1 C-Muster, AUDI=DMTL_A",variants differ,Tankleckdiagnose,Port nur Input
+MAIN CPU,42,P5.13,AN13,ADC,HFM2,"Belegung ME7.1.1 C-Muster, AUDI=HFM2",variants differ,Heißfilmluftmassenmesser2,Port nur Input
+MAIN CPU,43,P5.14,AN14,ADC,TAGR,"Belegung ME7.1.1 B-Muster (VW)=TAGR | Belegung ME7.1.1 C-Muster, AUDI=DSS",variants differ,Temperatur AGR,Port nur Input
+MAIN CPU,44,P5.15,AN15,ADC,KI,"Belegung ME7.1.1 B-Muster (VW)=KI | Belegung ME7.1.1 C-Muster, AUDI=KI",both ME7.1.1 columns agree,,Port nur Input
+MAIN CPU,77,P3.10,TXD0,ASC0,TXD,"Belegung ME7.1.1 B-Muster (VW)=TXD | Belegung ME7.1.1 C-Muster, AUDI=TXD",both ME7.1.1 columns agree,,
+MAIN CPU,78,P3.11,RXD0,ASC0,RXD,"Belegung ME7.1.1 B-Muster (VW)=RXD | Belegung ME7.1.1 C-Muster, AUDI=RXD",both ME7.1.1 columns agree,,
+MAIN CPU,75,P3.8,MRST,SSC,SSDI,"Belegung ME7.1.1 B-Muster (VW)=SSDI | Belegung ME7.1.1 C-Muster, AUDI=SSDI",both ME7.1.1 columns agree,,Siemens ASIC
+MAIN CPU,76,P3.9,MTSR,SSC,SSDO,"Belegung ME7.1.1 B-Muster (VW)=SSDO | Belegung ME7.1.1 C-Muster, AUDI=SSDO",both ME7.1.1 columns agree,,Siemens ASIC
+MAIN CPU,80,P3.13,SCLK,SSC,SSCLK,"Belegung ME7.1.1 B-Muster (VW)=SSCLK | Belegung ME7.1.1 C-Muster, AUDI=SSCLK",both ME7.1.1 columns agree,,Siemens ASIC
+MAIN CPU,Belegung ME7.4 B2 nach Angaben von H.Loistl,K3/EAP6-Mc,35437,,2.CAN nicht möglich,"Belegung ME7.1.1 C-Muster, AUDI=2.CAN nicht möglich",variants differ,,
+ASIC-mC,118,P1L.0,A0,EBC,SLP,"Belegung ME7.1.1 B-Muster=SLP | Belegung ME7.1.1 C-Muster, AUDI=SLP",both ME7.1.1 columns agree,Sekundärluft-Pumpe,
+ASIC-mC,119,P1L.1,A1,EBC,AAV,"Belegung ME7.1.1 B-Muster=AAV | Belegung ME7.1.1 C-Muster, AUDI=AAV",both ME7.1.1 columns agree,Aktivkohlefilterabschaltventil,
+ASIC-mC,120,P1L.2,A2,EBC,LUES2,"Belegung ME7.1.1 B-Muster=LUES2 | Belegung ME7.1.1 C-Muster, AUDI=DMTL_UV",variants differ,Lüftersteuerung 2,
+ASIC-mC,121,P1L.3,A3,EBC,NLEN_AS,"Belegung ME7.1.1 B-Muster=NLEN_AS | Belegung ME7.1.1 C-Muster, AUDI=NLEN_AS",both ME7.1.1 columns agree,,
+ASIC-mC,122,P1L.4,A4,EBC,LSP1VK,"Belegung ME7.1.1 B-Muster=LSP1VK | Belegung ME7.1.1 C-Muster, AUDI=LSP1VK",both ME7.1.1 columns agree,,LSF8 Pumpstrom Enable
+ASIC-mC,123,P1L.5,A5,EBC,LSP2VK,"Belegung ME7.1.1 B-Muster=LSP2VK | Belegung ME7.1.1 C-Muster, AUDI=LSP2VK",both ME7.1.1 columns agree,,LSF8 Pumpstrom Enable
+ASIC-mC,124,P1L.6,A6,EBC,LSP1HK,"Belegung ME7.1.1 B-Muster=LSP1HK | Belegung ME7.1.1 C-Muster, AUDI=LSP1HK",both ME7.1.1 columns agree,,LSF8 Pumpstrom Enable
+ASIC-mC,125,P1L.7,A7,EBC,LSP2HK,"Belegung ME7.1.1 B-Muster=LSP2HK | Belegung ME7.1.1 C-Muster, AUDI=LSP2HK",both ME7.1.1 columns agree,,LSF8 Pumpstrom Enable
+ASIC-mC,128,P1H.0,A8,EBC,FELA,"Belegung ME7.1.1 B-Muster=FELA | Belegung ME7.1.1 C-Muster, AUDI=SRU1",variants differ,,
+ASIC-mC,129,P1H.1,A9,EBC,CRSH,"Belegung ME7.1.1 B-Muster=CRSH | Belegung ME7.1.1 C-Muster, AUDI=CRSH",both ME7.1.1 columns agree,Crash-PWM-Signal vom Air-Bag,
+ASIC-mC,130,P1H.2,A10,EBC,ESRST_SM,"Belegung ME7.1.1 B-Muster=ESRST_SM | Belegung ME7.1.1 C-Muster, AUDI=ESRST_SM",both ME7.1.1 columns agree,,Absch. EGAS+Endst.
+ASIC-mC,131,P1H.3,A11,EBC,SWRST_SM,"Belegung ME7.1.1 B-Muster=SWRST_SM | Belegung ME7.1.1 C-Muster, AUDI=SWRST_SM",both ME7.1.1 columns agree,,Abschaltung SG-Rechner
+ASIC-mC,103,P0L.3,AD3,EBC,AD3,"Belegung ME7.1.1 B-Muster=AD3 | Belegung ME7.1.1 C-Muster, AUDI=AD3",both ME7.1.1 columns agree,,
+ASIC-mC,104,P0L.4,AD4,EBC,AD4,"Belegung ME7.1.1 B-Muster=AD4 | Belegung ME7.1.1 C-Muster, AUDI=AD4",both ME7.1.1 columns agree,,
+ASIC-mC,115,P0H.5,AD13,EBC,AD13,"Belegung ME7.1.1 B-Muster=AD13 | Belegung ME7.1.1 C-Muster, AUDI=AD13",both ME7.1.1 columns agree,,bei 8-bit MUX Bus A13
+ASIC-mC,116,P0H.6,AD14,EBC,AD14,"Belegung ME7.1.1 B-Muster=AD14 | Belegung ME7.1.1 C-Muster, AUDI=AD14",both ME7.1.1 columns agree,,bei 8-bit MUX Bus A14
+ASIC-mC,117,P0H.7,AD15,EBC,AD15,"Belegung ME7.1.1 B-Muster=AD15 | Belegung ME7.1.1 C-Muster, AUDI=AD15",both ME7.1.1 columns agree,,bei 8-bit MUX Bus A15
+ASIC-mC,132,P1H.4,A12,EBC,BF0,"Belegung ME7.1.1 B-Muster=BF0 | Belegung ME7.1.1 C-Muster, AUDI=BF0",both ME7.1.1 columns agree,,
+ASIC-mC,133,P1H.5,A13,EBC,BF1,"Belegung ME7.1.1 B-Muster=BF1 | Belegung ME7.1.1 C-Muster, AUDI=BF1",both ME7.1.1 columns agree,,
+ASIC-mC,134,P1H.6,A14,EBC,BF2,"Belegung ME7.1.1 B-Muster=BF2 | Belegung ME7.1.1 C-Muster, AUDI=BF2",both ME7.1.1 columns agree,,
+ASIC-mC,135,P1H.7,A15,EBC,BF3,"Belegung ME7.1.1 B-Muster=BF3 | Belegung ME7.1.1 C-Muster, AUDI=BF3",both ME7.1.1 columns agree,,
+ASIC-mC,89,P4.4,A20,EBC,WFS,"Belegung ME7.1.1 B-Muster=WFS | Belegung ME7.1.1 C-Muster, AUDI=WFS",both ME7.1.1 columns agree,,bei CAN Betrieb nur Port
+ASIC-mC,92,P4.7,A23,EBC,STST2,"Belegung ME7.1.1 B-Muster=STST2 | Belegung ME7.1.1 C-Muster, AUDI=STST2",both ME7.1.1 columns agree,,Programmierwunsch
+ASIC-mC,19,P7.0,POUT0,PWM,SLV,"Belegung ME7.1.1 B-Muster=SLV | Belegung ME7.1.1 C-Muster, AUDI=LUES1",variants differ,Sekundärluft-Ventil,
+ASIC-mC,20,P7.1,POUT1,PWM,AGR,"Belegung ME7.1.1 B-Muster=AGR | Belegung ME7.1.1 C-Muster, AUDI=LUES2",variants differ,Ausgang Abgasrückführung,
+ASIC-mC,21,P7.2,POUT2,PWM,LDR,"Belegung ME7.1.1 B-Muster=LDR | Belegung ME7.1.1 C-Muster, AUDI=HYLUE",variants differ,Ladedruckregelungs-Ventil,
+ASIC-mC,22,P7.3,POUT3,PWM,TEV,"Belegung ME7.1.1 B-Muster=TEV | Belegung ME7.1.1 C-Muster, AUDI=TEV",both ME7.1.1 columns agree,Tankentlüftungs-Ventil,
+ASIC-mC,47,P2.0,CC0IO,CAPCOM,LUV,"Belegung ME7.1.1 B-Muster=LUV | Belegung ME7.1.1 C-Muster, AUDI=LUV",both ME7.1.1 columns agree,Luftumfassungs-Ventil,
+ASIC-mC,48,P2.1,CC1IO,CAPCOM,DMTL_UV,"Belegung ME7.1.1 B-Muster=DMTL_UV | Belegung ME7.1.1 C-Muster, AUDI=TK_STAT",variants differ,,
+ASIC-mC,49,P2.2,CC2IO,CAPCOM,BT,"Belegung ME7.1.1 B-Muster=BT | Belegung ME7.1.1 C-Muster, AUDI=BT",both ME7.1.1 columns agree,Bremstest,
+ASIC-mC,50,P2.3,CC3IO,CAPCOM,ULT,"Belegung ME7.1.1 B-Muster=ULT | Belegung ME7.1.1 C-Muster, AUDI=ULT",both ME7.1.1 columns agree,Umluftventil Turbo,
+ASIC-mC,51,P2.4,CC4IO,CAPCOM,TKY,"Belegung ME7.1.1 C-Muster, AUDI=TKY",variants differ,,
+ASIC-mC,52,P2.5,CC5IO,CAPCOM,ETR,"Belegung ME7.1.1 B-Muster=ETR | Belegung ME7.1.1 C-Muster, AUDI=BUK",variants differ,Elektronische Thermostat Regelung,
+ASIC-mC,53,P2.6,CC6IO,CAPCOM,LUES1,"Belegung ME7.1.1 B-Muster=LUES1 | Belegung ME7.1.1 C-Muster, AUDI=SLP2",variants differ,,
+ASIC-mC,54,P2.7,CC7IO,CAPCOM,TAB1,"Belegung ME7.1.1 B-Muster=TAB1 | Belegung ME7.1.1 C-Muster, AUDI=TAB1",both ME7.1.1 columns agree,Abgastemperatur 1,
+ASIC-mC,57,P2.8,CC8IO,CAPCOM,TAB2,"Belegung ME7.1.1 B-Muster=TAB2 | Belegung ME7.1.1 C-Muster, AUDI=TAB2",both ME7.1.1 columns agree,Abgastemperatur 2,
+ASIC-mC,58,P2.9,CC9IO,CAPCOM,CS_ASIC,"Belegung ME7.1.1 B-Muster=CS_ASIC | Belegung ME7.1.1 C-Muster, AUDI=CS_ASIC",both ME7.1.1 columns agree,,SPI Selectierung des Slave
+ASIC-mC,59,P2.10,CC10IO,CAPCOM,GENRXD,"Belegung ME7.1.1 C-Muster, AUDI=GENRXD",variants differ,,
+ASIC-mC,60,P2.11,CC11IO,CAPCOM,MMS,"Belegung ME7.1.1 C-Muster, AUDI=MMS",variants differ,Motor-Soll-Moment-PWM,
+ASIC-mC,61,P2.12,CC12IO,CAPCOM,TMOT_UM,"Belegung ME7.1.1 B-Muster=TMOT_UM | Belegung ME7.1.1 C-Muster, AUDI=TMOT_UM",both ME7.1.1 columns agree,,
+ASIC-mC,62,P2.13,CC13IO,CAPCOM,MMS,"Belegung ME7.1.1 B-Muster=MMS | Belegung ME7.1.1 C-Muster, AUDI=GENTXD",variants differ,Motor-Soll-Moment-PWM,
+ASIC-mC,63,P2.14,CC14IO,CAPCOM,LDP/DMTL_M,"Belegung ME7.1.1 B-Muster=LDP/DMTL_M | Belegung ME7.1.1 C-Muster, AUDI=LDP/DMTL_M",both ME7.1.1 columns agree,,
+ASIC-mC,64,P2.15,CC15IO,CAPCOM,KWDG,"Belegung ME7.1.1 B-Muster=KWDG | Belegung ME7.1.1 C-Muster, AUDI=KWDG",both ME7.1.1 columns agree,,T7IN Ext. Count Input
+ASIC-mC,9,P8.0,CC16IO,CAPCOM,A_KOS,"Belegung ME7.1.1 B-Muster=A_KOS | Belegung ME7.1.1 C-Muster, AUDI=A_KOS",both ME7.1.1 columns agree,,
+ASIC-mC,10,P8.1,CC17IO,CAPCOM,E_KOS,"Belegung ME7.1.1 B-Muster=E_KOS | Belegung ME7.1.1 C-Muster, AUDI=E_KOS",both ME7.1.1 columns agree,,
+ASIC-mC,11,P8.2,CC18IO,CAPCOM,LA1,"Belegung ME7.1.1 B-Muster=LA1 | Belegung ME7.1.1 C-Muster, AUDI=LA1",both ME7.1.1 columns agree,,
+ASIC-mC,12,P8.3,CC19IO,CAPCOM,LA2,"Belegung ME7.1.1 B-Muster=LA2 | Belegung ME7.1.1 C-Muster, AUDI=LA2",both ME7.1.1 columns agree,,
+ASIC-mC,13,P8.4,CC20IO,CAPCOM,KLDF,"Belegung ME7.1.1 B-Muster=KLDF | Belegung ME7.1.1 C-Muster, AUDI=PX84 (tbd)",variants differ,Erregerstrom Generator DF,
+ASIC-mC,14,P8.5,CC21IO,CAPCOM,AC,"Belegung ME7.1.1 B-Muster=AC | Belegung ME7.1.1 C-Muster, AUDI=AC",both ME7.1.1 columns agree,Schalter Klimabereitschaft / Drehzahlanhebung,
+ASIC-mC,15,P8.6,CC22IO,CAPCOM,FST,"Belegung ME7.1.1 B-Muster=FST | Belegung ME7.1.1 C-Muster, AUDI=PX86 (tbd)",variants differ,Füllstand Tank,
+ASIC-mC,16,P8.7,CC23IO,CAPCOM,LSH1VK,"Belegung ME7.1.1 B-Muster=LSH1VK | Belegung ME7.1.1 C-Muster, AUDI=LSH1VK",both ME7.1.1 columns agree,Lambdasondenheizung h. KAT 2,
+ASIC-mC,23,P7.4,CC28IO,CAPCOM,LSH2VK,"Belegung ME7.1.1 B-Muster=LSH2VK | Belegung ME7.1.1 C-Muster, AUDI=LSH2VK",both ME7.1.1 columns agree,Lambdasondenheizung v. KAT 2,
+ASIC-mC,24,P7.5,CC29IO,CAPCOM,LSH1HK,"Belegung ME7.1.1 B-Muster=LSH1HK | Belegung ME7.1.1 C-Muster, AUDI=LSH1HK",both ME7.1.1 columns agree,Lambdasondenheizung h. KAT 1,
+ASIC-mC,25,P7.6,CC30IO,CAPCOM,LSH2HK,"Belegung ME7.1.1 B-Muster=LSH2HK | Belegung ME7.1.1 C-Muster, AUDI=LSH2HK",both ME7.1.1 columns agree,Lambdasondenheizung h. KAT 2,
+ASIC-mC,26,P7.7,CC31IO,CAPCOM,SLV,"Belegung ME7.1.1 C-Muster, AUDI=SLV",variants differ,Sekundärluft-Ventil,
+ASIC-mC,65,P3.0,T0IN,CAPCOM,KWDG,"Belegung ME7.1.1 B-Muster=KWDG | Belegung ME7.1.1 C-Muster, AUDI=KWDG",both ME7.1.1 columns agree,,
+ASIC-mC,74,P3.7,T2IN,GPT1,AUS,"Belegung ME7.1.1 B-Muster=AUS | Belegung ME7.1.1 C-Muster, AUDI=AUS",both ME7.1.1 columns agree,"GRA, ""Aus""",
+ASIC-mC,73,P3.6,T3IN,GPT1,WA,"Belegung ME7.1.1 B-Muster=WA | Belegung ME7.1.1 C-Muster, AUDI=WA",both ME7.1.1 columns agree,"GRA,  Wiederaufnahme",
+ASIC-mC,70,P3.5,T4IN,GPT1,SV,"Belegung ME7.1.1 B-Muster=SV | Belegung ME7.1.1 C-Muster, AUDI=SV",both ME7.1.1 columns agree,"GRA, Setzen Verzögerung",
+ASIC-mC,69,P3.4,T3EUD,GPT1,KUP,"Belegung ME7.1.1 B-Muster=KUP | Belegung ME7.1.1 C-Muster, AUDI=KUP",both ME7.1.1 columns agree,"GRA, Kupplung",
+ASIC-mC,68,P3.3,T3OUT,GPT1,KL.50,"Belegung ME7.1.1 B-Muster=KL.50 | Belegung ME7.1.1 C-Muster, AUDI=KL.50",both ME7.1.1 columns agree,,
+ASIC-mC,67,P3.2,CAPIN,GPT2,GRA,"Belegung ME7.1.1 B-Muster=GRA | Belegung ME7.1.1 C-Muster, AUDI=GRA",both ME7.1.1 columns agree,"GRA, ""Ein"" (Geschwindigkeits-Regel-Anlage, Tempomat)",
+ASIC-mC,66,P3.1,T6OUT,GPT2,BL,"Belegung ME7.1.1 B-Muster=BL | Belegung ME7.1.1 C-Muster, AUDI=BL",both ME7.1.1 columns agree,Bremslicht,
+ASIC-mC,27,P5.0,AN0,ADC,TMOT,"Belegung ME7.1.1 B-Muster=TMOT | Belegung ME7.1.1 C-Muster, AUDI=TMOT",both ME7.1.1 columns agree,Motortemperatur,Port nur Input
+ASIC-mC,28,P5.1,AN1,ADC,TANS,"Belegung ME7.1.1 B-Muster=TANS | Belegung ME7.1.1 C-Muster, AUDI=TANS",both ME7.1.1 columns agree,Ansauglufttemperatur,Port nur Input
+ASIC-mC,29,P5.2,AN2,ADC,Codierpin M/S,"Belegung ME7.1.1 B-Muster=Codierpin M/S | Belegung ME7.1.1 C-Muster, AUDI=BUK",variants differ,,Port nur Input
+ASIC-mC,30,P5.3,AN3,ADC,WFS,"Belegung ME7.1.1 B-Muster=WFS | Belegung ME7.1.1 C-Muster, AUDI=WFS",both ME7.1.1 columns agree,,Port nur Input
+ASIC-mC,31,P5.4,AN4,ADC,TVKAT1,"Belegung ME7.1.1 B-Muster=TVKAT1 | Belegung ME7.1.1 C-Muster, AUDI=TVKAT1",both ME7.1.1 columns agree,Temperatursensor Vorkat.1,Port nur Input
+ASIC-mC,32,P5.5,AN5,ADC,TVKAT2,"Belegung ME7.1.1 B-Muster=TVKAT2 | Belegung ME7.1.1 C-Muster, AUDI=TVKAT2",both ME7.1.1 columns agree,Temperatursensor Vorkat.2,Port nur Input
+ASIC-mC,33,P5.6,AN6,ADC,DSBKV,"Belegung ME7.1.1 C-Muster, AUDI=DSBKV",variants differ,Drucksensor Bremskraftverstärker,Port nur Input
+ASIC-mC,34,P5.7,AN7,ADC,UBR_A,"Belegung ME7.1.1 B-Muster=UBR_A | Belegung ME7.1.1 C-Muster, AUDI=UBR_A",both ME7.1.1 columns agree,,Port nur Input
+ASIC-mC,35,P5.8,AN8,ADC,HOG,"Belegung ME7.1.1 B-Muster=HOG | Belegung ME7.1.1 C-Muster, AUDI=HOG",both ME7.1.1 columns agree,Eingang Höhengeber,Port nur Input
+ASIC-mC,36,P5.9,AN9,ADC,NGW2,"Belegung ME7.1.1 C-Muster, AUDI=NGW2",variants differ,Nockenwellengeberwinkel2,Port nur Input
+ASIC-mC,39,P5.10,AN10,ADC,MMS,"Belegung ME7.1.1 B-Muster=MMS | Belegung ME7.1.1 C-Muster, AUDI=NGW",variants differ,Motor-Soll-Moment-PWM,Port nur Input
+ASIC-mC,40,P5.11,AN11,ADC,SPS1,"Belegung ME7.1.1 B-Muster=SPS1 | Belegung ME7.1.1 C-Muster, AUDI=SPS1",both ME7.1.1 columns agree,,Port nur Input
+ASIC-mC,41,P5.12,AN12,ADC,U_LS1HVK,"Belegung ME7.1.1 B-Muster=U_LS1HVK | Belegung ME7.1.1 C-Muster, AUDI=U_LS1HVK",both ME7.1.1 columns agree,,Port nur Input
+ASIC-mC,42,P5.13,AN13,ADC,U_LS2HVK,"Belegung ME7.1.1 B-Muster=U_LS2HVK | Belegung ME7.1.1 C-Muster, AUDI=U_LS2HVK",both ME7.1.1 columns agree,,Port nur Input
+ASIC-mC,43,P5.14,AN14,ADC,HR,"Belegung ME7.1.1 B-Muster=HR | Belegung ME7.1.1 C-Muster, AUDI=HR",both ME7.1.1 columns agree,Hauptrelaisansteuerung,Port nur Input
+ASIC-mC,44,P5.15,AN15,ADC,TMOT2,"Belegung ME7.1.1 B-Muster=TMOT2 | Belegung ME7.1.1 C-Muster, AUDI=TMOT2",both ME7.1.1 columns agree,Temperatur Kühlerausgang,Port nur Input
+ASIC-mC,75,P3.8,MRST,SSC,SSDI,"Belegung ME7.1.1 B-Muster=SSDI | Belegung ME7.1.1 C-Muster, AUDI=SSDI",both ME7.1.1 columns agree,,
+ASIC-mC,76,P3.9,MTSR,SSC,SSDO,"Belegung ME7.1.1 B-Muster=SSDO | Belegung ME7.1.1 C-Muster, AUDI=SSDO",both ME7.1.1 columns agree,,
+ASIC-mC,80,P3.13,SCLK,SSC,SSCLK,"Belegung ME7.1.1 B-Muster=SSCLK | Belegung ME7.1.1 C-Muster, AUDI=SSCLK",both ME7.1.1 columns agree,,

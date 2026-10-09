@@ -1,0 +1,16 @@
+# Anything that is hashed or flashed is a byte artefact.
+*.H86 -text
+*.hex -text
+*.M66 -text
+*.bin binary
+*.jar binary
+
+# Generated text is checked out exactly as its generator writes it (LF).
+# The build compares firmware/generated/* with the generator's output byte for
+# byte, so a Windows clone (core.autocrlf=true) must not convert these.
+firmware/generated/**                text eol=lf
+firmware/targets/me711/generated/**  text eol=lf
+tunerstudio/*.ini                    text eol=lf
+tunerstudio/*.dash                   text eol=lf
+tunerstudio/plugin/*.json            text eol=lf
+docs/PINOUT.md                       text eol=lf

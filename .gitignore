@@ -1,0 +1,49 @@
+# Build output
+/build/
+/out/
+firmware/targets/*/build/
+tools/tunerstudio/plugin/dist/
+*.obj
+*.o
+*.lst
+*.map
+*.elf
+*.abs
+*.omf
+*.m51
+*.m66
+*.bak
+*.log
+*.tmp
+
+# Images are build products; OEM reads are never committed.
+*.bin
+*.hex
+*.H86
+!tests/fixtures/*.bin
+/bins/
+
+# Generated TunerStudio files (regenerate from the tree)
+/tunerstudio/*.ini
+/tunerstudio/*.dash
+
+# Local reference corpora and calibration files (third-party, not redistributable)
+/reference/
+*.a2l
+*.dam
+*.ols
+*.kp
+*.xdf
+*.i64
+*.idb
+
+# Measurement records written by the bench and vehicle tools
+/evidence/
+
+# Scratch and tooling
+/tmp/
+__pycache__/
+*.pyc
+/.venv/
+/.pytest_cache/
+tools/flash/me7boot/C167BootTool/

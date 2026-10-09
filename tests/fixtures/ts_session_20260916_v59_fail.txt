@@ -1,0 +1,339 @@
+16/09/26 12:07:57 :Info: Communicating with sig:rusEFI Hanicore v1, HaniCore V59 FORENSIC WINDOW / Bosch ME7.1.1
+16/09/26 12:07:57 :Info: Getting ECU name for signature: 'HaniCore ME75 001'
+[Duplicate entry] received 4 times: Info: Getting ECU name for signature: 'HaniCore ME75 001'
+16/09/26 12:08:08 :Debug: goOffline Starting, Time:0
+16/09/26 12:08:08 :Info: Deactivated Turbo Baud, goOffline
+16/09/26 12:08:08 :Debug: Skip Burn, last write page: -2
+16/09/26 12:08:08 :Debug: goOffline about to stopProcessing, Time:255
+16/09/26 12:08:08 :Debug: goOffline Notified offline, Time:255
+16/09/26 12:08:08 :Debug: goOffline closed port, Time:256
+16/09/26 12:08:09 :Debug: goOffline comm thread stopped, Time:759
+16/09/26 12:08:09 :Debug: No Remaining Queue Write instructions
+16/09/26 12:08:09 :Info: _v52MyCar ComThread stopped COMM Thread11077.7706177135
+16/09/26 12:08:12 :Debug: Time to load ini list: 80ms.
+16/09/26 12:08:12 :Info: Supported iniSpecVersion=3.79
+[Duplicate entry] received 2 times: Info: Supported iniSpecVersion=3.79
+16/09/26 12:08:12 :Debug: Filtered ConfigurationOptionGroup in 0ms.
+16/09/26 12:08:46 :Info: Opening Project ...
+16/09/26 12:08:46 :Debug: TuneLog Editor set text
+16/09/26 12:08:46 :Debug: Fill Constants: 0
+16/09/26 12:08:46 :Debug: File does not exist, creating new:
+C:\TunerStudioProjects\_v52MyCar\restorePoints\_v52MyCar_2026-09-16_12.08.46.msq
+16/09/26 12:08:46 :Info: Time to save msq: 2.4567
+16/09/26 12:08:46 :Info: _v52MyCar Restore point saved
+16/09/26 12:08:46 :Info: _v52MyCar Restore point saved to: _v52MyCar_2026-09-16_12.08.46.msq
+16/09/26 12:08:46 :Info: Time to save msq: 0.8573
+16/09/26 12:08:46 :Debug: goOffline Starting, Time:0
+16/09/26 12:08:46 :Info: Deactivated Turbo Baud, goOffline
+16/09/26 12:08:46 :Debug: goOffline about to stopProcessing, Time:0
+16/09/26 12:08:46 :Debug: goOffline closed port, Time:0
+16/09/26 12:08:47 :Debug: goOffline comm thread stopped, Time:508
+16/09/26 12:08:47 :Debug: No Remaining Queue Write instructions
+16/09/26 12:08:47 :Debug: removing Configuration: _v52MyCar
+16/09/26 12:08:47 :Debug: ############################################# Save Project Backup ##########################################
+16/09/26 12:08:47 :Debug: Opening project: C:\TunerStudioProjects\_v52MyCar
+16/09/26 12:08:47 :Info: Supported iniSpecVersion=3.79
+16/09/26 12:08:47 :Debug: Filtered ConfigurationOptionGroup in 1ms.
+16/09/26 12:08:47 :Info: Supported iniSpecVersion=3.79
+16/09/26 12:08:47 :Info: Read file canPcVariables.ini: 1.0557ms
+16/09/26 12:08:47 :Info: Filtered ini: 0.0139ms
+16/09/26 12:08:47 :Info: No iniVersion defined
+16/09/26 12:08:47 :Info: Loading Trigger Wheels
+16/09/26 12:08:47 :Info: Loaded All known ini sections
+16/09/26 12:08:47 :Info: Parsed and validated ini "canPcVariables.ini" in : 0ms.
+16/09/26 12:08:47 :Info: Read file mainController.ini: 0.6764ms
+16/09/26 12:08:47 :Info: Filtered ini: 0.0241ms
+16/09/26 12:08:47 :Info: No iniVersion defined
+16/09/26 12:08:47 :Debug: ini signature: HaniCore ME75 001
+16/09/26 12:08:47 :Info: Loading Trigger Wheels
+16/09/26 12:08:47 :Info: Loaded All known ini sections
+16/09/26 12:08:47 :Info: Parsed and validated ini "mainController.ini" in : 6ms.
+16/09/26 12:08:47 :Info: Not Loading default Tools because non are defined for signature: HaniCore ME75 001
+16/09/26 12:08:47 :Info: Time to load primary config: 6.7895ms. used cached config: false
+16/09/26 12:08:47 :Debug: set baud to 57600
+[Duplicate entry] received 2 times: Debug: set baud to 57600
+16/09/26 12:08:47 :Info: Setting connection to: HaniCore K-Line / RS232: Port:COM3, Baud:57600
+16/09/26 12:08:47 :Debug: Adding Configuration: _v52MyCar
+16/09/26 12:08:47 :Debug: Fill Constants: 0
+16/09/26 12:08:47 :Info: Tune opened, 0 bytes updated. File:C:\TunerStudioProjects\_v52MyCar\CurrentTune.msq
+[Duplicate entry] received 2 times: Info: Tune opened, 0 bytes updated. File:C:\TunerStudioProjects\_v52MyCar\CurrentTune.msq
+16/09/26 12:08:47 :Info: dirtyData.size(): 0
+[Duplicate entry] received 2 times: Info: dirtyData.size(): 0
+16/09/26 12:08:47 :Debug: Flush lasted: 2ms.
+16/09/26 12:08:47 :Info: dirtyData.size(): 0
+[Duplicate entry] received 2 times: Info: dirtyData.size(): 0
+16/09/26 12:08:47 :Debug: Flush lasted: 80ms.
+16/09/26 12:08:47 :Debug: Skip Burn, last write page: -2
+16/09/26 12:08:47 :Info: !!! Loaded config in 103
+16/09/26 12:08:47 :Info: !!! Activated Project 150
+16/09/26 12:08:47 :Info: Opening Gauge Cluster..
+16/09/26 12:08:47 :Info: Time to load uncached dash: 19.1581ms, file: dashboard.dash
+16/09/26 12:08:47 :Debug: Deactivated fast paint Main Dashboard
+16/09/26 12:08:47 :Debug: High Speed Paint: true
+16/09/26 12:08:47 :Info: 
+16/09/26 12:08:47 :Info: Com Thread created: COMM Thread89704.68242760886
+16/09/26 12:08:47 :Debug: !!! Opened Dash 416
+16/09/26 12:08:47 :Info: Comm Manager for _v52MyCar Started, thread ID: COMM Thread89704.68242760886
+16/09/26 12:08:47 :Info: Connecting to controller on: HaniCore K-Line / RS232: Port:COM3, Baud:57600
+16/09/26 12:08:47 :Info: _v52MyCar Ready
+16/09/26 12:08:47 :Debug: Tuning View Files loaded in 28.7382ms.
+16/09/26 12:08:47 :Info: Comm Read Thread Change! Old Thread:null, new Thread:COMM Thread89704.68242760886
+16/09/26 12:08:48 :Info: Sig Bytes:x72 x75 x73 x45 x46 x49 x20 x48 x61 x6E x69 x63 x6F x72 x65 x20       rusEFI.Hanicore.
+x76 x31                                                               v1
+16/09/26 12:08:48 :Info: Communicating with sig:rusEFI Hanicore v1, HaniCore V59 FORENSIC WINDOW / Bosch ME7.1.1
+16/09/26 12:08:48 :Info: Getting ECU name for signature: 'HaniCore ME75 001'
+[Duplicate entry] received 4 times: Info: Getting ECU name for signature: 'HaniCore ME75 001'
+16/09/26 12:08:49 :Debug: goOffline Starting, Time:0
+16/09/26 12:08:49 :Info: Deactivated Turbo Baud, goOffline
+16/09/26 12:08:49 :Debug: Skip Burn, last write page: -2
+16/09/26 12:08:50 :Debug: goOffline about to stopProcessing, Time:252
+16/09/26 12:08:50 :Debug: goOffline Notified offline, Time:252
+16/09/26 12:08:50 :Debug: goOffline closed port, Time:252
+16/09/26 12:08:50 :Debug: goOffline comm thread stopped, Time:754
+16/09/26 12:08:50 :Debug: No Remaining Queue Write instructions
+16/09/26 12:08:51 :Info: _v52MyCar ComThread stopped COMM Thread89704.68242760886
+16/09/26 12:08:55 :Info: Opening Project ...
+16/09/26 12:08:55 :Debug: TuneLog Editor set text
+16/09/26 12:08:55 :Debug: File does not exist, creating new:
+C:\TunerStudioProjects\_v52MyCar\restorePoints\_v52MyCar_2026-09-16_12.08.55.msq
+16/09/26 12:08:55 :Info: Time to save msq: 2.7033
+16/09/26 12:08:55 :Info: _v52MyCar Restore point saved
+16/09/26 12:08:55 :Info: _v52MyCar Restore point saved to: _v52MyCar_2026-09-16_12.08.55.msq
+16/09/26 12:08:55 :Info: Time to save msq: 1.0662
+16/09/26 12:08:55 :Debug: goOffline Starting, Time:0
+16/09/26 12:08:55 :Info: Deactivated Turbo Baud, goOffline
+16/09/26 12:08:55 :Debug: goOffline about to stopProcessing, Time:0
+16/09/26 12:08:55 :Debug: goOffline closed port, Time:0
+16/09/26 12:08:56 :Debug: goOffline comm thread stopped, Time:502
+16/09/26 12:08:56 :Debug: No Remaining Queue Write instructions
+16/09/26 12:08:56 :Debug: removing Configuration: _v52MyCar
+16/09/26 12:08:56 :Debug: ############################################# Save Project Backup ##########################################
+16/09/26 12:08:56 :Debug: Opening project: C:\TunerStudioProjects\MyCar_v48
+16/09/26 12:08:56 :Info: Supported iniSpecVersion=3.79
+16/09/26 12:08:56 :Debug: Filtered ConfigurationOptionGroup in 5ms.
+16/09/26 12:08:56 :Info: Supported iniSpecVersion=3.79
+16/09/26 12:08:56 :Info: Read file canPcVariables.ini: 1.0972ms
+16/09/26 12:08:56 :Info: Filtered ini: 0.0072ms
+16/09/26 12:08:56 :Info: No iniVersion defined
+16/09/26 12:08:56 :Info: Loading Trigger Wheels
+16/09/26 12:08:56 :Info: Loaded All known ini sections
+16/09/26 12:08:56 :Info: Parsed and validated ini "canPcVariables.ini" in : 3ms.
+16/09/26 12:08:56 :Info: Read file mainController.ini: 1.9754ms
+16/09/26 12:08:56 :Info: Filtered ini: 1.5107ms
+16/09/26 12:08:56 :Info: No iniVersion defined
+16/09/26 12:08:56 :Debug: ini signature: rusEFI Hanicore v1
+16/09/26 12:08:56 :Info: Loading Trigger Wheels
+16/09/26 12:08:56 :Info: Loaded All known ini sections
+16/09/26 12:08:56 :Info: Parsed and validated ini "mainController.ini" in : 35ms.
+16/09/26 12:08:56 :Info: Not Loading default Tools because non are defined for signature: rusEFI Hanicore v1
+16/09/26 12:08:56 :Info: Time to load primary config: 46.798ms. used cached config: false
+16/09/26 12:08:56 :Debug: set baud to 57600
+[Duplicate entry] received 2 times: Debug: set baud to 57600
+16/09/26 12:08:56 :Info: Setting connection to: HaniCore K-Line / RS232: Port:COM3, Baud:57600
+16/09/26 12:08:56 :Debug: Adding Configuration: MyCar_v48
+16/09/26 12:08:56 :Debug: Fill Constants: 3
+16/09/26 12:08:56 :Info: Tune opened, 0 bytes updated. File:C:\TunerStudioProjects\MyCar_v48\CurrentTune.msq
+[Duplicate entry] received 2 times: Info: Tune opened, 0 bytes updated. File:C:\TunerStudioProjects\MyCar_v48\CurrentTune.msq
+16/09/26 12:08:56 :Info: dirtyData.size(): 0
+[Duplicate entry] received 2 times: Info: dirtyData.size(): 0
+16/09/26 12:08:56 :Debug: Flush lasted: 71ms.
+16/09/26 12:08:56 :Info: dirtyData.size(): 0
+[Duplicate entry] received 2 times: Info: dirtyData.size(): 0
+16/09/26 12:08:56 :Debug: Flush lasted: 72ms.
+16/09/26 12:08:56 :Debug: Skip Burn, last write page: -2
+16/09/26 12:08:56 :Info: !!! Loaded config in 207
+16/09/26 12:08:56 :Info: !!! Activated Project 375
+16/09/26 12:08:56 :Info: Opening Gauge Cluster..
+16/09/26 12:08:56 :Info: Time to load uncached dash: 14.7051ms, file: dashboard.dash
+16/09/26 12:08:56 :Debug: Deactivated fast paint Main Dashboard
+16/09/26 12:08:57 :Debug: High Speed Paint: true
+16/09/26 12:08:57 :Info: 
+16/09/26 12:08:57 :Info: Com Thread created: COMM Thread89417.15764027381
+16/09/26 12:08:57 :Debug: !!! Opened Dash 584
+16/09/26 12:08:57 :Info: Comm Manager for MyCar_v48 Started, thread ID: COMM Thread89417.15764027381
+16/09/26 12:08:57 :Info: Connecting to controller on: HaniCore K-Line / RS232: Port:COM3, Baud:57600
+16/09/26 12:08:57 :Info: MyCar_v48 Ready
+16/09/26 12:08:57 :Debug: Tuning View Files loaded in 35.5149ms.
+16/09/26 12:08:57 :Info: Comm Read Thread Change! Old Thread:null, new Thread:COMM Thread89417.15764027381
+16/09/26 12:08:57 :Info: Sig Bytes:x72 x75 x73 x45 x46 x49 x20 x48 x61 x6E x69 x63 x6F x72 x65 x20       rusEFI.Hanicore.
+x76 x31                                                               v1
+16/09/26 12:08:57 :Info: Communicating with sig:rusEFI Hanicore v1, HaniCore V59 FORENSIC WINDOW / Bosch ME7.1.1
+16/09/26 12:08:57 :Info: Activating page: 1
+16/09/26 12:08:58 :Debug: Read page time: 1196ms.
+16/09/26 12:08:58 :Debug: Read All Data
+16/09/26 12:08:58 :Debug: isBlank Time: 0 ms.
+16/09/26 12:08:58 :Debug: DiffTime: 3 ms.
+16/09/26 12:08:58 :Info: Getting ECU name for signature: 'rusEFI Hanicore v1'
+16/09/26 12:08:58 :Info: Looks like rusEFI
+16/09/26 12:08:58 :Info: Difference Report disabling shared table Models
+16/09/26 12:09:00 :Debug: Fill Constants: 2
+16/09/26 12:09:00 :Info: Skip Restore Point for 'MyCar_v48' because nothing changed since: MyCar_v48_2026-09-11_01.56.09.msq
+16/09/26 12:09:01 :Info: Time to save msq: 9.557
+16/09/26 12:09:01 :Info: Difference Report enabling shared table Models
+16/09/26 12:09:05 :Info: Initiating read page 1 : 20:2523
+16/09/26 12:09:11 :Info: dirtyData.size(): 0
+[Duplicate entry] received 2 times: Info: dirtyData.size(): 0
+16/09/26 12:09:11 :Debug: Flush lasted: 83ms.
+16/09/26 12:09:11 :Debug: Burn Page anonymous: 1
+16/09/26 12:09:11 :Info: Queueing burn to page:1
+16/09/26 12:09:12 :Warning: Controller Reported a Unrecognized Command!
+16/09/26 12:09:12 :Debug: call failed protocol validation, running stats: 1 failed validation, 574 successful.
+16/09/26 12:09:12 :Warning: Controller Reported a Unrecognized Command!
+16/09/26 12:09:12 :Debug: call failed protocol validation, running stats: 2 failed validation, 574 successful.
+16/09/26 12:09:12 :Error: Could not process CommInstruction. writing last 0 controller interactions to the log followed by the stack trace
+16/09/26 12:09:12 :Info: Error: Could not process CommInstruction. writing last 0 controller interactions to the log followed by the stack trace
+Sep 16, 2026 12:09:12 PM G.J y
+SEVERE: null
+G.l: Response packet failed validation: Controller Reported a Unrecognized Command
+	at G.J.c(Unknown Source)
+	at G.J.y(Unknown Source)
+	at A.t.c(Unknown Source)
+	at A.u.run(Unknown Source)
+
+16/09/26 12:09:14 :Debug: No Remaining Queue Write instructions
+16/09/26 12:09:15 :Info: Going offline before all changes were permanently saved to the Controller.
+16/09/26 12:09:15 :Info: Went offline 2
+16/09/26 12:09:16 :Info: Sig Bytes:x72 x75 x73 x45 x46 x49 x20 x48 x61 x6E x69 x63 x6F x72 x65 x20       rusEFI.Hanicore.
+x76 x31                                                               v1
+16/09/26 12:09:16 :Info: Communicating with sig:rusEFI Hanicore v1, HaniCore V59 FORENSIC WINDOW / Bosch ME7.1.1
+16/09/26 12:09:16 :Info: Activating page: 1
+16/09/26 12:09:17 :Warning: CRC failure on received payload.
+	Reported CRC: xB7 xBF xA0 xCE                                                       ....
+	Calculated CRC:x32 x8D xB2 x3A                                                       2..:
+	Response data:
+x01 x01 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00       ................
+x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00       ................
+x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00       ................
+x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00       ................
+x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00       ................
+x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00       ................
+x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00       ................
+x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00       ................
+x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00       ................
+x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00       ................
+x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00       ................
+x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00       ................
+x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00       ................
+x03 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00       ................
+x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00       ................
+x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00 x00       ................
+x00 x00 x00 xB7 xBF xA0 xCE                                           .......
+16/09/26 12:09:17 :Debug: call failed protocol validation, running stats: 1 failed validation, 16 successful.
+16/09/26 12:09:17 :Debug: Protocol reported error after write 0x0, waiting 20ms and retry 
+Sep 16, 2026 12:09:19 PM G.J a
+INFO: Error Reading Page
+V.b: Timeout after:1501ms. requested timeout:1500, Expected bytes:65475, bytes read:258
+	at A.t.a(Unknown Source)
+	at G.J.b(Unknown Source)
+	at G.J.a(Unknown Source)
+	at G.J.a(Unknown Source)
+	at G.J.l(Unknown Source)
+	at G.J.c(Unknown Source)
+	at G.J.y(Unknown Source)
+	at A.t.c(Unknown Source)
+	at A.u.run(Unknown Source)
+
+16/09/26 12:09:19 :Error: Could not process CommInstruction. writing last 0 controller interactions to the log followed by the stack trace
+16/09/26 12:09:19 :Info: Error: Could not process CommInstruction. writing last 0 controller interactions to the log followed by the stack trace
+Sep 16, 2026 12:09:19 PM G.J y
+SEVERE: null
+V.b: Timeout after:1501ms. requested timeout:1500, Expected bytes:65475, bytes read:258
+	at A.t.a(Unknown Source)
+	at G.J.b(Unknown Source)
+	at G.J.a(Unknown Source)
+	at G.J.a(Unknown Source)
+	at G.J.l(Unknown Source)
+	at G.J.c(Unknown Source)
+	at G.J.y(Unknown Source)
+	at A.t.c(Unknown Source)
+	at A.u.run(Unknown Source)
+
+16/09/26 12:09:19 :Debug: result.FAILED: 1 tryCount
+16/09/26 12:09:20 :Info: Re-establishing connection to: RS232: Port:COM3, Baud:57600
+16/09/26 12:09:21 :Info: Activating page: 1
+Sep 16, 2026 12:09:23 PM G.J a
+INFO: Error Reading Page
+V.b: Timeout after:1501ms. requested timeout:1500, Expected bytes:30915, bytes read:259
+	at A.t.a(Unknown Source)
+	at G.J.b(Unknown Source)
+	at G.J.a(Unknown Source)
+	at G.J.a(Unknown Source)
+	at G.J.l(Unknown Source)
+	at G.J.c(Unknown Source)
+	at G.J.y(Unknown Source)
+	at A.t.c(Unknown Source)
+	at A.u.run(Unknown Source)
+
+16/09/26 12:09:23 :Error: Could not process CommInstruction. writing last 0 controller interactions to the log followed by the stack trace
+16/09/26 12:09:23 :Info: Error: Could not process CommInstruction. writing last 0 controller interactions to the log followed by the stack trace
+Sep 16, 2026 12:09:23 PM G.J y
+SEVERE: null
+V.b: Timeout after:1501ms. requested timeout:1500, Expected bytes:30915, bytes read:259
+	at A.t.a(Unknown Source)
+	at G.J.b(Unknown Source)
+	at G.J.a(Unknown Source)
+	at G.J.a(Unknown Source)
+	at G.J.l(Unknown Source)
+	at G.J.c(Unknown Source)
+	at G.J.y(Unknown Source)
+	at A.t.c(Unknown Source)
+	at A.u.run(Unknown Source)
+
+16/09/26 12:09:23 :Debug: result.FAILED: 2 tryCount
+16/09/26 12:09:25 :Debug: Read page time: 1085ms.
+16/09/26 12:09:25 :Debug: Read All Data
+16/09/26 12:09:25 :Debug: isBlank Time: 0 ms.
+16/09/26 12:09:25 :Debug: DiffTime: 3 ms.
+16/09/26 12:09:27 :Info: Re-establishing connection to: RS232: Port:COM3, Baud:57600
+[Duplicate entry] received 2 times: Info: Re-establishing connection to: RS232: Port:COM3, Baud:57600
+16/09/26 12:09:31 :Debug: No Remaining Queue Write instructions
+16/09/26 12:10:38 :Info: Going offline before all changes were permanently saved to the Controller.
+16/09/26 12:10:38 :Debug: Went offline
+16/09/26 12:10:38 :Debug: No Remaining Queue Write instructions
+16/09/26 12:10:39 :Info: Going offline before all changes were permanently saved to the Controller.
+16/09/26 12:10:39 :Info: Went offline 2
+16/09/26 12:10:41 :Info: dirtyData.size(): 0
+[Duplicate entry] received 2 times: Info: dirtyData.size(): 0
+16/09/26 12:10:41 :Debug: Flush lasted: 74ms.
+16/09/26 12:10:41 :Debug: Burn Page anonymous: -1
+16/09/26 12:10:41 :Info: Sig Bytes:x72 x75 x73 x45 x46 x49 x20 x48 x61 x6E x69 x63 x6F x72 x65 x20       rusEFI.Hanicore.
+x76 x31 x00                                                           v1.
+16/09/26 12:10:41 :Info: Communicating with sig:rusEFI Hanicore v1, HaniCore V59 FORENSIC WINDOW / Bosch ME7.1.1
+16/09/26 12:10:43 :Info: Re-establishing connection to: RS232: Port:COM3, Baud:57600
+16/09/26 12:10:43 :Info: dirtyData.size(): 0
+[Duplicate entry] received 2 times: Info: dirtyData.size(): 0
+16/09/26 12:10:43 :Debug: Flush lasted: 72ms.
+16/09/26 12:10:43 :Debug: Burn Page anonymous: -1
+16/09/26 12:10:43 :Info: skip burn to page:1, lastWritePage = -2
+16/09/26 12:10:43 :Debug: goOffline Starting, Time:0
+16/09/26 12:10:43 :Info: Deactivated Turbo Baud, goOffline
+16/09/26 12:10:43 :Debug: Burn Page anonymous: -1
+16/09/26 12:10:43 :Info: skip burn to page:1, lastWritePage = -2
+16/09/26 12:10:43 :Debug: goOffline about to stopProcessing, Time:259
+16/09/26 12:10:43 :Debug: goOffline Notified offline, Time:260
+16/09/26 12:10:43 :Debug: goOffline closed port, Time:261
+16/09/26 12:10:44 :Info: MyCar_v48 ComThread stopped COMM Thread89417.15764027381
+16/09/26 12:10:44 :Debug: goOffline comm thread stopped, Time:1197
+16/09/26 12:10:44 :Debug: No Remaining Queue Write instructions
+16/09/26 12:10:46 :Info: Going offline before all changes were permanently saved to the Controller.
+16/09/26 12:12:55 :Info: Time to save msq: 12.5353
+16/09/26 12:12:55 :Info: closeApp Called
+16/09/26 12:12:55 :Debug: TuneLog Editor set text
+16/09/26 12:12:55 :Debug: Fill Constants: 7
+16/09/26 12:12:55 :Debug: File does not exist, creating new:
+C:\TunerStudioProjects\MyCar_v48\restorePoints\MyCar_v48_2026-09-16_12.12.55.msq
+16/09/26 12:12:55 :Info: Time to save msq: 9.2678
+16/09/26 12:12:55 :Info: MyCar_v48 Restore point saved
+16/09/26 12:12:55 :Info: MyCar_v48 Restore point saved to: MyCar_v48_2026-09-16_12.12.55.msq
+16/09/26 12:12:55 :Info: Time to save msq: 4.6073
+16/09/26 12:12:55 :Debug: goOffline Starting, Time:0
+16/09/26 12:12:55 :Info: Deactivated Turbo Baud, goOffline
+16/09/26 12:12:55 :Debug: goOffline about to stopProcessing, Time:0
+16/09/26 12:12:55 :Debug: goOffline closed port, Time:0
+16/09/26 12:12:56 :Debug: goOffline comm thread stopped, Time:501
+16/09/26 12:12:56 :Debug: No Remaining Queue Write instructions
+16/09/26 12:12:57 :Info: Going offline before all changes were permanently saved to the Controller.
+16/09/26 12:12:57 :Debug: removing Configuration: MyCar_v48
+16/09/26 12:12:57 :Debug: ############################################# Save Project Backup ##########################################
+16/09/26 12:12:57 :Info: Finalizing Sensors
+Saved user properties successfully

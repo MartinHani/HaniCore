@@ -1,0 +1,8 @@
+# Python packages for the HaniCore tools and tests (Python 3.13, `py -m pip install -r requirements.txt`).
+pyserial>=3.5        # anything that talks to an ECU over K-line / bootmode
+pytest>=8            # tests/unit pytest suites
+
+# Optional, installed only for the tools that need them:
+#   matplotlib     ETB characterization plots (tools/analysis)
+#   saleae         Logic 2 automation (tools/bench/hc_logic_capture.py)
+#   xlrd, PyMuPDF  regenerating connector data / searching reference PDFs (local corpora)

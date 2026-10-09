@@ -1,0 +1,54 @@
+16/09/26 13:28:04 :Info: Opening Gauge Cluster..
+16/09/26 13:28:04 :Info: Time to load uncached dash: 66.4836ms, file: dashboard.dash
+16/09/26 13:28:04 :Debug: High Speed Paint: false
+16/09/26 13:28:04 :Info: 
+16/09/26 13:28:04 :Info: Com Thread created: COMM Thread92912.49502934937
+16/09/26 13:28:04 :Info: endModalBlock called, but Root Pane is not a ProgressPane.
+16/09/26 13:28:04 :Debug: !!! Opened Dash 785
+16/09/26 13:28:04 :Info: Comm Manager for MyCar_v60 Started, thread ID: COMM Thread92912.49502934937
+16/09/26 13:28:04 :Info: Connecting to controller on: HaniCore K-Line / RS232: Port:COM3, Baud:57600
+16/09/26 13:28:04 :Info: MyCar_v60 Ready
+16/09/26 13:28:04 :Debug: Tuning View Files loaded in 29.9829ms.
+16/09/26 13:28:04 :Info: Comm Read Thread Change! Old Thread:null, new Thread:COMM Thread92912.49502934937
+16/09/26 13:28:04 :Info: Sig Bytes:x72 x75 x73 x45 x46 x49 x20 x48 x61 x6E x69 x43 x6F x72 x65 x20       rusEFI.HaniCore.
+x4D x45 x37 x31 x31 x20 x42 x41 x33 x31 x31 x33 x44 x31               ME711.BA3113D1
+16/09/26 13:28:04 :Info: Communicating with sig:rusEFI HaniCore ME711 BA3113D1, HaniCore V60 BURN REFUSAL / Bosch ME7.1.1
+16/09/26 13:28:04 :Info: Activating page: 1
+16/09/26 13:28:05 :Debug: Read page time: 1198ms.
+16/09/26 13:28:05 :Debug: Read All Data
+16/09/26 13:28:05 :Debug: Fill Constants: 9
+16/09/26 13:30:06 :Info: Initiating read page 1 : 20:2531
+16/09/26 13:31:53 :Info: dirtyData.size(): 0
+[Duplicate entry] received 2 times: Info: dirtyData.size(): 0
+16/09/26 13:31:53 :Debug: Flush lasted: 71ms.
+16/09/26 13:31:53 :Debug: Burn Page anonymous: 1
+16/09/26 13:31:53 :Info: Queueing burn to page:1
+16/09/26 13:31:55 :Debug: Burn time:1210ms.
+16/09/26 13:31:55 :Debug: burned page 1
+16/09/26 13:31:55 :Debug: No Remaining Queue Write instructions
+16/09/26 13:31:56 :Debug: File does not exist, creating new:
+C:\TunerStudioProjects\MyCar_v60\CurrentTune.msq
+16/09/26 13:31:56 :Info: Time to save msq: 49.365
+16/09/26 13:38:19 :Info: dirtyData.size(): 0
+[Duplicate entry] received 2 times: Info: dirtyData.size(): 0
+16/09/26 13:38:19 :Debug: Flush lasted: 77ms.
+16/09/26 13:38:19 :Debug: Burn Page anonymous: -1
+16/09/26 13:38:19 :Info: skip burn to page:1, lastWritePage = -2
+16/09/26 13:38:19 :Debug: Request to burn page, but no writes have been performed. Ignoring burn. page: 1
+16/09/26 13:38:21 :Info: dirtyData.size(): 0
+[Duplicate entry] received 2 times: Info: dirtyData.size(): 0
+16/09/26 13:38:21 :Debug: Flush lasted: 79ms.
+16/09/26 13:38:21 :Debug: Burn Page anonymous: -1
+16/09/26 13:38:21 :Info: skip burn to page:1, lastWritePage = -2
+16/09/26 13:38:21 :Debug: goOffline Starting, Time:0
+16/09/26 13:38:21 :Debug: Request to burn page, but no writes have been performed. Ignoring burn. page: 1
+16/09/26 13:38:21 :Info: Deactivated Turbo Baud, goOffline
+16/09/26 13:38:21 :Debug: Burn Page anonymous: -1
+16/09/26 13:38:21 :Info: skip burn to page:1, lastWritePage = -2
+16/09/26 13:38:21 :Debug: Request to burn page, but no writes have been performed. Ignoring burn. page: 1
+16/09/26 13:38:21 :Debug: goOffline about to stopProcessing, Time:300
+16/09/26 13:38:21 :Debug: goOffline Notified offline, Time:302
+16/09/26 13:38:21 :Debug: goOffline closed port, Time:302
+16/09/26 13:38:22 :Info: MyCar_v60 ComThread stopped COMM Thread92912.49502934937
+16/09/26 13:38:22 :Debug: goOffline comm thread stopped, Time:574
+16/09/26 13:38:22 :Debug: No Remaining Queue Write instructions

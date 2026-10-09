@@ -1,0 +1,359 @@
+"build\start_me711.obj",
+"build\hcnmi_v49.obj",
+"build\hcmain_me711.obj",
+"build\hcvec_me711.obj",
+"build\hcvecstub_me711.obj",
+"build\hcasic.obj",
+"build\hcasicframe.obj",
+"build\hcasicstart.obj",
+"build\hcumkom.obj",
+"build\hcasicdump.obj",
+"build\hcpower.obj",
+"build\hcio711.obj",
+"build\hcdbwmotor711.obj",
+"build\hcfar_me711.obj",
+"build\hcts.obj",
+"build\hchal_me711.obj",
+"build\hctrig_me711.obj",
+"build\hcsched_dry.obj",
+"build\hcroutes711.obj",
+"build\hcload711.obj",
+"build\hcdeadline711.obj",
+"build\hcdeadline_plan711.obj",
+"build\hcdefaults711.obj",
+"build\hcprofile711.obj",
+"build\hcsafety.obj",
+"build\hcrtmon711.obj",
+"build\hcserial711.obj",
+"build\hcbench.obj",
+"build\hcetbcal.obj",
+"build\hcdiag711.obj",
+"build\hcfresh711.obj",
+"build\hckline.obj",
+"build\hckwp_me711.obj",
+"build\hcwb.obj",
+"build\hccam.obj",
+"build\hcldr.obj",
+"build\hcboost711.obj",
+"build\hcknock.obj",
+"build\hcknock711.obj",
+"build\hcvvt.obj",
+"build\hcvvt711.obj",
+"build\hcidle.obj",
+"build\hcidle711.obj",
+"build\hctrans.obj",
+"build\hctrans711.obj",
+"build\hccel.obj",
+"build\hcigncorr711.obj",
+"build\hcengctl711.obj",
+"build\hcevlog711.obj",
+"build\hcdtc.obj",
+"build\hcdtc711.obj",
+"build\hclimp.obj",
+"build\hclimp711.obj",
+"build\hcnvm.obj",
+"build\hcburnforensics.obj",
+"build\hcliveforensics.obj",
+"build\hcengine.obj",
+"build\hcmainrelay.obj",
+"build\hcfuelpump.obj",
+"build\hc_dbw.obj",
+"build\hcconfig.obj",
+"build\hc_config_generated.obj",
+"build\hc_pin_descriptor.obj",
+"build\hc_pin_desc_bosch_me711.obj",
+"build\hc_validation.obj",
+"build\hc_config_manager.obj",
+"build\hc_presets.obj",
+"build\hc_route.obj",
+"build\hc_airfuel.obj",
+"build\hc_plan.obj"
+TO "build\hani_me711.abs"
+
+; ==========================================================================
+; HaniCore Bosch ME7.1.1 - the flash layout, and why it is this one.
+;
+; The image is 1 MiB at CPU 0x800000-0x8FFFFF; file offset X is CPU 0x800000+X.
+; It is laid out around the 29F800's ERASE SECTORS, not around whatever the
+; OEM happened to do:
+;
+;   file 0x000000-0x00FFFF   SA0..SA3     boot contract. The external boot
+;                                         block plus the ROMSYS header. The
+;                                         header is HaniCore-GENERATED; the
+;                                         block below it is retained, because
+;                                         it is executed code and deleting it
+;                                         is a proven dead ECU.
+;   file 0x010000-0x01FFFF   SA4          retained. The parameter-page window
+;                                         whose two-word bootrom sum is
+;                                         anchored here. Bosch already leaves
+;                                         this sector OUT of the program-page
+;                                         record - the hole between its two
+;                                         summing loops - and V53 uses that
+;                                         same idea for the store below.
+;   file 0x020000-0x0201FF                HaniCore's INTERRUPT VECTOR TABLE.
+;                                         Not linked here - Keil parks VECTAB
+;                                         inside our own segment and the build
+;                                         tool relocates it, exactly as the
+;                                         ME7.5 target does.
+;   [2026-10-06] SA6 is FCODE since V97 (see the FCODE class below); only
+;   SA5 (0x020200-0x02FFFF) stays reserved for the loader.
+;   file 0x020200-0x03FFFF   SA5..SA6     reserved for a resident recovery /
+;                                         update loader.
+;   file 0x040000-0x04FFFF   SA7          EVERYTHING HANICORE EXECUTES. One
+;                                         whole 64 KiB erase sector, so a
+;                                         firmware update erases exactly one
+;                                         sector and can touch nothing else.
+;                                         MOVED HERE FROM SA17 AT V53 - see
+;                                         below.
+;   file 0x050000-0x05FFFF   SA8          reserved for code growth, and it is
+;                                         reserved rather than merely free:
+;                                         it is inside the boot page record,
+;                                         so code may spill into it without
+;                                         moving the record boundary again.
+;   file 0x060000-0x0FFFFF   SA9..SA18    THE APPEND-ONLY CALIBRATION STORE.
+;                                         Eighty 8 KiB cells, ABOVE the
+;                                         bootrom program-page record.
+;
+; WHY THE CODE MOVED, V53, AND IT IS THE WHOLE POINT OF THE RELAYOUT.
+;
+; The bootrom's program-page record samples the first and last word of every
+; 8 KiB page it covers, and the boot block REFUSES to enter HaniCore if the
+; stored sum stops matching - physically proven on 2026-09-05, one programmed
+; word cost a bootmode reflash. An AMD embedded erase pre-programs a whole
+; sector to 0x00 before erasing it, so every sampled word in that sector is
+; wrong for the ~2 s the erase takes. And this board ties the 29F800's RESET
+; pin (44-pin SO pin 44) to RSTIN_FR, so SWRST_SM does not merely interrupt
+; the CPU - it ABORTS the erase and leaves the sector indeterminate.
+;
+; So while the store lived in SA7/SA8 it could not be reclaimed without
+; risking the ECU, and the store was capped at sixteen Burns for that reason.
+;
+; The record's coverage is NOT hardcoded in the boot block: it is read out of
+; the ROMSYS header this build generates (header+0x14 is the second range's
+; limit, and it has exactly one consumer, boot block 0x72D2). Moving that
+; limit down to 0x85FFFF takes SA9..SA18 out of the record entirely. The
+; summing loop offers only TWO ranges, so the excluded region has to be
+; contiguous at the top - which is why the code sector had to come down here.
+; Every executable byte is still covered exactly as strongly as before, and
+; tools/me711_bootsum_coverage_proof.py proves it by EXECUTING the real Bosch
+; routine and comparing address sets.
+;
+; NOTE WHAT IS ABSENT, compared with the ME7.5 linker script: there is no list
+; of windows dodging 8 KiB page boundaries. That script had to avoid the words
+; the bootrom's program-page sum samples, because it KEPT the donor's stored
+; sum and therefore had to keep the donor's sampled bytes. This build GENERATES
+; that sum from its own content, so the sampled words are ours to use and the
+; code region is one contiguous range.
+; ==========================================================================
+
+; Parked where the build tool expects it - see relocate_vectors() in
+; tools/build_hanicore_me711.py. A table linked at 0x000000 would
+; overwrite the boot block's own reset vector and kill the ECU; the CPU does
+; not read it there anyway, because the first-level table forwards interrupt N
+; to seg82:N*4.
+VECTAB (0x840000)
+
+; --------------------------------------------------------------------------
+; THE PEC POINTER FILE, 0xFCE0-0xFCFF, IS CARVED OUT OF EVERY CLASS BELOW.
+;
+; SRCP0/DSTP0 .. SRCP7/DSTP7 live at 0x00FCE0-0x00FCFF. They are REGISTERS,
+; not RAM, even though they sit inside the internal-RAM window the compiler
+; allocates near data from. Authority: reg167.h, Infineon's own header,
+; in the M744 stand-alone ECU project Latest version FW sourceCode/reg167.h
+; lines 352-369.
+;
+; L166 works around 0xFC00-0xFC1F on its own, because the GPR bank is a real
+; absolute segment (?C_MAINREGISTERS) it can see. NOTHING declares the PEC
+; pointers, so until this carve-out existed the linker allocated ordinary
+; variables straight on top of them.
+;
+; WHAT THAT COST. In V29 hc_asic_state landed at 0xFCE2 = DSTP0. Every call to
+; asic_start_transfer() programs the PEC destination pointer, so every SSC
+; block transfer overwrote the ASIC state machine's own state with the low
+; byte of a buffer address - 0xF0B0 -> state 176, a value no case in the
+; switch matches. The handshake could never reach its runtime state.
+; me711_boot_test lost six checks to it and the symptom pointed at the ASIC
+; rather than at the linker.
+;
+; IT IS OLDER THAN V29. V26, the only physically verified image, places
+; nothing here. V27A already placed sixteen variables here - engine ones -
+; and passed its gates anyway, because corrupting eng_ti_us is invisible to a
+; test that never runs the engine. V29 only made it visible by moving a
+; variable the state machine reads onto DSTP0.
+;
+; The carve-out costs 32 bytes of near RAM and cannot make a correct
+; allocation incorrect: it only removes address space the silicon already
+; owned. If a build ever fails to fit because of it, that build was relying
+; on corrupt RAM.
+; --------------------------------------------------------------------------
+CLASSES (
+  ; THIRD MOVE, 2026-09-06, V42. ICODE holds ?C_STARTUP_CODE and nothing else:
+  ; 208 bytes of a 3584-byte reservation, unchanged since V17. The V42 writer's
+  ; retry, settle and diary cost 352 bytes of NCODE that the 6 free bytes left
+  ; over from the V40 move could not hold, and taking them out of NCONST again
+  ; would leave both classes inside 400 bytes of their reservations - the exact
+  ; state that made this an L5 spill twice in three days. So the 3 KiB ICODE has
+  ; never used is given to code instead. ?C_STARTUP stays at 0x840200, which is
+  ; what the application entry pointer at 0x008000 names and what
+  ; tools/me711_boot_contract.py checks. Everything is still inside SA7.
+  ICODE  (0x840200-0x8403FF),
+  ; NCODE grew past 0x84DFFF when the Burn was made bounded (2026-09-04), and
+  ; the linker says so with L5 SECTION LOCATED OUTSIDE CLASS AREA rather than
+  ; silently spilling - so the boundary moves DELIBERATELY, and every move is
+  ; recorded here. NCONST held 4447 bytes of an 8 KiB reservation; giving 2 KiB
+  ; of that back to code left 54094 of 55296 used for code and 4447 of 6144
+  ; for const, and keeps the whole application inside SA7 - the invariant that
+  ; matters: an application update erases exactly one sector and touches
+  ; nothing else.
+  ;
+  ; SECOND MOVE, 2026-09-06, V40 RESETLESS BURN. The V39 layout left exactly
+  ; 28 BYTES of NCODE headroom - ?PR?HC_CONFIG_GENERATED ended at 0x84E7E3 -
+  ; so the 42 bytes of tick-gated yield that keep a LIVE flash commit inside
+  ; the 10 ms raster spilled the section out of the class. NCONST's own last
+  ; section ends at 0x84F92D, 1746 bytes short of its reservation; 1 KiB of
+  ; that moves to code. NCODE 0x841000-0x84EBFF is 56320 bytes for 55310 used,
+  ; NCONST 0x84EC00-0x84FFFF is 5120 for 4397. Both still inside SA7.
+  ;
+  ; NCODE 0x840400-0x84EDFF is 59904 bytes for 56666 used; NCONST
+  ; 0x84EE00-0x84FFFF is 4608 for 4402.
+  ;
+  ; FOURTH MOVE, 2026-09-13, V53. THE APPLICATION NOW SPANS SA7 AND SA8.
+  ;
+  ; The reclaim - a relocated sector eraser, the slice state machine and the
+  ; victim search - is about 1.8 KiB of code, and SA7 had roughly 700 bytes
+  ; left. Trimming the victim search to read record HEADERS instead of
+  ; CRC-checking every consumed cell made it far faster but very slightly
+  ; BIGGER, which is worth knowing: the inline 32-bit header reads cost more
+  ; than the call they replaced. It stays trimmed for the runtime, not the size.
+  ;
+  ; So the boundary moves into SA8 rather than the feature being cut, and SA8
+  ; is exactly what was reserved for this at the start of V53 - it is inside
+  ; the bootrom page record, so growing into it changes NOTHING about the
+  ; record's boundary and therefore nothing about the store above it. That was
+  ; the whole reason to reserve a protected sector rather than leave it free.
+  ;
+  ; WHAT IT DOES COST, said plainly: "an application update erases exactly ONE
+  ; sector" becomes TWO. Both are inside the record, neither is the store, and
+  ; the resident update loader reserved at 0x020200-0x03FFFF is untouched. The
+  ; alternative was to keep re-tuning this boundary every time a feature lands,
+  ; which is the state that produced three L5 spills in a week.
+  ;
+  ; NCODE 0x840400-0x85BFFF is 113664 bytes for 60752 used; NCONST
+  ; 0x85C000-0x85FFFF is 16384 for 4550. Both inside SA7+SA8, both inside the
+  ; boot page record, and there is room for the engine work still to land.
+  ;
+  ; FIFTH MOVE, 2026-09-15, V55. THAT LAST SENTENCE WAS NOT TRUE AND THE RANGE
+  ; ABOVE WAS A FICTION.
+  ;
+  ; NCODE is a single CGROUP. L166 refuses one larger than a segment:
+  ;
+  ;     *** ERROR L116: SIZE OF CGROUP EXCEEDS 64K
+  ;         GROUP:   NCODE (1)
+  ;
+  ; so the usable window has never been 113664 bytes - it is 0x840400 to
+  ; 0x84FFFF, 64512 bytes, and writing 0x85BFFF here only hid that until
+  ; something asked for more. Restoring hcsched_dry.c's crank-angle planner
+  ; asked for 3.6 KiB against 2.9 KiB free and the error arrived with no
+  ; warning history behind it.
+  ;
+  ; THE RANGE NOW SAYS WHAT THE LINKER WILL ACTUALLY DO, so the next spill is
+  ; an honest L5 naming the real boundary instead of an L116 naming a group.
+  ; SA8 is still reserved and still inside the boot page record; reaching it
+  ; needs FCODE - a second code class and a memory model per module - not a
+  ; larger number here. That is a deliberate piece of work with its own
+  ; qualification, and it is written down in docs/ARCHITECTURE.md rather
+  ; than discovered again.
+  ;
+  ; What paid for V55 instead: the 117 unclaimed-trap catch-alls in
+  ; hcvec_me711.c stopped calling hc_rst_vector_at() in hcconfig.c and write
+  ; the same two reset-diary words themselves. A Keil C166 `interrupt`
+  ; function that calls out of its module saves the whole register bank, and
+  ; that convention cost 4870 bytes of this sector - the module's own header
+  ; had warned about it since the ME7.5 target hit it first.
+  NCODE  (0x840400-0x84FFFF),
+  ; V97: FCODE CONTINUES IN SA6. SA8 was full (the knock driver spilled
+  ; 1168 bytes into 0x860000 - the persistence store's first sector - as an
+  ; L5). SA6 is blank and inside the boot page record; 0x838000-0x83800F is
+  ; left out because the builder writes the boot block's defensive far
+  ; pointer at 0x838004 (bootmode 0xDD). The resident-loader reservation
+  ; (docs/PLATFORM.md) keeps SA5. A firmware update now erases
+  ; SA6..SA8.
+  ; FCODE ends inside SA8, below the constant classes; each class keeps its
+  ; >=1024-byte reserve (me711_resource_budget_proof). The store sectors
+  ; (SA9.., 0x860000) are never used for code.
+  FCODE  (0x830000-0x837FFF, 0x838010-0x83FFFF, 0x850000-0x85B4BF),
+  ; V98r2: HCONST - the generated preset item tables (hc_presets.c,
+  ; HC_PRESET_MEM huge) had filled NCONST; 16 KB out of FCODE's SA8 tail
+  ; (FCODE used 3 KB of 0x850000-0x85BFFF).
+  HCONST (0x85B4C0-0x85E1FF),
+  ; NCONST stays inside the near-constant page 0x85C000-0x85FFFF.
+  NCONST (0x85E200-0x85FFFF),
+
+  ; Near data. 0x00F200-0x00FDFF is the RAM the boot block TESTS at every
+  ; reset (0x77B4-0x7810 walks 0xFDFA down to 0xF200 and resets on a
+  ; mismatch); the OEM application keeps variables in 0xF200-0xF5FF too.
+  ;
+  ; STACK LAYOUT (hcsafety.h):
+  ;   0xF200-0xF27F  near data, overflow range (NDATA0 below) - the upper
+  ;                  IRAM keeps room for the interrupt register banks
+  ;   0xF280-0xF2BF  runtime health record (hcrtmon711.h, fixed address)
+  ;   0xF2C0-0xF33F  K-line transport state (hcserial711.c, fixed address)
+  ;   0xF340-0xF37F  user-stack GUARD BAND - nothing may be placed here
+  ;   0xF380-0xF57F  ?C_USERSTACK, 512 bytes, the only NDATA section
+  ;   0xF580-0xF7FF  system stack, 634 usable (STKOV 0xF586, STKUN 0xF800)
+  ;   0xF800-        C near data, as before
+  ;   (the K-line PEC6 ring is XRAM 0xE0A0-0xE0FF, the OEM's own place)
+  NDATA  (0xF380-0xF57F),
+  NDATA0 (0xF200-0xF27F, 0xF800-0xFCDF, 0xFD00-0xFDFF),
+  SDATA  (0xF800-0xFCDF, 0xFD00-0xFDFF),
+  SDATA0 (0xF800-0xFCDF, 0xFD00-0xFDFF),
+  IDATA  (0xF800-0xFCDF, 0xFD00-0xFDFF),
+  IDATA0 (0xF800-0xFCDF, 0xFD00-0xFDFF),
+  ; V77: the cold modules compiled RENAMECLASS(NDATA0=XNDATA0) - see below.
+  XNDATA0 (0xE000-0xE09F, 0xE200-0xE7FF)
+)
+; --------------------------------------------------------------------------
+; V97. THE CLASS GAINED 0xE000-0xE09F (160 bytes): the boost, idle, DTC
+; and limp modules overflowed 0xE200-0xE7FF by 142 bytes (L5). The range
+; ends below 0xE0A0 because the OEM placed its K-line PEC receive ring at
+; 0xE0A2 (hcpecrx_me711.c, not linked yet - PEC6 is unwired) and below the
+; ASIC PEC frame at 0xE100. Same XRAM, same page 3, same DPP2: nothing
+; about the instructions changes. near_ram_hazard_proof checks both ranges.
+;
+; V77. COLD NEAR DATA LIVES IN THE ON-CHIP XRAM, 0xE200-0xE7FF.
+;
+; Near data had 112 bytes free against a 192-byte engineering reserve. The
+; 2 KB XRAM at 0xE000-0xE7FF is:
+;   * ENABLED BEFORE ANY C RUNS - start_me711.a66 writes SYSCON 0xE644/0xE244
+;     (XPEN set) right after BUSCON0;
+;   * CLEARED EXACTLY LIKE IRAM - the boot block's RAM test (0x7788-0x7814)
+;     makes the same three passes, ~addr / addr / ZERO, over 0xFDFA..0xF200
+;     and 0xE7FE..0xE000, so a variable here starts at the same zero on the
+;     same reset paths as one in IRAM;
+;   * IN THE SAME 16 KB PAGE AS 0xF700 - page 3, DPP2's NDATA group page - so
+;     every access compiles to the SAME instruction with the SAME DPP. L166
+;     refuses the link if the group ever leaves that page;
+;   * used by nothing else except the ASIC PEC frame at 0xE100-0xE1EB
+;     (TGT_ASIC_FRAME), which this range starts above.
+;
+; THE MECHANISM is build_me711.bat compiling exactly those modules with
+; RENAMECLASS(NDATA0=XNDATA0): their near-data section keeps its NDATA group
+; (so DPP2 and every instruction are unchanged) and only its CLASS, and so
+; its range, differs.
+;
+; ONLY COLD MODULES MOVE, chosen so the tooth path does not change at all:
+; the TunerStudio protocol state, the main loop's bookkeeping, the bench, the
+; ASIC start/run counters and SSC state, UMKOM, the pump and relay
+; lifecycles, the config manager and the validator. The scheduler, the
+; decoder, the HAL output route, hc_cfg[], the K-line receive ring, the
+; engine outputs and the safety permissions STAY in IRAM.
+; near_ram_hazard_proof checks this range never meets the ASIC frame.
+; --------------------------------------------------------------------------
+SECTIONS (
+  ; The user stack is PINNED. Without a pin L166 moved it to 0xFD00 the
+  ; moment the class had room, and an overflow from there would run DOWN into
+  ; the PEC pointer file at 0xFCE0. It sits BELOW the system
+  ; stack (0xF380-0xF57F) so an overflow runs into the guard band at
+  ; 0xF340-0xF37F and never into interrupt return frames.
+  ?C_USERSTACK%NDATA (0xF380)
+)

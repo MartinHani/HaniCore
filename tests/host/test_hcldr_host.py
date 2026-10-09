@@ -1,0 +1,103 @@
+"""Compile and run the boost control core (hcldr.c) host test, its negative
+controls, and a Keil check that the far module calls no ?C_ runtime helper
+.
+"""
+from __future__ import annotations
+
+import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools" / "lib"))
+import hcpaths  # noqa: F401,E402  (puts every tools/ and tests/ module on sys.path)
+
+import host_c_test as H
+
+
+SOURCE = H.HCP.find("hcldr.c")
+TEST = H.HOST_TESTS / "test_hcldr.c"
+KEIL = Path(r"C:\Keil\C166\BIN\C166.EXE")
+TARGET = H.ROOT / "firmware" / "targets" / "me711"
+
+CONTROLS = [
+    ("plain_windup", "the integrator integrates into saturation (clamp only)",
+     "    if (!((u >= (long)HCLDR_DUTY_MAX && di > 0L) || (u <= 0L && di < 0L))) {",
+     "    if (1) {"),
+    ("no_band", "the integrator runs at any distance from the target",
+     "    if (c->i_band_x10 && e > i16(c->i_band_x10))",
+     "    if (0)"),
+    ("two_sided_band", "the band also stops integration ABOVE target",
+     "    if (c->i_band_x10 && e > i16(c->i_band_x10))",
+     "    if (c->i_band_x10 && (e > i16(c->i_band_x10) || e < -i16(c->i_band_x10)))"),
+    ("d_on_error", "D acts on the error (derivative kick on a target step)",
+     "        long dm = (long)in->map_x10 - (long)b->last_map;",
+     "        long dm = (long)in->map_x10 - (long)b->last_map\n"
+     "                  - ((long)in->target_x10 - (long)b->last_map);"),
+    ("open_on_sensor", "no valid pressure keeps the open loop (rusEFI)",
+     "        return out(b, 0u, HCLDR_S_SENSOR);",
+     "        return out(b, c->closed ? 0u : in->open_x10, HCLDR_S_SENSOR);"),
+    ("cut_needs_enable", "overboost is judged only with boost control enabled",
+     "    if (in->map_x10 >= lim) {",
+     "    if (in->enabled && in->map_x10 >= lim) {"),
+    ("no_hysteresis", "the cut releases at the limit",
+     "    } else if (b->cut && in->map_x10 < (unsigned int)(lim - hy)) {",
+     "    } else if (b->cut && in->map_x10 < lim) {"),
+    ("keep_integ_below", "the PID keeps its integrator below the floor",
+     "    if (in->rpm < c->min_rpm || in->tps_x10 < c->min_tps_x10) {\n        pid_reset(b);",
+     "    if (in->rpm < c->min_rpm || in->tps_x10 < c->min_tps_x10) {"),
+]
+
+
+def keil_check() -> bool:
+    if not KEIL.exists():
+        print("SKIP: Keil C166 not found - helper check not run")
+        return True
+    out = Path(tempfile.mkdtemp())
+    r = subprocess.run([str(KEIL), str(SOURCE), "MOD167", "MEDIUM",
+                        "RENAMECLASS(NDATA0=XNDATA0)",
+                        "OBJECT(%s)" % (out / "hcldr.obj"),
+                        "PRINT(%s)" % (out / "hcldr.lst"), "INCDIR(%s)" % ";".join(map(str, H.HCP.include_dirs("me711"))), "CODE"],
+                       cwd=str(TARGET), capture_output=True, text=True)
+    lst = (out / "hcldr.lst").read_text(errors="replace") if (out / "hcldr.lst").exists() else ""
+    if "0 WARNING(S),  0 ERROR(S)" not in (r.stdout + lst):
+        print("FAIL: Keil C166 did not compile hcldr.c cleanly")
+        return False
+    helpers = sorted(set(re.findall(r"CALLS\s+SEG \((\?C_\w+)\)", lst)))
+    if helpers:
+        print("FAIL: hcldr.c (far) calls Keil runtime helpers: %s" % ", ".join(helpers))
+        return False
+    size = re.search(r"CODE SIZE\s+=\s+(\d+)", lst)
+    print("PASS: Keil C166 MEDIUM, 0 warnings, no ?C_ helper call (%s bytes)"
+          % (size.group(1) if size else "?"))
+    return True
+
+
+def main() -> int:
+    ran = H.run("hcldr", [SOURCE, TEST])
+    if ran is None:
+        return 0
+    cc, env = ran
+    src = SOURCE.read_text()
+    bad = 0
+    for name, what, old, new in CONTROLS:
+        assert src.count(old) == 1, "mutation point moved - update control " + name
+        mutant = Path(tempfile.gettempdir()) / ("hcldr_mutant_%s.c" % name)
+        mutant.write_text(src.replace(old, new))
+        exe = H.TMP / ("hc_hcldr_mutant_%s.exe" % name)
+        H.build(cc, env, [mutant, TEST], H.SHARED, exe, flags=("-w",))
+        r = subprocess.run([str(exe)], env=env, capture_output=True, text=True)
+        if r.returncode == 0:
+            print("FAIL: control %s - %s - passed the tests" % (name, what))
+            bad += 1
+        else:
+            first = [ln for ln in (r.stdout + r.stderr).splitlines() if "Assertion" in ln][:1]
+            print("PASS: control %s - %s - fails (%s)"
+                  % (name, what, first[0].strip() if first else "exit %d" % r.returncode))
+    if not keil_check():
+        bad += 1
+    return 1 if bad else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

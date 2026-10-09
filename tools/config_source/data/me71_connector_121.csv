@@ -1,0 +1,122 @@
+pin,signals,assigned,bosch_meaning
+1,EL_MA,yes,
+2,EL_MA,yes,
+3,KL15,yes,Versorgungsspannung Kl15
+4,LS2VK_H|ZAS2_S,yes,LSF vor Kat. 2 | Zylinderabschaltung 2
+5,LS1VK_H|ZAS1_S,yes,LSF vor Kat. 1 | Zylinderabschaltung 1
+6,LS2HK_H,yes,LSF hinter Kat. 2
+7,ZUE8,yes,Zündendstufe 8 extern
+8,ZUE7,yes,Zündendstufe 7 extern
+9,STST_S|ULVT_S,yes,Startersteuerung
+10,LS2HK_MA,yes,LSF hinter Kat. 2
+11,LS2HK_S,yes,LSF hinter Kat. 2
+12,LS2VK_MA,yes,LSF vor Kat. 2
+13,LS2VK_S,yes,LSF vor Kat. 2
+14,LS2VK_IA,yes,
+15,LS2VK_IP,yes,
+16,KS4_S|TVKAT2_S,yes,Klopfsensor 4 | Temperatursensor Vorkat.2
+17,PMOEL_S|TMOT2_S,yes,Temperatur Kühlerausgang
+18,TD_S,yes,
+19,TAUS_S,yes,
+20,TAB2_S,yes,Abgastemperatur 2
+21,ZAS2_S,yes,Zylinderabschaltung 2
+22,STST_S|ZAS1_S,yes,Startersteuerung | Zylinderabschaltung 1
+23,EV8,yes,Einspritzventil 8
+24,EV7|LUES2_S,yes,Einspritzventil 7 | Lüftersteuerung 2
+25,LDP_S,yes,Schalter Leak Detection Pump
+26,TAN_S|UBE_S,yes,Ansauglufttemperatur
+27,HFM_MA|SRDS_MA,yes,
+28,DF_S,yes,Erregerstrom Generator DF
+29,SRD_S|HFM_S,yes,
+30,FST_S,yes,Füllstand Tank
+31,KS3_S|TVKAT1_S,yes,Klopfsensor 3 | Temperatursensor Vorkat.1
+32,SCH_SEN,yes,
+33,SP2_MA,yes,
+34,SP2_S,yes,Sollwertpoti 2
+35,SP1_S,yes,Sollwertpoti 1
+36,SP1_MA,yes,
+37,TN_S,yes,tN-Signal (Drehzahlausgang)
+38,GRAEIN_S,yes,
+39,KU_S,yes,
+40,AC_S,yes,Schalter Klimabereitschaft / Drehzahlanhebung
+41,KKOBI_S,yes,
+42,KL 50,yes,
+43,DIAK_S,yes,"K-Leitung, WFS Immobilizer"
+44,SLV_S,yes,Sekundärluft-Ventil
+45,AAV_S|SRU2_S,yes,Aktivkohlefilterabschaltventil
+46,SLP_S,yes,Sekundärluft-Pumpe
+47,MIL_S,yes,Malfunction Indicator Light
+48,EFLA_S,yes,Fehlerlampe
+49,,no,
+50,SEN_MA,yes,
+51,LS1VK_MA,yes,LSF vor Kat. 1
+52,LS1VK_IP,yes,
+53,5V2,yes,5V-Versorgung 2 für Sollwertpoti 2 und sonstige Verbraucher
+54,VFZG_S,yes,
+55,BTS_S,yes,
+56,BLS_S,yes,
+57,GRASV_S,yes,
+58,CAN_L,yes,
+59,CAN_SCH,yes,Referenzmasse CAN-Bus
+60,CAN_H,yes,Referenzmasse CAN-Bus
+61,ACD_S|TAB1_S,yes,Schalter Druck Klimaanlage | Abgastemperatur 1
+62,KL 30,yes,
+63,LS1HK_H,yes,LSF hinter Kat. 1
+64,TEV,yes,Tankentlüftungs-Ventil
+65,EKPR,yes,Relais für elektrische Kraftstoffpumpe
+66,LUES1_S|STST_S,yes,Startersteuerung
+67,CRSH_S,yes,Crash-PWM-Signal vom Air-Bag
+68,LS1HK_MA,yes,LSF hinter Kat. 1
+69,LS1HK_S,yes,LSF hinter Kat. 1
+70,LS1VK_S,yes,LSF vor Kat. 1
+71,LS1VK_IA,yes,
+72,5V2,yes,5V-Versorgung 2 für Sollwertpoti 2 und sonstige Verbraucher
+73,5V1,yes,"5V-Versorgung 1, Im Motorsegment für Istwertpoti 1 u. 2,  im Karosseriesegment für Sollwertpoti 1"
+74,MMS_S,yes,Motor-Soll-Moment-PWM
+75,GRAWA_S,yes,
+76,GRAAUS_S,yes,
+77,CAN_L,yes,
+78,CAN_SCH,yes,Referenzmasse CAN-Bus
+79,CAN_H,yes,Referenzmasse CAN-Bus
+80,SLDP_S,yes,
+81,KVA_S,yes,Kraftstoffverbrauchsanzeige normiert
+82,DZG+_S,yes,
+83,5V1,yes,"5V-Versorgung 1, Im Motorsegment für Istwertpoti 1 u. 2,  im Karosseriesegment für Sollwertpoti 1"
+84,IP2_S,yes,Istwertpoti 1 (EGAS)
+85,TAN_S,yes,Ansauglufttemperatur
+86,PHA1_S,yes,Phasensignal1 (Nockenwelle)
+87,PHA2_S,yes,Phasensignal2 (Nockenwelle)
+88,EV3,yes,Einspritzventil 3
+89,EV4,yes,Einspritzventil 4
+90,DZG-_S|DZG_MA,yes,
+91,IP_MA,yes,
+92,IP1_S,yes,Istwertpoti 1 (EGAS)
+93,TMOT1_S,yes,
+94,ZUE3,yes,Zündendstufe 3 extern
+95,ZUE4,yes,Zündendstufe 4 extern
+96,EV1,yes,Einspritzventil 1
+97,EV2,yes,Einspritzventil 2
+98,5V2,yes,5V-Versorgung 2 für Sollwertpoti 2 und sonstige Verbraucher
+99,KS_MA,yes,Sensormasse Klopfsensoren
+100,AGRPOT_S,yes,
+101,SRD_S|TAGR_S,yes,Temperatur AGR
+102,ZUE1,yes,Zündendstufe 1 extern
+103,ZUE2,yes,Zündendstufe 2 extern
+104,SRU1_S|LDR_S,yes,Ladedruckregelungs-Ventil
+105,LUV_S,yes,Luftumfassungs-Ventil
+106,KS1_S,yes,Klopfsensor 1
+107,KS2_S,yes,Klopfsensor 2
+108,SEN_SCH,yes,
+109,,no,
+110,ZUE5,yes,Zündendstufe 5 extern
+111,ZUE6,yes,Zündendstufe 6 extern
+112,EV5,yes,Einspritzventil 5
+113,EV6,yes,Einspritzventil 6
+114,AGR_S,yes,Ausgang Abgasrückführung
+115,NWS_S,yes,Nockenwellen-Steuerung (Funktion ein/aus)
+116,ETH_S,yes,Elektrische Thermostatregelung
+117,ESBM+,yes,Electronic-System-Baukasten DV-E5 Motor +
+118,ESBM-,yes,Electronic-System-Baukasten DV-E5 Motor -
+119,,no,
+120,,no,
+121,,no,
