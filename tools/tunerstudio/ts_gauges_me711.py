@@ -25,13 +25,13 @@ import re
 #   name: (title, units, lo, hi, loDanger, loWarn, hiWarn, hiDanger, digits)
 # --------------------------------------------------------------------------
 GAUGE_META = {
-    "asicSampleAgeMs": ("ASIC frame age (65535 = unavailable)", "ms", 0, 65535, 0, 0, 50, 51, 0),
+    "asicSampleAgeMs": ("I/O chip frame age (65535 = unavailable)", "ms", 0, 65535, 0, 0, 50, 51, 0),
     "tpsSampleAgeMs": ("Oldest throttle sample (65535 = unavailable)", "ms", 0, 65535, 0, 0, 100, 101, 0),
     "lamAcqFlags": ("Lambda acquisition flags (last step)", "bits", 0, 255, 0, 0, 255, 255, 0),
-    "lamAckModes": ("CJ acknowledged modes (B2:B1)", "code", 0, 65535, 0, 0, 65535, 65535, 0),
+    "lamAckModes": ("Wideband controller modes (B2:B1)", "code", 0, 65535, 0, 0, 65535, 65535, 0),
     # ---- the fast block
     "RPMValue": ("RPM", "rpm", 0, 8000, 0, 0, 6500, 7000, 0),
-    "MAPValue": ("Pressure input (AWT: charge pressure)", "kPa", 0, 260, 0, 0, 200, 230, 1),
+    "MAPValue": ("Pressure sensor (MAP / charge)", "kPa", 0, 260, 0, 0, 200, 230, 1),
     "TPSValue": ("Throttle position", "%", 0, 100, 0, 0, 100, 100, 1),
     "pedalPosition": ("Pedal position", "%", 0, 100, 0, 0, 100, 100, 1),
     "coolant": ("Coolant temp", "C", -40, 140, -40, -15, 100, 110, 1),

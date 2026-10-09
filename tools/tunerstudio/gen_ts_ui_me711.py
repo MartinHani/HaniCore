@@ -387,7 +387,7 @@ TABLES = [
     # failed (rpm x throttle).
     ("mapEstimateTbl", "mapEstimate",  "mapEstRpmAx",   "RPMValue",
      "mapEstTpsAx",   "TPSValue",
-     "MAP estimate (pressure sensor fault)"),
+     "Pressure estimate (sensor fault)"),
     # V98: rusEFI injectionPhase - the injection angle by rpm x fuel load.
     ("injPhaseTbl",    "injPhaseTable", "injPhaseRpmAx", "RPMValue",
      "injPhaseLoadAx", "fuelLoad",
@@ -486,19 +486,27 @@ def table_dialog_lines() -> list[str]:
 # V97: the axis titles a tuner reads (rusEFI xyLabels). A string in braces
 # is a TunerStudio expression - the VE/ignition/AFR y axis says what the
 # load source makes it (gen_ts_ini_me711.LOAD_AXIS_LISTS).
+# hcLoadAxisList (gen_ts_ini_me711.LOAD_AXIS_LISTS) = Fuel load / Pressure
+# sensor / Throttle position / Cylinder filling / Manifold pressure / Charge
+# pressure. The fuel load is a PRESSURE for Speed density (the new model, or
+# the legacy model on its MAP strategy) and the THROTTLE otherwise; a
+# pressure is named by where Fuel > Fuel model says the sensor measures.
+# Until 2026-10-09 these keyed on loadSource alone, so Speed density selected
+# in the fuel model still titled the VE axis "Throttle position".
+_PRESS = "(pressureRole == 1 ? 4 : (pressureRole == 2 ? 5 : 1))"
+_FUEL = ("((fuelModel == 2 || (fuelModel == 0 && loadSource == 0)) ? %s : 2)"
+         % _PRESS)
 TABLE_Y_LABEL = {
-    # V98: hcLoadAxisList = Fuel load / MAP (kPa) / Throttle position (%) /
-    # Cylinder filling (%), indexed by what the table really uses
-    "veTableTbl": "{bitStringValue(hcLoadAxisList, loadSource == 0 ? 1 : 2)}",
-    "ignMapTbl": "{bitStringValue(hcLoadAxisList, ignLoadMode == 0 ? (loadSource == 0 ? 1 : 2) : ignLoadMode)}",
-    "afrMapTbl": "{bitStringValue(hcLoadAxisList, lambdaLoadMode == 0 ? (loadSource == 0 ? 1 : 2) : lambdaLoadMode)}",
+    "veTableTbl": "{bitStringValue(hcLoadAxisList, %s)}" % _FUEL,
+    "ignMapTbl": "{bitStringValue(hcLoadAxisList, ignLoadMode == 0 ? %s : (ignLoadMode == 1 ? %s : ignLoadMode))}" % (_FUEL, _PRESS),
+    "afrMapTbl": "{bitStringValue(hcLoadAxisList, lambdaLoadMode == 0 ? %s : (lambdaLoadMode == 1 ? %s : lambdaLoadMode))}" % (_FUEL, _PRESS),
     "pedalMapTbl": "Pedal position (%)",
     "boostDutyTbl": "Throttle position (%)",
     "boostTgtTbl": "Throttle position (%)",
     "vvtTarget1Tbl": "Cylinder filling (%)",
     "vvtTarget2Tbl": "Cylinder filling (%)",
     "mapEstimateTbl": "Throttle position (%)",
-    "injPhaseTbl": "{bitStringValue(hcLoadAxisList, loadSource == 0 ? 1 : 2)}",
+    "injPhaseTbl": "{bitStringValue(hcLoadAxisList, %s)}" % _FUEL,
 }
 
 

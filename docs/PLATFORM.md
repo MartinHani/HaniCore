@@ -67,6 +67,7 @@ board); Bosch component datasheets (CJ120, CJ220, CK110, CJ911).
 | throttle position, pedal | 92 / 84, 35 / 34 | main-CPU ADC |
 | pressure | 101 | main-CPU ADC |
 | coolant, intake air | 93, 26 | S5500 ADC; cavity 93 has a switched pull-up the board holds on |
+| ambient (barometric) pressure | on the board | S5500 ADC channel 8, see below |
 | wideband bank 1 / 2 | 70, 51, 71, 52 + heater 5 / 13, 12, 14, 15 + heater 4 | on-board CJ120 |
 | fuel-pump relay | 65 | CJ920, active low |
 | main relay | 23 | CJ910 hardware stage |
@@ -86,6 +87,27 @@ Hard limits:
 * CAN (58–60, 77–79) has no driver. There is no tacho output path and no oil
   pressure input.
 * Stage polarity is a board fact in `hctarget.h`, never a page field.
+
+### Onboard barometric sensor
+
+The ME7.1.1 board carries an absolute-pressure sensor of its own. The S5500
+digitises it as ADC channel 8 (runtime frame word 12, window slot 8); every
+frame word carries its channel number, and the firmware reads the sensor only
+from a fresh sample tagged channel 8.
+
+The transfer is this ECU's own factory calibration, read where its own code
+reads it: the factory routine multiplies the 10-bit sensor word by a gradient
+of 16192 (253.0 hPa/V) and adds an offset of 0, then accepts 400–1200 hPa and
+substitutes 1000 hPa outside that window. HaniCore applies the same transfer,
+`hPa = counts × 1265 / 1024`, and the same 400–1200 hPa window (outside it,
+or without a fresh sample, the fuel model falls back to its reference
+pressure). `tests/firmware/engine/me711_ambient_pressure.py` locates these
+constants in a factory image by the code that uses them.
+
+On the test car at standstill the sensor read 820 counts (1013 hPa) on one
+day and 828 counts (1023 hPa) on another, against 102.2 and 103.3 kPa from
+the engine's own pre-throttle pressure sensor: within 1 %, tracking the
+weather. It has not yet been compared with a reference barometer.
 
 ## Flash layout
 

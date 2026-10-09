@@ -51,10 +51,10 @@ def test_the_generated_ini_is_clean():
 
 
 def test_an_unterminated_label_is_caught(tmp_path):
-    t = good_text().replace(
-        '      field = "TRY 12 AND 8 FIRST - they are predictions, not a scan."',
-        '      field = "TRY 12 AND 8 FIRST - they are predictions, not a scan.',
-        1)
+    line = '      field = "Normal operation needs base 4. After each move read s5500Idx:"'
+    good = good_text()
+    assert line in good, "the mutation anchor is gone - re-anchor it"
+    t = good.replace(line, line[:-1], 1)
     msgs = [m for _n, m in audit_text(tmp_path, t)]
     assert any("open-ended String" in m for m in msgs), msgs
 

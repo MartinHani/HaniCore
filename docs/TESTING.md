@@ -48,8 +48,18 @@ level-condition skips to what the directory tree already defines.
 
 ## Current results
 
-Image `484F9753…` (the development build of 2026-10-09; layout `5AB824FA`).
-Every number below was measured on that exact image.
+Current image `26DFF618…` (2026-10-10; layout `5AB824FA`). It differs from
+`484F9753…` by two changes only - the onboard barometric sensor as an ambient
+source, and the DFCO pressure limit applying only to a manifold sensor;
+reverting them rebuilds `484F9753…` bit for bit. Run on `26DFF618…`:
+`run_gates.py tier1` 14/14, the TunerStudio gates 18/18, `run_gates.py fast`
+84/84 (one skip by design), the load-contract, engine-control,
+ambient-pressure and baro-honesty gates with their negative controls (the new
+checks fail on `484F9753…`), and the sensor-fallback, alpha-N start, boost,
+preset-apply, first-start-page and page-migration proofs. Not yet run on it:
+`full`, runtime qualification, bench.
+
+The table below was measured on `484F9753…`.
 
 | check | result |
 |---|---|

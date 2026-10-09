@@ -241,18 +241,18 @@ INDEX_FAMILIES = [
     # V97: the wideband (firmware/sensors/hcwb.h) - why lambda is withheld, the
     # latched fault, the heater state. Short: they are indicator texts.
     ("hcLamWhyList", HCP.find("hcwb.h"), "HCWB_WHY_", {
-        0: "VALID", 1: "OFF", 2: "FAULT (latched)", 3: "CJ120 NOT VERIFIED",
+        0: "VALID", 1: "OFF", 2: "FAULT (latched)", 3: "CONTROLLER NOT VERIFIED",
         4: "CALIBRATING", 5: "WAIT: ENGINE", 6: "WAIT: SUPPLY",
         7: "PREHEAT (DEW)", 8: "HEATING RAMP", 9: "SETTLING (Ri)",
-        10: "PUMP STARTING", 11: "CJ120 DIAG", 12: "PUMP SATURATED",
-        13: "NO Ri SIGNAL", 14: "BENCH HOLD", 15: "LEGACY QUIET-SIGNAL REFUSAL",
+        10: "PUMP STARTING", 11: "CONTROLLER DIAGNOSIS", 12: "PUMP SATURATED",
+        13: "NO Ri SIGNAL", 14: "BENCH HOLD", 15: "QUIET SIGNAL (not used)",
     }, ("VALID", "OFF", "FAULT", "CHIP", "CAL", "ENGINE", "SUPPLY",
         "PREHEAT", "RAMP", "SETTLE", "PUMP", "DIAG", "UA", "UR", "HOLD",
         "STUCK")),
     ("hcLamFaultList", HCP.find("hcwb.h"), "HCWB_F_", {
         0: "NO FAULT", 1: "HEATER SHORT GND", 2: "NO SENSOR / HTR OPEN",
         3: "HEATER SHORT UB", 4: "PUMP LINE IA/IP", 5: "NERNST LINE UN",
-        6: "GROUND LINE VM", 7: "CJ120 NO ANSWER", 8: "CALIBRATION",
+        6: "GROUND LINE VM", 7: "CONTROLLER NOT ANSWERING", 8: "CALIBRATION",
         9: "DID NOT HEAT 60s", 10: "OVERHEAT", 11: "UNDERHEAT",
         12: "NO Ri SIGNAL", 13: "UR STAYED RAILED",
     }, ("NONE", "HEATER_GND", "HEATER_OPEN", "HEATER_UB", "LINE_IAIP",
@@ -309,7 +309,7 @@ MASK_FAMILIES = [
                  "drives an engine output"),
         0x0002: ("Engine phase known", "NO CYCLE SYNC: the 720 deg phase is "
                  "not resolved"),
-        0x0004: ("Supervisor running", "ASIC: the S5500 link is not running"),
+        0x0004: ("I/O chip link running", "I/O CHIP: the link is not running"),
         0x0008: ("Calibration valid", "CAL: the page does not validate"),
         0x0010: ("Key on", "KEY OFF: controlled key-off in progress"),
         0x0020: ("Crank signal present", "NO CRANK: the decoder sees no "
@@ -323,7 +323,7 @@ MASK_FAMILIES = [
         0x0008: ("PORT OK", "REFUSED: NO PORT"),
         0x0010: ("CHANNEL OK", "REFUSED: CHANNEL"),
         0x0020: ("NOT BUSY", "REFUSED: BUSY"),
-        0x0040: ("S5500 UP", "REFUSED: S5500 DOWN"),
+        0x0040: ("I/O CHIP UP", "REFUSED: I/O CHIP DOWN"),
         0x0080: ("TPS PAIR OK", "REFUSED: TPS CORRELATION"),
         0x0100: ("BRIDGE OK", "REFUSED: BRIDGE (SF)"),
         0x0200: ("CAVITY OK", "REFUSED: CAVITY"),
@@ -340,7 +340,7 @@ MASK_FAMILIES = [
         0x0010: ("-", "ABORTED: BRIDGE (SF)"),
         0x0020: ("-", "ABORTED: OUT OF BAND"),
         0x0040: ("-", "ABORTED: TPS CORRELATION"),
-        0x0080: ("-", "ABORTED: S5500 DOWN"),
+        0x0080: ("-", "ABORTED: I/O CHIP DOWN"),
     }, ("HOST", "CRANK", "CFG", "TIMEOUT", "SF", "TPSMOVE", "TPSPAIR",
         "SUPERVISOR")),
 

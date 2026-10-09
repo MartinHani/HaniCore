@@ -108,7 +108,33 @@ reading trustworthy. THE FULL CHAIN, LINK BY LINK, WITH ITS CLASS:
   6. HaniCore's conversion, which is that formula with the A2L read against
      the binary it maps. `SAME-FAMILY ECU REFERENCE`, an ESTIMATE.
 
-SO WHY DOES IT READ NEAR FULL SCALE? THAT IS NOT CONCLUDED HERE. 1.22 bar
+RESOLVED (2026-10-09): THE TARGET'S OWN TRANSFER, FROM ITS OWN CODE
+=================================================================
+`target_transfer()` reads it out of the target binary by the code that uses
+it, not by any A2L address:
+
+  * the ADC-distribution routine masks an ASIC frame word to 10 bits and
+    stores it to near 0x8888, in the same slot (third store, ASIC AN8 by the
+    frame order) where the sibling stores `udsu_w` (0xC100);
+  * the target's voltage diagnosis compares 0x8888 x 1 against its own byte
+    thresholds at 0x818D8A / 0x818D8B, x4 = 44 / 992 counts (sibling UDSUMN /
+    UDSUMX 41 / 999) - the sibling keeps those words after DSUOFS, the target
+    does not;
+  * the conversion multiplies 0x8888 by the word at 0x81EE12 (16192), shifts
+    by 9 like the sibling's DSUGRAD code, saturating-adds 0x81EE14 (0) like
+    its DSUOFS code, then range-checks against 0x81EE18 / 0x81EE1A (400 /
+    1200 hPa) and substitutes 0x81EE16 (1000 hPa).
+
+So the target's transfer is the sibling's: 1265/1024 hPa per count, offset 0
+(`EXACT TARGET BINARY`, units from the sibling A2L). The 2026-09-05 near-full
+-scale reading predates the aligned window: every capture since 2026-09-26
+reads s5500Idx 0xFFFF and HOG 812..830 counts (1003..1025 hPa), and on the car
+at standstill it agreed with the independent charge-pressure sensor within 1 %
+on two days (26 Sep 820 counts = 1013 hPa vs 102.2 kPa; 3 Oct 828 = 1023 hPa
+vs 103.3 kPa) - `PHYSICAL`. The firmware uses it as Ambient source "Onboard
+barometric sensor" (hcload711.c).
+
+HISTORY: WHY IT ONCE READ NEAR FULL SCALE. 1.22 bar
 through the old expression implies `baroRaw` about 1019 of 1023, and all that
 proves is that THE SOURCE BEING READ is at or near full scale. At least three
 things produce that and they are distinguished by one number:
@@ -340,15 +366,94 @@ def transfer():
     }
 
 
+# THE TARGET'S OWN DSU BLOCK, as its code reads it (target_transfer()).
+TARGET_PINNED = {
+    "udsu_ram": 0x8888, "dsugrad_addr": 0x81EE12, "dsuofs_addr": 0x81EE14,
+    "dsugrad_int": 16192, "dsuofs_int": 0,
+    "pue_addr": 0x81EE16, "pue_hpa": 1000.0,
+    "pmin_addr": 0x81EE18, "pmin_hpa": 400.0,
+    "pmax_addr": 0x81EE1A, "pmax_hpa": 1200.0,
+    "umin_counts": 44, "umax_counts": 992,
+    "hpa_per_count": 1265.0 / 1024.0,
+}
+
+
+def _sites(d, pattern):
+    return [m for m in re.finditer(pattern, d, re.S)]
+
+
+def target_transfer(path: Path = None):
+    """The DSU calibration THIS ECU's code reads, located by the code shape
+    the sibling's A2L-named routine has - never by an A2L address."""
+    d = (path or BIN_TARGET).read_bytes()
+
+    def addr(page, off):
+        return (page << 14) | (off & 0x3FFF)
+
+    w16 = lambda b: struct.unpack("<H", b)[0]
+    # EXTP #pag; MOV R4,grad; MOV R5,udsu; SHL R5,#5; MULU R5,R4
+    grad = _sites(d, re.escape(b"\xd7\x40") + b"(..)" + re.escape(b"\xf2\xf4")
+                  + b"(..)" + re.escape(b"\xf2\xf5") + b"(..)"
+                  + re.escape(b"\x5c\x55\x1b\x54"))
+    # EXTP #pag; MOV R4,ofs; then the sibling's saturating add
+    ofs = _sites(d, re.escape(b"\xd7\x40") + b"(..)" + re.escape(b"\xf2\xf4")
+                 + b"(..)" + re.escape(b"\x6d\x05\x00") + b"."
+                 + re.escape(b"\x9d\x06\xe6\xf4\xff\xff\x0d\x03\x00") + b"."
+                 + re.escape(b"\x8d\x01\xe0\x04"))
+    out = {"grad_sites": len(grad), "ofs_sites": 0}
+    if grad:
+        g = grad[0]
+        out["dsugrad_addr"] = addr(w16(g.group(1)), w16(g.group(2)))
+        out["udsu_ram"] = w16(g.group(3))
+        out["consistent"] = all(
+            addr(w16(m.group(1)), w16(m.group(2))) == out["dsugrad_addr"]
+            and w16(m.group(3)) == out["udsu_ram"] for m in grad)
+        # the offset is the word the same routine adds next; other
+        # saturating adds in the image read other operands
+        ofs = [m for m in ofs if addr(w16(m.group(1)), w16(m.group(2)))
+               == out["dsugrad_addr"] + 2]
+        out["ofs_sites"] = len(ofs)
+        if ofs:
+            out["dsuofs_addr"] = out["dsugrad_addr"] + 2
+    rd = lambda a: struct.unpack_from("<H", d, a - FLASH_BASE)[0]
+    if "dsugrad_addr" in out:
+        out["dsugrad_int"] = rd(out["dsugrad_addr"])
+    if "dsuofs_addr" in out:
+        out["dsuofs_int"] = struct.unpack_from("<h", d, out["dsuofs_addr"] - FLASH_BASE)[0]
+    if "udsu_ram" in out:
+        u = struct.pack("<H", out["udsu_ram"])
+        # the writer: AND Rn,#03FFh then MOV udsu,Rn - a 10-bit ADC word
+        out["udsu_10bit_writer"] = len(_sites(
+            d, b"\x66[\xf0-\xff]\xff\x03\xf6[\xf0-\xff]" + re.escape(u)))
+        # the voltage diagnosis: MOVBZ R4,thr; SHL R4,#2; CMP R4,udsu
+        vd = _sites(d, re.escape(b"\xd7\x40") + b"(..)" + re.escape(b"\xc2\xf4")
+                    + b"(..)" + re.escape(b"\x5c\x24\x42\xf4") + re.escape(u))
+        out["umin_counts"] = out["umax_counts"] = None
+        thr = sorted(d[addr(w16(m.group(1)), w16(m.group(2))) - FLASH_BASE] * 4
+                     for m in vd)
+        if len(thr) == 2:
+            out["umin_counts"], out["umax_counts"] = thr
+    base = out.get("dsugrad_addr", 0)
+    q = 0.0390625                       # p_uw_q0p039, hPa per bit
+    for k, off in (("pue", 4), ("pmin", 6), ("pmax", 8)):
+        out[k + "_addr"] = base + off
+        out[k + "_hpa"] = rd(base + off) * q if base else None
+    if "dsugrad_int" in out:
+        out["hpa_per_count"] = out["dsugrad_int"] / 512.0 * q
+    return out
+
+
 def ini_expression(tr=None):
     """The [OutputChannels] expression, and its provenance comment."""
     tr = tr or transfer()
     expr = "{ baroRaw * %.6f + %.4f }" % (tr["hpa_per_count"], tr["offset_hpa"])
-    note = ("ambient pressure, SIBLING CALIBRATION %s: DSUGRAD %d = %.1f hPa/V, "
-            "DSUOFS %d = %.1f hPa. NOT exact-target - see "
+    note = ("onboard ambient pressure, THIS ECU's DSU calibration: DSUGRAD %d "
+            "@0x%06X = %.1f hPa/V, DSUOFS %d @0x%06X, valid %d..%d hPa - "
             "tests/firmware/engine/me711_ambient_pressure.py"
-            % (tr["a2l_project"], tr["dsugrad_int"],
-               tr["gradient_hpa_per_v"], tr["dsuofs_int"], tr["offset_hpa"]))
+            % (TARGET_PINNED["dsugrad_int"], TARGET_PINNED["dsugrad_addr"],
+               tr["gradient_hpa_per_v"], TARGET_PINNED["dsuofs_int"],
+               TARGET_PINNED["dsuofs_addr"], TARGET_PINNED["pmin_hpa"],
+               TARGET_PINNED["pmax_hpa"]))
     return expr, note
 
 
@@ -453,24 +558,57 @@ def main():
        mn <= 120 and mx >= 900,
        "%.3f V .. %.3f V" % (mn * 5.0 / 1024.0, mx * 5.0 / 1024.0))
 
-    # THE CANDIDATE THIS KILLS, SO IT CANNOT COME BACK.
-    #
-    # A search of THIS ECU's image for the sibling's (DSUGRAD, DSUOFS) word
-    # pair found exactly one hit per megabyte, at 0x81EE12, and in the sibling
-    # the unique hit IS the right address. That was a real uniqueness argument
-    # and it was still wrong, because it assumed the Porsche calibration uses
-    # the sibling's gradient and a zero offset. Reading two words further
-    # settles it: the window would be 25600 and 10240 counts, on a converter
-    # whose largest possible output is 1023, with the minimum ABOVE the
-    # maximum. DO NOT RESURRECT 0x81EE12.
+    # 0x81EE12, BY ITS CODE. A byte search once found the sibling's
+    # (DSUGRAD, DSUOFS) pair at 0x81EE12 and "refuted" it because the next two
+    # words are no 10-bit VOLTAGE window. That assumed the sibling's block
+    # layout. The target's own code (target_transfer) reads 0x81EE12/14 in
+    # the DSU routine and the next words as a PRESSURE window, and keeps its
+    # voltage window as two bytes elsewhere - so the refutation's premise is
+    # false, and the words are what the code says they are.
     CAND = 0x81EE12
     cmn = word_at(BIN_TARGET, CAND + 4)
     cmx = word_at(BIN_TARGET, CAND + 6)
-    ck("the 0x81EE12 candidate is REFUTED by the two words nobody read",
+    ck("the words after 0x81EE14 are no voltage window (the old premise)",
        not (0 < cmn < cmx <= ADC_FULL),
-       "UDSUMN would be %d counts and UDSUMX %d, against a 10-bit maximum of "
-       "%d - impossible, so the (DSUGRAD, DSUOFS) match there is coincidence"
-       % (cmn, cmx, ADC_FULL))
+       "%d and %d counts cannot be UDSUMN/UDSUMX - the target keeps those "
+       "elsewhere" % (cmn, cmx))
+    tt = target_transfer()
+    print("\n  THIS ECU's DSU calibration, located by its code:")
+    for k in ("udsu_ram", "dsugrad_addr", "dsuofs_addr", "pue_addr",
+              "pmin_addr", "pmax_addr"):
+        print("    %-13s 0x%06X" % (k, tt.get(k, 0)))
+    ck("two DSUGRAD multiply sites and two DSUOFS add sites, one address each",
+       tt["grad_sites"] == 2 and tt["ofs_sites"] == 2 and tt.get("consistent"),
+       "%d / %d sites" % (tt["grad_sites"], tt["ofs_sites"]))
+    ck("its input is a 10-bit ADC word, written as such",
+       tt.get("udsu_10bit_writer", 0) >= 1,
+       "AND #03FFh then MOV 0x%04X" % tt.get("udsu_ram", 0))
+    ck("its own voltage diagnosis window matches the sibling's",
+       tt["umin_counts"] is not None
+       and abs(tt["umin_counts"] - mn) <= 8 and abs(tt["umax_counts"] - mx) <= 8,
+       "%s / %s counts vs sibling %d / %d" % (tt["umin_counts"],
+                                              tt["umax_counts"], mn, mx))
+    ck("the target's DSUGRAD / DSUOFS equal the sibling's",
+       tt.get("dsugrad_int") == word_at(BIN_SIBLING, g_addr)
+       and tt.get("dsuofs_int") == word_at(BIN_SIBLING, g_addr + 2, signed=True),
+       "%s / %s" % (tt.get("dsugrad_int"), tt.get("dsuofs_int")))
+    ck("and its pressure window / substitute are physical ambient values",
+       tt["pmin_hpa"] == 400.0 and tt["pmax_hpa"] == 1200.0
+       and tt["pue_hpa"] == 1000.0,
+       "%.0f..%.0f hPa, substitute %.0f hPa" % (tt["pmin_hpa"], tt["pmax_hpa"],
+                                                tt["pue_hpa"]))
+    ck("the derived target transfer equals the one the firmware compiles in",
+       all(tt.get(k) == v for k, v in TARGET_PINNED.items()),
+       "hcload711.c: hPa = counts x 1265/1024, 400..1200 hPa")
+    fw = (ROOT / "firmware/targets/me711/engine/hcload711.c").read_text(errors="replace")
+    ck("hcload711.c carries exactly that transfer and window",
+       "raw*1265u,1024u" in fw and "raw>=400u && raw<=1200u" in fw
+       and "hc_fresh_asic_an(8u)" in fw)
+    # negative control: the same locator run on the SIBLING must not invent
+    # the target's addresses (its routine has a different register shape).
+    st = target_transfer(BIN_SIBLING)
+    ck("negative control - the locator finds nothing in the sibling",
+       st["grad_sites"] == 0, "%d sites" % st["grad_sites"])
 
     # THE CONTROL FOR THAT TEST: the same three-part shape must ACCEPT the
     # block that is known to be right, or it is rejecting everything and
@@ -553,26 +691,13 @@ def main():
            for r in iomap.splitlines()),
        "Eingang Hoehengeber - the main CPU's own AN8 is SPS1/DKG, pedal 1")
 
-    print("\n  WHY IT READS HIGH IS NOT SETTLED HERE, AND ONE NUMBER SETTLES IT:")
-    print("    read s5500Idx.")
-    print("      bit 8 CLEAR  -> the window is not aligned and baroRaw is some")
-    print("                      other frame word entirely: WRONG SOURCE")
-    print("      bit 8 SET    -> slot 8 really is ASIC AN8 = HOG, and the")
-    print("                      question moves to the front end - no sender")
-    print("                      fitted, an open circuit, or a supply fault")
-    print("      0xFFFF       -> the whole window is on the ADDAT block")
-    print("    No reflash. It is already published, beside baroRaw.")
-
     expr, note = ini_expression(tr)
     print("\n  the .ini expression:\n    ambientPressure = %s\n    ; %s"
           % (expr, note))
 
-    print("\n%s" % ("AMBIENT PRESSURE: the pairing rule holds and the transfer "
-                    "function read\nfrom the A2L's OWN binary is "
-                    "self-consistent - published as an ESTIMATE.\nThe SOURCE "
-                    "is not proven, and which of the three explanations "
-                    "applies\nis a bench reading of s5500Idx, not a "
-                    "constant."
+    print("\n%s" % ("AMBIENT PRESSURE: the pairing rule holds, and THIS ECU's "
+                    "own DSU code\nreads the same transfer the firmware "
+                    "uses (EXACT TARGET BINARY)."
                     if not FAILS else "AMBIENT PRESSURE PROOF FAILS - %d check(s)."
                     % FAILS))
     return 0 if not FAILS else 1

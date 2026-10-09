@@ -242,7 +242,7 @@ UNUSED = {
     "lambda2CylMask": "closed loop trims every cylinder from its sensor",
     "pinMapSwitch": "no map switching exists",
     # B6 (V98): pins a dialog showed with no reader and no label
-    "pinBaro": "the baro is the board's own sensor (ASIC w08)",
+    "pinBaro": "the ambient sensor is on the ECU board (Sensors > Ambient pressure)",
     "pinOilPress": "no oil pressure input path exists",
     "pinFuelPress": "no fuel pressure input path exists",
     "pinFlex": "no flex fuel input exists",
@@ -272,7 +272,7 @@ UNUSED = {
     "cylBank": "no per-bank strategy reads it",
     "testMode": "the bench command itself selects the mode",
     "testTimeoutMs": "bench timing is clamped in code",
-    "iatDefault": "an invalid IAT reads -40 C, fixed (V97)",
+    "iatDefault": "an invalid IAT reads -40 C; each consumer has its own fallback",
 }
 
 # Housekeeping the validator or the page manager checks, shown on purpose in
@@ -307,62 +307,47 @@ def _unused_class(ts):
 # the selector alone, and selecting a preset changed that one byte and
 # nothing else.
 panel("hcEnginePreset", "Engine base tune", [
-    T("#Choosing below CHANGES NOTHING by itself. Choose, then press APPLY:"),
-    T("#the ECU writes the preset's values into the ordinary fields (engine"),
-    T("#stopped only), checks the whole page, and refuses the lot if the"),
-    T("#result would not validate. It does NOT Burn - review, then Burn."),
+    T("#Choose an engine, then press APPLY - choosing alone changes nothing."),
+    T("#APPLY (engine stopped) writes the preset into the ordinary settings"),
+    T("#and checks the whole configuration; if it would not be valid,"),
+    T("#nothing is changed. APPLY does not Burn: review, then Burn."),
     F("enginePreset"),
     C("cmdApplyEnginePreset", "APPLY ENGINE PRESET"),
-    T("If the fields do not update within a few seconds, close and reopen"),
-    T("the dialog (or reconnect): the ECU asks TunerStudio to re-read."),
-    T("Every value stays editable afterwards; nothing runs 'as a preset'."),
-    T("!Cylinders, displacement and max engine speed take effect after a"),
-    T("!Burn and a key cycle."),
+    T("Every value stays editable afterwards. If a dialog still shows old"),
+    T("values, close and reopen it."),
+    T("!Cylinder count, displacement and maximum engine speed take effect"),
+    T("!after a Burn and a key cycle."),
 ])
 
 # rusEFI engineChars: cylinders, displacement, firing order, FUEL STRATEGY.
 panel("hcEngineBasics", "Engine", [
-    T("#Geometry the whole fuel and spark model is derived from."),
     F("cylinders"),
     F("strokes"),
     F("displacementCc"),
     B(),
-    T("#Fuel strategy (rusEFI fuelAlgorithm). Speed density: VE by rpm x"),
-    T("#MAP, air from MAP and intake temperature. Alpha-N: VE by rpm x"),
-    T("#throttle; 'x inlet pressure' multiplies by the measured pressure"),
-    T("#(a sensor BEFORE the throttle, e.g. the AWT's), 'no pressure"),
-    T("#sensor' assumes 101.3 kPa - pure alpha-N, MAP faults cannot touch it."),
-    F("loadSource", "Legacy V101 load source", "fuelModel == 0"),
-    F("alphaNUseIat", None, "fuelModel == 0 && loadSource == 2"),
-    P("hcPanelTableAxes"),
-    T("#TunerStudio's VE Table Generator (VE table > Tools) models MAP"),
-    T("#(kPa) load only: use it with speed density, not with alpha-N."),
-    T("A failed pressure sensor fuels from the pressure estimate table (Fuel"),
-    T("menu, rpm x throttle): MANIFOLD pressure under speed density, INLET"),
-    T("(boost) pressure under alpha-N x inlet pressure. Gauges show 0 = FAULT."),
+    T("#Fuel model (set in Fuel > Fuel model):"),
+    P("hcPanelLoadSummary"),
     B(),
-    T("#Which load the ignition and target lambda tables use."),
-    F("ignLoadMode"),
-    F("lambdaLoadMode"),
+    T("#Maximum engine speed: the highest speed the trigger decoder and"),
+    T("#scheduler accept. An engineering limit, not a rev limiter"),
+    T("#(Setup > Limits and protection)."),
+    F("revMax", "Maximum engine speed"),
     B(),
-    T("#The highest speed the decoder and scheduler are sized for. It is a"),
-    T("#noise ceiling, NOT a rev limiter (see Limits and fallbacks)."),
-    F("revMax"),
-    T("A complete engine setup is loaded from Controller / Base Tunes."),
+    T("A complete engine setup is loaded from Controller > Base Tunes."),
 ])
 
 panel("hcEngineFiring", "Firing order", [
-    T("#A named order computes each cylinder's TDC (4-stroke, even fire)."),
-    T("#VAG 1.8T: 1-3-4-2. CUSTOM: enter the TDC angles below (odd fire)."),
-    T("#Wiring is separate: Injection / Ignition hardware assign each"),
-    T("#CYLINDER its cavity - never rearrange pins to match the order."),
+    T("#Pick the firing order; the ECU places each cylinder's TDC."),
+    T("#Custom: enter each cylinder's TDC angle (odd-fire engines)."),
+    T("#Pins are assigned per cylinder (Injection / Ignition hardware):"),
+    T("#never rearrange them to match the firing order."),
     F("firingOrder"),
-    T("#TDC of each cylinder, degrees after cylinder 1 (CUSTOM only):"),
+    T("#TDC of each cylinder, degrees after cylinder 1 (Custom only):"),
     E("tdcCylDegX10", "firingOrder == 0"),
 ])
 
 panel("hcEngineFiringExt", "Cylinders 9..12", [
-    T("Only read with firing order CUSTOM and more than 8 cylinders."),
+    T("Used with firing order Custom and more than 8 cylinders."),
     E("tdcCylExtDegX10", "firingOrder == 0"),
 ])
 
@@ -371,27 +356,26 @@ panel("hcEngineFiringExt", "Cylinders 9..12", [
 # (hcsched_dry.c, rusEFI rpmHardLimit + cutFuelOnHardLimit): above revLimit
 # every injector event is planned undriven, fuel returns 200 rpm below it.
 panel("hcLimitsRev", "Rev limiter", [
-    T("#Hard limit: above the rev limit cut FUEL, SPARK or both, back below"),
-    T("#limit - hysteresis. Spark cut skips the given sparks of every 8 (8 ="),
-    T("#all). 0 = no limiter. Not while cranking."),
+    T("#Above the rev limit, cut fuel, spark or both until the speed is back"),
+    T("#below the limit minus the hysteresis. Spark cut skips that many of"),
+    T("#every 8 sparks (8 = all). 0 = no limiter. Inactive while cranking."),
     F("revLimit"),
     F("revLimitHyst"),
     F("revlimMode"),
     F("revlimPattern", None, "revlimMode != 1"),
-    T("#Soft limit (rusEFI): over the hysteresis band BELOW the limit, timing"),
-    T("#retard and fuel added ramp in. 0 = off."),
+    T("#Soft limit: within the hysteresis band below the limit, timing"),
+    T("#retard and added fuel ramp in. 0 = off."),
     F("revLimitSoftRetard"),
     F("revLimitSoftFuel"),
-    T("Not physically qualified on the car."),
 ])
 
 panel("hcLimitsProtect", "Engine protection", [
-    T("#Each protection is a FUEL CUT (limpCut shows which), after rusEFI's"),
-    T("#limp manager. Coolant above its limit: fuel cut above the coolant rev"),
-    T("#limit (0 = 3000 rpm), 200 rpm hysteresis; a faulted sensor is not"),
-    T("#judged. A latched throttle fault (DBW on): fuel cut above 1500 rpm"),
-    T("#(etbLimpRpm). Injector duty over its limits: cut until below 20 %."),
-    T("#Flood clear: no fuel while cranking with the pedal floored. 0 = off."),
+    T("#Each protection cuts fuel (Diagnostics > Why is fuel cut? says which)."),
+    T("#Coolant over its limit: cut above the coolant rev limit (0 = 3000 rpm);"),
+    T("#a failed coolant sensor is not judged. A latched throttle fault (DBW"),
+    T("#on): cut above the throttle-fault rev limit (0 = 1500 rpm). Injector"),
+    T("#duty over its limits: cut until below 20 %. Flood clear: no fuel"),
+    T("#while cranking with the pedal floored (0 = off)."),
     F("cltMaxDegX10"),
     F("cltLimpRpm"),
     F("etbLimpRpm"),
@@ -401,34 +385,56 @@ panel("hcLimitsProtect", "Engine protection", [
     F("floodClearX10"),
 ])
 
-panel("hcLimitsBoost", "Boost cut", [
-    T("#At this pressure FUEL is cut and the boost solenoid forced OFF, until"),
-    T("#the pressure falls below it by the hysteresis - whether or not boost"),
-    T("#control is enabled (a stuck wastegate overboosts with the valve off)."),
-    T("#0 = 220 kPa / 15 kPa. It needs a valid MAP reading: a MAP fault gives"),
-    T("#valve 0 and no cut."),
+panel("hcLimitsBoost", "Overboost cut", [
+    T("#At this pressure fuel is cut and the boost valve closed until the"),
+    T("#pressure falls by the hysteresis - also with boost control off (a"),
+    T("#stuck wastegate overboosts with the valve closed). 0 = 220 / 15 kPa."),
+    T("#Reads the pressure sensor; without a valid reading the valve stays"),
+    T("#closed and pressure-loss protection applies."),
     F("boostCutKpa"),
     F("boostCutHyst"),
+])
+
+panel("hcProtPressure", "Pressure-loss protection", [
+    T("#Cuts fuel under load when the pressure reading is missing or stale."),
+    T("#Always active for Speed density and Boosted Alpha-N (which also get"),
+    T("#no air without it); switch it on here for Legacy and Pure Alpha-N."),
+    T("#Any pressure loss also closes the boost valve."),
+    F("pressureGuardEnable"),
+    F("pressureGuardRpm"),
+    F("pressureGuardTps"),
+])
+
+panel("hcProtLean", "Lean protection", [
+    T("#Cuts fuel when measured lambda stays leaner than target by the"),
+    T("#margin, under load, for the set time. A cold, faulted or stale"),
+    T("#wideband can neither trigger nor release it. Fuel returns once lambda"),
+    T("#is back at target with the engine off load for the recovery time."),
+    F("leanGuardEnable"),
+    F("lambdaPhysicalQualified", None, "leanGuardEnable == 1"),
+    F("leanGuardRpm", None, "leanGuardEnable == 1"),
+    F("leanGuardTps", None, "leanGuardEnable == 1"),
+    F("leanGuardCharge", None, "leanGuardEnable == 1"),
+    F("leanGuardDeviation", None, "leanGuardEnable == 1"),
+    F("leanGuardPersist", None, "leanGuardEnable == 1"),
+    F("leanGuardRecovery", None, "leanGuardEnable == 1"),
+    T("!Off by default. Enable only after the wideband reads correctly on"),
+    T("!this engine - never test it by running the engine lean."),
 ])
 
 
 # ----------------------------------------------------------------- TRIGGER --
 # rusEFI triggerConfiguration: "Primary Trigger" beside "Cam Inputs", xAxis.
 panel("hcTriggerWheel", "Primary trigger", [
-    T("#A complete wheel's tooth count and how many are missing: a 60-2 is"),
-    T("#60 and 2. The decoder reads these, and trigCfgTeeth / trigCfgGap on"),
-    T("#the right show what it actually resolved."),
+    T("#Teeth of the complete wheel and how many are missing (60-2: 60 and"),
+    T("#2). The live values on the right show what the decoder resolved."),
     F("syTeeth"),
     F("syGap"),
     F("trigEdge"),
-    T("#Trigger angle: where tooth #1 - the edge that ENDS the gap - is, in"),
-    T("#crank degrees after cylinder-1 TDC. Negative = before TDC, e.g. a"),
-    T("#tooth 78 deg BTDC is -78.0. Same meaning as Speeduino's trigger"),
-    T("#angle; rusEFI's trigger angle offset is the same number, sign flipped."),
-    T("#Every other angle (TDC table, spark, injection, cam, knock) is in"),
-    T("#degrees after cylinder-1 TDC and follows this one."),
-    T("!Check it: FIXED timing + a timing light, or the tooth profile."),
-    T("!AWT preset -78.0; a car page on -2.0 (old 358.0) is 76 deg off: Help."),
+    T("#Trigger angle: where tooth #1 - the first tooth after the gap - is,"),
+    T("#in crank degrees after cylinder 1 TDC; negative = before TDC (a tooth"),
+    T("#78 deg BTDC is -78.0). Every other angle follows it."),
+    T("!Verify it with fixed timing and a timing light, or the tooth profile."),
     F("trigAngleX10"),
     F("pinCrank"),
 ])
@@ -442,26 +448,22 @@ panel("hcTriggerSync", "Synchronisation", [
 ])
 
 panel("hcTriggerCam", "Cam inputs", [
-    T("#camRefs is how many edges of the chosen polarity the cam gives in"),
-    T("#one 720 degree cycle. ONE (a single-window Hall cam) resolves the"),
-    T("#cycle, so sequential fuel and COP become possible. An EVEN count never"),
-    T("#can, and the firmware will not claim cycle sync from one."),
+    T("#A cam input lets the ECU know the 720 deg cycle, which sequential"),
+    T("#fuel and coil-on-plug need. With reference edges, one edge per cycle"),
+    T("#resolves it; an even count of equal edges never can."),
     F("camEnable"),
     F("camEdge", None, "camEnable == 1"),
     F("camRefs", None, "camEnable == 1"),
     F("camRefX10", None, "camEnable == 1"),
     F("camWindowX10", None, "camEnable == 1"),
-    T("#LEVEL: the Bosch quick-start wheel (1.8T, VR6). The cam LEVEL is read"),
-    T("#at one crank angle and must alternate every revolution; its sectors"),
-    T("#(both edges captured) show on the right. Engine angle: move it with"),
-    T("#the crank offset."),
+    T("#Level: for the Bosch quick-start wheel (VAG 1.8T, VR6) - the cam"),
+    T("#level at one crank angle, alternating every revolution."),
     F("camPhaseMode", None, "camEnable == 1"),
     F("camPhaseAngleX10", None, "camEnable == 1 && camPhaseMode == 1"),
     F("camPhaseLevel", None, "camEnable == 1 && camPhaseMode == 1"),
     F("camPhaseConfirm", None, "camEnable == 1 && camPhaseMode != 0"),
-    T("#PATTERN: each cam's wheel from the library. Teeth are named by"),
-    T("#their spacing in crank degrees, then the half and the VVT deviation by"),
-    T("#their angle; camWindowX10 is the VVT authority."),
+    T("#Pattern: pick each cam's wheel; teeth are identified by their"),
+    T("#spacing. The acceptance window is also the VVT range."),
     F("cam1Pattern", None, "camEnable == 1 && camPhaseMode == 2"),
     F("cam2Pattern", None, "camEnable == 1 && camPhaseMode == 2"),
     F("cam2RefX10", None, "camEnable == 1 && camPhaseMode == 2"),
@@ -483,10 +485,10 @@ rpanel("hcReadTrigger", 2, ["rpmGauge", "crankSyncGauge", "cycleSyncGauge",
 # light. hcsched_dry.c sums every synchronised tooth period per 6-degree bin;
 # the vehicle logger reads the 60 bins and finds the slowest ones.
 panel("hcToothProfile", "Tooth profile / compression TDC", [
-    T("#COMPRESSION: engine stopped, key on. Press, then crank ~5 s. Spark"),
-    T("#and fuel are HELD OFF until the crank stops (or 30 s). The slowest"),
-    T("#teeth are the compression TDCs - read them with the vehicle logger."),
-    T("#RUNNING: 64 revolutions, outputs untouched."),
+    T("#Compression: engine stopped, key on. Press, then crank about 5 s."),
+    T("#Spark and fuel are held off until the crank stops (or 30 s); the"),
+    T("#slowest teeth are the compression TDCs (HaniCore vehicle logger)."),
+    T("#Running: 64 revolutions, outputs untouched."),
     C("cmdToothLogCompression", "Compression profile (no spark/fuel)"),
     C("cmdToothLogRunning", "Running profile"),
     C("cmdToothLogAbort", "Abort"),
@@ -507,8 +509,8 @@ ipanel("hcPanelToothLog", 1, [
 # rusEFI injectorConfig: "Injection" + "Injector Settings" + "Fuel
 # characteristics".
 panel("hcInjectorHw", "Injector settings", [
-    T("#Flow turns the model's fuel mass into an opening time; the dead time"),
-    T("#(curve, centre) is added afterwards and never scaled by it."),
+    T("#Flow turns the fuel mass into an opening time; the dead time (curve,"),
+    T("#centre) is added afterwards and never scaled by it."),
     F("injFlowCcMin"),
     B(),
     T("#Fuel characteristics"),
@@ -519,8 +521,8 @@ panel("hcInjectorHw", "Injector settings", [
 # mode", injection phase) with the sequential state beside it.
 panel("hcInjectorStrategy", "Injection", [
     T("#Sequential runs two half pulses per cylinder until the cam confirms"),
-    T("#the cycle, then one whole pulse - switched per cylinder with the same"),
-    T("#fuel per intake. Batch/semi-sequential need only crank sync."),
+    T("#the cycle, then one whole pulse, with the same fuel per intake."),
+    T("#Batch and semi-sequential need only crank sync."),
     F("injStrategy"),
     F("injTimingMode"),
     F("injPhaseMode"),
@@ -546,8 +548,8 @@ rpanel("hcReadSeq", 4, ["syncStateGauge", "seqActiveGauge", "seqInjMaskGauge",
 panel("hcInjectorPins", "Injector outputs", [
     T("#The cavity that drives each CYLINDER's injector. The firing order"),
     T("#(Base engine) is separate: do not rearrange pins to match it."),
-    T("!Cavity 19 is injector 8 and 24 injector 7 - NOT cavity 23, which is the"),
-    T("!main relay stage. Cavity 20 is unnamed on the ME7.1.1 sheet."),
+    T("!Injector 7 is cavity 24 and injector 8 cavity 19. Cavity 23 is the"),
+    T("!main relay stage, not an injector."),
     E("injPin", "cylinders"),
 ])
 
@@ -576,11 +578,11 @@ panel("hcFuelEnrich", "Acceleration enrichment", [
 ])
 
 panel("hcFuelOverrun", "Deceleration fuel cutoff (DFCO)", [
-    T("#rusEFI DFCO: cuts every injector with the pedal (throttle without"),
-    T("#DBW) released, above the cut rpm, below the MAP limit, the coolant"),
-    T("#warm - after the delay. Fuel returns below the resume rpm or on"),
-    T("#pedal. A FAILED pedal/TPS, coolant or (speed density) MAP sensor"),
-    T("#never cuts fuel. 0 rpm = off."),
+    T("#Cuts every injector on overrun: pedal (or throttle without DBW)"),
+    T("#released, above the cut rpm, coolant warm, after the delay. Fuel"),
+    T("#returns below the resume rpm or when the pedal is pressed. A failed"),
+    T("#pedal, throttle, coolant or pressure sensor never cuts fuel."),
+    T("#0 rpm = off. The pressure limit applies only to a manifold sensor."),
     F("overrunRpm"),
     F("overrunResume"),
     F("overrunTpsX10"),
@@ -600,11 +602,11 @@ rpanel("hcReadFuel", 2, ["RPMValueGauge", "fuelLoadGauge",
 
 # V98: rusEFI fuelClosedLoopCorrection - short-term trim, per region.
 panel("hcStft", "Closed loop fuel correction", [
-    T("#Short-term trim (rusEFI STFT): measured vs target lambda, integrated"),
-    T("#with the region's time constant and limited to its add / remove."),
-    T("#Only with the sensor READY, running, warm, after the start delay,"),
-    T("#outside the deadband, and held after a fuel cut or an enrichment."),
-    T("#Bank 2 trims from lambda 2 when it is fitted. Off = trim 0."),
+    T("#Short-term trim: measured against target lambda, integrated with the"),
+    T("#region's time constant and limited to its add / remove. Active only"),
+    T("#with a valid wideband, engine warm, after the start delay, outside"),
+    T("#the deadband; held after a fuel cut or an enrichment. Bank 2 trims"),
+    T("#from lambda 2 when fitted. Off = no trim."),
     F("stftEnable"),
     F("stftStartDelay", None, "stftEnable == 1"),
     F("stftMinClt", None, "stftEnable == 1"),
@@ -644,17 +646,16 @@ panel("hcStftRight", "", [
 # rusEFI ignitionSettings: "Spark / Mode / ... Timing Mode / Fixed Timing"
 # beside "Ignition Outputs". Fixed timing lives HERE, as in rusEFI.
 panel("hcIgnitionBasics", "Ignition", [
-    T("#Running dwell is the Ignition / Dwell curve (against battery)."),
+    T("#Running dwell is the Ignition > Dwell curve (against battery)."),
     F("ignStrategy"),
     B(),
-    T("#USE FIXED TIMING WHILE VALIDATING WITH A TIMING GUN. Fixed holds ONE"),
-    T("#angle at every speed and load, ignores cranking and applies no"),
-    T("#correction, so the light sees exactly what the ECU commanded. Until it"),
-    T("#has been done, the trigger angle and every cell of the map are"),
-    T("#hypotheses. Correct the Trigger angle in Setup / Trigger (AWT: -78)."),
+    T("#Fixed timing holds one angle at every speed and load, with no"),
+    T("#corrections, so a timing light shows exactly what the ECU commands."),
+    T("#Use it to verify the trigger angle (Setup > Trigger) before trusting"),
+    T("#the ignition table."),
     F("timingModeCfg"),
     F("fixedTimingX10", None, "timingModeCfg == 1"),
-    T("!Commanded advance is clamped to -30.0 (after TDC) .. 60.0 deg BTDC."),
+    T("Commanded advance is limited to -30.0 (after TDC) .. 60.0 deg BTDC."),
 ])
 
 panel("hcIgnitionPins", "Ignition outputs", [
@@ -680,10 +681,10 @@ rpanel("hcReadSpark", 2, ["RPMValueGauge", "ignitionTimingGauge",
 # counts->temperature CURVE, so the curve itself sits in the middle - the way
 # rusEFI embeds cltFuelCorrCurve, fan1PwmCurve and 29 others in dialogs.
 panel("hcSensorClt", "CLT sensor", [
-    T("#The curve maps RAW ADC COUNTS to temperature. The AWT preset uses this"),
-    T("#ECU's own OEM curve for its switched 340 R pull-up (the state the board"),
-    T("#is in). An invalid input reads -40 C - on the gauge AND in the fuel"),
-    T("#and ignition models - and sets CLT FAULT (P0115)."),
+    T("#The curve maps raw ADC counts to temperature; the default is this"),
+    T("#ECU's own OEM curve. An invalid input displays -40 C and sets the"),
+    T("#coolant fault (P0115); fuel, ignition and idle then use their own"),
+    T("#safe fallback values."),
     F("pinClt"),
     P("hcPanelCltValid"),
 ])
@@ -694,35 +695,40 @@ ipanel("hcPanelCltValid", 1, [
 ])
 
 panel("hcSensorIat", "IAT sensor", [
-    T("#Same shape as coolant: a raw-count to temperature curve."),
+    T("#A raw-count to temperature curve, like coolant. An invalid input"),
+    T("#displays -40 C and sets the intake air fault; the fuel model then"),
+    T("#uses 0 C and the timing correction 0."),
     T("!AWT harness: the IAT signal must be moved to cavity 26."),
-    T("#An invalid input reads -40 C (display and models) and sets IAT FAULT."),
     F("pinIat"),
     F("iatChannel"),
 ])
 
-panel("hcSensorMap", "Pressure sensor (AWT: charge pressure)", [
-    T("#A LINEAR transfer function, in the sensor's own terms:"),
-    T("#    kPa x10  =  offset  +  counts * gradient / 1000"),
-    T("#so a 4 bar sensor reading 0.5 V at 0 kPa and 4.5 V at 400 kPa has"),
-    T("#gradient (4000-0)*1000/(921-102) and offset -gradient*102/1000."),
-    T("!AWT: the sensor on cavity 101 reads BEFORE the throttle (boost), not"),
-    T("!manifold pressure - which is why the AWT base tune runs alpha-N."),
+panel("hcSensorMap", "Pressure sensor", [
+    T("#One external pressure sensor, manifold (MAP) or charge pressure."),
+    T("#Where it measures is set in Fuel > Fuel model (Pressure sensor"),
+    T("#location). Linear transfer: kPa x10 = offset + counts x gradient / 1000."),
+    T("#Example: 0.5 V = 0 kPa and 4.5 V = 400 kPa gives gradient"),
+    T("#4000 x 1000 / (921 - 102) and offset -gradient x 102 / 1000."),
+    T("!VAG 1.8T (AWT): cavity 101 is CHARGE pressure, before the throttle."),
     F("pinMap"),
     F("mapSensOff"),
     F("mapSensGrd"),
+    F("pressureMaxAge"),
 ])
 
-panel("hcSensorBaro", "Baro sensor", [
-    T("#Fuel / Ambient source controls the ambient value used by new fuel policies."),
-    T("#The legacy startup display seed is stored below; it does not correct fuel."),
-    F("baroDefault", "Legacy startup display seed"),
+panel("hcSensorBaro", "Ambient pressure", [
+    T("#The ambient (barometric) pressure the fuel model uses where it needs"),
+    T("#one: Pure Alpha-N ambient correction and the Boosted Alpha-N blend."),
+    F("ambientSource"),
+    F("ambientMaxAge", None, "ambientSource == 1"),
     B(),
-    T("#Ambient pressure on the right is the ECU's OWN altitude sensor, on"),
-    T("#the board (its read path is proven on the bench). It is NOT"),
-    T("#what the engine model uses, and its transfer function is an estimate"),
-    T("#from a sibling calibration: read it as approximate."),
-    T("!Near 0 or 1023 raw counts the input is at a rail: not a measurement."),
+    T("#Onboard barometric sensor: on the ECU board, read every 10 ms, with"),
+    T("#this ECU's own factory calibration. Valid 400..1200 hPa; a missing"),
+    T("#or out-of-range reading falls back to the reference pressure."),
+    T("#Engine stopped: the pressure sensor is read after 1 s at rest (50..120"),
+    T("#kPa) and kept for the set time; it never learns running boost."),
+    T("#Reference pressure: the fixed value set in Fuel > Fuel model; also"),
+    T("#the fallback whenever the selected source has no valid reading."),
 ])
 
 panel("hcSensorBattery", "Battery", [
@@ -732,18 +738,18 @@ panel("hcSensorBattery", "Battery", [
     F("pinVbat"),
 ])
 
-panel("hcSensorMisc", "Aux analog inputs", [
-    T("#Physical connector cavity."),
+panel("hcSensorMisc", "Mass air flow input", [
     F("pinMaf"),
-    T("A MAF is OPTIONAL: an absent or failed one never inhibits"),
-    T("speed-density operation."),
+    T("Optional and read for diagnostics only: the fuel model does not use"),
+    T("a MAF, and an absent or failed one never affects fuelling."),
 ])
 
 rpanel("hcReadClt", 1, ["cltDcGauge", "cltCtrlDcGauge", "cltRawAsicGauge"])
 rpanel("hcReadIat", 1, ["iatDcGauge"])
 rpanel("hcReadMap", 2, ["mapKpaX10Gauge", "engLoadGauge", "rlX10Gauge"])
-rpanel("hcReadBaro", 2, ["ambientPressureGauge", "ambientVoltageGauge",
-                         "baroRawGauge", "mapKpaX10Gauge"])
+rpanel("hcReadBaro", 2, ["ambientUsedGauge", "ambientPressureGauge",
+                         "ambientVoltageGauge", "baroRawGauge",
+                         "mapKpaX10Gauge", "ambientAgeSecondsGauge"])
 
 rpanel("hcReadBattery", 2, ["battDvGauge", "batteryGauge", "adc05_UBATGauge"])
 rpanel("hcReadNvm", 2, ["nvmGenerationGauge", "nvmCommitsGauge",
@@ -787,9 +793,9 @@ ipanel("hcPanelLambda", 2, [
         "{ B2 HEATER: bitStringValue(hcLamHeaterList, heater2State)}",
         "{ B2 HEATER: bitStringValue(hcLamHeaterList, heater2State)}",
         "white, black, yellow, black"),
-    IND("cj1Ok == 1", "CJ120 #1: NOT VERIFIED", "CJ120 #1: ANSWERING",
+    IND("cj1Ok == 1", "CONTROLLER 1: NOT VERIFIED", "Controller 1: answering",
         "white, black, green, black"),
-    IND("cj2Ok == 1", "CJ120 #2: NOT VERIFIED", "CJ120 #2: ANSWERING",
+    IND("cj2Ok == 1", "CONTROLLER 2: NOT VERIFIED", "Controller 2: answering",
         "white, black, green, black"),
 ])
 rpanel("hcReadLambdaLink", 2, ["cj1ErrGauge", "cj2ErrGauge",
@@ -804,26 +810,19 @@ panel("hcLambdaRight", "", [
 
 # ------------------------------------------------------------------ LAMBDA --
 panel("hcLambdaStrategy", "Wideband O2 (on-board controllers)", [
-    T("#Measured lambda feeds the closed loop fuel correction (Fuel menu)"),
-    T("#and VE Analyze - only while READY."),
-    T("!Heater permission follows the selected policy. Preheat and ramp"),
-    T("!lead to closed loop only with qualified sensor-mode measurements"),
-    T("!on the sensor's internal resistance against an 82.5 ohm reference. Pump"),
-    T("!current only when hot. Heating a FITTED sensor is not yet qualified."),
-    T("!Lambda reads 0 = NOT a measurement. 0 OFF 1 INIT 2 HEATING 3 WARMING"),
-    T("!4 READY 5 FAULT (lam1Fault: 2 = heater open / no sensor)."),
-    T("#Family mapping: bank 1 cavities 70/51/71/52, heater 5. Verify the harness."),
+    T("#Two Bosch LSU controllers on the ECU board. Measured lambda feeds"),
+    T("#closed loop fuel correction and VE Analyze only while the sensor is"),
+    T("#READY (heated, pump current on, calibration clean). Lambda 0 means"),
+    T("#'no measurement', never 'rich'."),
+    T("#Bank 1: cavities 70/51/71/52, heater 5 (an AWT LSU plugs straight in)."),
     F("lambda1Source"),
     F("pinLambda1"),
     B(),
-    T("#HEATER POLICY: measure actual H+ at the sensor before choosing."),
-    T("!ECU battery voltage does not prove the heater feed is present."),
-    T("!Disabled never heats. Ignition on requires key and qualified supply."),
-    T("!Engine running only also requires a running engine; an allowed run"),
-    T("!grants one finite 30 s tail. Key-off or Disabled cancels permission."),
-    T("!Sensor type, loaded PWM polarity, current and condensation handling"),
-    T("!are PHYSICAL QUALIFICATION PENDING. Readiness has no promised time."),
+    T("#Heater: check that the sensor's heater feed (H+) is live before"),
+    T("#choosing. Disabled never heats; 'ignition on' needs key on; 'engine"),
+    T("#running' also needs a running engine and keeps 30 s after a stop."),
     F("lambdaHeatPolicy"),
+    T("!Heating a fitted sensor is not yet vehicle-qualified on this ECU."),
     B(),
     F("lambda2Source"),
     F("pinLambda2"),
@@ -848,15 +847,13 @@ panel("hcEtbBase", "Base ETB settings", [
     # dbwEnable 0, so the frequency has to be settable before the throttle is
     # ever enabled - and it is a property of the body, not of this ECU.
     F("dbwPwmHz"),
-    T("#2000 Hz is this ECU's OEM value. Re-run ETB Characterization after"),
-    T("#changing it: the bias curve is only valid at the frequency it was"),
-    T("#measured at."),
-    T("!No limp-home position and no DBW rev taper exist, so neither has a"),
-    T("!control here (their page bytes are reserved; ts_ini_dead_knob_proof)."),
+    T("#2000 Hz is this ECU's factory value. Re-run ETB Characterization"),
+    T("#after changing it: the bias curve is valid only at the frequency it"),
+    T("#was measured at."),
 ])
 
 panel("hcEtbPid", "PID settings", [
-    T("#rusEFI units: %/% , %/%/s, %.s/% - or run the PID autotune below."),
+    T("#Units %/%, %/%/s and %.s/% - or let PID Autotune find them."),
     F("dbwKp"),
     F("dbwKi"),
     F("dbwKd"),
@@ -872,19 +869,19 @@ panel("hcEtbSafety", "ETB jam / deviation detection", [
     T("#latches (the output is held meanwhile). Key-on clears a latch."),
     F("dbwFaultDebounceMs"),
     F("dbwSfMode"),
-    T("#Both TPS tracks failed with DBW on: alpha-N fuels at the spring"),
-    T("#opening (the motor is off then)."),
+    T("#Both throttle tracks failed (DBW on): the motor is off and the fuel"),
+    T("#model assumes this spring opening."),
     F("dbwLimpX10"),
-    T("#rusEFI ETB rev limit: above the start the target tapers to closed."),
+    T("#Throttle rev limit: above the start the target tapers to closed."),
     F("dbwRevlimRpm"),
     F("dbwRevlimRange"),
 ])
 
 panel("hcEtbNudge", "ETB bench test", [
-    T("#rusEFI's 'Bench Test ETB'. RPM 0, TPS tracks agreeing, driver fault-free,"),
-    T("#or it refuses. Three nudges of at most 50 ms, not a stroke; it aborts"),
-    T("#on a bridge fault, on the plate leaving a compiled-in band, or on the"),
-    T("#tracks disagreeing. Watch which way the plate moves."),
+    T("#Engine stopped, throttle tracks agreeing, driver fault-free - or it"),
+    T("#refuses. Three nudges of at most 50 ms; it stops on a bridge fault,"),
+    T("#the plate leaving a fixed band, or the tracks disagreeing. Watch"),
+    T("#which way the plate moves."),
     C("cmdTestAbort", "ABORT"),
     C("cmdTestDbwA", "Throttle bridge, direction A"),
     C("cmdTestDbwB", "Throttle bridge, direction B"),
@@ -894,9 +891,8 @@ panel("hcEtbNudge", "ETB bench test", [
 ])
 
 panel("hcEtbTpsCal", "TPS calibration", [
-    T("#CLOSED goes in MIN and OPEN in MAX, in that order and NOT sorted: on"),
-    T("#a Bosch/VAG body the first track FALLS as the plate opens, so a"),
-    T("#correct calibration can have min > max. The direction is the data."),
+    T("#Closed goes in MIN and open in MAX, not sorted: on a Bosch/VAG body"),
+    T("#the first track falls as the plate opens, so min > max is correct."),
     F("pinTps1"),
     F("tps1Min"),
     F("tps1Max"),
@@ -904,21 +900,21 @@ panel("hcEtbTpsCal", "TPS calibration", [
     F("tps2Min"),
     F("tps2Max"),
     B(),
-    T("#Hold the plate at the stop and press. Both tracks together, to RAM"),
-    T("#only - the tune is then modified and unburned; Burn to keep it."),
+    T("#Hold the plate at the stop and press. Both tracks are captured"),
+    T("#together, in RAM - Burn to keep them."),
     C("cmdGrabTpsClosed", "Grab Closed Throttle"),
     C("cmdGrabTpsOpen", "Grab Fully Opened Throttle"),
     B(),
     T("#Each track reads 0 % closed and 100 % open whichever way its voltage"),
-    T("#runs, so after both Grabs the pair is SAME even on a VAG body."),
+    T("#runs, so after both Grabs the correlation is Same."),
     F("tpsCorrelation"),
     F("tpsTolX10"),
 ])
 
 panel("hcEtbAppCal", "Pedal position sensor", [
-    T("#Released goes in MIN, floored in MAX, same rule as the throttle."),
-    T("#Each Grab reads BOTH tracks at once and sets correlation SAME: a VAG"),
-    T("#pedal track 2 reading half of track 1 still gives the same 0..100 %."),
+    T("#Released goes in MIN, floored in MAX, as for the throttle. Each Grab"),
+    T("#reads both tracks and sets the correlation to Same (a VAG pedal's"),
+    T("#second track reads about half of the first)."),
     F("pinApp1"),
     F("pedal1Min"),
     F("pedal1Max"),
@@ -926,9 +922,8 @@ panel("hcEtbAppCal", "Pedal position sensor", [
     F("pedal2Min"),
     F("pedal2Max"),
     B(),
-    T("#Release the pedal COMPLETELY, then Grab Released."),
-    T("#Press the pedal FULLY and hold it, then Grab Full Pedal."),
-    T("#Both tracks together, to RAM only - Burn to keep."),
+    T("#Release the pedal completely, then Grab Released. Press it fully,"),
+    T("#hold it, then Grab Full Pedal. In RAM - Burn to keep."),
     C("cmdGrabAppRest", "Grab Released"),
     C("cmdGrabAppFull", "Grab Full Pedal"),
     B(),
@@ -945,7 +940,7 @@ panel("hcEtbAppCal", "Pedal position sensor", [
 # V97 (2026-09-30): ONE throttle workflow. The buttons live ONLY in the main
 # dialog (Advanced > Electronic Throttle Body); this is its diagnostics page
 # - the run's status, phase-by-phase values and the AutoCal settings.
-panel("hcEtbCommission", "ETB AutoCal / Diagnostics", [
+panel("hcEtbCommission", "ETB AutoCal results", [
     T("#Run it from Advanced > Electronic Throttle Body (AutoCal ETB)."),
     T("#AutoCal ETB = TPS endpoints -> PID autotune -> verify: the closed"),
     T("#loop steps 20-60-20-4-15 %; each must settle within 2 % in 350 ms,"),
@@ -1063,12 +1058,11 @@ rpanel("hcReadApp", 2, ["app1RawGauge", "app2RawGauge",
 
 # -------------------------------------------------------------------- IDLE --
 panel("hcIdleBase", "Idle settings", [
-    T("#Idle through the electronic throttle: a FLOOR under the ETB demand ="),
-    T("#the base position by coolant + a PI trim toward the target rpm by"),
-    T("#coolant, bounded by the trim authority. The loop runs only with the"),
-    T("#pedal released, after the post-start delay, and below target + band;"),
-    T("#otherwise the trim is HELD (reset only when the engine stops)."),
-    T("#Off: the ETB pedal map at 0 % pedal and the minimum ETB position alone."),
+    T("#Idle through the electronic throttle: a floor under the throttle"),
+    T("#target = base position by coolant + a PI trim toward the target rpm,"),
+    T("#limited by the trim authority. The loop runs with the pedal released,"),
+    T("#after the post-start delay, below target + band; otherwise the trim"),
+    T("#is held. Off: the pedal map at 0 % and the minimum throttle position."),
     F("idleEnable"),
     F("idleKp", None, "idleEnable == 1"),
     F("idleKi", None, "idleEnable == 1"),
@@ -1076,18 +1070,16 @@ panel("hcIdleBase", "Idle settings", [
     F("idleRpmBand", None, "idleEnable == 1"),
     F("idlePedalX10", None, "idleEnable == 1"),
     F("idleStartMs", None, "idleEnable == 1"),
-    T("#Pedal blend (rusEFI etbIdleThrottleRange): the idle opening is"),
-    T("#ADDED to the pedal map, which is compressed into what remains, so"),
-    T("#the pedal stays progressive. 0 = the larger of the two."),
+    T("#Pedal blend: the idle opening is added to the pedal map, which is"),
+    T("#compressed into what remains. 0 = the larger of the two."),
     F("etbIdleRange", None, "idleEnable == 1"),
     # V97: rusEFI "Extra Idle Features" - the dashpot
     T("#Dashpot: after a pedal release the floor carries the adder for the"),
     T("#hold time, then decays it to 0 (the trim is held meanwhile)."),
-    F("idleDashX10", "Dashpot coasting-to-idle Initial idle Adder",
-      "idleEnable == 1"),
-    F("idleDashHoldMs", "Dashpot coasting-to-idle Hold time",
+    F("idleDashX10", "Dashpot adder", "idleEnable == 1"),
+    F("idleDashHoldMs", "Dashpot hold time",
       "idleEnable == 1 && idleDashX10 > 0"),
-    F("idleDashDecayMs", "Dashpot coasting-to-idle Decay time",
+    F("idleDashDecayMs", "Dashpot decay time",
       "idleEnable == 1 && idleDashX10 > 0"),
 ])
 
@@ -1106,13 +1098,11 @@ ipanel("hcIdleState", 2, [
 ])
 
 # V97: rusEFI idleTimingPidCorrDialog, "Closed-loop Ignition idle timing"
-panel("hcIdleTiming", "Closed-loop Ignition idle timing", [
-    T("#Spark advance is added below the idle target and taken away above"),
-    T("#it while the idle throttle loop is CLOSED (not while cranking, not"),
-    T("#with the pedal pressed, not coasting). Spark answers within a cycle;"),
-    T("#the throttle needs the manifold's time. Gain is degrees per 100 rpm"),
-    T("#away from target: rusEFI's starting point is 10 (0.1 deg/rpm)."),
-    T("#Proportional only: the throttle trim already integrates the error."),
+panel("hcIdleTiming", "Closed-loop idle timing", [
+    T("#Adds advance below the idle target and removes it above, while the"),
+    T("#idle throttle loop is closed. Spark answers within a cycle, the"),
+    T("#throttle more slowly. Gain is degrees per 100 rpm of error (start at"),
+    T("#10); proportional only - the throttle trim integrates."),
     F("idleTimingEnable"),
     F("idleTimingKp", None, "idleTimingEnable == 1"),
     F("idleTimingMinX10", None, "idleTimingEnable == 1"),
@@ -1125,11 +1115,11 @@ rpanel("hcReadIdleTiming", 2, ["rpmGauge", "idleTargetRpmGauge",
 
 # ------------------------------------------------------------------- BOOST --
 panel("hcBoostBase", "Boost control options", [
-    T("#Open loop (mode 0): the base duty map (rpm x TPS) x the CLT and IAT"),
-    T("#multipliers. Closed loop (mode 1): that duty + a PID on the manifold"),
-    T("#pressure toward the target table, every 20 ms. Sent through the I/O chip"),
-    T("#to cavity 104 at the 10 ms frame quantum. ZERO below the rpm / TPS"),
-    T("#floor, at the boost cut (Setup / Limits), on a MAP fault, at key-off."),
+    T("#Open loop: the base duty table (rpm x TPS) x the CLT and IAT"),
+    T("#multipliers. Closed loop: that duty + a PID on the measured boost"),
+    T("#pressure toward the target table, every 20 ms, on cavity 104 in"),
+    T("#10 ms steps. The valve is closed below the rpm / TPS floor, at the"),
+    T("#overboost cut, on a pressure sensor fault and at key-off."),
     F("boostEnable"),
     F("boostMode", None, "boostEnable == 1"),
     F("boostMinRpm", None, "boostEnable == 1"),
@@ -1138,10 +1128,9 @@ panel("hcBoostBase", "Boost control options", [
 ])
 
 panel("hcBoostPid", "Boost PID", [
-    T("#Closed loop (boostMode 1). Gains per 20 ms step, duty 0.1 % per"),
-    T("#0.1 kPa of error. D acts on the pressure, not the error. The I term"),
-    T("#waits until the pressure is within the band BELOW target (spooling)"),
-    T("#and never integrates into a saturated output."),
+    T("#Gains per 20 ms step, duty 0.1 % per 0.1 kPa of error. D acts on the"),
+    T("#pressure. I waits until the pressure is within the band below target"),
+    T("#and never winds up into a saturated output."),
     F("boostKp", None, "boostMode == 1"),
     F("boostKi", None, "boostMode == 1"),
     F("boostKd", None, "boostMode == 1"),
@@ -1159,29 +1148,24 @@ rpanel("hcReadBoost", 2, ["boostTargetX10Gauge", "boostReqX10Gauge",
 # rusEFI outputsDialog: "Main relay output" and "Fuel Pump", each with its
 # own Test button, beside the other outputs. One dialog, not three.
 panel("hcOutMainRelay", "Main relay output", [
-    T("#The logical MAIN_RELAY. AUTO requests it whenever the ECU runs."),
-    T("#Cavity 23 is the ECU's OWN relay stage: it closes with the key in"),
-    T("#hardware and run-on (hold time below) is kept through its keep-alive"),
-    T("#input, so on 23 only AUTO is valid and no port is written"),
-    T("#(mainRelayBound = 2). The AWT base tune uses 23."),
-    T("#Any other relay-class cavity is driven by the CPU (bound = 1); 65 is"),
-    T("#a LOW-SIDE SINK: wire the coil from switched +12 V to the cavity."),
+    T("#Auto requests the main relay whenever the ECU runs. Cavity 23 is"),
+    T("#the ECU's own relay stage: it closes with the key and holds for the"),
+    T("#release delay after key-off; only Auto is valid there. Another relay"),
+    T("#cavity (65) is a low-side sink: coil from switched +12 V to the pin."),
     F("mainRelayModeCfg"),
     F("pinMainRelay"),
     F("mainRelayGraceMs"),
     F("mainRelayHoldMs"),
-    T("The bench test drives a CPU-driven cavity (65) only; on 23 it is"),
-    T("refused - the relay already follows the key."),
+    T("The test drives cavity 65 only; on 23 the relay follows the key."),
     C("cmdTestRelay", "Test Main Relay"),
     P("hcPanelRelay"),
 ])
 
 panel("hcOutFuelPump", "Fuel pump", [
-    T("#AUTO: one prime per key cycle (max 5 s), ON while the crank turns,"),
-    T("#OFF when the decoder declares a stall. No latching ON exists."),
-    T("#Cavity 65 is a LOW-SIDE SINK (measured active-LOW on the bench): relay"),
-    T("#coil from switched +12 V to cavity 65. It is open when OFF, unpowered"),
-    T("#or in reset, so no inverted mode is offered."),
+    T("#Auto: one prime per key cycle (max 5 s), on while the engine turns,"),
+    T("#off when it stalls. Cavity 65 is a low-side sink: relay coil from"),
+    T("#switched +12 V to cavity 65; it is open when off, unpowered or in"),
+    T("#reset."),
     F("fuelPumpMode"),
     F("pinFuelPump"),
     F("fuelPumpPrimeMs"),
@@ -1190,11 +1174,10 @@ panel("hcOutFuelPump", "Fuel pump", [
 ])
 
 panel("hcOutMisc", "Cam solenoid outputs", [
-    T("#Physical connector cavities, 255 = not assigned."),
     F("pinCam1Sol"),
     F("pinCam2Sol"),
     B(),
-    T("#Cam solenoid stages: three 250 Hz bursts at 50 %, engine stopped."),
+    T("#Test: three 250 Hz bursts at 50 %, engine stopped."),
     C("cmdTestAbort", "ABORT"),
     C("cmdTestVvt1", "Test cam solenoid, cavity 115"),
     C("cmdTestVvt2", "Test cam solenoid, cavity 120"),
@@ -1205,10 +1188,9 @@ panel("hcOutMisc", "Cam solenoid outputs", [
 # V98: rusEFI launch_control / shift_torque_reduction / antilag_system /
 # rotational idle. Every function OFF by default; each needs its switch
 # (cavity 86/87 when no cam uses it) or, without one, its pedal condition.
-_MS_NOTE = T("Switch inputs: the OEM switch cavities 38/39/40/55/56/57/75/76 "
-             "(wire to +12 V) or the cam inputs 86/87 (to ground, only if no "
-             "cam uses them); each dropdown entry names its polarity. Not "
-             "physically qualified.")
+_MS_NOTE = T("Switch inputs: cavities 38/39/40/55/56/57/75/76 (switch to "
+             "+12 V) or the cam inputs 86/87 (switch to ground, only when no "
+             "cam uses them); each entry names its polarity.")
 
 panel("hcMsLaunch", "Launch control", [
     T("#Standing start: held at the launch rpm by a spark cut that ramps"),
@@ -1320,26 +1302,23 @@ panel("hcCtrlIdent", "Controller", [
     F("cfgFlags"),
 ])
 
-panel("hcCtrlS5500", "S5500 correlation window", [
-    T("#The sixteen-word window into the supervision frame. Editing this"),
-    T("#field MOVES the window - an ordinary page write. The engine needs"),
-    T("#base 4: the window then IS the ASIC's analog port map (w00 CLT,"),
-    T("#w01 IAT, w08 altitude, w12/w13 CJ120 Ri). Developer use only."),
-    T("#s5500Idx = 65535 means all sixteen decode as ADDAT channels 0..15."),
+panel("hcCtrlS5500", "I/O chip analog window", [
+    T("#Developer use only. Which 16 words of the I/O chip frame the ECU"),
+    T("#reads as analog inputs. Must be 4 for normal operation (coolant,"),
+    T("#intake air, ambient pressure and wideband all depend on it)."),
+    T("#s5500Idx = 65535: all sixteen words carry their own channel."),
     F("s5500WindowBase"),
 ])
 
 panel("hcNvmTest", "Persistence test byte", [
-    T("#THE P3 TEST FIELD. An alignment pad inside the persistent page that"),
-    T("#nothing in the runtime reads - so it can be changed, burned and"),
-    T("#power-cycled without changing how the engine behaves."),
-    T("Procedure: change it, Burn, power-cycle the ECU, read it back."),
-    F("idlePad", "Persistence test byte (P3)"),
+    T("#A byte nothing in the engine reads: change it, Burn, power-cycle"),
+    T("#the ECU and read it back to check calibration storage."),
+    F("idlePad", "Persistence test byte"),
 ])
 
 panel("hcCtrlBenchValues", "Bench test parameters", [
-    T("#What the bench commands ask for. Every one is CLAMPED IN FIRMWARE"),
-    T("#afterwards - a page cannot be edited into a continuous energisation."),
+    T("#The pulse the bench tests ask for. The firmware clamps it, so no"),
+    T("#value here can energise an output continuously."),
     F("testValue"),
 ])
 
@@ -1403,7 +1382,7 @@ YELLOW = "white, black, yellow, black"
 # the status overview. NOT inside the table editors: an indicator there
 # rendered as a full-width white banner above the grid (real TunerStudio).
 ipanel("hcPanelTableAxes", 1, [
-    IND("(cfgWarnings & 1024) != 0", "VE load axis fits the load source",
+    IND("(cfgWarnings & 1024) != 0", "VE load axis fits the fuel model",
         "VE LOAD AXIS OUTSIDE 0..100 % THROTTLE", RED),
     IND("(cfgWarnings & 2048) != 0", "Ignition load axis fits",
         "IGNITION LOAD AXIS OUTSIDE 0..100 % THROTTLE", RED),
@@ -1455,10 +1434,43 @@ ipanel("hcPanelGrab", 1, [
 ])
 
 ipanel("hcPanelBaro", 1, [
-    IND("baroPlausible", "AMBIENT INPUT AT A RAIL - not a measurement",
-        "Ambient input inside its span", GREEN),
-    IND("baroWindowOk", "S5500 WINDOW MOVED - baroRaw is a different word",
-        "Ambient raw is frame word 12", GREEN),
+    IND("(tickMs & 512) != 0",
+        "{ In use: bitStringValue(hcAmbientSrcList, ambientProvenance)}",
+        "{ In use: bitStringValue(hcAmbientSrcList, ambientProvenance)}",
+        "white, black, white, black"),
+    IND("ambientFallback", "Selected source valid",
+        "FALLBACK: reference pressure in use", YELLOW),
+    IND("baroPlausible", "ONBOARD SENSOR AT A RAIL - no measurement",
+        "Onboard sensor in range", GREEN),
+    IND("baroWindowOk", "I/O CHIP WINDOW MOVED - sensor not readable",
+        "Onboard sensor readable", GREEN),
+])
+
+# What the fuel model is, in words, beside the settings that make it. The
+# three cfg* channels are expressions over the PAGE (gen_ts_ini_me711
+# DERIVED_CH, Speeduino's `strokeMultipler = { twoStroke == 1 ? 1 : 2 }`);
+# the clock is the repaint trigger (the hcEtbCharacterizeDiagnosis idiom).
+ipanel("hcPanelLoadSummary", 1, [
+    IND("(tickMs & 512) != 0", label, label, "white, black, white, black")
+    for label in (
+        "{ Fuel model: bitStringValue(hcFuelModelList, cfgFuelModel)}",
+        "{ VE table axis: bitStringValue(hcLoadAxisList, cfgVeAxisKind)}",
+        "{ Air density from: bitStringValue(hcDensityList, cfgDensityKind)}",
+    )
+])
+
+ipanel("hcPanelLoadState", 1, [
+    IND("cfgValidation != 0 && cfgFirstBadSlot < 1024",
+        "Configuration accepted",
+        "{ REFUSED: bitStringValue(hcCfgFieldList, cfgFirstBadSlot)}", RED),
+    IND("(loadFlags & 1) != 0", "Fuel model settings consistent",
+        "FUEL MODEL SETTINGS INVALID - fuel cut", RED),
+    IND("(loadFlags & 2) != 0", "Fuel model pressure valid",
+        "PRESSURE READING LOST", RED),
+    IND("ambientFallback", "Ambient source valid",
+        "AMBIENT: REFERENCE FALLBACK", YELLOW),
+    IND("iatDensityFallback", "Intake temperature used",
+        "INTAKE TEMPERATURE: FALLBACK", YELLOW),
 ])
 
 ipanel("hcPanelSensors", 2, None)          # filled from SENSOR_BITS
@@ -1520,8 +1532,8 @@ ipanel("hcPanelBenchState", 1, [
 ])
 
 ipanel("hcPanelPlatform", 2, [
-    IND("asicRunning", "ASIC NOT RUNNING", "ASIC running", GREEN),
-    IND("asicError", "ASIC OK", "ASIC ERROR", RED),
+    IND("asicRunning", "I/O CHIP NOT RUNNING", "I/O chip running", GREEN),
+    IND("asicError", "I/O chip OK", "I/O CHIP ERROR", RED),
     IND("tickRunning", "TICK STOPPED", "Tick running", GREEN),
     IND("rxTickRunning", "RX TICK STOPPED", "RX tick running", GREEN),
     IND("wdtFed", "WATCHDOG NOT FED", "Watchdog fed", GREEN),
@@ -1529,7 +1541,8 @@ ipanel("hcPanelPlatform", 2, [
     IND("ramBadBit", "RAM OK", "RAM FAULT", RED),
     IND("rxLoss", "Serial OK", "SERIAL LOSS", RED),
     IND("setupFault", "Setup OK", "SETUP FAULT", RED),
-    IND("baroWindowOk", "BARO WINDOW MOVED", "Baro window at word 12", YELLOW),
+    IND("baroWindowOk", "I/O CHIP WINDOW MOVED", "I/O chip window at word 4",
+        YELLOW),
     IND("mainRelayWindowOk", "RELAY WINDOW MOVED",
         "Relay window at word 11", YELLOW),
 ])
@@ -1579,9 +1592,10 @@ dialog("hcSetupEngine", "Base engine", [
 
 columns("hcSetupLimitsCols",
         ["hcLimitsRev", "hcLimitsProtect"],
-        "hcLimitsBoost")
+        ["hcLimitsBoost", "hcProtPressure"],
+        "hcProtLean")
 
-dialog("hcSetupLimits", "Limits and fallbacks", [
+dialog("hcSetupLimits", "Limits and protection", [
     P("hcSetupLimitsCols"),
 ])
 
@@ -1607,10 +1621,10 @@ dialog("hcSensorBatteryDlg", "Battery", [
 ], layout="border")
 
 # V97: rusEFI malfunctionDialog "Check Engine Settings": output, test button
-panel("hcOutCel", "Check Engine Settings", [
-    T("#Cavity 47: a low-side stage - lamp from switched +12 V"),
-    T("#to the cavity. At key-on: ON for the test time, OFF for the gap, then"),
-    T("#the trouble codes' MIL request (a stored fault reads ON-OFF-ON)."),
+panel("hcOutCel", "Check engine lamp", [
+    T("#Cavity 47 is a low-side stage: lamp from switched +12 V to the pin."),
+    T("#At key-on: on for the test time, off for the gap, then it shows the"),
+    T("#trouble codes (a stored fault reads on-off-on)."),
     F("celEnable"),
     F("pinMil", None, "celEnable == 1"),
     F("celTestEnable", None, "celEnable == 1"),
@@ -1721,13 +1735,13 @@ panel("hcCranking", "Cranking settings", [
     T("0 = the Ignition / Dwell curve (dwell vs battery) decides - NOT zero"),
     T("dwell. Any other value replaces the curve while cranking."),
     B(),
-    T("#Fuel: MASS per cylinder per cycle against coolant (curve), through"),
-    T("#the injector model like running fuel (rusEFI cranking base fuel)."),
-    T("#A failed coolant sensor uses the 20 C point."),
+    T("#Fuel: mass per cylinder per cycle against coolant (curve), through"),
+    T("#the injector model like running fuel. A failed coolant sensor uses"),
+    T("#the 20 C point."),
     B(),
     T("#Priming: one pulse on every injector at key-on, engine stopped,"),
-    T("#after the delay (rusEFI). Mass against coolant (curve); 0 = none."),
-    T("#Repeated key-ons without a start prime less (flooding guard)."),
+    T("#after the delay. Mass against coolant (curve); 0 = none. Repeated"),
+    T("#key-ons without a start prime less (flooding guard)."),
     F("primeDelay"),
 ])
 
@@ -1768,12 +1782,12 @@ dialog("hcSensorIatDlg", "IAT sensor", [
     P("hcReadIat", "East"),
 ], layout="border", help_topic="hcHelpThermistor")
 
-dialog("hcSensorMapDlg", "Pressure input (AWT: charge)", [
+dialog("hcSensorMapDlg", "Pressure sensor (MAP / charge pressure)", [
     P("hcSensorMap", "West"),
     P("hcReadMap", "East"),
 ], layout="border", help_topic="hcHelpPressure")
 
-dialog("hcSensorBaroDlg", "Baro sensor", [
+dialog("hcSensorBaroDlg", "Ambient pressure", [
     P("hcSensorBaroLeft", "West"),
     P("hcReadBaro", "East"),
 ], layout="border", help_topic="hcHelpBaro")
@@ -1783,7 +1797,7 @@ panel("hcSensorBaroLeft", "", [
     P("hcPanelBaro"),
 ])
 
-dialog("hcSensorMiscDlg", "Aux analog inputs", [
+dialog("hcSensorMiscDlg", "Mass air flow input", [
     P("hcSensorMisc"),
 ], help_topic="hcHelpRouting")
 
@@ -1803,21 +1817,21 @@ ipanel("hcPanelTpsDiag", 1, [
 ])
 
 panel("hcEtbTpsDiag", "TPS", [
-    T("#Read-only. Pins, endpoints and AutoCal are in"),
+    T("#Live values only. Pins, endpoints and AutoCal are in"),
     T("#Advanced > Electronic Throttle Body."),
     P("hcPanelTpsDiag"),
     P("hcReadTps"),
 ])
 
-dialog("hcEtbTpsCalDlg", "TPS (diagnostics)", [
+dialog("hcEtbTpsCalDlg", "Throttle position sensor", [
     P("hcEtbTpsDiag"),
 ], help_topic="hcHelpTpsCal")
 
-panel("hcEtbCharacterizeControls", "ETB / Diagnostics", [
-    T("!ENGINE OFF ONLY. Keep clear of the throttle; no pedal is needed."),
-    T("2-90% holds and ramps, driver-demand slams/ramps through the pedal map,"),
-    T("then break-away edges at 5-80%: the friction band and its midpoint."),
-    T("Characterization leaves calibration/PID unchanged. Every exit leaves bridge OFF."),
+panel("hcEtbCharacterizeControls", "ETB characterization", [
+    T("!Engine off only. Keep clear of the throttle; no pedal is needed."),
+    T("Holds and ramps from 2 to 90 %, pedal-map slams and ramps, then"),
+    T("break-away tests at 5..80 %: the friction band and its midpoint."),
+    T("It changes no calibration; every exit switches the bridge off."),
     C("cmdEtbCharacterize", "Run ETB Characterization"),
     C("cmdEtbAutoCalAbort", "Abort"),
     C("cmdEtbSaveBias", "Save Measured Bias / Feedforward", "sweepBiasState == 1 && etbCalResult == 7"),
@@ -1832,10 +1846,10 @@ panel("hcEtbCharacterizeControls", "ETB / Diagnostics", [
     IND("(sweepFindings & 128) != 0", "Rate limit: not observed", "TARGET RATE LIMIT active during pedal slam"),
     IND("(sweepFindings & 256) != 0", "-", "INCONCLUSIVE: inspect traces / analyze log"),
     IND("etbCalResult == 7 && sweepFindings == 0", "-", "GOOD within this profile; inspect traces"),
-    T("Voltage compensation: NOT JUDGED FROM SINGLE RUN."),
-    T("Save a data log for per-segment metrics and comparison at other voltages."),
-    T("Save changes RAM only. Review the proposal and Burn explicitly. PID, TPS and VBAT remain unchanged."),
-    T("After Save, rerun immediately; compare holding integral, error, saturation and motion traces."),
+    T("Battery compensation is not judged from a single run: log runs at"),
+    T("other voltages to compare. Save writes the measured bias curve to"),
+    T("RAM only (PID, TPS and battery settings unchanged) - review, rerun"),
+    T("and compare, then Burn."),
     P("hcEtbBiasCompare"),
     P("hcEtbFrictionBand"),
 ])
@@ -1882,12 +1896,12 @@ panel("hcEtbCharacterizeMotion", "", [LG("hcEtbSweepMotion", "ETB motion and sig
     ["sweepRequested", "sweepTarget", "sweepActual", "sweepMotor"] )])
 panel("hcEtbCharacterizeTerms", "", [LG("hcEtbSweepTerms", "ETB controller contributions", "South",
     ["sweepP", "sweepI", "sweepD", "sweepFf", "battDv"] )])
-dialog("hcEtbCharacterizeDlg", "ETB / Diagnostics / Characterization", [
+dialog("hcEtbCharacterizeDlg", "ETB characterization", [
     P("hcEtbCharacterizeControls", "West"), P("hcEtbCharacterizeResults", "East"),
     P("hcEtbCharacterizeMotion", "South"), P("hcEtbCharacterizeTerms", "Center"),
 ], layout="border")
 
-dialog("hcEtbCommissionDlg", "ETB AutoCal / Diagnostics", [
+dialog("hcEtbCommissionDlg", "ETB AutoCal results", [
     P("hcEtbCommission", "West"),
     P("hcEtbCommissionRight", "East"),
 ], layout="border", help_topic="hcHelpEtbCommission")
@@ -1936,7 +1950,7 @@ dialog("hcBoostDlg", "Boost control options", [
 columns("hcMotorsportCols", ["hcMsLaunch", "hcMsFlat"],
         ["hcMsAls"], ["hcMsPit", "hcMotorsport"])
 
-dialog("hcMotorsportDlg", "Launch, flat shift, anti-lag", [
+dialog("hcMotorsportDlg", "Launch, flat shift, anti-lag, pit limiter", [
     P("hcMotorsportCols"),
 ])
 
@@ -2019,7 +2033,7 @@ panel("hcKnockRight", "", [
     T("#Per cylinder: level (KI / reference), retard, reference, knocks"),
     P("hcReadKnockCyl"),
 ])
-dialog("hcKnockDlg", "Knock Control", [
+dialog("hcKnockDlg", "Knock control", [
     P("hcKnockLeft", "West"),
     P("knockKefCurve", "Center"),
     P("hcKnockRight", "East"),
@@ -2029,9 +2043,9 @@ dialog("hcKnockDlg", "Knock Control", [
 # rusEFI Advanced: "VVT outputs and PID" (vvtPidDialog: Configuration West,
 # the PIDs Center) and "VVT intake / exhaust target" (table + status).
 panel("hcVvtConfig", "Configuration", [
-    T("!Closed loop needs camPhaseMode PATTERN on that cam input: it closes"),
-    T("!on the pattern core's measured tooth-0 position. On/off: the target"),
-    T("!table's sign switches the solenoid. Faults drop the duty to 0."),
+    T("#Closed loop needs the Pattern cam phase method on that cam input"),
+    T("#(Setup > Trigger). On/off: a positive target switches the solenoid."),
+    T("#A fault drops the duty to 0 (the phaser's rest position)."),
     E("vvtMode"),
     F("pinCam1Sol", None, "vvtMode1 > 0"),
     F("pinCam2Sol", None, "vvtMode2 > 0"),
@@ -2075,7 +2089,7 @@ panel("hcVvtRight", "", [
     P("hcPanelVvt"),
     P("hcReadVvt"),
 ])
-dialog("hcVvtDlg", "VVT Configuration & PID", [
+dialog("hcVvtDlg", "VVT outputs and PID", [
     P("hcVvtConfig", "West"),
     P("hcVvtPid", "Center"),
     P("hcVvtRight", "East"),
@@ -2084,7 +2098,7 @@ dialog("hcVvtDlg", "VVT Configuration & PID", [
 # ------------------------------------------------------------------ IDLE ---
 dialog("hcIdleDlg", "Idle settings",
        [P("hcIdleBase"), P("hcReadIdle"), P("hcIdleState")], layout="xAxis")
-dialog("hcIdleTimingDlg", "Closed-loop Ignition idle timing",
+dialog("hcIdleTimingDlg", "Closed-loop idle timing",
        [P("hcIdleTiming"), P("hcReadIdleTiming")], layout="xAxis")
 
 # ------------------------------------------------------------ CONTROLLER ---
@@ -2095,17 +2109,14 @@ dialog("hcBaseTunes", "Base Tunes", [
 ])
 
 dialog("hcCtrlDlg", "Controller and identity", [P("hcCtrlIdent")])
-dialog("hcCtrlS5500Dlg", "S5500 correlation window", [
+dialog("hcCtrlS5500Dlg", "I/O chip analog window", [
     P("hcCtrlS5500"),
 ])
 
 panel("hcUnusedInfo", "", [
-    T("#Page fields no linked module reads, taken out of the live dialogs so"),
-    T("#those show only what the engine uses. Editing one changes nothing."),
-    T("#They keep their page bytes, so layout and signature do not move."),
-    T("#tests/tunerstudio/me711_page_reader_audit.py checks this list against the image."),
-    T("Implemented features that are not yet physically qualified keep"),
-    T("their own menus and say so there."),
+    T("#Settings stored in the calibration that this firmware does not use."),
+    T("#Editing one changes nothing; they are kept so stored calibrations"),
+    T("#stay compatible."),
 ])
 
 # Three columns, not five: explanation + engine | fuel | ignition + channels.
@@ -2154,8 +2165,8 @@ dialog("hcWhyNoSync", "Why is there no sync?", [
 ])
 
 dialog("hcWhyFuelCut", "Why is fuel cut?", [
-    T("#Two different things can stop fuel: a CUT decided by the engine"),
-    T("#model, and an INHIBIT that stops every output at once."),
+    T("#Two things stop fuel: a cut decided by the engine model, and an"),
+    T("#inhibit that stops every output at once."),
     P("hcPanelFuelCut"),
     P("hcPanelInhibits"),
     P("hcReadFuel"),
@@ -2166,14 +2177,13 @@ dialog("hcWhyFuelCut", "Why is fuel cut?", [
 # V85 measured spark permitted under crank sync - the text was the opposite of
 # the truth, on the dialog a person opens when deciding whether a coil is live.
 columns("hcWhyNoSparkCols",
-        [T("#Coils ARE driven by the engine runtime - there is no user arm."),
-         T("#Spark needs crank position (crank sync), a valid page and the"),
-         T("#supervision link; each inhibit below stops it on its own."),
-         T("#Then the map, dwell and timing mode decide what is commanded."),
+        [T("#Spark runs automatically - there is no arming switch. It needs"),
+         T("#crank sync, a valid configuration and the I/O chip link; each"),
+         T("#inhibit below stops it on its own. The table, dwell and timing"),
+         T("#mode then decide what is commanded."),
          B(),
-         T("!Coil outputs are NOT physically qualified yet: the first spark on"),
-         T("!a new installation is a first-actuation test (Controller / Bench"),
-         T("!test, one coil at a time, engine stopped)."),
+         T("!On a new installation test each coil first (Controller > Bench"),
+         T("!test, one at a time, engine stopped)."),
          B(),
          P("hcPanelInhibits")],
         ["hcPanelTrigger", "hcReadSpark"])
@@ -2251,10 +2261,10 @@ dialog("hcWhyThrottle", "Why is the throttle disabled?", [
 # rusEFI's fuel_computer / ignition_state dialogs: the WORKING, in the order
 # the firmware computes it.
 dialog("hcFuelComputer", "Fuel computer", [
-    T("#The chain, in the order the firmware computes it: fuel load (MAP,"),
-    T("#or throttle under alpha-N) + charge temperature -> air density ->"),
-    T("#VE -> air mass -> target lambda -> fuel mass -> corrections (warm-"),
-    T("#up, closed loop, wall film) -> opening time + dead time."),
+    T("#In calculation order: VE table (rpm x VE axis) and air density"),
+    T("#(pressure, temperature) -> air mass -> target lambda -> fuel mass"),
+    T("#-> corrections (warm-up, closed loop, wall film) -> opening time"),
+    T("#+ dead time."),
     P("hcReadFuel"),
     P("hcPanelFuelCut"),
 ])
@@ -2268,30 +2278,30 @@ dialog("hcSparkState", "Ignition state", [
 # menu path of every step - and the three things this firmware does NOT do
 # that a first start must not assume.
 panel("hcHelpSteps", "Setup order", [
-    T("#1  Controller / Base Tunes: choose the engine, APPLY (engine stopped),"),
+    T("#1  Controller > Base Tunes: choose the engine, APPLY (engine stopped),"),
     T("#   review, Burn, then cycle the key."),
-    T("#2  Advanced / Electronic Throttle Body: AutoCal ETB. Sensors / Pedal"),
-    T("#   position sensor: Grab both ends, check the two"),
-    T("#   tracks agree while moving, Burn."),
-    T("#3  Sensors: CLT, IAT, MAP, Baro, Battery read plausibly"),
-    T("#   (Diagnostics / Why? / Which sensor failed?)."),
-    T("#4  Setup / Trigger: crank - crank sync must come and stay"),
-    T("#   (Diagnostics / Why? / Why is there no sync?)."),
-    T("#5  Controller / Bench test, engine stopped, ONE channel at a time:"),
-    T("#   fuel pump, each injector, each coil, the throttle nudge."),
-    T("#6  Advanced / Electronic Throttle Body: enable only after 2 and 5."),
-    T("#7  Ignition / Ignition hardware: FIXED timing, check with a timing"),
-    T("#   light, correct the Trigger angle in Setup / Trigger, back to DYNAMIC."),
+    T("#2  Fuel > Fuel model: check the model and where the pressure sensor"),
+    T("#   measures."),
+    T("#3  Advanced > Electronic Throttle Body: AutoCal ETB. Sensors > Pedal"),
+    T("#   position sensor: Grab both ends; the two tracks must agree. Burn."),
+    T("#4  Sensors: coolant, intake air, pressure, ambient and battery read"),
+    T("#   plausibly (Diagnostics > Why? > Which sensor failed?)."),
+    T("#5  Setup > Trigger: crank - sync must come and stay"),
+    T("#   (Diagnostics > Why? > Why is there no sync?)."),
+    T("#6  Controller > Bench test, engine stopped, one channel at a time:"),
+    T("#   fuel pump, each injector, each coil, the throttle."),
+    T("#7  Advanced > Electronic Throttle Body: enable only after 3 and 6."),
+    T("#8  Ignition > Ignition hardware: fixed timing, check with a timing"),
+    T("#   light, correct the trigger angle (Setup > Trigger), back to dynamic."),
     B(),
-    T("#BURN: works with the engine stopped or cranking. Above about 500 rpm"),
-    T("#it is refused (Diagnostics / Calibration storage says why) and the"),
-    T("#edits stay live in RAM - stop the engine and Burn again."),
+    T("#Burn works with the engine stopped or cranking; the connection pauses"),
+    T("#for a few seconds and resumes. Above about 500 rpm it is refused and"),
+    T("#the edits stay live - stop the engine and Burn again."),
     B(),
-    T("!NOT IN THIS FIRMWARE: oil-pressure protection (no oil input),"),
-    T("!long-term fuel trim, MAF fuelling. Fields no module reads live in"),
-    T("!Controller / Unused settings. Rev limiter, idle control, closed-loop"),
-    T("!lambda and boost, launch / flat shift / anti-lag are implemented but"),
-    T("!NOT physically qualified - qualify each before relying on it."),
+    T("!Not in this firmware: oil-pressure protection, long-term fuel trim,"),
+    T("!MAF-based fuelling. Implemented but not yet vehicle-qualified: rev"),
+    T("!limiter, idle control, closed-loop lambda, boost control, knock, VVT,"),
+    T("!launch / flat shift / anti-lag and lean protection."),
 ])
 
 dialog("hcHelpInfo", "HaniCore - setup order", [
@@ -2322,62 +2332,75 @@ dialog("hcHelpInfo", "HaniCore - setup order", [
 SEP = ("SEP", None)
 NOT_USED = " (not used)"
 
-panel("hcLoadPolicyPanel", "Fuel model and density", [
-    T("#Legacy preserves V101 CAL_LOAD_SOURCE, including its fault estimate."),
-    T("#Pure Alpha-N: TPS x RPM; reference density; optional qualified ambient and IAT."),
-    T("#Manifold SD: manifold MAP x RPM; measured manifold density once."),
-    T("#Charge Alpha-N: TPS x RPM; continuous upstream density or BARO-relative blend."),
-    T("#AWT cavity 101 is CHARGE PRESSURE before the throttle. It is not manifold MAP."),
-    T("#Changing the model does not convert VE axes or retune table cells."),
-    F("fuelModel"),F("pressureRole"),F("densityPolicy",None,"fuelModel != 0"),
-    F("densityReference"),F("ambientCorrection",None,"fuelModel == 1"),F("fuelUseIat",None,"fuelModel != 0"),
-    F("chargeBlendStart",None,"fuelModel == 3 && densityPolicy == 2"),
-    F("chargeBlendFull",None,"fuelModel == 3 && densityPolicy == 2"),
-    T("#Gauge = max(charge-BARO,0). w = clamp((gauge-start)/(full-start),0..1)."),
-    T("#P effective = BARO + gauge x w. rho=P effective/(R x T); air=rho x volume x VE."),
-    T("#Fuel=air/(stoich x lambda). The displayed ratio is diagnostic: no second multiplier."),
+# THE FUEL MODEL: one dialog that owns every setting deciding how air is
+# estimated - the model, the legacy variant, where the pressure sensor
+# measures, which pressure the air density uses, and the table loads - with
+# what is configured and what runs, in words, beside it. Theory and formulas
+# live in docs/ARCHITECTURE.md, not here.
+panel("hcLoadPolicyPanel", "Fuel model", [
+    T("#Air per cylinder = air density x cylinder volume x VE, with the VE"),
+    T("#table looked up on rpm and the VE table axis."),
+    F("fuelModel"),
+    F("loadSource", None, "fuelModel == 0"),
+    F("alphaNUseIat", None, "fuelModel == 0 && loadSource == 2"),
+    B(),
+    T("#Pressure sensor and air density"),
+    F("pressureRole"),
+    F("densityPolicy", None, "fuelModel != 0"),
+    F("densityReference", None, "fuelModel != 0"),
+    F("ambientCorrection", None, "fuelModel == 1"),
+    F("fuelUseIat", None, "fuelModel != 0"),
+    F("chargeBlendStart", None, "fuelModel == 3 && densityPolicy == 2"),
+    F("chargeBlendFull", None, "fuelModel == 3 && densityPolicy == 2"),
+    B(),
+    T("#Ignition and target lambda table loads"),
+    F("ignLoadMode"),
+    F("lambdaLoadMode"),
+    P("hcPanelTableAxes"),
 ])
-panel("hcLoadAmbientPanel", "Ambient provenance", [
-    F("ambientSource"),F("ambientMaxAge"),F("pressureMaxAge"),
-    T("#Fixed fallback uses densityReference; it is not a measured ambient pressure."),
-    T("#Stopped capture needs a valid physical pressure role, 1 s fully stopped,"),
-    T("#and 50..120 kPa. Its lease expires; running charge pressure is never captured."),
-    T("#A dedicated barometric sensor transfer is not implemented yet."),
-    T("#It falls back explicitly. No guessed barometric transfer can change fueling."),
+
+rpanel("hcReadLoadModel", 2, ["veValueGauge", "veAxisInputGauge",
+                              "densityPressureGauge", "densityTemperatureGauge",
+                              "ambientUsedGauge", "pressureMeasuredGauge",
+                              "airMgX10Gauge", "baseFuelMassGauge"])
+
+panel("hcLoadModelInfo", "", [
+    P("hcPanelLoadSummary"),
+    P("hcPanelLoadState"),
+    T("#Pure Alpha-N: VE by throttle; density from the reference pressure,"),
+    T("#  optionally corrected for ambient. No pressure sensor needed."),
+    T("#Speed density: VE by manifold pressure; density from the same"),
+    T("#  measured manifold pressure. Needs a manifold (MAP) sensor."),
+    T("#Boosted Alpha-N: VE by throttle; density from the charge pressure"),
+    T("#  before the throttle - measured, or ambient + boost blend. For"),
+    T("#  engines whose only sensor is before the throttle (VAG 1.8T AWT)."),
+    T("#Legacy compatibility: HaniCore's original models, kept so existing"),
+    T("#  calibrations run unchanged; pick the variant in Legacy load model."),
+    T("!Changing the model does not rescale the VE table - retune it."),
+    P("hcReadLoadModel"),
 ])
-panel("hcLoadProtectionPanel", "Fuel protection", [
-    T("#New pressure-dependent models cut fuel on lost authoritative pressure under load."),
-    F("pressureGuardEnable"),F("pressureGuardRpm"),F("pressureGuardTps"),
-    T("#Legacy guard is optional. Boost valve authority is inhibited on pressure loss in all modes."),
-    F("leanGuardEnable"),F("lambdaPhysicalQualified"),F("leanGuardRpm"),F("leanGuardTps"),
-    F("leanGuardCharge"),F("leanGuardDeviation"),F("leanGuardPersist"),F("leanGuardRecovery"),
-    T("#Lean guard is disabled by default. Enable only after physical lambda commissioning."),
-    T("#Cold, stale, faulted or unqualified lambda cannot trigger or release the guard."),
-    T("#Recovery requires unloaded valid lambda at or richer than target for the recovery time."),
-    T("#Never commission by deliberately making the engine lean; inject simulated signals."),
-])
-dialog("hcLoadPolicies", "Fuel model, pressure role and density",[P("hcLoadPolicyPanel")])
-dialog("hcLoadAmbient", "Ambient source and freshness",[P("hcLoadAmbientPanel")])
-dialog("hcLoadProtection", "Pressure loss and lean protection",[P("hcLoadProtectionPanel")])
+
+dialog("hcLoadPolicies", "Fuel model", [
+    P("hcLoadPolicyPanel", "West"),
+    P("hcLoadModelInfo", "East"),
+], layout="border", help_topic="hcHelpPressure")
 
 MENU = [
     ("&Setup", [
         ("hcSetupEngine", "Base engine"),
-        ("hcSetupLimits", "Limits and fallbacks"),
         ("hcSetupTrigger", "Trigger"),
         SEP,
         ("hcSensorBatteryDlg", "Battery"),
-        SEP,
         ("hcSetupOutputs", "Outputs"),
+        SEP,
+        ("hcSetupLimits", "Limits and protection"),
     ]),
 
     ("&Fuel", [
-        ("hcLoadPolicies", "Fuel model, pressure role and density"),
-        ("hcLoadAmbient", "Ambient source and freshness"),
-        ("hcLoadProtection", "Pressure loss and lean protection"),
+        ("hcLoadPolicies", "Fuel model"),
         ("veTableTblEdit", "VE"),
         ("veTableTbl3D", "VE 3D view"),
-        ("GROUP", "Injector Setup", [
+        ("GROUP", "Injector setup", [
             ("hcFuelInjector", "Injection configuration"),
             ("hcFuelInjHw", "Injection hardware"),
         ]),
@@ -2385,18 +2408,19 @@ MENU = [
         ("afrMapTblEdit", "Target lambda"),
         ("afrMapTbl3D", "Target lambda 3D view"),
         ("hcStftDlg", "Closed loop fuel correction"),
+        SEP,
         ("cltEnrCurve", "Warmup enrichment"),
+        # rusEFI: groupMenu "TPS Acceleration Enrichment / Wall Wetting AE"
+        ("GROUP", "Acceleration enrichment", [
+            ("hcFuelTransient", "Wall wetting (transient fuel)"),
+            ("hcFuelCorrections", "TPS acceleration enrichment"),
+        ]),
         ("hcFuelDfco", "Deceleration fuel cutoff (DFCO)"),
         ("injPhaseTblEdit", "Injection timing"),
         ("injPhaseTbl3D", "Injection timing 3D view"),
+        SEP,
         ("mapEstimateTblEdit", "Pressure estimate (sensor fault)"),
         ("mapEstimateTbl3D", "Pressure estimate 3D view"),
-        SEP,
-        # rusEFI: groupMenu "TPS Acceleration Enrichment / Wall Wetting AE"
-        ("GROUP", "Acceleration Enrichment / Wall Wetting AE", [
-            ("hcFuelTransient", "Wall wetting AE (transient fuel)"),
-            ("hcFuelCorrections", "TPS acceleration enrichment"),
-        ]),
     ]),
 
     ("&Ignition", [
@@ -2408,7 +2432,7 @@ MENU = [
         SEP,
         ("hcIgnitionHw", "Ignition hardware"),
         SEP,
-        ("hcKnockDlg", "Knock Control"),
+        ("hcKnockDlg", "Knock control"),
     ]),
 
     ("&Cranking", [
@@ -2421,7 +2445,7 @@ MENU = [
         ("idleTargetCurve", "Idle target RPM from CLT"),
         ("idleBaseCurve", "Idle position from CLT"),
         SEP,
-        ("hcIdleTimingDlg", "Closed-loop Ignition idle timing"),
+        ("hcIdleTimingDlg", "Closed-loop idle timing"),
     ]),
 
     ("&Advanced", [
@@ -2433,7 +2457,7 @@ MENU = [
         ("vvtTarget2TblEdit", "VVT cam 2 (exhaust) target"),
         ("vvtTarget2Tbl3D", "VVT cam 2 target 3D"),
         SEP,
-        ("GROUP", "Boost Control", [
+        ("GROUP", "Boost control", [
             ("hcBoostDlg", "Boost control options"),
             ("boostDutyTblEdit", "Boost control open loop base duty"),
             ("boostDutyTbl3D", "Boost control open loop base duty 3D"),
@@ -2447,23 +2471,23 @@ MENU = [
         ("dbwBiasCurve", "ETB bias curve (feed forward)"),
         ("pedalMapTblEdit", "ETB pedal target"),
         ("pedalMapTbl3D", "ETB pedal target 3D view"),
-        ("hcEtbCommissionDlg", "ETB AutoCal / Diagnostics"),
-        ("hcEtbCharacterizeDlg", "ETB / Diagnostics / Characterization"),
+        ("hcEtbCommissionDlg", "ETB AutoCal results"),
+        ("hcEtbCharacterizeDlg", "ETB characterization"),
     ]),
 
     ("&Sensors", [
         ("hcSensorCltDlg", "CLT sensor"),
         ("hcSensorIatDlg", "IAT sensor"),
         SEP,
-        ("hcEtbTpsCalDlg", "TPS (diagnostics)"),
+        ("hcEtbTpsCalDlg", "TPS"),
         ("hcEtbAppCalDlg", "Pedal position sensor"),
         SEP,
-        ("hcSensorMapDlg", "Pressure input (AWT: charge)"),
-        ("hcSensorBaroDlg", "Baro sensor"),
+        ("hcSensorMapDlg", "MAP / charge pressure sensor"),
+        ("hcSensorBaroDlg", "Baro sensor (onboard)"),
         SEP,
         ("hcSensorLambdaDlg", "Wideband O2 sensors"),
         SEP,
-        ("hcSensorMiscDlg", "Aux analog inputs"),
+        ("hcSensorMiscDlg", "MAF input"),
     ]),
 ]
 
@@ -2482,6 +2506,11 @@ MENU = [
 # ==========================================================================
 NOT_SHOWN = {
     "v102Pad": "alignment only",
+    # Seeds the ambient value for the first main-loop pass after power-up;
+    # from then on the Ambient pressure source decides (hcload711.c). Not a
+    # setting a tuner should meet.
+    "baroDefault": "power-up seed only - Sensors > Baro sensor (onboard) "
+                   "chooses the ambient source",
     "transPad": "alignment byte after transEnable",
     "idleTimingPad": "alignment byte after idleTimingEnable",
     "seqPad": "alignment byte after injTimingMode",
@@ -2876,7 +2905,7 @@ FRONT_INDICATORS = [
     ("nvmOnDefaults", "TUNE LOADED", "DEFAULT TUNE", RED),
     ("cltError", "CLT OK", "CLT FAULT", RED),
     ("iatError", "IAT OK", "IAT FAULT", RED),
-    ("mapError", "MAP OK", "MAP FAULT", RED),
+    ("mapError", "PRESSURE OK", "PRESSURE FAULT", RED),
     ("vbatError", "BATT OK", "BATT FAULT", RED),
     ("tps1Error", "TPS1 OK", "TPS1 FAULT", RED),
     ("tps2Error", "TPS2 OK", "TPS2 FAULT", RED),

@@ -79,10 +79,8 @@ Two rules hold this together:
 
 ## Engine model
 
-* **Load**: speed density (VE by rpm × MAP), alpha-N scaled by inlet pressure
-  (for engines whose pressure sensor sits before the throttle), or pure
-  alpha-N. Air mass → target lambda → fuel mass → injector flow and dead time
-  → pulse width.
+* **Load**: one of four fuel models (below). Air mass → target lambda → fuel
+  mass → injector flow and dead time → pulse width.
 * **Fuel**: VE and target-lambda tables, warm-up, after-start, X-tau wall
   film, cranking fuel as mass, priming, DFCO, closed-loop short-term trim
   (only while the wideband reports a valid, moving signal).
@@ -96,7 +94,71 @@ Two rules hold this together:
   each consumer applies its own documented fallback.
 * **Limits**: rev limiter (fuel, spark or both, soft limit), coolant and
   throttle-fault protection, injector duty cut, overboost fuel cut, flood
-  clear.
+  clear, pressure-loss and lean protection.
+
+### Fuel model
+
+The air in each cylinder is
+
+    air = density × (displacement / cylinders) × VE(rpm, VE axis)
+    density = p_density / (R_air × T)
+    fuel = air / (stoichiometric ratio × target lambda)
+
+Three things are chosen separately, and the TunerStudio project names each
+one (*Fuel → Fuel model*):
+
+* the **VE table axis** — what the VE table is looked up on;
+* the **air-density pressure** `p_density` — which pressure enters the
+  density, exactly once (there is no second pressure multiplier);
+* the **pressure sensor location** — where the one external pressure sensor
+  physically measures: manifold (after the throttle) or charge pressure
+  (before the throttle).
+
+| fuel model | VE table axis | air-density pressure | needs |
+|---|---|---|---|
+| Pure Alpha-N | throttle position | reference pressure, optionally corrected by ambient | no pressure sensor |
+| Speed density | manifold pressure | the same measured manifold pressure | a manifold sensor |
+| Boosted Alpha-N | throttle position | measured charge pressure, or ambient + boost blend | a charge-pressure sensor |
+| Legacy compatibility | per legacy variant | per legacy variant | — |
+
+*Ambient + boost blend*: `gauge = max(p_charge − p_ambient, 0)`,
+`w = clamp((gauge − start) / (full − start), 0, 1)`,
+`p_density = p_ambient + gauge × w` — ambient density off boost, the measured
+charge pressure fully above `full`.
+
+*Legacy compatibility* keeps HaniCore's original three load strategies
+byte-for-byte for existing calibrations: speed density (MAP axis, measured
+pressure), alpha-N + measured pressure (throttle axis, the measured pressure —
+the AWT base tune), and pure alpha-N (throttle axis, 101.3 kPa). A failed
+pressure sensor fuels from the pressure estimate table (rpm × throttle).
+
+The configuration is refused when the location does not fit the model (Speed
+density needs a manifold sensor, Boosted Alpha-N a charge-pressure sensor).
+Changing the model never rescales the VE table: a VE table is an effective
+filling model on its own axis and density basis, so it is retuned, not
+converted.
+
+The ignition and target-lambda tables have their own load selector: the fuel
+load, the pressure sensor, the throttle or the cylinder filling. On a VAG
+1.8T (AWT), "pressure sensor" is charge pressure, not manifold load.
+
+**Ambient pressure** is used only by Pure Alpha-N's ambient correction and by
+the Boosted Alpha-N blend. Sources: the ECU's **onboard barometric sensor**
+(an absolute-pressure sensor on the circuit board, read through the I/O chip
+every 10 ms; converted with this ECU's own factory calibration and accepted
+between 400 and 1200 hPa — see [PLATFORM.md](PLATFORM.md#onboard-barometric-sensor));
+the external pressure sensor read after 1 s with the engine stopped, kept for
+a set time and never learnt from running boost; or a fixed reference. A
+missing or out-of-range reading falls back to the reference.
+
+**Protection**: Speed density and Boosted Alpha-N have no pressure estimate:
+when the pressure they need is missing or stale the density pressure is zero,
+so no fuel is delivered, and above the configured rpm / throttle the
+pressure-loss cut is also set (optional for the other models). The boost
+valve is closed on any pressure loss. Lean protection
+cuts fuel when a qualified wideband reads leaner than target by a margin for
+a set time under load; it is off by default and a cold, faulted or stale
+wideband can neither trigger nor release it.
 
 ## Trigger and runtime
 

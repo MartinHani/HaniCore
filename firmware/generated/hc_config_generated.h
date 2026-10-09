@@ -88,7 +88,7 @@ typedef enum {
 #define HC_PINCAP_SPECIAL_LOCKED 0x8000u
 
 /* ------------------------------------------------------------ enums -- */
-/* LoadSource: Fuel load strategy */
+/* LoadSource: Legacy load model */
 #define HC_LOAD_MAP                   0u
 #define HC_LOAD_TPS                   1u
 #define HC_LOAD_ALPHAN                2u
@@ -194,23 +194,23 @@ typedef enum {
 #define HC_CAMPAT_NISSAN_VQ           7u
 #define HC_CAMPAT_MIATA_NB            8u
 
-/* FuelModel: Base fuel model */
+/* FuelModel: Fuel model */
 #define HC_FUEL_LEGACY                0u
 #define HC_FUEL_ALPHAN                1u
 #define HC_FUEL_MANIFOLD              2u
 #define HC_FUEL_CHARGE                3u
 
-/* PressureRole: Physical pressure input */
+/* PressureRole: Where the pressure sensor measures */
 #define HC_PRESSURE_NONE              0u
 #define HC_PRESSURE_MANIFOLD          1u
 #define HC_PRESSURE_CHARGE            2u
 
-/* DensityPolicy: Density pressure policy */
+/* DensityPolicy: Air density pressure */
 #define HC_DENSITY_FIXED              0u
 #define HC_DENSITY_ABSOLUTE           1u
 #define HC_DENSITY_BLEND              2u
 
-/* BaroSource: Ambient provenance */
+/* BaroSource: Ambient pressure source */
 #define HC_BARO_FIXED                 0u
 #define HC_BARO_STOPPED               1u
 #define HC_BARO_DEDICATED             2u
@@ -229,7 +229,7 @@ typedef enum {
 #define CFG_U_ENGINE_PRESET            2512u /* u8 Engine preset */
 #define CFG_U_INJECTOR_PRESET          2513u /* u8 Injector preset */
 #define CFG_U_COIL_PRESET              2514u /* u8 Coil preset */
-#define CFG_U_MAP_PRESET               2515u /* u8 MAP sensor preset */
+#define CFG_U_MAP_PRESET               2515u /* u8 Pressure sensor preset */
 #define CFG_U_CYL_BANK                 2516u /* u8[12] Cylinder bank */
 #define CFG_U_TDC_CYL_EXT              2528u /* u16[4] Cylinder 9..12 TDC */
 #define CFG_U_INJ_STRATEGY             2536u /* u8 Injection strategy */
@@ -246,7 +246,7 @@ typedef enum {
 #define CFG_U_PIN_CAM2                 2550u /* u8 Camshaft 2 pin */
 #define CFG_U_PIN_INJ                  2551u /* u8[12] Injector pin per cylinder */
 #define CFG_U_PIN_IGN                  2563u /* u8[12] Ignition pin per cylinder */
-#define CFG_U_PIN_MAP                  2575u /* u8 MAP sensor pin */
+#define CFG_U_PIN_MAP                  2575u /* u8 Pressure sensor pin */
 #define CFG_U_PIN_BARO                 2576u /* u8 Barometric sensor pin */
 #define CFG_U_PIN_CLT                  2577u /* u8 Coolant sensor pin */
 #define CFG_U_PIN_IAT                  2578u /* u8 Intake air sensor pin */
@@ -308,7 +308,7 @@ typedef enum {
 #define CFG_U_TEST_PIN                 2673u /* u8 Bench test pin */
 #define CFG_U_TEST_VALUE               2674u /* u16 Bench test value */
 #define CFG_U_TEST_TIMEOUT_MS          2676u /* u16 Bench test timeout */
-#define CFG_U_S5500_BASE               2678u /* u8 S5500 window base word */
+#define CFG_U_S5500_BASE               2678u /* u8 Analog window base word */
 #define CFG_U_DBW_MOTOR_DIR            2679u /* u8 Throttle motor direction */
 #define CFG_U_FUEL_PUMP_MODE           2680u /* u8 Fuel pump mode */
 #define CFG_U_LAM_HEAT_POLICY          2681u /* u8 Wideband heater */
@@ -414,19 +414,19 @@ typedef enum {
 #define CFG_U_VVT_TARGET1              3050u /* s16[64] Cam 1 target */
 #define CFG_U_VVT_TARGET2              3178u /* s16[64] Cam 2 target */
 #define CFG_U_FIRING_ORDER             3306u /* u8 Firing order */
-#define CFG_U_ALPHAN_IAT               3307u /* u8 Alpha-N: correct for intake air temperature */
+#define CFG_U_ALPHAN_IAT               3307u /* u8 Use intake air temperature */
 #define CFG_U_IGN_LOAD_MODE            3308u /* u8 Ignition table load */
 #define CFG_U_LAM_LOAD_MODE            3309u /* u8 Target lambda table load */
 #define CFG_U_LAM_RPM_AX               3310u /* u16[16] Target lambda rpm axis */
 #define CFG_U_LAM_LOAD_AX              3342u /* u16[16] Target lambda load axis */
-#define CFG_U_MAPEST_RPM_AX            3374u /* u16[8] MAP estimate rpm axis */
-#define CFG_U_MAPEST_TPS_AX            3390u /* u16[8] MAP estimate throttle axis */
-#define CFG_U_MAPEST                   3406u /* u8[64] MAP estimate */
+#define CFG_U_MAPEST_RPM_AX            3374u /* u16[8] Pressure estimate rpm axis */
+#define CFG_U_MAPEST_TPS_AX            3390u /* u16[8] Pressure estimate throttle axis */
+#define CFG_U_MAPEST                   3406u /* u8[64] Pressure estimate */
 #define CFG_U_PRIME_MG                 3470u /* u16[8] Priming pulse fuel */
 #define CFG_U_PRIME_DELAY              3486u /* u8 Priming delay */
 #define CFG_U_DFCO_DELAY               3487u /* u8 Fuel cut delay */
 #define CFG_U_DFCO_MIN_CLT             3488u /* u16 Fuel cut: coolant above */
-#define CFG_U_DFCO_MAP_MAX             3490u /* u8 Fuel cut: MAP below */
+#define CFG_U_DFCO_MAP_MAX             3490u /* u8 Fuel cut: manifold pressure below */
 #define CFG_U_DFCO_RETARD              3491u /* u8 Fuel cut timing retard */
 #define CFG_U_DFCO_RAMP                3492u /* u8 Fuel cut retard ramp-out */
 #define CFG_U_STFT_ENABLE              3493u /* u8 Closed loop fuel correction */
@@ -473,28 +473,28 @@ typedef enum {
 #define CFG_U_INJ_PHASE_LOAD_AX        3566u /* u16[8] Injection timing load axis */
 #define CFG_U_INJ_PHASE                3582u /* u16[64] Injection timing */
 #define CFG_U_FUEL_MODEL               3710u /* u8 Fuel model */
-#define CFG_U_PRESSURE_ROLE            3711u /* u8 Pressure input physical role */
-#define CFG_U_DENSITY_POLICY           3712u /* u8 Density pressure policy */
-#define CFG_U_BARO_SOURCE              3713u /* u8 Ambient source */
-#define CFG_U_AMBIENT_CORR             3714u /* u8 Pure Alpha-N ambient correction */
-#define CFG_U_IAT_POLICY               3715u /* u8 New fuel models: use valid IAT */
-#define CFG_U_LEAN_ENABLE              3716u /* u8 Lean guard (disabled until commissioned) */
-#define CFG_U_LAMBDA_QUALIFIED         3717u /* u8 Lambda physically qualified for protection */
-#define CFG_U_PRESSURE_GUARD           3718u /* u8 Legacy pressure-loss fuel cut */
+#define CFG_U_PRESSURE_ROLE            3711u /* u8 Pressure sensor location */
+#define CFG_U_DENSITY_POLICY           3712u /* u8 Air density pressure */
+#define CFG_U_BARO_SOURCE              3713u /* u8 Ambient pressure source */
+#define CFG_U_AMBIENT_CORR             3714u /* u8 Correct for ambient pressure */
+#define CFG_U_IAT_POLICY               3715u /* u8 Use intake air temperature */
+#define CFG_U_LEAN_ENABLE              3716u /* u8 Lean protection */
+#define CFG_U_LAMBDA_QUALIFIED         3717u /* u8 Wideband commissioned for protection */
+#define CFG_U_PRESSURE_GUARD           3718u /* u8 Pressure-loss cut in Legacy / Pure Alpha-N */
 #define CFG_U_V102_PAD                 3719u /* u8 Alignment pad */
-#define CFG_U_PRESSURE_REF             3720u /* u16 Fixed absolute reference */
-#define CFG_U_BLEND_START              3722u /* u16 Charge blend starts above BARO */
-#define CFG_U_BLEND_FULL               3724u /* u16 Charge blend fully active above BARO */
-#define CFG_U_BARO_MAX_AGE             3726u /* u16 Stopped capture maximum age */
-#define CFG_U_PRESSURE_TIMEOUT         3728u /* u16 Pressure measurement maximum age */
-#define CFG_U_GUARD_RPM                3730u /* u16 Pressure-loss protection above */
-#define CFG_U_GUARD_TPS                3732u /* u16 Pressure-loss protection above TPS */
-#define CFG_U_LEAN_RPM                 3734u /* u16 Lean guard above */
-#define CFG_U_LEAN_TPS                 3736u /* u16 Lean guard above TPS */
-#define CFG_U_LEAN_CHARGE              3738u /* u16 Lean guard above engine load */
-#define CFG_U_LEAN_DEVIATION           3740u /* u16 Lean deviation above target lambda */
-#define CFG_U_LEAN_PERSIST             3742u /* u16 Lean persistence before fuel cut */
-#define CFG_U_LEAN_RECOVERY            3744u /* u16 Recovery: unloaded valid lambda duration */
+#define CFG_U_PRESSURE_REF             3720u /* u16 Reference pressure */
+#define CFG_U_BLEND_START              3722u /* u16 Boost blend starts at (above ambient) */
+#define CFG_U_BLEND_FULL               3724u /* u16 Boost blend complete at (above ambient) */
+#define CFG_U_BARO_MAX_AGE             3726u /* u16 Engine-stopped reading valid for */
+#define CFG_U_PRESSURE_TIMEOUT         3728u /* u16 Pressure reading maximum age */
+#define CFG_U_GUARD_RPM                3730u /* u16 Pressure-loss cut above */
+#define CFG_U_GUARD_TPS                3732u /* u16 Pressure-loss cut above TPS */
+#define CFG_U_LEAN_RPM                 3734u /* u16 Lean protection above */
+#define CFG_U_LEAN_TPS                 3736u /* u16 Lean protection above TPS */
+#define CFG_U_LEAN_CHARGE              3738u /* u16 Lean protection above cylinder filling */
+#define CFG_U_LEAN_DEVIATION           3740u /* u16 Lean margin over target */
+#define CFG_U_LEAN_PERSIST             3742u /* u16 Lean for longer than */
+#define CFG_U_LEAN_RECOVERY            3744u /* u16 Recovery: at target, off load, for */
 #define CFG_U_DBW_PWM_HZ               3746u /* u16 Throttle bridge PWM frequency */
 #define CFG_U_DBW_FRICTION_X10         3748u /* u16 Throttle friction compensation */
 

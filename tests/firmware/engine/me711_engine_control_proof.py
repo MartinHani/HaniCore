@@ -155,6 +155,32 @@ def main_one(stem):
     check("DFCO: BOTH throttle tracks failed -> NO fuel cut (bug B4)",
           not (d_bad["cut"] & 1) and (d_bad["err"] & ERR_TPS) == ERR_TPS,
           "cut 0x%04X, err 0x%04X" % (d_bad["cut"], d_bad["err"]))
+    # The pressure ceiling only means "coasting" on a MANIFOLD sensor. With a
+    # pre-throttle (charge) sensor under Boosted Alpha-N it must not block
+    # DFCO, whatever the legacy load source byte holds; a manifold sensor
+    # above the ceiling must.
+    def dfco_with(model, role, policy):
+        for n, v in (("CFG_U_FUEL_MODEL", model), ("CFG_U_PRESSURE_ROLE", role),
+                     ("CFG_U_DENSITY_POLICY", policy), ("CAL_LOAD_SOURCE", 0),
+                     ("CFG_U_DFCO_MAP_MAX", 50)):
+            r("hc_cal_set_u8", off(n), v)
+        tick(r, 3000, 30, 378, 200)
+        return tick(r, 3000, 0, 378, 60)
+    saved_m = [r.active(off(n)) for n in ("CFG_U_FUEL_MODEL", "CFG_U_PRESSURE_ROLE",
+               "CFG_U_DENSITY_POLICY", "CAL_LOAD_SOURCE", "CFG_U_DFCO_MAP_MAX")]
+    if has("hc_load_select"):
+        d_ch = dfco_with(3, 2, 1)
+        d_mf = dfco_with(2, 1, 1)
+    else:
+        d_ch = d_mf = {"cut": 0}
+    check("DFCO: a charge-pressure sensor never blocks overrun cut",
+          bool(d_ch["cut"] & 1), "cut 0x%04X" % d_ch["cut"])
+    check("DFCO: a manifold sensor above the ceiling does",
+          not (d_mf["cut"] & 1), "cut 0x%04X" % d_mf["cut"])
+    for n, v in zip(("CFG_U_FUEL_MODEL", "CFG_U_PRESSURE_ROLE",
+                     "CFG_U_DENSITY_POLICY", "CAL_LOAD_SOURCE",
+                     "CFG_U_DFCO_MAP_MAX"), saved_m):
+        r("hc_cal_set_u8", off(n), v)
     r("hc_cal_set_u16", off("CAL_OVERRUN_RPM"), 0)
 
     # ---------------------------------------------------- 6 pure alpha-N

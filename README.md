@@ -40,12 +40,12 @@ region included.
 
 | area | |
 |---|---|
-| Fuel | speed density, alpha-N × inlet pressure, alpha-N; VE and target-lambda tables; injector flow and dead-time model; warm-up, after-start, X-tau wall film; cranking fuel by mass; DFCO; closed-loop trim |
+| Fuel | fuel models: speed density, pure alpha-N, boosted alpha-N (throttle VE + charge-pressure density), and legacy compatibility; onboard barometric sensor; VE and target-lambda tables; injector flow and dead-time model; warm-up, after-start, X-tau wall film; cranking fuel by mass; DFCO; closed-loop trim |
 | Ignition | timing tables with CLT/IAT corrections, dwell vs battery, overdwell protection, closed-loop idle timing, per-cylinder knock retard |
 | Injection and spark | batch, semi-sequential, sequential; wasted or sequential coil-on-plug, with a crank-only fallback until the cam has resolved the cycle |
 | Trigger | missing-tooth crank wheels (VR or Hall), cam level or pattern decoding, named firing orders, tooth and composite loggers |
 | Air | electronic throttle with on-ECU commissioning (endpoint calibration, relay PID autotune, friction characterization), idle control, boost control, two VVT outputs |
-| Protection | rev limiter (fuel / spark / soft), coolant and throttle-fault limp, injector duty cut, overboost cut, flood clear |
+| Protection | rev limiter (fuel / spark / soft), coolant and throttle-fault limp, injector duty cut, overboost cut, pressure-loss and lean protection, flood clear |
 | Diagnostics | trouble codes, per-consumer sensor fallbacks, engine event recorder, read-only vehicle logger with automatic analysis |
 | Calibration | 4 KiB page with transactional writes; Burn to an append-only flash store with validation and fallback; built-in and user presets |
 | Link | TunerStudio at 57600 / 115200 baud, VAG/KWP 5-baud entry, TunerStudio connection plugin |

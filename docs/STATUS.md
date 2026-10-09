@@ -62,7 +62,8 @@ HaniCore-owned boot region.
 | function | level | notes |
 |---|---|---|
 | Electronic throttle: control loop and commissioning | **BENCH** | bench body fully commissioned; car commissioning partial |
-| Load: speed density, alpha-N × pressure, alpha-N | **VEHICLE** (alpha-N × pressure) | |
+| Fuel model: Legacy compatibility (speed density, alpha-N × pressure, pure alpha-N) | **VEHICLE** (alpha-N × pressure) | the AWT base tune |
+| Fuel model: Pure Alpha-N, Speed density, Boosted Alpha-N; pressure-loss and lean protection | **SIMULATOR** | [ARCHITECTURE.md](ARCHITECTURE.md#fuel-model) |
 | Fuel model: VE, injector model, warm-up, after-start, wall film, DFCO, priming, cranking mass | **SIMULATOR** | partly exercised on the car |
 | Ignition: tables, corrections, dwell, overdwell, rev limiter | **SIMULATOR** | spark timing used on the car |
 | Closed-loop lambda (short-term trim) | **SIMULATOR** | needs a qualified wideband |
@@ -83,7 +84,7 @@ HaniCore-owned boot region.
 | Manifold / charge pressure | **VEHICLE** | |
 | Throttle and pedal pairs | **VEHICLE** (pedal), **BENCH** (throttle) | acquisition owned by the 1 ms tick: sample age 2–15 ms on the bench |
 | Battery voltage | **BENCH** | |
-| Ambient pressure | **BENCH** (read path) | transfer function is an estimate |
+| Ambient pressure, onboard sensor | **VEHICLE** (reading), **SIMULATOR** (as ambient source) | this ECU's own factory transfer; at standstill it matched the car's charge-pressure sensor within 1 % on two days. No reference barometer yet |
 | Wideband lambda, two banks | **BENCH** (controller, heater gates) | lambda with a fitted, heated sensor not qualified |
 | Switch inputs | **BENCH** (positions) | per-cavity toggle test pending |
 | MAF | **IMPLEMENTED** | read, not used by the fuel model |

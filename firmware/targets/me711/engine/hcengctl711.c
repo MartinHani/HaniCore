@@ -425,12 +425,15 @@ static void dfco_update(unsigned int rpm)
     } else if (eng_clt_dc <= hc_cal_u16(CFG_U_DFCO_MIN_CLT)) {
         allowed = 0u;
     } else if (mapmax != 0u
-               && hc_cal_u8(CAL_LOAD_SOURCE) != CAL_LOAD_TPS
+               && (hc_cal_u8(CFG_U_FUEL_MODEL) == 0u
+                   ? hc_cal_u8(CAL_LOAD_SOURCE) != CAL_LOAD_TPS
+                   : hc_cal_u8(CFG_U_PRESSURE_ROLE) == 1u)
                && eng_map_kpa_x10 >= (unsigned int)(mapmax * 10u)) {
         /* only a MANIFOLD pressure says "coasting". Under alpha-N x
            inlet pressure the sensor is BEFORE the throttle (the AWT's 101)
            and reads ambient or boost on a closed throttle - the ceiling
-           would forbid DFCO for ever. */
+           would forbid DFCO for ever. The legacy model knows that from its
+           load source, the others from the declared sensor location. */
         allowed = 0u;
     } else if (hc_trans.as_pm != 0u) {
         allowed = 0u;                /* Speeduino: not during after-start */

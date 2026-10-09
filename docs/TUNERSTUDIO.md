@@ -130,9 +130,30 @@ one dialog, tables with rpm/load axes and tracers, curves where they are
 calibrated, and test buttons in the dialog of the thing they test. Pin
 selectors show connector cavities ("93 - Coolant temperature"), never CPU
 ports. A field the firmware does not read is labelled "(not used)".
-Diagnostics and developer channels live under Diagnostics and Controller.
+
+| menu | contents |
+|---|---|
+| Setup | Base engine (cylinders, displacement, firing order, a summary of the fuel model), Trigger, Battery, Outputs, Limits and protection (rev limiter, engine protection, overboost, pressure-loss and lean protection) |
+| Fuel | Fuel model, VE, injector setup, target lambda, closed-loop correction, warm-up, acceleration enrichment, DFCO, injection timing, pressure estimate |
+| Ignition | timing table and corrections, dwell, ignition hardware, knock control |
+| Cranking, Idle | cranking and after-start; idle control and idle timing |
+| Advanced | launch / flat shift / anti-lag, VVT, boost control, electronic throttle |
+| Sensors | CLT, IAT, TPS, pedal, MAP / charge pressure sensor, onboard baro sensor (ambient pressure source), wideband, MAF input |
+| Controller | Base Tunes, bench test, controller identity, unused settings; developer diagnostics |
+| Diagnostics | status overview, "Why?" pages, trouble codes, live state per subsystem |
+
+*Fuel → Fuel model* names the VE table axis, the air-density pressure and the
+pressure sensor location separately and shows, in words, what is configured
+([ARCHITECTURE.md](ARCHITECTURE.md#fuel-model)). The table editors title
+their load axis from the same settings.
+
 Electronic throttle commissioning is under *Advanced → Electronic Throttle
 Body* ([COMMISSIONING.md](COMMISSIONING.md)).
+
+A Burn pauses the connection for a few seconds while flash is written;
+TunerStudio resumes polling by itself (bench, 57600 and 115200 baud). If the
+ECU loses power while connected, TunerStudio takes a while to declare it
+offline.
 
 Any TunerStudio response code with bit 7 set ends the session, so the
 firmware answers refused operations with OK and publishes the outcome

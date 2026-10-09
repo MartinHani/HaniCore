@@ -23,20 +23,17 @@ available and this project made two of them:
      Sea-level pressure is not local absolute pressure, and a scale fitted to
      one reading on one day is a fiction that will read plausibly for ever.
 
-The current scale comes from a SIBLING calibration (A1104F: DSUGRAD 16192 =
-253.0 hPa/V, DSUOFS 0) and the project rules establish that **no A2L, DAMOS or
-XDF in this repository maps the binary this ECU runs.** So the number is
-defensible and it is NOT exact-target, and the .ini has to keep saying so.
+The scale is THIS ECU's own DSU calibration, read where its own code reads it
+(DSUGRAD 16192 @0x81EE12 = 253.0 hPa/V, DSUOFS 0 @0x81EE14; units from the
+sibling A2L whose DSU routine has the same shape) -
+tests/firmware/engine/me711_ambient_pressure.py derives it from the binary.
+On the car it agreed with the independent charge-pressure sensor at standstill
+within 1 % on two days. No reference barometer has been compared yet.
 
-WHAT THIS GATE CHECKS is that the honesty survives an edit: the mask, the
-window condition, the plausibility band, the sibling-derived scale and - above
-all - the words that mark it as not-exact. It does not check that the pressure
-is CORRECT. Nothing can, until somebody measures this board against a
-reference barometer.
-
-The analysis that produced all of this is tests/firmware/engine/me711_ambient_pressure.py,
-which is a document and is not run by anything. That is precisely why the
-conclusions needed a gate.
+WHAT THIS GATE CHECKS is that the conversion survives an edit: the mask, the
+window condition, the plausibility band, the target scale and the words that
+name where it comes from. The firmware's own use of the sensor (Ambient source
+"Onboard barometric sensor") is gated by me711_load_contract_proof.
 """
 from __future__ import annotations
 
@@ -50,8 +47,8 @@ import hcpaths  # noqa: F401,E402  (puts every tools/ and tests/ module on sys.p
 
 import me711_image as PI                     # noqa: E402
 
-# The sibling-calibration scale, hPa per count: 253.0 hPa/V * (5/1024) V/count.
-SIBLING_HPA_PER_COUNT = 253.0 * 5.0 / 1024.0     # 1.23535...
+# This ECU's DSU scale, hPa per count: 253.0 hPa/V * (5/1024) V/count.
+TARGET_HPA_PER_COUNT = 253.0 * 5.0 / 1024.0      # 1.23535... = 1265/1024
 TOL = 0.001
 
 # The refuted expression, kept so the negative control is the REAL defect
@@ -106,15 +103,15 @@ def audit(text):
         m = re.search(r"baroRaw\s*\*\s*([0-9]*\.?[0-9]+)", ap)
         if m:
             scale = float(m.group(1))
-    out.append(("the scale is the SIBLING-derived one, to 0.001 hPa/count",
+    out.append(("the scale is this ECU's DSU calibration, to 0.001 hPa/count",
                 scale is not None
-                and abs(scale - SIBLING_HPA_PER_COUNT) < TOL,
+                and abs(scale - TARGET_HPA_PER_COUNT) < TOL,
                 "%s (want %.6f)"
-                % (scale if scale is not None else ap, SIBLING_HPA_PER_COUNT)))
+                % (scale if scale is not None else ap, TARGET_HPA_PER_COUNT)))
 
     cm = comment_of(text, "ambientPressure")
-    out.append(("...and the .ini SAYS it is a sibling, not this target",
-                "SIBLING" in cm.upper() and "NOT exact-target" in cm,
+    out.append(("...and the .ini SAYS where it comes from",
+                "THIS ECU" in cm.upper() and "0x81EE12" in cm,
                 cm[:64] or "no comment"))
 
     out.append(("the refuted +22% expression is gone",
@@ -158,7 +155,7 @@ def main() -> int:
     fails_on("the scale is quietly fitted to a weather website",
              lambda t: re.sub(r"(ambientPressure\s*=\s*\{\s*baroRaw\s*\*\s*)"
                               r"[0-9.]+", r"\g<1>1.241000", t, count=1))
-    fails_on("the sibling provenance is dropped from the comment",
+    fails_on("the target provenance is dropped from the comment",
              lambda t: re.sub(r"(ambientPressure\s*=\s*\{[^}]*\}\s*);[^\n]*",
                               r"\1; ambient pressure [hPa]", t, count=1))
     fails_on("the 10-bit mask is widened to the whole word",
@@ -174,9 +171,9 @@ def main() -> int:
               "evidence does not support, or has stopped saying what it is.")
         return 1
     print("BARO HONESTY PASSES - masked to 10 bits, window published, rails "
-          "called implausible, sibling scale declared as a sibling.")
-    print("THIS IS NOT A CLAIM THAT THE PRESSURE IS CORRECT. No reference "
-          "barometer has been compared against this board.")
+          "called implausible, this ECU's own scale with its address.")
+    print("Checked on the car against the charge-pressure sensor at standstill "
+          "(within 1 %); no reference barometer yet.")
     return 0
 
 

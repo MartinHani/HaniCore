@@ -27,6 +27,13 @@ class Rig(C.Rig):
         self('hc_hal_main_sample',14,0xe000|500,1,self.ms)
         self.put('eng_sensor_err',0 if valid else C.d((C.SHARED/'engine/hcengine.h').read_text(),'ENG_ERR_MAP'));self.put('eng_map_kpa_x10',pressure if valid else 0)
         self.put('eng_tps_x10',tps);self('hc_load_select',rpm,tps)
+    def hog(self,raw,tag=8,fresh=True):
+        """One accepted S5500 frame whose window slot 8 carries `raw` with
+        ADDAT channel `tag` (the onboard sensor is ASIC AN8)."""
+        self.m.w8(C.sym('hc_s5500_base')&0xffff,4)
+        self.m.w16(0x380000+C.d(C._tgt,'TGT_RAM_S5500WIN')+2*8,(tag<<12)|raw)
+        self.m.w16(C.Rig.ADC_META+2*33,self.ms if fresh else (self.ms-500)&65535)
+        self.m.w16(C.Rig.ADC_META+2*34,1);self.m.w8(C.sym('hc_asic_run_live')&0xffff,1)
     def model(self,model,role,policy):
         for n,v in [('FUEL_MODEL',model),('PRESSURE_ROLE',role),('DENSITY_POLICY',policy)]:self.cfg(n,v,True)
 
@@ -60,8 +67,16 @@ def main():
     check('Stopped ambient capture expires terminally into fixed fallback',r.val('ambient_valid')==0 and r.val('ambient_source')==0 and r.val('ambient')==1013)
     for _ in range(700):r.step(1200,rpm=3000,dt=100)
     check('Millisecond wrap cannot resurrect expired BARO',r.val('ambient_valid')==0 and r.val('ambient_source')==0)
-    r.cfg('BARO_SOURCE',2,True);r.step(2000)
-    check('Unqualified dedicated HOG is never authoritative',r.val('ambient_valid')==0 and r.val('ambient')==1013 and r.val('flags')&4)
+    # Onboard sensor: hPa = counts x 1265/1024 (this ECU's DSUGRAD/DSUOFS,
+    # me711_ambient_pressure.py), only from a fresh AN8-tagged sample inside
+    # the OEM's own 400..1200 hPa window. 828 counts = the car on 2026-10-03.
+    r.cfg('BARO_SOURCE',2,True);r.hog(828);r.step(2000)
+    check('Onboard sensor: fresh AN8 sample is the ambient, by the target transfer',r.val('ambient')==1022 and r.val('ambient_source')==2 and r.val('ambient_valid')==1 and not(r.val('flags')&4),str([r.val(n) for n in ['ambient','ambient_source','ambient_valid','flags']]))
+    r.hog(828);r.step(1172)
+    check('Charge blend is relative to the onboard ambient',abs(r.val('effective')-1097)<=1 and r.val('blend')==500,str([r.val('effective'),r.val('blend')]))
+    for raw,kw,why in ((828,{'fresh':False},'stale'),(828,{'tag':7},'not AN8'),(973,{},"above 1200 hPa"),(323,{},'below 400 hPa')):
+        r.hog(raw,**kw);r.step(2000)
+        check('Onboard sensor: %s sample falls back to the fixed reference'%why,r.val('ambient_valid')==0 and r.val('ambient_source')==0 and r.val('ambient')==1013 and r.val('flags')&4,str([r.val(n) for n in ['ambient','ambient_source','flags']]))
     r.model(3,2,1);r.step(valid=False);r('hc_load_protect',3000,1000)
     check('Lost authoritative pressure cuts fuel under load',bool(r.g16('eng_fuelcut')&16))
     r.step(1013);r('hc_load_protect',3000,1000)

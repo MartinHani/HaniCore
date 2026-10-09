@@ -91,10 +91,10 @@ PIN_NONE = 255
 # (alphan_airmass.cpp: 101.325 kPa, 20 C or IAT), which needs no pressure
 # sensor at all.
 ENUM_LOAD_SOURCE = ConfigEnum("LoadSource", [
-    (0, "LOAD_MAP", "Speed density (MAP)"),
-    (1, "LOAD_TPS", "Alpha-N x inlet pressure"),
-    (2, "LOAD_ALPHAN", "Alpha-N (no pressure sensor)"),
-], "Fuel load strategy")
+    (0, "LOAD_MAP", "Speed density (manifold pressure)"),
+    (1, "LOAD_TPS", "Alpha-N + measured pressure"),
+    (2, "LOAD_ALPHAN", "Pure Alpha-N (no pressure sensor)"),
+], "Legacy load model")
 
 # V98: rusEFI's firing_order_e numbering (controllers/algo/firing_order.h),
 # so a rusEFI tune's firingOrder maps 1:1 - except 0, which rusEFI spends on
@@ -144,7 +144,7 @@ ENUM_FIRING_ORDER = ConfigEnum("FiringOrder", [
 # tables. 0 = the fuel table's own load (rusEFI AFR_None).
 ENUM_LOAD_AXIS = ConfigEnum("LoadAxis", [
     (0, "LOADAX_FUEL", "Same as the fuel load"),
-    (1, "LOADAX_MAP", "MAP (kPa)"),
+    (1, "LOADAX_MAP", "Pressure sensor (kPa)"),
     (2, "LOADAX_TPS", "Throttle position (%)"),
     (3, "LOADAX_FILL", "Cylinder filling (%)"),
 ], "Table load axis")
@@ -269,9 +269,9 @@ ENUM_SYNC_MODE = ConfigEnum("SyncMode", [
 ], "How much engine position the decoder is configured to establish")
 
 ENUM_CAM_PHASE = ConfigEnum("CamPhaseMethod", [
-    (0, "CAMPH_REFS", "Equally spaced reference edges (camRefs)"),
-    (1, "CAMPH_LEVEL", "Cam LEVEL at one crank angle (Bosch quick-start / single window)"),
-    (2, "CAMPH_PATTERN", "Cam wheel PATTERN - teeth by spacing, then angle (V97)"),
+    (0, "CAMPH_REFS", "Equally spaced reference edges"),
+    (1, "CAMPH_LEVEL", "Cam level at one crank angle (Bosch quick-start / single window)"),
+    (2, "CAMPH_PATTERN", "Cam wheel pattern (tooth spacing, then angle)"),
 ], "How the camshaft input decides which revolution of the cycle this is")
 
 # V97: the cam wheel library of firmware/engine/hccam.c (tooth angles from rusEFI's
@@ -298,7 +298,7 @@ ENUM_TRIG_DECODER = ConfigEnum("TriggerDecoder", [
    "enforced against a decoder that has no gap.")
 
 ENUM_TRACK_CORR = ConfigEnum("TrackCorrelation", [
-    (0, "TRACK_OPPOSITE", "Opposite after calibration (legacy: both min < max)"),
+    (0, "TRACK_OPPOSITE", "Opposite after calibration (both min < max)"),
     (1, "TRACK_SAME", "Same after calibration - use with Grab (min = closed)"),
     (2, "TRACK_SCALED", "Same direction, different scale/offset"),
 ], "Dual-track correlation model for TPS and APP. Do NOT assume opposite: it "
@@ -357,10 +357,10 @@ ALL_ENUMS = [
     ENUM_CAM_PATTERN,
 ]
 
-ENUM_FUEL_MODEL = ConfigEnum("FuelModel", [(0,"FUEL_LEGACY","Legacy V101 compatibility"),(1,"FUEL_ALPHAN","Pure Alpha-N"),(2,"FUEL_MANIFOLD","Manifold Speed Density"),(3,"FUEL_CHARGE","Charge-pressure Alpha-N")], "Base fuel model")
-ENUM_PRESSURE_ROLE = ConfigEnum("PressureRole", [(0,"PRESSURE_NONE","None"),(1,"PRESSURE_MANIFOLD","Manifold absolute pressure"),(2,"PRESSURE_CHARGE","Pre-throttle charge pressure")], "Physical pressure input")
-ENUM_DENSITY_POLICY = ConfigEnum("DensityPolicy", [(0,"DENSITY_FIXED","Fixed reference"),(1,"DENSITY_ABSOLUTE","Continuous absolute pressure (once)"),(2,"DENSITY_BLEND","Charge blend relative to BARO")], "Density pressure policy")
-ENUM_BARO_SOURCE = ConfigEnum("BaroSource", [(0,"BARO_FIXED","Fixed reference fallback"),(1,"BARO_STOPPED","Valid stopped-pressure capture"),(2,"BARO_DEDICATED","Dedicated sensor: unqualified / unavailable")], "Ambient provenance")
+ENUM_FUEL_MODEL = ConfigEnum("FuelModel", [(0,"FUEL_LEGACY","Legacy compatibility"),(1,"FUEL_ALPHAN","Pure Alpha-N (TPS)"),(2,"FUEL_MANIFOLD","Speed density (manifold pressure)"),(3,"FUEL_CHARGE","Boosted Alpha-N (TPS + charge pressure)")], "Fuel model")
+ENUM_PRESSURE_ROLE = ConfigEnum("PressureRole", [(0,"PRESSURE_NONE","None fitted"),(1,"PRESSURE_MANIFOLD","Manifold pressure (after the throttle)"),(2,"PRESSURE_CHARGE","Charge pressure (before the throttle)")], "Where the pressure sensor measures")
+ENUM_DENSITY_POLICY = ConfigEnum("DensityPolicy", [(0,"DENSITY_FIXED","Reference pressure - Pure Alpha-N"),(1,"DENSITY_ABSOLUTE","Measured pressure - Speed density / Boosted Alpha-N"),(2,"DENSITY_BLEND","Ambient + boost blend - Boosted Alpha-N")], "Air density pressure")
+ENUM_BARO_SOURCE = ConfigEnum("BaroSource", [(0,"BARO_FIXED","Reference pressure (fixed)"),(1,"BARO_STOPPED","Pressure sensor with the engine stopped"),(2,"BARO_DEDICATED","Onboard barometric sensor")], "Ambient pressure source")
 ALL_ENUMS += [ENUM_FUEL_MODEL, ENUM_PRESSURE_ROLE, ENUM_DENSITY_POLICY, ENUM_BARO_SOURCE]
 
 
@@ -508,7 +508,7 @@ LEGACY: list[Meta] = [
          G.SENSOR_ROUTING, units="ohm", lo=0, hi=65535, category="Sensors"),
 
     # ---- bench and safety ------------------------------------------------
-    Meta("CFG_OUTPUTS_ARMED", "outputsArmedCfg", "Retired (V84): no effect", Z,
+    Meta("CFG_OUTPUTS_ARMED", "outputsArmedCfg", "Retired: no effect", Z,
          G.GENERAL, lo=0, hi=1, safety_critical=True, category="Safety",
          note="RETIRED V84. Used to gate every engine output behind a manual "
               "arm; normal operation is now trigger/scheduler driven and a "
@@ -603,10 +603,10 @@ LEGACY: list[Meta] = [
          lo=9500, hi=12000, category="Sensors"),
 
     # ---- pressure and position sensors -----------------------------------
-    Meta("CAL_MAP_SENS_OFF", "mapSensOff", "MAP at zero counts", L,
+    Meta("CAL_MAP_SENS_OFF", "mapSensOff", "Pressure at zero counts", L,
          G.SENSOR_ROUTING, units="kPa", scale=0.1, digits=1, lo=0, hi=65535,
          category="Sensors"),
-    Meta("CAL_MAP_SENS_GRD", "mapSensGrd", "MAP gradient per 1000 counts", L,
+    Meta("CAL_MAP_SENS_GRD", "mapSensGrd", "Pressure gradient per 1000 counts", L,
          G.SENSOR_ROUTING, units="kPa", scale=0.1, digits=1, lo=0, hi=65535,
          category="Sensors"),
     Meta("CAL_TPS1_MIN", "tps1Min", "TPS1 closed counts", Z, G.DBW_SETUP,
@@ -627,7 +627,7 @@ LEGACY: list[Meta] = [
          lo=0, hi=1023, safety_critical=True, category="DBW"),
 
     # ---- strategy selectors already in the page --------------------------
-    Meta("CAL_LOAD_SOURCE", "loadSource", "Fuel load strategy", Z,
+    Meta("CAL_LOAD_SOURCE", "loadSource", "Legacy load model", Z,
          G.ENGINE_SETUP, lo=0, hi=2, enum=ENUM_LOAD_SOURCE, category="Engine",
          note="Speed density: VE(rpm, MAP) x density(MAP, intake air) - needs "
               "a true manifold pressure sensor; on a sensor fault the MAP "
@@ -635,7 +635,7 @@ LEGACY: list[Meta] = [
               "throttle) x density(measured inlet pressure) - for a pressure "
               "sensor BEFORE the throttle (VAG 1.8T G31). Alpha-N: VE(rpm, "
               "throttle) at 101.3 kPa - no pressure sensor needed."),
-    Meta("CAL_INJ_MODE", "injModeLegacy", "Injection mode (legacy)", Z,
+    Meta("CAL_INJ_MODE", "injModeLegacy", "Injection mode, old field", Z,
          G.INJECTOR_ROUTING, lo=0, hi=1, safety_critical=True, category="Fuel",
          note="0 batch / 1 sequential. Superseded by injStrategy in the "
               "universal block, which can also say semi-sequential; the "
@@ -905,7 +905,7 @@ UNIVERSAL: list[NewField] = [
                   G.IGNITION_ROUTING, lo=0, hi=255, category="Ignition"),
              "u8 coil component preset id, 0 = custom"),
     NewField("CFG_U_MAP_PRESET", "u8", 1,
-             Meta("CFG_U_MAP_PRESET", "mapSensorPreset", "MAP sensor preset", Z,
+             Meta("CFG_U_MAP_PRESET", "mapSensorPreset", "Pressure sensor preset", Z,
                   G.SENSOR_ROUTING, lo=0, hi=255, category="Sensors"),
              "u8 pressure sensor preset id, 0 = custom"),
     NewField("CFG_U_CYL_BANK", "u8", MAX_CYL_UNIVERSAL,
@@ -1043,7 +1043,7 @@ UNIVERSAL: list[NewField] = [
                        G.IGNITION_ROUTING, PinCap.IGN_OUT, "Ignition"),
              "u8[12] physical connector pin driving each cylinder's coil"),
     NewField("CFG_U_PIN_MAP", "u8", 1,
-             _pin_meta("CFG_U_PIN_MAP", "pinMap", "MAP sensor pin",
+             _pin_meta("CFG_U_PIN_MAP", "pinMap", "Pressure sensor pin",
                        G.SENSOR_ROUTING, PinCap.AIN, "Sensors", crit=False),
              "u8 physical connector pin for the manifold pressure sensor"),
     NewField("CFG_U_PIN_BARO", "u8", 1,
@@ -1373,7 +1373,7 @@ UNIVERSAL: list[NewField] = [
     # one mechanism that has failed on hardware is not a diagnostic.
     NewField("CFG_U_S5500_BASE", "u8", 1,
              Meta("CFG_U_S5500_BASE", "s5500WindowBase",
-                  "S5500 window base word", L, G.GENERAL,
+                  "Analog window base word", L, G.GENERAL,
                   lo=0, hi=117, category="Controller",
                   note="The first runtime-frame word the 16-word "
                        "correlation window shows. Editing this field moves "
@@ -2227,7 +2227,7 @@ UNIVERSAL: list[NewField] = [
              "u8 firing order (rusEFI firing_order_e), 0 = custom TDC angles"),
     NewField("CFG_U_ALPHAN_IAT", "u8", 1,
              Meta("CFG_U_ALPHAN_IAT", "alphaNUseIat",
-                  "Alpha-N: correct for intake air temperature", L,
+                  "Use intake air temperature", L,
                   G.ENGINE_SETUP, lo=0, hi=1, enum=ENUM_OFF_ON,
                   category="Fuel",
                   note="rusEFI alphaNUseIat. Off: the air is taken at 20 C. "
@@ -2261,16 +2261,16 @@ UNIVERSAL: list[NewField] = [
                   category="Lambda", note="kPa or %, per lambdaLoadMode."),
              "u16[16] target lambda load axis, 0.1 kPa or 0.1 %"),
     NewField("CFG_U_MAPEST_RPM_AX", "u16", 8,
-             Meta("CFG_U_MAPEST_RPM_AX", "mapEstRpmAx", "MAP estimate rpm axis",
+             Meta("CFG_U_MAPEST_RPM_AX", "mapEstRpmAx", "Pressure estimate rpm axis",
                   L, G.TABLES, units="rpm", lo=0, hi=20000, category="Sensors"),
              "u16[8] MAP estimate rpm axis"),
     NewField("CFG_U_MAPEST_TPS_AX", "u16", 8,
              Meta("CFG_U_MAPEST_TPS_AX", "mapEstTpsAx",
-                  "MAP estimate throttle axis", L, G.TABLES, units="%",
+                  "Pressure estimate throttle axis", L, G.TABLES, units="%",
                   scale=0.1, digits=1, lo=0, hi=1000, category="Sensors"),
              "u16[8] MAP estimate throttle axis, 0.1 %"),
     NewField("CFG_U_MAPEST", "u8", 64,
-             Meta("CFG_U_MAPEST", "mapEstimate", "MAP estimate", L, G.TABLES,
+             Meta("CFG_U_MAPEST", "mapEstimate", "Pressure estimate", L, G.TABLES,
                   units="kPa", lo=0, hi=255, category="Sensors",
                   note="rusEFI mapEstimateTable: what the FUEL uses in place "
                        "of the pressure sensor while it has failed (speed "
@@ -2309,7 +2309,7 @@ UNIVERSAL: list[NewField] = [
                        "inhibits the cut."),
              "u16 DFCO minimum coolant, 10*C + 10000"),
     NewField("CFG_U_DFCO_MAP_MAX", "u8", 1,
-             Meta("CFG_U_DFCO_MAP_MAX", "dfcoMapMax", "Fuel cut: MAP below", L,
+             Meta("CFG_U_DFCO_MAP_MAX", "dfcoMapMax", "Fuel cut: manifold pressure below", L,
                   G.TABLES, units="kPa", lo=0, hi=250, category="Fuel",
                   note="rusEFI coastingFuelCutMap. 0 = no MAP condition (the "
                        "only correct setting for a pressure sensor before "
@@ -2569,31 +2569,31 @@ UNIVERSAL: list[NewField] = [
 # ==========================================================================
 for _slot, _ts, _label, _enum, _hi in [
     ("FUEL_MODEL","fuelModel","Fuel model",ENUM_FUEL_MODEL,3),
-    ("PRESSURE_ROLE","pressureRole","Pressure input physical role",ENUM_PRESSURE_ROLE,2),
-    ("DENSITY_POLICY","densityPolicy","Density pressure policy",ENUM_DENSITY_POLICY,2),
-    ("BARO_SOURCE","ambientSource","Ambient source",ENUM_BARO_SOURCE,2),
-    ("AMBIENT_CORR","ambientCorrection","Pure Alpha-N ambient correction",None,1),
-    ("IAT_POLICY","fuelUseIat","New fuel models: use valid IAT",None,1),
-    ("LEAN_ENABLE","leanGuardEnable","Lean guard (disabled until commissioned)",None,1),
-    ("LAMBDA_QUALIFIED","lambdaPhysicalQualified","Lambda physically qualified for protection",None,1),
-    ("PRESSURE_GUARD","pressureGuardEnable","Legacy pressure-loss fuel cut",None,1),
+    ("PRESSURE_ROLE","pressureRole","Pressure sensor location",ENUM_PRESSURE_ROLE,2),
+    ("DENSITY_POLICY","densityPolicy","Air density pressure",ENUM_DENSITY_POLICY,2),
+    ("BARO_SOURCE","ambientSource","Ambient pressure source",ENUM_BARO_SOURCE,2),
+    ("AMBIENT_CORR","ambientCorrection","Correct for ambient pressure",None,1),
+    ("IAT_POLICY","fuelUseIat","Use intake air temperature",None,1),
+    ("LEAN_ENABLE","leanGuardEnable","Lean protection",None,1),
+    ("LAMBDA_QUALIFIED","lambdaPhysicalQualified","Wideband commissioned for protection",None,1),
+    ("PRESSURE_GUARD","pressureGuardEnable","Pressure-loss cut in Legacy / Pure Alpha-N",None,1),
     ("V102_PAD","v102Pad","Alignment pad",None,255),
 ]:
     UNIVERSAL.append(NewField("CFG_U_"+_slot,"u8",1,Meta("CFG_U_"+_slot,_ts,_label,Z,G.ENGINE_SETUP,lo=0,hi=_hi,enum=_enum,category="Load and protection",safety_critical=True),"V102 independent load/protection policy"))
 for _slot, _ts, _label, _units, _lo, _hi, _scale in [
-    ("PRESSURE_REF","densityReference","Fixed absolute reference","kPa",500,1200,0.1),
-    ("BLEND_START","chargeBlendStart","Charge blend starts above BARO","kPa",0,3000,0.1),
-    ("BLEND_FULL","chargeBlendFull","Charge blend fully active above BARO","kPa",1,4000,0.1),
-    ("BARO_MAX_AGE","ambientMaxAge","Stopped capture maximum age","s",1,65535,1),
-    ("PRESSURE_TIMEOUT","pressureMaxAge","Pressure measurement maximum age","ms",10,1000,1),
-    ("GUARD_RPM","pressureGuardRpm","Pressure-loss protection above","rpm",0,20000,1),
-    ("GUARD_TPS","pressureGuardTps","Pressure-loss protection above TPS","%",0,1000,0.1),
-    ("LEAN_RPM","leanGuardRpm","Lean guard above","rpm",0,20000,1),
-    ("LEAN_TPS","leanGuardTps","Lean guard above TPS","%",0,1000,0.1),
-    ("LEAN_CHARGE","leanGuardCharge","Lean guard above engine load","%",0,5000,0.1),
-    ("LEAN_DEVIATION","leanGuardDeviation","Lean deviation above target lambda","lambda",1,1000,0.001),
-    ("LEAN_PERSIST","leanGuardPersist","Lean persistence before fuel cut","ms",1,10000,1),
-    ("LEAN_RECOVERY","leanGuardRecovery","Recovery: unloaded valid lambda duration","ms",1,30000,1),
+    ("PRESSURE_REF","densityReference","Reference pressure","kPa",500,1200,0.1),
+    ("BLEND_START","chargeBlendStart","Boost blend starts at (above ambient)","kPa",0,3000,0.1),
+    ("BLEND_FULL","chargeBlendFull","Boost blend complete at (above ambient)","kPa",1,4000,0.1),
+    ("BARO_MAX_AGE","ambientMaxAge","Engine-stopped reading valid for","s",1,65535,1),
+    ("PRESSURE_TIMEOUT","pressureMaxAge","Pressure reading maximum age","ms",10,1000,1),
+    ("GUARD_RPM","pressureGuardRpm","Pressure-loss cut above","rpm",0,20000,1),
+    ("GUARD_TPS","pressureGuardTps","Pressure-loss cut above TPS","%",0,1000,0.1),
+    ("LEAN_RPM","leanGuardRpm","Lean protection above","rpm",0,20000,1),
+    ("LEAN_TPS","leanGuardTps","Lean protection above TPS","%",0,1000,0.1),
+    ("LEAN_CHARGE","leanGuardCharge","Lean protection above cylinder filling","%",0,5000,0.1),
+    ("LEAN_DEVIATION","leanGuardDeviation","Lean margin over target","lambda",1,1000,0.001),
+    ("LEAN_PERSIST","leanGuardPersist","Lean for longer than","ms",1,10000,1),
+    ("LEAN_RECOVERY","leanGuardRecovery","Recovery: at target, off load, for","ms",1,30000,1),
 ]:
     UNIVERSAL.append(NewField("CFG_U_"+_slot,"u16",1,Meta("CFG_U_"+_slot,_ts,_label,Z,G.ENGINE_SETUP,units=_units,lo=_lo,hi=_hi,scale=_scale,digits=1 if _scale==0.1 else 3 if _scale==0.001 else 0,category="Load and protection",safety_critical=True),"V102 explicit units; no second pressure multiplier"))
 

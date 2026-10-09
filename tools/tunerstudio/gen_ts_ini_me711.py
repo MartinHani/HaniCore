@@ -1213,8 +1213,16 @@ for _i,_n in enumerate(["dlPlannedDwell","dlPlannedSpark","dlPlannedOpen","dlPla
 for _b in range(8):
     for _i,_n in enumerate(["FuelUs","DeadUs","RequestedUs","ScheduledUs","DeliveredUs","Owner","Flags"]):
         CH.append((1286+14*_b+2*_i,"inj%d%s"%(_b+1,_n),"U16","us" if _i<5 else "","Last request/admission/command interval for this channel. Flags: 1 ON, 2 clipped, 4 truncated, 8 OFF guard, 16 requested overflow, 32 last request refused. Owner is a ticket, not cylinder phase."))
+# hcload711.c hc_load_publish(): the fuel model's state, 25 words, in order.
+_LOAD_UNITS = {"pressureMeasured": "kPa", "pressureAge": "ms",
+               "ambientUsed": "kPa", "ambientAgeSeconds": "s",
+               "densityPressure": "kPa", "densityTemperature": "K",
+               "loadSampleMs": "ms", "loadElapsedMs": "ms",
+               "ambientStoppedMs": "ms", "ambientRemainderMs": "ms",
+               "leanPersistMs": "ms", "leanRecoveryMs": "ms",
+               "leanMeasurement": "lambda"}
 for _i,_n in enumerate(["loadModelNow","pressureRoleNow","densityPolicyNow","pressureMeasured","pressureAge","pressureValid","ambientUsed","ambientProvenance","ambientValid","ambientAgeSeconds","densityPressure","densityRatio","chargeBlendWeight","densityTemperature","veAxisInput","loadFlags","loadSampleMs","loadElapsedMs","ambientStoppedMs","ambientRemainderMs","leanPersistMs","leanRecoveryMs","leanLatched","leanEligible","leanMeasurement"]):
-    CH.append((1398+2*_i,_n,"U16","","Load policy diagnostics: ambient provenance 0 fixed fallback / 1 leased capture; flags 1 bad model 2 lost pressure 4 ambient fallback 8 IAT fallback 16 task gap."))
+    CH.append((1398+2*_i,_n,"U16",_LOAD_UNITS.get(_n,""),"Fuel model state: ambient source in use 0 reference / 1 engine-stopped reading / 2 onboard sensor; flags 1 invalid model 2 pressure lost 4 ambient fallback 8 IAT fallback 16 task gap."))
 CH += [(1448,"baseFuelMass","U16","mg","Uncorrected model fuel mass, saturates at 655.35 mg"),(1450,"dlGeneration","U16","","Terminal at 65535 until boot"),(1452,"dlCommandMasks","U16","","Low byte ignition ON; high byte injector ON"),(1454,"dlReservedMasks","U16","","Low byte ignition reservations; high byte injector reservations"),(1456,"dlQueueCount","U16","","Hardware deadline node count")]
 for _b in range(8):
     CH.append((1458+8*_b,"inj%dAcceptedFullUs"%(_b+1),"U32","us","Full last accepted width; narrow ScheduledUs saturates at 65535"))
@@ -1353,21 +1361,12 @@ TRANSLATE[1146] = -10000.0
 # rule that would have stopped it: AN A2L ADDRESS MAY BE READ FROM A BINARY
 # ONLY IF THAT BINARY CARRIES THE A2L'S OWN EPK AT THE A2L'S OWN ADDR_EPK.
 #
-# What is published now is the A2L read against ITS OWN binary - a SIBLING
-# calibration, self-consistent, and marked as an estimate. No A2L that maps
-# THIS binary is in this repository.
-#
-# AND THE SCALING WAS NEVER THE WHOLE PROBLEM - BUT WHY IT READS HIGH IS NOT
-# CONCLUDED HERE. 1.22 bar through the old expression implies baroRaw near 1019
-# of 1023, and that proves only that THE SOURCE BEING READ is near full scale.
-# Bosch's port map puts the ambient sender on the ASIC's AN8 (HOG, "Eingang
-# Hoehengeber"); baroRaw is window SLOT 8 of the S5500 frame; and the HAL tags
-# every slot with the ADDAT channel it claims to be. So s5500Idx bit 8 tells a
-# bench which of these it is - an unaligned window reading the wrong word, or
-# the right word with something wrong at the front end - and it needs no
-# reflash. `baroPlausible` marks the number as outside a believable band
-# instead of letting it stand in for a measurement.
-# See docs/ARCHITECTURE.md.
+# What is published now is THIS ECU's own DSU calibration, located by the
+# code that reads it (me711_ambient_pressure.target_transfer: DSUGRAD 16192
+# @0x81EE12, DSUOFS 0 @0x81EE14) - the same transfer the firmware applies
+# when Ambient source is "Onboard barometric sensor" (hcload711.c). The
+# 2026-09-05 near-full-scale reading came from the unaligned window; every
+# capture since reads s5500Idx 0xFFFF and a plausible ambient pressure.
 _AMB = AMB.transfer()
 _AMB_EXPR, _AMB_NOTE = AMB.ini_expression(_AMB)
 
@@ -1540,9 +1539,9 @@ DERIVED_CH = [
      "V78 KL15_STAT, P6.2 - the CJ910's own ignition signal; the native "
      "main-relay stage on cavity 23 follows it"),
     ("baroRaw",   "{ s5500w08 & 1023 }", "cnt",
-     "S5500 AN8 HOG / udsu_w raw; valid while s5500Base = 4"),
+     "onboard ambient sensor raw (I/O chip AN8); valid while s5500Base = 4"),
     ("ambientVoltage", "{ baroRaw * %.10f }" % _AMB["volts_per_count"], "V",
-     "ambient-pressure sensor voltage, A2L spg_uw_q0p00488 = 5/1024 V/count"),
+     "onboard ambient sensor voltage, 5/1024 V/count"),
     ("ambientPressure", _AMB_EXPR, "hPa", _AMB_NOTE),
     ("ambientPressureBar", "{ ambientPressure * 0.001 }", "bar",
      "ambientPressure converted hPa -> bar"),
@@ -1557,6 +1556,27 @@ DERIVED_CH = [
      "bit 8"),
     ("baroWindowOk", "{ s5500Base == 4 }", "",
      "1 when baroRaw points at runtime frame word 12"),
+    # The fuel model in words (Fuel > Fuel model, Setup > Base engine): the
+    # CONFIGURATION, as expressions over the page - Speeduino's
+    # `strokeMultipler = { twoStroke == 1 ? 1 : 2 }`. Indices into
+    # hcFuelModelList / hcLoadAxisList / hcDensityList.
+    ("cfgFuelModel", "{ fuelModel }", "",
+     "configured fuel model (hcFuelModelList)"),
+    ("cfgVeAxisKind",
+     "{ (fuelModel == 2 || (fuelModel == 0 && loadSource == 0)) ? "
+     "(pressureRole == 1 ? 4 : (pressureRole == 2 ? 5 : 1)) : 2 }", "",
+     "what the VE table is looked up on (hcLoadAxisList)"),
+    ("cfgDensityKind",
+     "{ fuelModel == 2 ? 0 : (fuelModel == 3 ? (densityPolicy == 2 ? 5 : 1) "
+     ": (fuelModel == 1 ? (ambientCorrection == 1 ? 4 : 3) "
+     ": (loadSource == 2 ? 3 : (pressureRole == 1 ? 0 "
+     ": (pressureRole == 2 ? 1 : 2))))) }", "",
+     "which pressure sets the air density (hcDensityList)"),
+    ("ambientFallback", "{ (loadFlags & 4) != 0 && ambientSource != 0 }", "",
+     "the selected ambient source has no valid reading: reference in use"),
+    ("iatDensityFallback",
+     "{ (loadFlags & 8) != 0 && fuelModel != 0 && fuelUseIat == 1 }", "",
+     "intake temperature selected for density but not valid: 20 C in use"),
     ("nvmNotBurned", "{ (nvmState & 255) == 1 }", "",
      "the page has been edited since the last Burn"),
     ("nvmBurnPending", "{ (nvmState & 255) == 2 || (nvmState & 255) == 3 }", "",
@@ -1803,16 +1823,36 @@ for _i in range(1, 5):
 # V98: one list indexed like ENUM_LOAD_AXIS (hcengctl711.c hc_ec_ign_load):
 # the fuel load is MAP kPa (speed density) or throttle % (alpha-N).
 LOAD_AXIS_LISTS = [
-    ("hcLoadAxisList", ["Fuel load", "MAP (kPa)", "Throttle position (%)",
-                        "Cylinder filling (%)"]),
+    # 0..3 = ENUM_LOAD_AXIS; 4/5 name the pressure by where it is measured
+    ("hcLoadAxisList", ["Fuel load", "Pressure sensor (kPa)",
+                        "Throttle position (%)", "Cylinder filling (%)",
+                        "Manifold pressure (kPa)", "Charge pressure (kPa)"]),
+    ("hcFuelModelList", ["Legacy compatibility", "Pure Alpha-N (TPS)",
+                         "Speed density (manifold pressure)",
+                         "Boosted Alpha-N (TPS + charge pressure)"]),
+    ("hcDensityList", ["Measured manifold pressure",
+                       "Measured charge pressure",
+                       "Measured pressure sensor",
+                       "Reference pressure", "Ambient pressure",
+                       "Ambient + boost blend"]),
+    ("hcAmbientSrcList", ["Reference pressure", "Engine-stopped reading",
+                          "Onboard barometric sensor"]),
     # V98: hcengctl711.h EC_STFT_* (the closed-loop state's low byte)
     ("hcStftList", ["Off", "Engine not running", "Startup delay",
                     "Coolant cold / sensor fault", "No valid lambda",
                     "Hold after fuel cut", "Hold after enrichment",
                     "Hold after other cut", "Correcting",
                     "VE table being written",
-                    "Legacy activity hold (unused in V101)"]),
+                    "Activity hold (not used)"]),
 ]
+
+SENSOR_LABEL = {
+    "cltError": "Coolant temperature", "mapError": "Pressure sensor",
+    "tps1Error": "Throttle track 1", "tps2Error": "Throttle track 2",
+    "app1Error": "Pedal track 1", "app2Error": "Pedal track 2",
+    "tpsPairError": "Throttle tracks agree", "appPairError": "Pedal tracks agree",
+    "vbatError": "Battery voltage", "iatError": "Intake air temperature",
+}
 
 SENSOR_BITS = [
     (0x0001, "cltError"), (0x0002, "mapError"),
@@ -1857,45 +1897,40 @@ HELP_TOPICS = [
     # resetless and physically qualified, the user arm is retired (V84), and
     # seven topics dialogs named had never been declared at all.
     ("hcHelpFiringOrder", "Firing order and TDC", [
-        "HaniCore does not take a named firing order. It takes the TDC angle "
-        "of each cylinder in crank degrees, which is the more general thing "
-        "and is what the scheduler actually uses.",
-        "Cylinder 1 is normally 0. The others follow the engine's firing "
-        "order at 720/n degree spacing for a four-stroke.",
-        "A wrong TDC angle does not misfire politely - it fires into a "
-        "closing valve. Check it with a timing light before loading the "
-        "engine (Ignition / Ignition hardware, Timing mode FIXED).",
+        "Choose the engine's firing order from the list: the ECU places each "
+        "cylinder's top dead centre (TDC) from it, for an even-firing "
+        "four-stroke. For an odd-firing engine choose Custom and enter each "
+        "cylinder's TDC in crank degrees after cylinder 1.",
+        "Injector and coil pins stay assigned per cylinder (Injection / "
+        "Ignition hardware): never rearrange pins to match the firing order.",
+        "A wrong order fires into a closing valve. Check it with a timing "
+        "light (Ignition > Ignition hardware, fixed timing) before loading "
+        "the engine.",
     ]),
     ("hcHelpTrigger", "Trigger setup", [
         "Teeth is the number of teeth the wheel WOULD have if none were "
         "missing. Gap is how many are missing. A 60-2 wheel is 60 and 2.",
         "Edge selects which capture edge the tooth is counted on. Getting it "
         "wrong shifts every ignition and injection event by a tooth width.",
-        "Trigger source decides whether the real crank and cam captures may "
-        "be armed at all, or only the bench generator. It is a safety gate, "
-        "not a convenience.",
+        "Trigger source decides whether the real crank and cam inputs are "
+        "used, or only the bench generator.",
         "Crank sync alone is enough for batch or semi-sequential fuel and "
         "wasted spark.",
         "Trigger angle is WHERE TOOTH #1 IS, in crank degrees after "
         "cylinder-1 TDC: negative = before TDC. Tooth #1 is the first tooth "
         "after the missing-tooth gap - the edge that ends the gap. A 60-2 "
         "whose first tooth after the gap passes the sensor 78 deg before "
-        "TDC is -78.0 (13 teeth x 6 deg). Speeduino's trigger angle means "
-        "the same; rusEFI's trigger angle offset is the same number with "
-        "the sign flipped (+78 there = -78 here).",
-        "It is a measured number. Set FIXED timing (Ignition / Ignition "
-        "hardware), aim a timing light at cylinder 1, and change the "
-        "trigger angle until the light shows the fixed angle - or run the "
-        "tooth profile (Tooth profile / compression TDC), which needs no "
-        "light. Every other angle - the TDC table, spark, injection, the "
-        "cam check angle, knock windows - is in degrees after cylinder-1 "
-        "TDC and moves with it: re-check the cam check angle after a "
-        "correction.",
-        "VAG 1.8T (AWT): the preset is -78.0 (stock ECU: 72 deg from its "
-        "reference mark, the tooth after tooth #1, to TDC). The first car "
-        "page ran on -2.0 - the old internal offset 358.0 - which is 76 deg "
-        "from it. That difference is not a conversion error; see "
-        "docs/firmware/design/ME711_CRANK_REFERENCE.md before loading an engine on either.",
+        "TDC is -78.0 (13 teeth x 6 deg). Coming from Speeduino: its trigger "
+        "angle means the same; from rusEFI: its trigger angle offset is the "
+        "same number with the sign flipped (+78 there = -78 here).",
+        "It is a measured number. Set fixed timing (Ignition > Ignition "
+        "hardware), aim a timing light at cylinder 1 and change the trigger "
+        "angle until the light shows the fixed angle - or run the tooth "
+        "profile, which needs no light. Every other angle (TDC table, spark, "
+        "injection, cam check angle, knock windows) is in degrees after "
+        "cylinder 1 TDC and moves with it: re-check the cam check angle "
+        "after a correction.",
+        "VAG 1.8T (AWT) base tune: -78.0.",
     ]),
     ("hcHelpInjMode", "Injection mode", [
         "Batch and semi-sequential fire injectors in groups and need only "
@@ -1907,9 +1942,9 @@ HELP_TOPICS = [
         "it is added after the flow calculation and never scaled by it.",
     ]),
     ("hcHelpDbw", "Electronic throttle", [
-        "The bridge is a Bosch CJ220. On undervoltage, over-temperature or "
-        "over-current it goes tristate and drives its fault pin LOW - which "
-        "is why the fault-pin mode default is 'LOW is a fault'.",
+        "On undervoltage, over-temperature or over-current the throttle "
+        "driver switches off and pulls its fault line LOW - hence the default "
+        "fault polarity 'LOW is a fault'.",
         "The two pedal tracks and the two throttle tracks must agree within "
         "their tolerance before the controller will close the loop. That is "
         "the plausibility check, and it is not optional.",
@@ -1923,19 +1958,18 @@ HELP_TOPICS = [
         "the endpoints; PID Autotune tunes and verifies using the stored "
         "endpoints. The Grab buttons and the bounded bench "
         "test remain the manual ways.",
-        "Battery compensation (on by default, Bosch DLRUBSOLL) scales the "
-        "motor output by 13.5 V / battery, so the gains mean the same torque "
-        "at 9 V cranking and 14 V running.",
+        "Battery compensation (on by default) scales the motor output by "
+        "13.5 V / battery, so the gains mean the same torque at 9 V cranking "
+        "and 14 V running.",
         "A pedal or throttle sensor error must persist for the confirm time "
-        "(AWT: 140 ms, Bosch TVPWDK12) before it latches; meanwhile the last "
-        "output is HELD. A latched fault clears at the next key-on with the "
-        "engine stopped. AutoCal preserves latched faults.",
-        "The bridge runs at 2 kHz, the OEM's own frequency (V93; V92 ran "
-        "20 kHz, the CJ220's limit, and the plate got a fraction of the "
-        "commanded torque).",
+        "(default 50 ms) before it latches; meanwhile the last output is "
+        "held. A latched fault clears at the next key-on with the engine "
+        "stopped. AutoCal keeps latched faults.",
+        "The bridge PWM frequency is set in this dialog; 2 kHz is this ECU's "
+        "factory value. Much higher frequencies lose motor torque.",
     ]),
     ("hcHelpTransient", "Transient fuel", [
-        "The wall film (X-tau, rusEFI's wall-wetting model): of every "
+        "The wall film (X-tau wall-wetting model): of every "
         "injection a share X lands on the port wall, and the film gives a "
         "share Tc/(tau+Tc) of itself to the cylinder each cycle. The ECU "
         "injects (want - film share) / (1 - X), so the CYLINDER receives "
@@ -1947,12 +1981,11 @@ HELP_TOPICS = [
         "injected and the film dries; the re-entry automatically injects "
         "the film's rebuild.",
         "Tuning: a lean spike on a tip-in (lambda log) = more X or more tau "
-        "at that coolant; rich = less. transCorrUs shows the film's share "
-        "live, wallFilmUs the fuel on the wall.",
+        "at that coolant; rich = less. The live values beside the settings "
+        "show the film's share and the fuel on the wall.",
         "After-start: extra fuel the moment cranking ends, decaying linearly "
         "over the after-start duration.",
-        "Physical qualification pending: the AWT values are rusEFI-like "
-        "starting points (judgement), tune with a wideband.",
+        "The VAG 1.8T base values are starting points: tune with a wideband.",
     ]),
     ("hcHelpEtbCommission", "ETB AutoCal", [
         "AutoCal ETB runs the TPS endpoint calibration and, only if it "
@@ -1962,44 +1995,40 @@ HELP_TOPICS = [
         "adjusted candidate gains; only verified gains are published. Nothing "
         "is burned and DBW is never enabled: after a PASS review the values "
         "and Burn.",
-        "AutoCal captures both independent opposing TPS tracks during bounded "
-        "drive in each direction (dbwAutocalMs, clamped 300..1500 ms; "
-        "dbwAutocalDuty, clamped 20..60 %). Both spans must reach 100 counts, "
-        "the spring rest must lie between the ends and agree between tracks. "
-        "AN2/IPV is amplified TPS1 and clips normally; it is diagnostic only. "
+        "AutoCal captures both throttle tracks while driving the plate in "
+        "each direction for a bounded time (AutoCal dwell 300..1500 ms, "
+        "AutoCal duty 20..60 %). Both spans must reach 100 counts, the "
+        "spring rest must lie between the ends and agree between tracks. "
         "Direction A/B reports POSITION CAPTURED, not physical stop contact. "
         "A stationary position alone cannot distinguish a stop from insufficient "
         "motor torque. Confirm full travel, spring return, current and bridge "
         "voltage on the actual throttle body before accepting calibration.",
         "PID autotune: brings the plate to 50 % (50% NOT REACHED if it cannot "
-        "within 1.5 s), then a +/- dbwTuneAmp relay for 8 + 16 cycles (15 s "
+        "within 1.5 s), then a +/- relay amplitude for 8 + 16 cycles (15 s "
         "at most). OUT OF BAND: the plate left 20..80 %. PID IMPLAUSIBLE: "
         "amplitude outside 0.5..30 % or period outside 20..1000 ms. KI "
         "LIMITED: the rule asked for more integral gain than the page field "
         "holds; the field maximum (lower) is written. PID Autotune only needs "
         "stored endpoints (NO ENDPOINTS otherwise).",
-        "Every run stops at once on RPM > 0, OUTPUTS OFF (page, S5500 link or "
-        "key), BRIDGE (SF), TPS RAIL or Abort. IN: names the phase a failure "
-        "happened in. Combined AutoCal keeps endpoint and PID candidates private "
-        "until verification passes; failure publishes neither candidate.",
-        "The detailed log of a run is tools/vehicle/me711_dbw_vehicle_test.py - it "
-        "records every phase, both raw tracks, the bounded capture, "
-        "every autotune cycle and the page before/after.",
+        "Every run stops at once on RPM > 0, OUTPUTS OFF (configuration, I/O "
+        "chip link or key), BRIDGE fault, TPS at a rail or Abort. IN: names "
+        "the phase a failure happened in. Combined AutoCal keeps endpoint and "
+        "PID results private until verification passes; a failure publishes "
+        "neither.",
+        "For a detailed record of every phase, log the run with the HaniCore "
+        "vehicle tool.",
     ]),
     ("hcHelpBench", "Bench tests", [
-        "Every bench test requires: the engine stopped (rpm 0 and no crank "
-        "edge), a valid page, the S5500 supervision link, one selected "
-        "channel on a proven port, a pulse and duration clamped in code, a "
-        "finite count and automatic release. ABORT stops it at once.",
-        "There is no arming switch (retired in V84): the test button IS the "
-        "deliberate act. A refused test says WHICH precondition failed "
-        "(Controller / Bench state and refusals) - it is never a silent "
-        "no-op.",
-        "Physically qualified on this ECU: the fuel pump stage (cavity 65, "
-        "active-LOW, logic analyser). Injector, coil and "
-        "throttle-motor outputs are NOT yet physically qualified - their "
-        "first test on an installation is a first-actuation measurement: "
-        "one channel, nothing else connected, then the next.",
+        "Every bench test requires the engine stopped (rpm 0 and no crank "
+        "signal), a valid configuration and the I/O chip link. It drives one "
+        "output with a pulse and duration limited by the firmware, a finite "
+        "number of times, then releases it. ABORT stops it at once.",
+        "There is no arming switch: the test button is the deliberate act. A "
+        "refused test says which condition failed (Controller > Bench state "
+        "and refusals) - it never silently does nothing.",
+        "On a new installation treat the first test of each injector, coil "
+        "and throttle output as a measurement: one channel, nothing else "
+        "connected, then the next.",
     ]),
     ("hcHelpBurn", "Burn and calibration storage", [
         "Editing a value changes RAM immediately and the engine uses it at "
@@ -2008,11 +2037,12 @@ HELP_TOPICS = [
         "Burn takes a SNAPSHOT at the instant you press it and writes it to "
         "the ECU's own flash as a new record. The session stays connected; "
         "a Burn does not reset the ECU.",
-        "Burn with the engine stopped (about 1 s) or cranking. Above about "
-        "500 rpm on a 60-2 wheel there is no time to program flash between "
-        "teeth: the Burn is refused on its deadline, the old record stays "
-        "valid and your edits stay live - stop the engine and Burn again. "
-        "Diagnostics / Calibration storage says why.",
+        "Burn with the engine stopped or cranking: the connection pauses for "
+        "a few seconds while flash is written, then resumes by itself. Above "
+        "about 500 rpm on a 60-2 wheel there is no time to program flash "
+        "between teeth: the Burn is refused, the old record stays valid and "
+        "your edits stay live - stop the engine and Burn again. Diagnostics > "
+        "Calibration storage says why.",
         "A record is valid only when its last word is written; until then "
         "the previous record is the one the ECU boots from.",
     ]),
@@ -2020,29 +2050,60 @@ HELP_TOPICS = [
         "Coolant and intake-air are a curve from raw ADC counts to "
         "temperature (this ECU's own OEM curve by default). Place a point "
         "by reading the live counts with the sensor at a known temperature.",
-        "A sensor in fault reads its fault value - coolant and intake air "
-        "-40 C, MAP 0 kPa (no air, so no fuel) - on the gauge and in the "
-        "models alike, and lights its FAULT lamp and trouble code. "
-        "Diagnostics / Why? / Which sensor failed? says which.",
+        "A sensor in fault displays its fault value - coolant and intake air "
+        "-40 C, pressure 0 kPa - lights its FAULT lamp and sets its trouble "
+        "code. The engine does not run on the displayed value: each function "
+        "uses its own fallback (a failed coolant sensor gives no warm-up "
+        "enrichment; under Legacy compatibility a failed pressure sensor "
+        "fuels from the pressure estimate table - see Fuel > Fuel model help "
+        "for the other models). Diagnostics > Why? > Which sensor failed? "
+        "says which.",
     ]),
     ("hcHelpThermistor", "Temperature sensors", [
         "The curve maps raw ADC counts to temperature. Counts beyond either "
-        "end of the curve are read as open or short circuit: the sensor "
-        "then reads -40 C and its FAULT lamp lights.",
+        "end of the curve are open or short circuit: the sensor then "
+        "displays -40 C, its FAULT lamp lights, and fuel, ignition and idle "
+        "use their own fallback values.",
         "Coolant is cavity 93 and intake air cavity 26 on this ECU. On an AWT "
         "harness the IAT wire (AWT cavity 85) must be moved to cavity 26: "
         "Porsche cavity 85 is a pressure input and cannot read an NTC.",
     ]),
-    ("hcHelpPressure", "Pressure input role", [
-        "Transfer: kPa x10 = offset + counts x gradient / 1000. Use the sensor's specified calibration.",
-        "AWT cavity 101 measures pre-throttle CHARGE PRESSURE. Select its role explicitly in Fuel / Load model.",
-        "Manifold Speed Density requires a true manifold sensor. Pure Alpha-N uses reference or qualified ambient pressure. Charge Alpha-N uses upstream pressure continuously or the configured BARO-relative blend.",
-        "Pressure enters density once. A missing authoritative input inhibits boost and cuts under configured load conditions. Legacy compatibility preserves the old loadSource arithmetic.",
+    ("hcHelpPressure", "Fuel model and pressure sensor", [
+        "The fuel model decides what the VE table is looked up on and which "
+        "pressure sets the air density. Pure Alpha-N: throttle; the reference "
+        "pressure, optionally corrected for ambient. Speed density: manifold "
+        "pressure for both. Boosted Alpha-N: throttle for VE; the charge "
+        "pressure before the throttle for density, measured or as an ambient "
+        "+ boost blend. Legacy compatibility runs HaniCore's original models "
+        "so existing calibrations behave exactly as before.",
+        "Pressure sensor location must match the hardware. VAG 1.8T (AWT): "
+        "cavity 101 measures charge pressure before the throttle, not "
+        "manifold pressure. A location that does not fit the model is "
+        "refused (Speed density needs a manifold sensor, Boosted Alpha-N a "
+        "charge-pressure sensor).",
+        "Transfer: kPa x10 = offset + counts x gradient / 1000, from the "
+        "sensor's data sheet.",
+        "Pressure enters the air density once - there is no second pressure "
+        "multiplier. A lost pressure reading closes the boost valve. Speed "
+        "density and Boosted Alpha-N have no pressure estimate: without the "
+        "reading they deliver no fuel (Setup > Limits and protection adds the "
+        "cut under load). Legacy compatibility fuels from the pressure "
+        "estimate table instead.",
+        "Changing the model does not rescale the VE table: retune it.",
     ]),
-    ("hcHelpBaro", "Ambient source and freshness", [
-        "The dedicated HOG read path exists, but its estimated transfer is unqualified for fuel authority. Its selection uses fixed fallback with validity false.",
-        "Fuel / Ambient source chooses fixed reference or fresh stopped-pressure capture after one second stopped. Capture has a finite age lease, never learns running boost, and falls back after expiry.",
-        "Diagnostics show value, provenance, validity and age. Pure Alpha-N ambient correction is optional; charge blending uses ambient as its gauge-pressure reference. No hidden second pressure multiplier.",
+    ("hcHelpBaro", "Ambient pressure", [
+        "Ambient (barometric) pressure is used by Pure Alpha-N's ambient "
+        "correction and by the Boosted Alpha-N ambient + boost blend. The "
+        "other models do not use it.",
+        "Onboard barometric sensor: the ECU's own sensor on the circuit "
+        "board, converted with this ECU's factory calibration and accepted "
+        "between 400 and 1200 hPa. A missing or out-of-range reading falls "
+        "back to the reference pressure.",
+        "Pressure sensor with the engine stopped: after 1 s at rest the "
+        "pressure sensor reads ambient; the value is kept for the set time "
+        "and never learnt from running boost.",
+        "Reference pressure: the fixed value set in Fuel > Fuel model. The "
+        "panel shows which source is in use and whether it fell back.",
     ]),
     ("hcHelpTpsCal", "Throttle position sensor", [
         "This page only reads the two tracks. The throttle is set up in "
@@ -2057,20 +2118,19 @@ HELP_TOPICS = [
         "the whole travel, or the throttle will never enter closed loop.",
     ]),
     ("hcHelpAppCal", "Pedal position sensor", [
-        "Pedal released: Grab Idle/Up. Pedal floored: Grab WOT/Down. Both "
-        "tracks together, to RAM - Burn to keep them.",
+        "Pedal released: Grab Released. Pedal floored and held: Grab Full "
+        "Pedal. Both tracks together, in RAM - Burn to keep them.",
         "A VAG pedal's second track reads about half the first; with "
         "correlation SAME both still normalise to 0..100 % and are compared.",
     ]),
     ("hcHelpVvt", "Cam phase control (VVT)", [
-        "Each cam b drives its solenoid stage (pinCam<b>Sol: cavity 115 = "
-        "the CPU's POUT0, 120 = POUT1, CJ920 low sides, freewheel diodes) "
-        "from its target table (rpm x rl, degrees of ADVANCE).",
-        "CLOSED LOOP measures the cam: camPhaseMode must be PATTERN for that "
-        "cam input, and the position is the identified tooth 0's deviation "
-        "from its nominal angle (advance = the tooth earlier). A position "
-        "older than the max age is not a measurement - duty 0, PID reset "
-        "(rusEFI's rule).",
+        "Each cam drives its solenoid on cavity 115 or 120 (low-side PWM with "
+        "a freewheel diode) from its target table (rpm x cylinder filling, "
+        "degrees of advance).",
+        "Closed loop measures the cam: the cam phase method must be Pattern "
+        "for that cam input (Setup > Trigger), and the position is the "
+        "identified tooth's deviation from its nominal angle. A position "
+        "older than the maximum age is not a measurement: duty 0, PID reset.",
         "ON/OFF (1.8T 20V-style adjusters): a target > 0 switches the "
         "solenoid ON at the on/off duty; no position needed.",
         "Direction: if more duty RETARDS the cam, set it inverted.",
@@ -2079,15 +2139,14 @@ HELP_TOPICS = [
         "target by more than the limit for the time (stuck or slow "
         "phaser), the tooth outside the pattern's VVT authority, or "
         "enabled without a stage routed.",
-        "Start with the bench burst: a logic analyser on 115 / 120 shows "
-        "frequency, polarity and duty. Not measured on this ECU yet.",
+        "Start with the bench burst: a scope on 115 / 120 shows frequency, "
+        "polarity and duty. Not yet measured on this ECU.",
     ]),
     ("hcHelpKnock", "Knock control", [
-        "The CC195 on the board integrates each knock sensor's band-passed "
-        "signal over a crank-angle WINDOW after each cylinder's TDC; the "
-        "integral (KI, ADC counts) is compared with that cylinder's learned "
-        "QUIET reference times the threshold factor. Bosch ME7 KR, with "
-        "rusEFI's time-based recovery.",
+        "The knock processor on the board integrates each knock sensor's "
+        "band-passed signal over a crank-angle window after each cylinder's "
+        "TDC; the integral (ADC counts) is compared with that cylinder's "
+        "learned quiet reference times the threshold factor.",
         "START IN MONITOR. It measures and detects exactly like Active but "
         "never changes the spark. Log a drive: each cylinder's level (KI / "
         "reference) should sit near 1.0 when quiet; a real knock is a spike "
@@ -2104,43 +2163,42 @@ HELP_TOPICS = [
         "diagnosis count) gives its cylinders the sensor-fault retard.",
         "Until the cam has identified the cycle the retard is applied to the "
         "cylinder AND its 360-degree twin (the window cannot tell them apart).",
-        "Not yet measured on hardware: the CC195 select/gain codes are read "
-        "from the OEM binary; the cavity of each sensor number is from the "
-        "family table (PROBABLE). A scope on MF (P8.0) and KI (AN15) with a "
-        "sensor tapped is the bench test.",
+        "Not yet measured on hardware: check each sensor's signal with a "
+        "tapped sensor and a log in Monitor before using Active.",
     ]),
     ("hcHelpLambda", "Wideband lambda", [
-        "Two onboard Bosch CJ120 wideband interfaces. An AWT LSU sensor plugs "
-        "into bank 1 (cavities 70, 51, 71, 52; heater low side 5).",
-        "Measured lambda feeds the closed-loop fuel correction (Fuel > "
-        "Closed loop fuel correction) and VE Analyze, ONLY while the sensor "
-        "is READY: heater in closed loop on Ri, pump current on, calibration "
-        "and DIAG clean. The heater stage is bench-proven (V93); heating a "
-        "fitted sensor is the car's first qualification step. Lambda reads 0 "
-        "whenever it is not a measurement - that means 'not a measurement', "
-        "never 'rich', and closed loop drops that bank's trim.",
+        "Two onboard Bosch LSU wideband controllers. A VAG 1.8T (AWT) sensor "
+        "plugs into bank 1 (cavities 70, 51, 71, 52; heater low side 5).",
+        "Measured lambda feeds closed loop fuel correction (Fuel > Closed "
+        "loop fuel correction) and VE Analyze only while the sensor is READY: "
+        "heated to temperature, pump current on, calibration and diagnosis "
+        "clean. Lambda 0 means 'not a measurement', never 'rich', and closed "
+        "loop then drops that bank's trim.",
+        "The heater drive is proven on the bench; heating a fitted sensor is "
+        "the first vehicle qualification step.",
     ]),
     ("hcHelpIgnition", "Ignition hardware", [
-        "Coil outputs are CK110 current-source stages: about 5 V during dwell, "
-        "spark on the falling edge. Probe them through a divider, not a "
-        "pull-up.",
+        "Coil outputs drive coils with built-in igniters: about 5 V during "
+        "dwell, spark on the falling edge. Probe them through a divider, not "
+        "a pull-up.",
         "Wasted spark needs only crank sync; coil-on-plug sequential needs "
         "the cam. Running dwell is the Ignition / Dwell curve; cranking "
         "dwell and cranking advance are in Cranking settings.",
         "Validate with FIXED timing and a timing light before trusting the "
-        "map; the commanded advance is clamped to 60 deg BTDC.",
+        "table; the commanded advance is limited to -30..60 deg BTDC.",
     ]),
     ("hcHelpRouting", "Hardware routing", [
         "Every pin field is a PHYSICAL CONNECTOR CAVITY of the ME7.1.1 "
         "121-pin connector. Each list offers only cavities whose driver "
         "stage can do the job, and the validator refuses a conflicting or "
         "impossible assignment - the page then does not apply.",
-        "Cavity 21 is KL15 (a power input), 23 the CJ910 main relay stage, "
-        "18 and 22 the CJ120 chip selects, 4 and 5 the LSU heater low sides. "
-        "None of them is a general-purpose output.",
-        "An AWT harness needs terminal moves in its connector before this ECU "
-        "is fitted (KL15, relay feed, relay drive, IAT) - see the project "
-        "notes; never plug it onto an unmodified harness.",
+        "Cavity 21 is the ignition (KL15) power input, 23 the main relay "
+        "stage, 18 and 22 internal wideband chip selects, 4 and 5 the "
+        "wideband heater low sides. None of them is a general-purpose output.",
+        "A VAG 1.8T (AWT) harness needs terminal moves in its connector "
+        "before this ECU is fitted (ignition feed, relay feed, relay drive, "
+        "intake air temperature) - see docs/PINOUT.md; never plug it onto an "
+        "unmodified harness.",
     ]),
 ]
 
@@ -2157,11 +2215,11 @@ DIAG_DIALOGS = [
       "Overlap is refused; minimum commanded OFF separation is 100 us.",
       "Delivered is the internal GPIO command interval. Verify valve opening on the bench."],
      ["inj%d%s"%(b,n) for b in range(1,9) for n in ("FuelUs","DeadUs","RequestedFullUs","AcceptedFullUs","DeliveredFullUs","Owner","Flags")]),
-    ("hcDiagLoadPolicy", "Load, density and ambient provenance",
-     ["rho = effective absolute pressure / (R air x temperature); air = rho x cylinder volume x VE.",
-      "Fuel mass = air / (stoich x target lambda). Density ratio is diagnostic; no second multiplier.",
-      "AWT cavity 101 measures CHARGE PRESSURE before the throttle, not manifold MAP.",
-      "Ambient validity certifies a leased software sample; dedicated HOG transfer is unqualified."],
+    ("hcDiagLoadPolicy", "Fuel model and air density",
+     ["Air = density x cylinder volume x VE; density = pressure / (R x temperature).",
+      "Fuel = air / (stoichiometric ratio x target lambda). The density ratio is for reference only.",
+      "Ambient source in use: 0 reference, 1 engine-stopped reading, 2 onboard sensor.",
+      "Flags: 1 invalid model, 2 pressure lost, 4 ambient fallback, 8 intake temperature fallback."],
      ["loadModelNow","pressureRoleNow","densityPolicyNow","veValue","veAxisInput","pressureMeasured","pressureValid","pressureAge","ambientUsed","ambientProvenance","ambientValid","ambientAgeSeconds","densityPressure","densityRatio","chargeBlendWeight","densityTemperature","airMgX10","baseFuelMass","loadFlags","leanMeasurement","leanEligible","leanPersistMs","leanLatched","leanRecoveryMs"]),
     ("hcDiagRuntime", "Engine runtime",
      ["What the engine layer currently believes, pass by pass.",
@@ -2183,21 +2241,20 @@ DIAG_DIALOGS = [
       "schedulerCatchup", "schedulerPending", "schedulerStatus",
       "scheduledDwellStart", "scheduledSpark", "scheduledInjStart",
       "scheduledInjEnd", "nextIgnSlot", "nextInjSlot"]),
-    ("hcDiagThrottle", "Throttle and relays",
-     ["THE WHOLE DBW CHAIN, so a bench can see WHY a duty is what it is.",
-      "dbwSteps must climb at about 200/s - a frozen count means the 5 ms",
-      "control raster is not running at all.",
+    ("hcDiagThrottle", "Throttle, pedal and relays",
+     ["The whole throttle chain, to see why a duty is what it is.",
+      "dbwSteps climbs at about 200/s; a frozen count means the 5 ms",
+      "throttle control is not running.",
       "",
       "dbwFaults latches: 1 calibration, 2 pedal pair, 4 throttle pair,",
-      "8 pedal range, 16 throttle range, 32 bridge fault pin, 64 off target",
+      "8 pedal range, 16 throttle range, 32 bridge fault, 64 off target",
       "too long, 128 no backing sensor, 256 outputs not live.",
       "",
-      "mainRelayLife low byte is the lifecycle state, high byte the",
-      "CONFIGURED cavity. fuelPumpState carries state, request and cavity",
-      "in one word so they cannot be read from different passes.",
-      "outputPins is the CPU port READ BACK (V75): 1 pump pin on, 2 relay",
-      "pin on, 4 pump permitted, 8 relay refused permission; V77 adds",
-      "16/32/64, the live CC15/CC8/CC9 capture pin levels."],
+      "mainRelayLife: low byte the lifecycle state, high byte the",
+      "configured cavity. fuelPumpState carries state, request and cavity.",
+      "outputPins is the port read back: 1 pump pin on, 2 relay pin on,",
+      "4 pump permitted, 8 relay refused, 16/32/64 crank / cam 1 / cam 2",
+      "input levels."],
      ["dbwState", "dbwFaults", "dbwSteps", "dbwPedalX10", "dbwTargetX10",
       "dbwActualX10", "dbwErrorX10", "dbwDutyX10", "dbwInteg",
       "dbwTermP", "dbwTermD", "dbwTermFf", "dbwOutRaw", "dbwBattFactor",
@@ -2216,11 +2273,11 @@ DIAG_DIALOGS = [
       "Burn A, then edit to B without burning: A is what is permanent.",
       "Burn A, edit to B, Burn again: B is what is permanent.",
       "",
-      "A BURN KEEPS THE SESSION - no reset, no reconnect (physically",
-      "qualified, V51..V60). It takes about 1 s with the engine stopped",
-      "and works while cranking. Above about 500 rpm on a 60-2 there is",
-      "no time between teeth to program flash: the Burn is REFUSED on its",
-      "deadline (livePauseReason 3), the previous record stays valid and",
+      "A BURN KEEPS THE SESSION - no reset, no reconnect. TunerStudio",
+      "pauses for a few seconds while flash is written, then resumes.",
+      "It works with the engine stopped or cranking. Above about 500 rpm",
+      "on a 60-2 there is no time between teeth to program flash: the Burn",
+      "is REFUSED (livePauseReason 3), the previous record stays valid and",
       "the edits stay live - stop the engine and Burn again.",
       "A reset, a disconnect or an NVM error during a Burn is a STOP",
       "condition, not normal behaviour.",
@@ -2233,11 +2290,11 @@ DIAG_DIALOGS = [
       "nvmPollMax", "nvmCommitStage", "nvmCommitLastStage",
       "nvmCommitFailStage", "releaseId", "cfgSource", "cfgStateBits",
       "cfgBurns", "cfgWrites", "ramBad"]),
-    ("hcDiagBurnReset", "Burn reset forensics (V45)",
-     ["V45 DIAGNOSTIC BUILD ONLY. This dialog is retained evidence for ONE",
-      "Burn. Do not Burn again, reset, or power-cycle before recording it.",
-      "All values are compact live numeric readouts; flags are documented in",
-      "the V45 bench card and diagnostic field map."],
+    ("hcDiagBurnReset", "Burn forensics: reset log",
+     ["Developer record of the last Burn and the last reset, kept across",
+      "resets. Record it before burning, resetting or power-cycling again.",
+      "Stages and flags are defined in the calibration-storage and boot",
+      "code (hcnvm.c, hcmain_me711.c)."],
      ["bfBurnEpoch", "bfBootEpoch", "bfFlags", "bfCurrentStage",
       "bfLastStage", "bfFailStage", "bfFailureReason", "bfNvmState",
       "bfNvmPhase", "bfNvmResult", "bfNvmCell", "bfNvmPos",
@@ -2248,10 +2305,10 @@ DIAG_DIALOGS = [
       "rstPreviousTrap", "rstPreviousTrapMs", "rstPreviousWdtServices",
       "rstPreviousTarget0", "rstPreviousTarget1", "rstPreviousTarget2",
       "rstPreviousTarget3", "rstPreviousTarget4", "bfRecordPresent"]),
-    ("hcDiagLiveBurn", "Live Burn qualification (V49 forensics)",
-     ["PHYSICAL QUALIFICATION REQUIRED.",
-      "Edit P3, then press Burn explicitly. Closing this dialog does not Burn.",
-      "ONE BURN PER QUALIFICATION STEP. After pressing Burn, record the result before pressing Burn again, resetting or power-cycling.",
+    ("hcDiagLiveBurn", "Burn forensics: live Burn",
+     ["Developer view of a Burn in progress: admission windows, flash writer,",
+      "interrupt and I/O chip safety. To exercise it, edit the persistence",
+      "test byte and press Burn; closing this dialog does not Burn.",
       "Status: READY / PROGRAMMING / PAUSED / REJECTED / DURABLE SUCCESS / FAILED."],
      ["releaseId", "nvmState", "liveBurnError", "liveGeneration", "liveCommits",
       "liveAttempts", "nvmSlot", "liveWordsTotal", "liveWordsCompleted",
@@ -2263,39 +2320,24 @@ DIAG_DIALOGS = [
       "livePec0Remaining", "livePec4Remaining", "liveSscCon", "liveAsicDenied",
       "liveAsicOverdue", "liveSscErrors", "liveRpm"]),
     ("hcDiagRamProbe", "External SRAM execution probe",
-     ["RUN THIS BEFORE YOU EVER PRESS BURN ON THIS ECU. It writes no",
-      "flash, drives no pin and changes no calibration.",
+     ["Developer check that this board can run code from external RAM,",
+      "which the flash writer (Burn) relies on. It writes no flash, drives",
+      "no pin and changes no calibration; the engine must be stopped.",
       "",
-      "The flash writer cannot run from flash - the device it erases is",
-      "the device the CPU fetches from - so it copies itself into the",
-      "external SRAM at 0x386000 and runs there. That has only ever been",
-      "proven in a simulator. If this board cannot do it, the first",
-      "discovery would otherwise be a half-erased calibration sector.",
-      "",
-      "Each button copies a small routine into exactly that region, CALLs",
-      "it across the segment boundary, and checks it came back with the",
-      "right answer. The routine reads a seed, runs a loop with a",
-      "conditional branch in it, and writes its signature last - so a",
-      "board that can fetch straight-line code but not branch, or one",
-      "that runs half way, fails rather than passes.",
+      "Each button copies a small routine with a loop and a branch into",
+      "the writer's RAM region, calls it and checks the answer.",
       "",
       "ramProbe low byte: 0 never run, 2 PASS, 3 wrong answer, 4 no",
-      "signature, 5 SRAM unusable, 6 refused (the engine could be",
-      "turning - it needs RPM 0 and no crank signal).",
+      "signature, 5 RAM unusable, 6 refused (engine turning).",
+      "A result stuck at 1 (running) after a reset means this board",
+      "cannot run code from external RAM: do not Burn.",
       "",
-      "IF IT READS 1 (RUNNING) AND THE ECU JUST RESET, THIS BOARD CANNOT",
-      "EXECUTE FROM EXTERNAL SRAM. Do not use the flash writer. Say so",
-      "and stop - the state is written before the call and survives the",
-      "reset, which is exactly why it is there.",
-      "",
-      "Press two different seeds. One correct answer could be luck."],
+      "Use two different seeds."],
      ["ramProbe", "ramProbeSeed", "ramProbeResult", "ramBad"]),
-    ("hcDiagNativeIo", "Wideband, N75 and key-off - the ASIC-owned I/O",
-     ["Lambda reads 0 whenever it is not a measurement; lam1Why/lam2Why",
-      "say why (0 = valid). The LSU heater stage is reached (V93 bench);",
-      "heating a fitted sensor is the car's first test (the AWT preset",
-      "enables bank 1 and closed loop on it). N75 (cavity 104) is an ASIC",
-      "output switched through the frame every 10 ms."],
+    ("hcDiagNativeIo", "Wideband, boost valve and key-off",
+     ["Lambda reads 0 whenever it is not a measurement; lam1Why / lam2Why",
+      "say why (0 = valid). The boost valve (cavity 104) and the wideband",
+      "heaters are switched through the I/O chip every 10 ms."],
      ["lambda1X1000", "lambda1Valid", "heater1State", "heaterDuty",
       "cj1Diag", "cj120Reg1", "cj120Ident", "cj120Xfers", "o2Pre1Volts",
       "lambda2X1000", "lambda2Valid", "heater2State",
@@ -2312,18 +2354,18 @@ DIAG_DIALOGS = [
       "runOnCount", "mainRelayBound", "relayFeedV"]),
     # hcDiagDtc: V97 (2026-09-30) moved to gen_ts_ux_me711 - a readable
     # P-code list instead of eight raw integers.
-    ("hcDiagSensors", "Sensors and HAL",
-     ["halAinMask has one bit per HAL channel: 1 means this BOARD really",
-      "reads it. A dark bit is an honest 'no source', not a fault."],
+    ("hcDiagSensors", "Sensors and inputs",
+     ["halAinMask has one bit per analog input: 1 means this board really",
+      "reads it. A dark bit means 'no source', not a fault."],
      ["halAinMask", "sensorErr", "cfgRouteRouted", "cfgRouteMismatch",
       "tpsX10", "tps2X10", "pedalX10", "pedal2X10", "baroRaw",
       "ambientVoltage", "ambientPressure", "tps1Voltage", "tps2Voltage",
       "app1Voltage", "app2Voltage", "s5500Base", "s5500Idx",
       "cltDc", "cltRawAsic", "iatDc", "iatRawAsic", "mapKpaX10",
       "adc14_DSS", "o2Pre1Volts", "o2Pre2Volts", "kl15Status"]),
-    ("hcDiagPlatform", "Platform and comms",
-     ["Boot, serial and the S5500 supervision link. rxHwOvr and rxOvf are",
-      "the two that mean bytes were actually lost."],
+    ("hcDiagPlatform", "Communication and ECU link",
+     ["Boot, serial link and I/O chip link. rxHwOvr and rxOvf count",
+      "bytes that were actually lost."],
      ["bootStage", "tickMs", "loopCount", "frames", "calTicks", "cfgSource",
       "ramBad", "rxBytes", "rxReqs", "rxResync", "rxHwOvr", "rxFrameErr",
       "rxOvf", "rxEchoLost", "linkRate", "linkLocked", "linkSwitches",
@@ -2437,6 +2479,10 @@ def crosscheck():
     # quietly loads a broken expression (exactly what happened when the first
     # APP/TPS voltage views used Bosch net names instead of the emitted names).
     known = {name for _off, name, *_rest in CH}
+    # A derived channel may also read a scalar PAGE constant - the cfg*
+    # fuel-model descriptions do (Speeduino's own idiom, `strokeMultipler =
+    # { twoStroke == 1 ? 1 : 2 }`). Arrays are not addressable this way.
+    known |= {f.meta.ts for f in UI.MODEL.resolve()[0] if f.count == 1}
     for name, expression, _units, _desc in DERIVED_CH:
         refs = set(re.findall(r"[A-Za-z_]\w*", expression))
         missing_refs = sorted(refs - known)
@@ -2699,10 +2745,19 @@ def main() -> int:
         ("tickMs", "System tick", "ms", 0, 65535),
         ("calTicks", "T7 ticks/byte", "tick", 0, 1300),
         ("battery", "Battery", "V", 0, 17),
-        ("ambientPressure", "Ambient Pressure", "hPa", 300, 1300),
-        ("ambientPressureBar", "Ambient Pressure", "bar", 0, 2),
-        ("baroRaw", "Ambient raw (HOG)", "cnt", 0, 1023),
-        ("ambientVoltage", "Ambient Sensor", "V", 0, 5),
+        ("ambientPressure", "Onboard baro sensor", "hPa", 300, 1300),
+        ("ambientPressureBar", "Onboard baro sensor", "bar", 0, 2),
+        ("baroRaw", "Onboard baro sensor raw", "cnt", 0, 1023),
+        ("ambientVoltage", "Onboard baro sensor voltage", "V", 0, 5),
+        ("ambientUsed", "Ambient pressure used", "kPa", 0, 130),
+        ("ambientAgeSeconds", "Ambient reading age", "s", 0, 3600),
+        ("pressureMeasured", "Pressure sensor", "kPa", 0, 400),
+        ("densityPressure", "Air density pressure", "kPa", 0, 400),
+        ("densityTemperature", "Air density temperature", "K", 230, 400),
+        ("densityRatio", "Density vs reference", "", 0, 4),
+        ("chargeBlendWeight", "Boost blend weight", "", 0, 1),
+        ("veAxisInput", "VE table axis value", "", 0, 400),
+        ("leanMeasurement", "Lean protection lambda", "lambda", 0, 2),
         ("app1Voltage", "Pedal 1 voltage", "V", 0, 5),
         ("app2Voltage", "Pedal 2 voltage", "V", 0, 5),
         ("app1Raw", "Pedal 1 raw", "cnt", 0, 1023),
@@ -3241,8 +3296,10 @@ def main() -> int:
     # The mask decoders are built from the firmware's own headers, so they are
     # handed to the UX module rather than written down there twice.
     _dynamic = {
-        "hcPanelSensors": ['      indicator = { %s }, "%s OK", "%s FAULT"'
-                           % (nm, nm, nm) for _mask, nm in SENSOR_BITS],
+        "hcPanelSensors": ['      indicator = { %s }, "%s OK", "%s FAULT", '
+                           'white, black, red, black'
+                           % (nm, SENSOR_LABEL[nm], SENSOR_LABEL[nm].upper())
+                           for _mask, nm in SENSOR_BITS],
         "hcPanelFuelCut": SEM.fault_indicators("fuelCut", "fuelCut"),
         "hcPanelInhibits": SEM.fault_indicators("safetyInhibits",
                                                 "safetyInhibits"),
@@ -3284,10 +3341,10 @@ def main() -> int:
     # have handled '!W' since V20, and tests/unit/test_ts_commands.py checks both
     # directions. tests/unit/test_ts_ini_ui_contract.py is the gate that would have
     # caught this before it reached hardware.
-    w('   dialog = hcBench, "HaniCore ME711 bench"')
-    w('      commandButton = "Restart the ASIC link", cmdAsicRestart')
-    w('      field = "Main relay mode", mainRelayModeCfg')
-    w('      field = "Relay mismatch grace", mainRelayGraceMs')
+    w('   dialog = hcBench, "I/O chip link restart"')
+    w(label("Developer use: restarts the I/O chip link (wideband, analog"))
+    w(label("inputs, boost valve, heaters) without a reset. Engine stopped."))
+    w('      commandButton = "Restart the I/O chip link", cmdAsicRestart')
     w("")
     # V89 UI: FOUR COLUMNS, NOT ONE. The rules, the channel buttons, the
     # auxiliary outputs and the live state side by side - it was ~150 text
@@ -3296,22 +3353,23 @@ def main() -> int:
     # view; it is the same unconditional command.
     w('   dialog = hcOutputTestRules, ""')
     for line in [
-        "READ THIS BEFORE PRESSING ANYTHING.",
+        "#Each test drives ONE output for a short, bounded time.",
         "",
-        "Nothing here drives a pin unless ALL of these hold at once:",
-        "   the decoder reports NO CRANK SIGNAL and rpm is 0",
-        "   the page is valid        (cfgValidation reads 0)",
-        "   the S5500 supervision link is running",
+        "It runs only when all of these hold:",
+        "   the engine is stopped (no crank signal, rpm 0)",
+        "   the configuration is valid",
+        "   the I/O chip link is running",
         "",
-        "Pulse width is testValue, CLAMPED IN FIRMWARE to 20 ms for an",
-        "injector and 4 ms for a coil. Ten pulses, 200 ms apart, then stop.",
-        "A crank edge, an invalid page or Abort stops it where it stands.",
+        "The pulse is the bench test value, limited by the firmware to",
+        "20 ms for an injector and 4 ms for a coil. Ten pulses, 200 ms",
+        "apart. A crank signal, an invalid configuration or ABORT stops",
+        "it at once.",
         "",
-        "Injector, coil and throttle outputs are NOT physically qualified",
-        "yet: the FIRST run is a measurement - nothing connected, a scope",
-        "on the connector pin, one channel, then the next.",
+        "!On a new installation the first test of each output is a",
+        "!measurement: nothing else connected, a scope or test lamp on",
+        "!the pin, one channel at a time.",
         "",
-        "hcbState 3 = REFUSED, and hcbRefuse names every reason at once.",
+        "A refused test lists every reason (Bench state and refusals).",
         "",
     ]:
         w(label(line))
@@ -3333,20 +3391,18 @@ def main() -> int:
     w('      commandButton = "ABORT", cmdTestAbort')
     w(label(""))
     for line in [
-        "# FUEL PUMP RELAY - EKP, cavity 65, a LOW-SIDE sink measured",
-        "# active-LOW (V76): relay coil from switched +12 V to cavity 65.",
-        "Timed in MILLISECONDS here - watch hcbWidthMs, not hcbWidthUs.",
+        "# Fuel pump relay - cavity 65, low-side: relay coil from",
+        "# switched +12 V to cavity 65. Timed in milliseconds.",
     ]:
         w(label(line))
     w('      commandButton = "Fuel pump relay", cmdTestPump')
     w(label(""))
     for line in [
-        "# MAIN RELAY - the logical output on its configured cavity. Only",
-        "# a CPU-driven cavity (65) can be tested. Cavity 23 - the CJ910",
-        "# relay stage the AWT base tune uses - follows KL15 in hardware,",
-        "# so there the test is REFUSED (hcbRefuse bit 512), by design.",
-        "! Cavity 21 is KL15, a power input: never a relay output.",
-        "Bounded: 3 x up to 1 s, then it stops itself.",
+        "# Main relay - the configured cavity. Only a CPU-driven cavity",
+        "# (65) can be tested; cavity 23 follows the key in hardware, so",
+        "# the test is refused there by design.",
+        "! Cavity 21 is the ignition (KL15) input, never a relay output.",
+        "Three pulses of up to 1 s, then it stops.",
     ]:
         w(label(line))
     w('      commandButton = "Main relay (configured cavity)", cmdTestRelay')
@@ -3354,20 +3410,20 @@ def main() -> int:
     # Each explanation now sits directly above ITS buttons (until V89 the
     # throttle text was followed by the cam buttons).
     for line in [
-        "# THROTTLE BRIDGE - S8100, OU1 cavity 117 / OU2 cavity 118.",
-        "! RPM must be zero, the TPS tracks must agree and SF must be",
-        "! clean before this will start. It aborts on bridge fault, on",
-        "! the plate moving past a compiled-in band, or on the tracks",
-        "! disagreeing. Three nudges of at most 50 ms - not a stroke.",
+        "# Throttle motor - cavities 117 / 118.",
+        "! Engine stopped, throttle tracks agreeing and no bridge fault,",
+        "! or it refuses. Three nudges of at most 50 ms; it stops on a",
+        "! bridge fault, the plate leaving a fixed band, or the tracks",
+        "! disagreeing.",
     ]:
         w(label(line))
     w('      commandButton = "Throttle bridge, direction A", cmdTestDbwA')
     w('      commandButton = "Throttle bridge, direction B", cmdTestDbwB')
     w(label(""))
     for line in [
-        "# CAM SOLENOIDS - MAIN POUT0 -> cavity 115, POUT1 -> cavity 120.",
-        "! Three bursts of the OEM 250 Hz PWM at 50 % duty, each as long",
-        "! as the test value (ms, clamped). Stage ON = pin LOW (CJ920).",
+        "# Cam solenoids - cavities 115 and 120.",
+        "! Three 250 Hz bursts at 50 % duty, each as long as the test",
+        "! value (ms, limited by the firmware).",
     ]:
         w(label(line))
     w('      commandButton = "Cam solenoid, cavity 115", cmdTestVvt1')
@@ -3388,22 +3444,13 @@ def main() -> int:
     # V89 UI: the explanation beside the controls and the result.
     w('   dialog = hcS5500Help, ""')
     for line in [
-        "TRY 12 AND 8 FIRST - they are predictions, not a scan.",
-        "me711_s5500_static_map puts coolant at word 21-23 and the",
-        "whole analog block at words 7-25. Base 12 covers it.",
+        "#Developer use only. Moves the 16-word analog window over the",
+        "#I/O chip frame to locate the analog block.",
         "",
-        "Read s5500Idx after each. 0xFFFF means all sixteen words",
-        "decode as ADDAT channels 0..15 - that is the block.",
+        "Normal operation needs base 4. After each move read s5500Idx:",
+        "0xFFFF means all sixteen words carry their own channel number.",
         "",
-        "# USE THE FIELD BELOW FIRST, NOT THE BUTTONS.",
-        "# Typing a number here is an ORDINARY PAGE WRITE - the same",
-        "# mechanism every other field on every other dialog uses, and",
-        "# the one whose read half is already proven on this ECU.",
-        "! On 2026-09-02 the buttons underneath transmitted NOTHING on",
-        "! the real ECU with this .ini parsing correctly and the",
-        "! controller online. They are kept because the firmware parser",
-        "! behind them is proven offline - but the field is the path",
-        "! that does not depend on [ControllerCommands] at all.",
+        "Type the base in the field, or use the buttons.",
     ]:
         w(label(line))
     w("")
@@ -3412,7 +3459,7 @@ def main() -> int:
         w('      readout = %sGauge' % g)
     w("")
     w('   dialog = hcS5500Controls, ""')
-    w('      field = "S5500 window base word", s5500WindowBase')
+    w('      field = "Analog window base word", s5500WindowBase')
     w(label(""))
     for base in S5500_SWEEP:
         w('      commandButton = "window at word %d", cmdS5500Win%d'
@@ -3420,7 +3467,7 @@ def main() -> int:
     w(label(""))
     w('      panel = hcS5500Live')
     w("")
-    w('   dialog = hcS5500, "S5500 analog window sweep", xAxis')
+    w('   dialog = hcS5500, "I/O chip analog window sweep", xAxis')
     w('      panel = hcS5500Help')
     w('      panel = hcS5500Controls')
     w("")
@@ -3741,17 +3788,18 @@ def main() -> int:
         ("hcDiagRuntime", "Engine runtime"),
         ("hcDiagThrottle", "Throttle, pedal and relays"),
         ("hcDiagSensors", "Sensors and inputs"),
-        ("hcDiagNativeIo", "Wideband, N75 and key-off (ASIC)"),
+        ("hcDiagNativeIo", "Wideband, boost valve and key-off"),
         ("hcDiagPersist", "Calibration storage (Burn)"),
         ("hcDiagPlatform", "Communication and ECU link"),
+        ("hcDiagLoadPolicy", "Fuel model and air density"),
     ]
     DEV_MENU = [
-        ("hcBench", "Bench modes and ASIC restart"),
-        ("hcS5500", "S5500 window sweep"),
-        ("hcCtrlS5500Dlg", "S5500 correlation window"),
-        ("hcDiagRamProbe", "External SRAM execution probe"),
-        ("hcDiagLiveBurn", "Live Burn qualification (V49 forensics)"),
-        ("hcDiagBurnReset", "Burn reset forensics (V45)"),
+        ("hcBench", "I/O chip link restart"),
+        ("hcCtrlS5500Dlg", "I/O chip analog window"),
+        ("hcS5500", "I/O chip analog window sweep"),
+        ("hcDiagRamProbe", "External RAM execution probe"),
+        ("hcDiagLiveBurn", "Burn forensics: live Burn"),
+        ("hcDiagBurnReset", "Burn forensics: reset log"),
     ]
 
     def diag_entries():
@@ -3779,8 +3827,8 @@ def main() -> int:
             ("hcBenchState", "Bench state and refusals"),
             UX.SEP,
             ("hcCtrlDlg", "Controller and identity"),
-            ("hcUnusedSettings", "Unused settings (stored, not read)"),
-            ("hcUnusedIo", "Unused pin assignments (no runtime path)"),
+            ("hcUnusedSettings", "Unused settings"),
+            ("hcUnusedIo", "Unused pin assignments"),
             UX.SEP,
             ("GROUP", "Developer diagnostics", DEV_MENU),
         ]),
