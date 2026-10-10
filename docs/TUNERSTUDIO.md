@@ -14,7 +14,7 @@ py tools\tunerstudio\gen_ts_ini_me711.py
 |---|---|
 | `tunerstudio/hanicore_me711.ini` | the `.ini` for the image built from the same tree |
 | `tunerstudio/hanicore_me711_<stem>.ini` | the same file under the image's name |
-| `tunerstudio/hanicore_me711_<stem>_forensic.ini` | read-only variant with the extended diagnostic channels |
+| `tunerstudio/hanicore_me711_<stem>_forensic.ini` | developer project: everything in the user project plus the developer pages (I/O chip analog window, external-RAM probe, Burn forensic records, actuator command telemetry, page housekeeping) and the extended diagnostic channel block |
 | `tunerstudio/hanicore_me711_<stem>_userdefined_fallback.ini` | variant for TunerStudio builds that reject newer dialog syntax |
 | `tunerstudio/HaniCore.dash` | default gauge cluster (needs a local rusEFI checkout to generate) |
 | `tunerstudio/plugin/` | the K-line connection plugin (published binary) |
@@ -82,7 +82,11 @@ unchanged and names the field. It never Burns. Built-ins:
 * **Board default** — what is true of this ECU whatever engine is fitted; a
   fresh or blank-store ECU starts on it.
 * **VAG 1.8T DBW (AWT)** — routing, trigger, cam, strategies and engineering
-  starting points for the AWT. It deliberately does **not** set injector,
+  starting points for the AWT. Pressure sensor location: charge pressure
+  (before the throttle); ambient source: the onboard barometric sensor; fuel
+  model: Legacy compatibility (alpha-N + measured pressure), because the
+  calibration's sensor-fault behaviour is Legacy's
+  ([ARCHITECTURE.md](ARCHITECTURE.md#fuel-model)). It deliberately does **not** set injector,
   coil or pressure-sensor data, or VE and ignition tables (named gaps). With
   no injector flow entered, a fresh page delivers no fuel.
 * **Custom** — nothing is set.
@@ -139,7 +143,7 @@ ports. A field the firmware does not read is labelled "(not used)".
 | Cranking, Idle | cranking and after-start; idle control and idle timing |
 | Advanced | launch / flat shift / anti-lag, VVT, boost control, electronic throttle |
 | Sensors | CLT, IAT, TPS, pedal, MAP / charge pressure sensor, onboard baro sensor (ambient pressure source), wideband, MAF input |
-| Controller | Base Tunes, bench test, controller identity, unused settings; developer diagnostics |
+| Controller | Base Tunes, bench test, unused settings (developer pages: forensic project only) |
 | Diagnostics | status overview, "Why?" pages, trouble codes, live state per subsystem |
 
 *Fuel → Fuel model* names the VE table axis, the air-density pressure and the

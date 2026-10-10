@@ -261,6 +261,9 @@ static const hc_preset_item_t HC_PRESET_MEM items_vag_18t_me711[] = {
     { 2640u,   300u, 2u }, /* injRefPressureKpa */
     { 2642u,     0u, 2u }, /* crankingDwellMsX100 */
     { 1236u,     1u, 1u }, /* loadSource */
+    { 3710u,     0u, 1u }, /* fuelModel */
+    { 3711u,     2u, 1u }, /* pressureRole */
+    { 3713u,     2u, 1u }, /* ambientSource */
     {  640u,   500u, 2u }, /* fuelRpmAx[0] */
     {  642u,   950u, 2u }, /* fuelRpmAx[1] */
     {  644u,  1400u, 2u }, /* fuelRpmAx[2] */
@@ -1166,7 +1169,7 @@ const hc_preset_t hc_engine_presets[] = {
     { 1u, items_vag_18t_me75_awt, 51u, 0x03C2u, 0u }, /* VAG 1.8T AWT (ME7.5 image only) */
     { 2u, items_bosch_me711, 20u, 0x02F9u, 0u }, /* Porsche V8 donor - incomplete, refused */
     { 4u, items_bosch_me711_board, 16u, 0x02F9u, 1u }, /* Board defaults - routing only, no engine - BOARD DEFAULT */
-    { 3u, items_vag_18t_me711, 1043u, 0x02F9u, 0u }, /* VAG 1.8T DBW (AWT) */
+    { 3u, items_vag_18t_me711, 1046u, 0x02F9u, 0u }, /* VAG 1.8T DBW (AWT) */
 };
 
 const unsigned char hc_engine_preset_count = 5u;

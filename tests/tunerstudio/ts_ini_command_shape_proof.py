@@ -341,7 +341,26 @@ def main(argv):
 
     print("=== TunerStudio ControllerCommand shape proof ===\n")
     print("  ini   %s" % path.name)
-    bad = run_checks(text)
+    # The tuner's project carries only the commands its pages press; the
+    # developer commands (I/O chip window, RAM probe, link restart) live in
+    # the forensic project. So the user file must be clean apart from
+    # firmware cases only the developer pages reach, and the firmware <-> .ini
+    # cross-check and the mutation test run on the forensic project.
+    found = sorted((ROOT / "tunerstudio").glob("*_forensic.ini"))
+    forensic = found[0] if len(found) == 1 else None
+    if not path.name.endswith("_forensic.ini") and forensic is not None:
+        dev_text = forensic.read_text(errors="replace")
+        dev_bad = run_checks(dev_text)
+        # a firmware case the user file does not press is fine exactly when
+        # the developer project presses it
+        bad = [b for b in run_checks(text)
+               if not (b.startswith("ORPHANFW") and b not in dev_bad)]
+        bad += ["[%s] %s" % (forensic.name, b) for b in dev_bad]
+        print("  ini   %s (developer project: the full command set)"
+              % forensic.name)
+        text = dev_text
+    else:
+        bad = run_checks(text)
 
     print()
     if bad:

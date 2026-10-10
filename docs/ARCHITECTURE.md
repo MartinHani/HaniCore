@@ -132,6 +132,21 @@ pressure), alpha-N + measured pressure (throttle axis, the measured pressure —
 the AWT base tune), and pure alpha-N (throttle axis, 101.3 kPa). A failed
 pressure sensor fuels from the pressure estimate table (rpm × throttle).
 
+Legacy alpha-N + measured pressure and Boosted Alpha-N with measured density
+compute the same air while every sensor is valid. They differ on faults:
+
+| condition | Legacy alpha-N + measured pressure | Boosted Alpha-N |
+|---|---|---|
+| pressure sensor fault | pressure estimate table (rpm × throttle) | no density pressure: no fuel, plus the pressure-loss cut under load |
+| pressure reading older than *Pressure reading maximum age*, or outside 10–500 kPa | used unless the sensor's own fault detection rejects it | treated as lost |
+| intake air temperature fault | 0 °C (rich side) | 20 °C |
+| intake air temperature not selected | always uses it | 20 °C |
+
+The VAG 1.8T (AWT) base tune therefore stays on Legacy compatibility, with the
+sensor location (charge pressure) and the ambient source (onboard sensor)
+stated explicitly; switching it to Boosted Alpha-N is a deliberate choice of
+those fault semantics.
+
 The configuration is refused when the location does not fit the model (Speed
 density needs a manifold sensor, Boosted Alpha-N a charge-pressure sensor).
 Changing the model never rescales the VE table: a VE table is an effective

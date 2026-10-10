@@ -750,6 +750,26 @@ ENGINE_PRESETS: list[Preset] = [
                "loadSource": Value(1, V, "CAL_LOAD_TPS: alpha-N x inlet "
                                    "pressure - the AWT sensor is upstream of "
                                    "the throttle"),
+               # THE FUEL MODEL STAYS LEGACY COMPATIBILITY, deliberately.
+               # Boosted Alpha-N with measured density equals this with every
+               # sensor valid, but not on a fault: Legacy fuels from the
+               # pressure estimate table on a pressure-sensor fault, counts a
+               # stale reading as valid, and takes 0 C on an IAT fault; the
+               # modern model delivers no air without the pressure and takes
+               # 20 C. Those are this calibration's fault semantics.
+               "fuelModel": Value(0, V, "Legacy compatibility: keeps the "
+                                  "pressure-estimate and IAT fault fallbacks "
+                                  "this calibration was made with"),
+               # The hardware truth, explicit (a page migrated from the
+               # previous layout carries role 0). Neither changes the Legacy
+               # arithmetic: the role only feeds the optional pressure-loss
+               # cut (off) and the engine-stopped capture; the ambient value
+               # only feeds the modern models and the readout.
+               "pressureRole": Value(2, V, "cavity 101 is the charge-pressure "
+                                     "sensor before the throttle (pvdkdsl_w)"),
+               "ambientSource": Value(2, V, "the ECU's onboard barometric "
+                                      "sensor, this ECU's own factory "
+                                      "transfer (me711_ambient_pressure.py)"),
                "fuelRpmAx": Value([500 + 450 * i for i in range(16)], V,
                                   "HaniCore's default rpm grid, set "
                                   "explicitly"),

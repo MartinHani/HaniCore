@@ -46,13 +46,26 @@ def good_text():
     return GOOD.read_text(errors="replace")
 
 
+# The developer pages (I/O chip window, RAM probe, Burn forensics) are only in
+# the forensic project; the mutations that edit them use that file.
+DEV = sorted((ROOT / "tunerstudio").glob("*_forensic.ini"))[0]
+
+
+def dev_text():
+    return DEV.read_text(errors="replace")
+
+
 def test_the_generated_ini_is_clean():
     assert C.audit(GOOD)[1] == []
 
 
+def test_the_forensic_ini_is_clean():
+    assert C.audit(DEV)[1] == []
+
+
 def test_an_unterminated_label_is_caught(tmp_path):
     line = '      field = "Normal operation needs base 4. After each move read s5500Idx:"'
-    good = good_text()
+    good = dev_text()
     assert line in good, "the mutation anchor is gone - re-anchor it"
     t = good.replace(line, line[:-1], 1)
     msgs = [m for _n, m in audit_text(tmp_path, t)]
@@ -68,7 +81,8 @@ def test_an_output_channel_in_a_field_is_caught(tmp_path):
 
 
 def test_a_button_with_no_command_is_caught(tmp_path):
-    t = good_text().replace("cmdS5500Win12", "cmdS5500Win12Typo", 1)
+    t = dev_text().replace("cmdS5500Win12", "cmdS5500Win12Typo", 1)
+    assert "cmdS5500Win12Typo" in t, "the mutation found no cmdS5500Win12"
     msgs = [m for _n, m in audit_text(tmp_path, t)]
     assert any("not defined in [ControllerCommands]" in m
                for m in msgs), msgs
@@ -84,7 +98,7 @@ def test_a_gauge_with_no_definition_is_caught(tmp_path):
 def test_a_menu_pointing_at_no_dialog_is_caught(tmp_path):
     # The entry is a groupChildMenu since the V89 rusEFI pass (Controller /
     # Developer diagnostics); mutate whichever keyword carries it.
-    t = good_text().replace('Menu = hcS5500, ', 'Menu = hcS5500Typo, ', 1)
+    t = dev_text().replace('Menu = hcS5500, ', 'Menu = hcS5500Typo, ', 1)
     assert 'hcS5500Typo' in t, 'the mutation found no hcS5500 menu entry'
     msgs = [m for _n, m in audit_text(tmp_path, t)]
     assert any("not defined" in m and "hcS5500Typo" in m for m in msgs), msgs

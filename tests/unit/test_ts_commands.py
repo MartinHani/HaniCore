@@ -25,6 +25,10 @@ import hcpaths  # noqa: F401,E402  (puts every tools/ and tests/ module on sys.p
 
 ROOT = Path(__file__).resolve().parents[2]
 INI = ROOT / "tunerstudio/hanicore_me711.ini"
+# The developer commands (I/O chip window sweep, RAM probe, link restart)
+# are offered by the developer (forensic) project only; "offered" means by
+# either file, and the user file offers a subset.
+INI_DEV = sorted((ROOT / "tunerstudio").glob("*_forensic.ini"))[0]
 GEN = ROOT / "tools/tunerstudio/gen_ts_ini_me711.py"
 MAIN = ROOT / "firmware/targets/me711/diagnostics/hcdiag711.c"
 
@@ -100,6 +104,9 @@ def test_the_ini_is_generated_and_says_so():
 def test_every_ini_command_exists_in_the_firmware():
     fw = _firmware_commands()
     ini = _ini_commands(INI.read_text(errors="replace"))
+    assert ini <= _ini_commands(INI_DEV.read_text(errors="replace")), \
+        "the user project offers a command the developer project does not"
+    ini = _ini_commands(INI_DEV.read_text(errors="replace"))
     assert ini, "no '!' commands found in the .ini - the parser is wrong"
     missing = sorted(ini - fw)
     assert not missing, (
@@ -109,7 +116,7 @@ def test_every_ini_command_exists_in_the_firmware():
 
 def test_every_firmware_command_is_offered_or_declared_terminal_only():
     fw = _firmware_commands()
-    ini = _ini_commands(INI.read_text(errors="replace"))
+    ini = _ini_commands(INI_DEV.read_text(errors="replace"))
     unoffered = sorted(fw - ini - set(TERMINAL_ONLY))
     assert not unoffered, (
         "hcts_target_cmd() handles %s but nothing offers it and it is not in "
@@ -162,7 +169,7 @@ def test_the_s5500_window_sweep_is_reachable_from_tunerstudio():
     WITHOUT another flash. It was implemented in the firmware but reachable
     only from a terminal, which meant a bench session had to leave TunerStudio
     to use it."""
-    text = INI.read_text(errors="replace")
+    text = INI_DEV.read_text(errors="replace")
     # THE LETTER IS AN ESCAPE NOW. V37B respelled every literal because real
     # TunerStudio drops a second consecutive plain character, so `"!W\x0c"`
     # became `"!\x57\x0c"` and the wire bytes stayed identical. Matching the
@@ -188,7 +195,7 @@ def test_the_sweep_covers_the_whole_runtime_frame():
     m = re.search(r"#define\s+TGT_ASIC_WORDS_RUN\s+(\d+)", hdr)
     assert m, "TGT_ASIC_WORDS_RUN not found"
     words = int(m.group(1))
-    text = INI.read_text(errors="replace")
+    text = INI_DEV.read_text(errors="replace")
     bases = sorted(int(b) for b in
                    re.findall(r'cmdS5500Win(\d+)\s*=', text))
     assert bases[0] == 4, (

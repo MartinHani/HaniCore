@@ -275,7 +275,10 @@ class Model:
 
 
 # ------------------------------------------------------------------ check --
-def check(text, verbose=True):
+def check(text, verbose=True, user=False):
+    """user=True: the tuner's project, which must NOT carry the developer
+    pages (gen_ts_ini_me711.DEV_ONLY); they are required in the forensic
+    project instead, and so is the SRAM probe chain."""
     m = Model(text)
     bad = []
 
@@ -312,6 +315,11 @@ def check(text, verbose=True):
 
     # 4. the required diagnostics dialogs, from the generator's own table
     for did in REQUIRED_DIAG:
+        if user and did in G.DEV_ONLY:
+            if did in m.decl:
+                bad.append("DEVELOPER  %s is a developer page and belongs in "
+                           "the forensic project only" % did)
+            continue
         chans = REQUIRED_DIAG_CHANNELS.get(did, [])
         if chans and not any(declares_channel(text, c) for c in chans):
             continue                 # this file has none of its channels
@@ -322,9 +330,11 @@ def check(text, verbose=True):
             bad.append("ORPHAN     required diagnostics dialog %s is not "
                        "reachable from any menu" % did)
 
-    # 5. THE SRAM EXECUTION PROBE, as a named chain.
+    # 5. THE SRAM EXECUTION PROBE, as a named chain (developer project).
     ents = m.entries_for(PROBE_DIALOG)
-    if not ents:
+    if user:
+        pass
+    elif not ents:
         bad.append("ORPHAN     the SRAM execution probe dialog %s is in no "
                    "menu - P0a cannot be performed" % PROBE_DIALOG)
     elif not any(_menu_name(e[0]) in PROBE_TOP_MENUS for e in ents):
@@ -333,7 +343,7 @@ def check(text, verbose=True):
                    % (PROBE_DIALOG, " or ".join(PROBE_TOP_MENUS),
                       ", ".join(sorted({e[0] for e in ents}))))
 
-    if PROBE_DIALOG in m.decl:
+    if PROBE_DIALOG in m.decl and not user:
         cmds = m.within(PROBE_DIALOG, "buttons")
         for seed in PROBE_SEEDS:
             def decoded(cname):
@@ -370,7 +380,7 @@ def check(text, verbose=True):
                  sum(1 for k in m.decl.values() if k == "dialog"),
                  sum(1 for k in m.decl.values() if k == "curve"),
                  sum(1 for k in m.decl.values() if k == "table")))
-        if not bad:
+        if not bad and not user:
             path = m.entries_for(PROBE_DIALOG)[0]
             print('    probe route: menu "%s" -> subMenu %s, "%s" -> dialog '
                   "%s -> %d seeded buttons"
@@ -469,10 +479,24 @@ def main(argv) -> int:
     path = Path(argv[1]) if len(argv) > 1 and not argv[1].startswith("--") \
         else DEFAULT_INI
     text = path.read_text(errors="replace")
+    # The tuner's project and the developer (forensic) project are checked
+    # together: the user file without the developer pages, the forensic file
+    # with them - and the mutation test runs where the probe lives.
+    dev_path = G.OUT_FORENSIC
+    user = not path.name.endswith("_forensic.ini") and dev_path.exists()
 
     print("=== TunerStudio menu reachability proof ===\n")
-    print("  ini   %s" % path.name)
-    bad = check(text)
+    print("  ini   %s%s" % (path.name, " (user project)" if user else ""))
+    bad = check(text, user=user)
+    if user:
+        print("  ini   %s (developer project)" % dev_path.name)
+        dev_text = dev_path.read_text(errors="replace")
+        bad += ["[%s] %s" % (dev_path.name, b) for b in check(dev_text)]
+        mutant = text + "\n   dialog = %s, \"probe\"\n" % PROBE_DIALOG
+        if not any(b.startswith("DEVELOPER") for b in check(mutant, False, True)):
+            bad.append("CONTROL    a developer page put back into the user "
+                       "project is not caught")
+        text = dev_text
 
     print()
     if bad:
@@ -482,7 +506,8 @@ def main(argv) -> int:
         print("  [PASS] every menu entry names something declared, every "
               "dialog is reachable")
         print("  [PASS] every required diagnostics dialog is reachable "
-              "(%d, from the generator's own table)" % len(REQUIRED_DIAG))
+              "(%d, from the generator's own table; developer pages only in "
+              "the forensic project)" % len(REQUIRED_DIAG))
         print("  [PASS] the SRAM execution probe chain is complete: "
               "Diagnostics -> dialog -> %d seeded buttons -> %s"
               % (len(PROBE_SEEDS), ", ".join(PROBE_GAUGES)))

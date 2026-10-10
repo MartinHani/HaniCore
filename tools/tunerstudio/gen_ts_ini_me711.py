@@ -2493,6 +2493,138 @@ def crosscheck():
     return top
 
 
+# Development-history tags (V45, V97, V98r2, ...) in channel descriptions say
+# WHEN something changed, which is the release record's job, not the
+# project file's. The descriptions keep them in this source; the generated
+# [OutputChannels] comments do not.
+_VER = r"V\d{2,3}[a-z]?\d?"
+
+
+def public_comment(c: str) -> str:
+    c = c.strip()
+    c = re.sub(r"\s*Until " + _VER + r"[^.]*\.", "", c)
+    c = re.sub(r"\s*\(" + _VER + r"(?: layout)?\)", "", c)
+    c = re.sub(r"\(" + _VER + r"[,:]?\s+", "(", c)
+    c = re.sub(r"(^|[.;]\s+)" + _VER + r":?\s+", r"\1", c)
+    c = re.sub(r"\bRETIRED " + _VER, "RETIRED", c)
+    c = re.sub(r"\b" + _VER + r"\s+(?=[a-z])", "", c)
+    c = re.sub(r"\s{2,}", " ", c)
+    for a, b in ((" :", ":"), (" ;", ";"), (" ,", ","), ("( ", "("),
+                 (" )", ")")):
+        c = c.replace(a, b)
+    c = re.sub(r"(\. )([a-z])", lambda m: m.group(1) + m.group(2).upper(), c)
+    return c.strip()
+
+
+def public_och_comments(lines):
+    out, sec = [], None
+    for ln in lines:
+        if ln.startswith("["):
+            sec = ln.strip()
+        if sec == "[OutputChannels]" and ";" in ln and not ln.lstrip().startswith(";"):
+            head, _sep, tail = ln.partition(";")
+            ln = head + "; " + public_comment(tail)
+        out.append(ln)
+    return out
+
+
+# THE USER PROJECT LEAVES OUT THE DEVELOPER PAGES. These open firmware
+# internals - the I/O chip window, the external-RAM probe, the Burn forensic
+# records, the executor's command telemetry, the page's own housekeeping
+# words - that no tuner or installer needs. They stay in the forensic project
+# (OUT_FORENSIC), which is the same file with the extended channel block.
+DEV_ONLY = ("hcBench", "hcCtrlS5500Dlg", "hcS5500", "hcDiagRamProbe",
+            "hcDiagLiveBurn", "hcDiagBurnReset", "hcDiagDeadline",
+            "hcDiagInjectorPulses", "hcCtrlDlg")
+
+
+def user_project(lines, dev_only=DEV_ONLY):
+    """`lines` minus the developer menu entries and every [UiDialogs] block
+    only they reach. Blocks the developer pages share with user pages stay."""
+    blk_re = re.compile(r"^ {3}(dialog|indicatorPanel|readoutPanel|help)\s*=\s*(\w+)")
+    menu_re = re.compile(r"^\s*(?:subMenu|groupChildMenu)\s*=\s*(\w+)")
+    sec, blocks, cur = None, {}, None
+    for i, ln in enumerate(lines):
+        if ln.startswith("["):
+            sec, cur = ln.strip(), None
+            continue
+        if sec != "[UiDialogs]":
+            continue
+        m = blk_re.match(ln)
+        if m:
+            cur = m.group(2)
+            blocks[cur] = {"kind": m.group(1), "start": i, "end": i + 1,
+                           "kids": set()}
+            continue
+        if cur:
+            blocks[cur]["end"] = i + 1
+            m = re.match(r"^\s*panel\s*=\s*(\w+)", ln)
+            if m:
+                blocks[cur]["kids"].add(m.group(1))
+    refs = [m.group(1) for ln in lines for m in [menu_re.match(ln)] if m]
+
+    def reach(roots):
+        seen, work = set(), list(roots)
+        while work:
+            b = work.pop()
+            if b not in seen:
+                seen.add(b)
+                work.extend(blocks.get(b, {}).get("kids", ()))
+        return seen
+    full = reach(refs)
+    user = reach(r for r in refs if r not in dev_only)
+    drop = {b for b in full - user
+            if b in blocks and blocks[b]["kind"] != "help"}
+    missing = set(dev_only) - full
+    if missing:
+        raise SystemExit("DEV_ONLY names pages the menu does not reach: %s"
+                         % sorted(missing))
+    gone = set()
+    for b in drop:
+        gone.update(range(blocks[b]["start"], blocks[b]["end"]))
+    out = []
+    for i, ln in enumerate(lines):
+        if i in gone:
+            continue
+        m = menu_re.match(ln)
+        if m and m.group(1) in dev_only:
+            continue
+        out.append(ln)
+    # A group whose children all left, and separators that now separate
+    # nothing, go too.
+    res = []
+    for i, ln in enumerate(out):
+        s = ln.strip()
+        if s.startswith("groupMenu"):
+            nxt = out[i + 1].strip() if i + 1 < len(out) else ""
+            if not nxt.startswith("groupChildMenu"):
+                continue
+        res.append(ln)
+    out, res = res, []
+    for i, ln in enumerate(out):
+        s = ln.strip()
+        if s == "subMenu = std_separator":
+            prev = res[-1].strip() if res else ""
+            nxt = out[i + 1].strip() if i + 1 < len(out) else ""
+            if (prev.startswith("menu =") or prev == "subMenu = std_separator"
+                    or nxt.startswith("menu =") or not nxt):
+                continue
+        res.append(ln)
+    # The commands only those pages' buttons send go with them.
+    btn = re.compile(r'^\s*commandButton\s*=\s*"[^"]*"\s*,\s*(\w+)')
+    pressed = lambda ls: {m.group(1) for ln in ls for m in [btn.match(ln)] if m}
+    gone_cmds = pressed(lines) - pressed(res)
+    out, sec = [], None
+    for ln in res:
+        if ln.startswith("["):
+            sec = ln.strip()
+        m = re.match(r"^(\w+)\s*=", ln)
+        if sec == "[ControllerCommands]" and m and m.group(1) in gone_cmds:
+            continue
+        out.append(ln)
+    return out
+
+
 def label(text: str) -> str:
     """A dialog line that is text only.
 
@@ -3925,7 +4057,9 @@ def main() -> int:
     # Whitespace at a line end has no TunerStudio meaning and makes a release
     # diff noisy; normalize it here so the versioned generated contract is
     # reproducible as well as syntactically valid.
-    L = [line.rstrip() for line in L]
+    L = public_och_comments([line.rstrip() for line in L])
+    L_dev = L
+    L = user_project(L_dev)
     OUT.write_text("\n".join(L) + "\n", encoding="ascii", newline="\n")
     OUT_VERSIONED.write_text("\n".join(L) + "\n", encoding="ascii", newline="\n")
     print(f"wrote {OUT}")
@@ -3982,7 +4116,7 @@ def main() -> int:
         157: "lfWriterResult",
     }
     forensic = []
-    for line in L:
+    for line in L_dev:
         if line.strip().startswith("ochBlockSize"):
             forensic.append("   ochBlockSize   = %d" % OCH_READ_SIZE)
             for i in range(172):

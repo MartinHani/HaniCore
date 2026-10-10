@@ -11,7 +11,7 @@ py tools\tunerstudio\gen_ts_ini_me711.py
 |---|---|
 | `hanicore_me711.ini` | the `.ini` for the current image |
 | `hanicore_me711_<stem>.ini` | the same, under the image's name |
-| `hanicore_me711_<stem>_forensic.ini` | read-only diagnostic variant |
+| `hanicore_me711_<stem>_forensic.ini` | developer project: adds the developer pages and the extended diagnostic channels |
 | `hanicore_me711_<stem>_userdefined_fallback.ini` | fallback for older TunerStudio dialog syntax |
 | `HaniCore.dash` | default gauge cluster |
 | `plugin/HaniCore_KLine_Transport_<version>.jar` | K-line connection plugin, with its build record (`.json`) |
