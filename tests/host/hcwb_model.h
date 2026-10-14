@@ -71,7 +71,8 @@ static unsigned int ur_of(model_t *m)
 static unsigned int ua_of(model_t *m)
 {
     long mv;
-    if ((m->physical & HCWB_LA) || !(m->physical & HCWB_PA) || !m->sensor)
+    /* PA is active low (hcwb.h): PA = 1 holds the pump current off */
+    if ((m->physical & HCWB_LA) || (m->physical & HCWB_PA) || !m->sensor)
         return (unsigned int)((int)UA0 + m->ua_shift);
     /* UA = zero + 8 x 61.9 ohm x Ip */
     mv = (long)UA0 * 5000L / 1023L + (long)m->ip_ua * 4952L / 10000L;
@@ -160,7 +161,7 @@ static void model_init(model_t *m)
     unsigned int i;
     unsigned char *p = (unsigned char *)m;
     for (i = 0u; i < sizeof(*m); i++) p[i] = 0u;
-    m->ms = 1000u; m->reg1 = 0x88u; m->chip_ok = 1u; m->diag = 0xFFu;
+    m->ms = 1000u; m->reg1 = HCWB_MODE_COLD; m->chip_ok = 1u; m->diag = 0xFFu;
     m->sensor = 1u; m->temp = 20u; m->vbatt = 140u; m->running = 0u;
     m->key_on = 1u; m->en = 1u; m->ip_ua = 0; m->ur_force = 0u;
     m->diag_force = 0u; m->ua_shift = 0; m->amb = 20u;

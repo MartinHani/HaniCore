@@ -94,8 +94,9 @@ static unsigned int frame_total(const hckline_t *k)
     if ((fmt & 0x80u) == 0u) {
         return 0xFFu;           /* not addressed - not for us */
     }
-    if ((fmt & 0x40u) != 0u) {
-        return 0xFFu;           /* functional/broadcast - refused */
+    if ((fmt & 0x40u) != 0u && k->state != HCKLINE_ST_FAST) {
+        return 0xFFu;           /* functional/broadcast - refused (only a
+                                   fast-init StartCommunication may be one) */
     }
     len = (unsigned char)(fmt & 0x3Fu);
     if (len != 0u) {
@@ -366,6 +367,17 @@ void hckline_on_slow_init(hckline_t *k, unsigned char addr, unsigned long now_us
     enter(k, HCKLINE_ST_SYNC, now_us);
 }
 
+void hckline_on_fast_init(hckline_t *k, unsigned long now_us)
+{
+    tx_reset(k);
+    rx_reset(k);
+    k->identified = 0u;
+    k->retry_used = 0u;
+    k->baud_pending = 0u;
+    k->bad_run = 0u;
+    enter(k, HCKLINE_ST_FAST, now_us);
+}
+
 void hckline_on_rx(hckline_t *k, unsigned char b, unsigned long now_us)
 {
     unsigned int total;
@@ -384,6 +396,49 @@ void hckline_on_rx(hckline_t *k, unsigned char b, unsigned long now_us)
                 enter(k, HCKLINE_ST_IDLE, now_us);
             }
         }
+        return;
+    }
+
+    if (k->state == HCKLINE_ST_FAST) {
+        /* FAST INIT: assemble frames until ONE valid StartCommunication. A
+           bad header or checksum only restarts the frame - the tester may
+           need a byte or two to align after its wake-up - and nothing but
+           StartCommunication is answered (the window ends in tick()). */
+        if (k->rx_len != 0u && elapsed(now_us, k->t_byte) > HCKLINE_STALE_US) {
+            rx_reset(k);
+        }
+        k->t_byte = now_us;
+        if (k->rx_len >= HCKLINE_RX_MAX) {
+            rx_reset(k);
+            return;
+        }
+        k->rx[k->rx_len++] = b;
+        total = frame_total(k);
+        if (total == 0xFFu) {
+            rx_reset(k);
+            return;
+        }
+        if (total == 0u || k->rx_len < total) {
+            return;
+        }
+        if ((k->rx[1] == k->cfg.ecu_addr || k->rx[1] == HCKLINE_FUNC_ADDR)
+            && checksum(k->rx, total - 1u) == k->rx[total - 1u]
+            && frame_data_len(k) >= 1u
+            && k->rx[frame_data_off(k)] == HCKLINE_SID_START_COMM) {
+            unsigned char r[3];
+            r[0] = (unsigned char)(HCKLINE_SID_START_COMM + HCKLINE_RESP_OFFSET);
+            r[1] = k->cfg.kb1;
+            r[2] = k->cfg.kb2;
+            rx_reset(k);
+            send_reply(k, r, 3u);
+            k->init_ok++;
+            k->frames_ok++;
+            k->bad_run = 0u;
+            k->t_rx = now_us;
+            enter(k, HCKLINE_ST_SESSION, now_us);
+            return;
+        }
+        rx_reset(k);            /* not our StartCommunication */
         return;
     }
 
@@ -497,6 +552,14 @@ void hckline_tick(hckline_t *k, unsigned long now_us)
                 k->identified = 0u;
                 enter(k, HCKLINE_ST_IDLE, now_us);
             }
+        }
+        break;
+
+    case HCKLINE_ST_FAST:
+        if (elapsed(now_us, k->t_state) >= HCKLINE_FAST_WAIT_US) {
+            k->init_fail++;     /* a wake-up without a StartCommunication */
+            rx_reset(k);
+            enter(k, HCKLINE_ST_IDLE, now_us);
         }
         break;
 

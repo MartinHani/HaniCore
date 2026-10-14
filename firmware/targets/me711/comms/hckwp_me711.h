@@ -22,6 +22,31 @@
 #ifndef HCKWP_ME711_H
 #define HCKWP_ME711_H
 
+/* THE SHARED-BUS ENTRY STATE (2026-10-13, ME711_OBD_KLINE.md section 6), in
+   external SRAM (TGT_RAM_KLINE: the far modules' XRAM is full). The 1 ms
+   tick measures every LOW run of the RXD0 pin exactly (HC_KL_TICK); the main
+   loop reads the finished run - an ISO 14230 fast-init wake-up is TiniL
+   25 ms low then 25 ms high, and no UART byte (< 1 ms of low) or 5-baud bit
+   (200 ms) lands in 20..30 ms. */
+typedef struct {
+    unsigned char st;          /* KL_PV: a GOFAST rate is on probation      */
+    unsigned char lowcnt;      /* ms the pin has been low (tick, <= 255)    */
+    unsigned char run;         /* the last finished low run, ms; 0 = taken  */
+    unsigned char asic_prep;   /* hcasicstart.c: the NEXT runtime frame's
+                                  build step, done between frames (0 none,
+                                  1 payload zeroed, 2 complete) - parked here
+                                  because near RAM has no byte left */
+    unsigned char run_t;       /* tick_ms when that run ended (mod 256)     */
+    unsigned char rxp;         /* low byte of DSTP6 at the last tick: a byte
+                                  the UART received ends a low run          */
+    unsigned int  t_pv;        /* when the GOFAST rate was taken, ms        */
+} kl_t;
+#define HC_KL   (*(kl_t huge *)(TGT_EXTRAM_BASE + TGT_RAM_KLINE))
+/* hc_tick_isr, every ms: `hi` = the RXD0 pin (P3.11), `rxp` = the low byte
+   of the PEC6 receive pointer (DSTP6). FAR - an inline copy cost 74 bytes of
+   the near code that has none left. */
+void far hc_kl_tick(unsigned char hi, unsigned char rxp, unsigned int now);
+
 void far hc_kwp_init(void);
 /* main loop, every pass: the ms tick and the RXD0 pin level (1 = idle high) */
 void far hc_kwp_service(unsigned int ms, unsigned char rxd_high);

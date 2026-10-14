@@ -100,6 +100,74 @@ static int do_init(hckline_t *k, unsigned long *t, long jitter_us)
     return (k->state == HCKLINE_ST_SESSION);
 }
 
+/* ---- ISO 14230 fast init (2026-10-13, ME711_OBD_KLINE.md section 6.2) ---- */
+static void feed(hckline_t *k, unsigned long *t, const unsigned char *f, unsigned int n)
+{
+    unsigned int i;
+    for (i = 0u; i < n; i++) { hckline_on_rx(k, f[i], *t); *t += 1000u; }
+}
+
+static void test_fast_init(void)
+{
+    hckline_cfg_t cfg; hckline_t k; unsigned long t = 1000u;
+    unsigned char o[48]; unsigned int n;
+    static const unsigned char phys[5] = { 0x81, 0x01, 0xF1, 0x81, 0xF4 };
+    static const unsigned char func[5] = { 0xC1, 0x33, 0xF1, 0x81, 0x66 };
+    static const unsigned char tp[5]   = { 0x81, 0x01, 0xF1, 0x3E, 0xB1 };
+    static const unsigned char badck[5] = { 0x81, 0x01, 0xF1, 0x81, 0xF5 };
+    unsigned char id[3];
+
+    /* physical StartCommunication -> 83 F1 01 C1 EF 8F cs, SESSION */
+    hckline_default_cfg(&cfg); hckline_init(&k, &cfg);
+    hckline_on_fast_init(&k, t);
+    assert(k.state == HCKLINE_ST_FAST);
+    assert(phys[4] == cksum(phys, 4u) && func[4] == cksum(func, 4u)
+           && tp[4] == cksum(tp, 4u));
+    feed(&k, &t, phys, 5u); hckline_tick(&k, t);
+    n = drain(&k, o, sizeof(o));
+    assert(n == 7u && o[0] == 0x83u && o[1] == 0xF1u && o[2] == 0x01u
+           && o[3] == 0xC1u && o[4] == cfg.kb1 && o[5] == cfg.kb2
+           && o[6] == cksum(o, 6u));
+    assert(k.state == HCKLINE_ST_SESSION && k.init_ok == 1u);
+    /* and the session is a real one: IDENTIFY answers */
+    id[0] = HCKLINE_SID_IDENTIFY; id[1] = 'H'; id[2] = 'C';
+    send_kwp(&k, &t, id, 3u); hckline_tick(&k, t);
+    n = drain(&k, o, sizeof(o));
+    assert(n >= 8u && o[3] == (unsigned char)(HCKLINE_SID_IDENTIFY + 0x40u));
+    assert(k.identified == 1u);
+
+    /* functional (0x33) StartCommunication, after a garbage byte and a bad
+       checksum: still answered, physically */
+    hckline_init(&k, &cfg); t = 1000u;
+    hckline_on_fast_init(&k, t);
+    o[0] = 0x00; feed(&k, &t, o, 1u);
+    feed(&k, &t, badck, 5u); hckline_tick(&k, t);
+    assert(drain(&k, o, sizeof(o)) == 0u && k.state == HCKLINE_ST_FAST);
+    feed(&k, &t, func, 5u); hckline_tick(&k, t);
+    n = drain(&k, o, sizeof(o));
+    assert(n == 7u && o[3] == 0xC1u && o[1] == 0xF1u && o[2] == 0x01u);
+    assert(k.state == HCKLINE_ST_SESSION);
+
+    /* any other service inside the window is NOT answered */
+    hckline_init(&k, &cfg); t = 1000u;
+    hckline_on_fast_init(&k, t);
+    feed(&k, &t, tp, 5u); hckline_tick(&k, t);
+    assert(drain(&k, o, sizeof(o)) == 0u && k.state == HCKLINE_ST_FAST);
+
+    /* no StartCommunication: the window closes, nothing was sent */
+    run_us(&k, &t, HCKLINE_FAST_WAIT_US + 1000u);
+    assert(drain(&k, o, sizeof(o)) == 0u);
+    assert(k.state == HCKLINE_ST_IDLE && k.init_fail == 1u);
+
+    /* a functional frame is still refused OUTSIDE the window */
+    hckline_init(&k, &cfg); t = 1000u;
+    assert(do_init(&k, &t, 0));
+    feed(&k, &t, func, 5u); hckline_tick(&k, t);
+    assert(drain(&k, o, sizeof(o)) == 0u);
+    printf("  fast init: physical + functional StartCommunication -> C1 EF 8F, "
+           "nothing else answered, window times out, functional refused in a session: OK\n");
+}
+
 /* ============================ the tests ============================ */
 
 static void test_exact_init(void)
@@ -492,6 +560,7 @@ int main(void)
     test_session_timeout();
     test_abandoned_session();
     test_no_unsolicited();
+    test_fast_init();
     test_random_init(20000);
     test_fuzz(200000);
     printf("PASS: all hckline host tests\n");

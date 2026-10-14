@@ -61,4 +61,13 @@ unsigned int hc_hal_dbw_pwm_period(void);
 unsigned int hc_hal_dbw_pwm_applied_hz(void);
 void hc_hal_dbw_pwm_poll(void);
 
+/* The tacho output, cavity 37 / P2.13 / CC13 (hcroutes711.c, far):
+   init releases the pin, the main loop sets the frequency, the 1 ms tick
+   re-arms the hardware compare. */
+void far hc_tacho_init(void);
+void far hc_tacho_service(void);
+void far hc_tacho_tick(void);
+unsigned char far hc_tacho_running(void);
+void far hc_tacho_test(unsigned char rpm100);
+
 #endif /* HCHAL_ME711_H */

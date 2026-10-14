@@ -31,18 +31,20 @@
 #define HC_PRESET_MEM   /* huge on ME7.1.1: the tables live in HCONST */
 #endif
 
-typedef struct {
-    unsigned int  offset;     /* page offset the value belongs at   */
-    unsigned int  value;      /* the value, already in stored units */
-    unsigned char width;      /* 1 or 2 bytes                       */
-} hc_preset_item_t;
-
+/* A PRESET IS A LIST OF BYTE RUNS (2026-10-11). Each run is: page offset
+   (high byte, low byte), a length n (1..255), then the n page bytes in page
+   order - a u16 field's value is its two big-endian page bytes, exactly what
+   hc_cal_set_u16() and the transaction stage. Items that follow each other
+   in the page share one run; item order is kept, so a later value still
+   wins. The 6-byte {offset, value, width} item it replaces spent 10.5 KB of
+   HCONST on 1755 values; the bytes and their order are unchanged. */
 typedef struct {
     unsigned char id;
-    const hc_preset_item_t HC_PRESET_MEM *items;
-    unsigned int  n_items;    /* V89: > 255 once a preset carries a VE table */
+    const unsigned char HC_PRESET_MEM *runs;
+    unsigned int  n_items;    /* values set (fields x elements), for tools */
     unsigned int  target_id;  /* 0 = any board; else hc_pin_target_id */
     unsigned char board_default; /* 1 = this board's fresh-page routing */
+    unsigned int  n_bytes;    /* length of runs[] */
 } hc_preset_t;
 
 extern const hc_preset_t hc_engine_presets[];

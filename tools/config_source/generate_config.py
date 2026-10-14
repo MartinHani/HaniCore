@@ -716,18 +716,20 @@ PRESET_H = R"""/*
 #define HC_PRESET_MEM   /* huge on ME7.1.1: the tables live in HCONST */
 #endif
 
-typedef struct {
-    unsigned int  offset;     /* page offset the value belongs at   */
-    unsigned int  value;      /* the value, already in stored units */
-    unsigned char width;      /* 1 or 2 bytes                       */
-} hc_preset_item_t;
-
+/* A PRESET IS A LIST OF BYTE RUNS (2026-10-11). Each run is: page offset
+   (high byte, low byte), a length n (1..255), then the n page bytes in page
+   order - a u16 field's value is its two big-endian page bytes, exactly what
+   hc_cal_set_u16() and the transaction stage. Items that follow each other
+   in the page share one run; item order is kept, so a later value still
+   wins. The 6-byte {offset, value, width} item it replaces spent 10.5 KB of
+   HCONST on 1755 values; the bytes and their order are unchanged. */
 typedef struct {
     unsigned char id;
-    const hc_preset_item_t HC_PRESET_MEM *items;
-    unsigned int  n_items;    /* V89: > 255 once a preset carries a VE table */
+    const unsigned char HC_PRESET_MEM *runs;
+    unsigned int  n_items;    /* values set (fields x elements), for tools */
     unsigned int  target_id;  /* 0 = any board; else hc_pin_target_id */
     unsigned char board_default; /* 1 = this board's fresh-page routing */
+    unsigned int  n_bytes;    /* length of runs[] */
 } hc_preset_t;
 
 extern const hc_preset_t hc_engine_presets[];
@@ -817,12 +819,12 @@ unsigned char HC_COLD hc_preset_apply_engine_active(unsigned char id)
     if (p->target_id != 0u && p->target_id != hc_pin_target_id) {
         return 2u;
     }
-    for (k = 0u; k < p->n_items; k++) {
-        if (p->items[k].width == 2u) {
-            hc_cal_set_u16(p->items[k].offset, p->items[k].value);
-        } else {
-            hc_cal_set_u8(p->items[k].offset,
-                          (unsigned char)p->items[k].value);
+    for (k = 0u; k < p->n_bytes; ) {
+        unsigned int off = ((unsigned int)p->runs[k] << 8) | p->runs[k + 1u];
+        unsigned char n = p->runs[k + 2u];
+        k += 3u;
+        while (n--) {
+            hc_cal_set_u8(off++, p->runs[k++]);
         }
     }
     hc_cal_set_u8(CFG_U_ENGINE_PRESET, id);
@@ -854,15 +856,12 @@ unsigned char HC_COLD hc_preset_apply_engine(unsigned char id, unsigned int rpm)
        validates goes through the ordinary per-field apply policy. Never a
        Burn: that stays the tuner's own action. */
     hc_cfg_mgr_txn_begin();
-    for (k = 0u; k < p->n_items; k++) {
-        if (p->items[k].width == 2u) {
-            hc_cfg_mgr_txn_put_u8(p->items[k].offset,
-                                  (unsigned char)(p->items[k].value >> 8));
-            hc_cfg_mgr_txn_put_u8((unsigned int)(p->items[k].offset + 1u),
-                                  (unsigned char)(p->items[k].value & 0xFFu));
-        } else {
-            hc_cfg_mgr_txn_put_u8(p->items[k].offset,
-                                  (unsigned char)p->items[k].value);
+    for (k = 0u; k < p->n_bytes; ) {
+        unsigned int off = ((unsigned int)p->runs[k] << 8) | p->runs[k + 1u];
+        unsigned char n = p->runs[k + 2u];
+        k += 3u;
+        while (n--) {
+            hc_cfg_mgr_txn_put_u8(off++, p->runs[k++]);
         }
     }
     /* The preset id is itself a configuration field, so a page tells you what
@@ -908,6 +907,7 @@ def gen_presets(fields):
     a("")
     problems = []
     counts = {}
+    nbytes_of = {}
     for pr in PRESETS.ENGINE_PRESETS:
         items = []
         for key, val in pr.values.items():
@@ -945,19 +945,37 @@ def gen_presets(fields):
             continue
         a("/* %s */" % pr.name)
         if items:
-            a("static const hc_preset_item_t HC_PRESET_MEM items_%s[] = {"
-              % pr.key.lower())
+            # THE ITEM LISTING stays in the file as comments (one ITEM line
+            # per value, the old row format) - gates and readers parse it;
+            # the compiled table is the byte runs that follow it.
+            runs = []                 # [offset, bytearray]
             for off, v, wdt, why in items:
                 # a signed field's negative value is stored as its two's
                 # complement in the field's width (V97: trigAngleX10 -20 =
-                # 0xFFEC); "-20u" is a Keil C115 warning, which fails the build
+                # 0xFFEC)
+                u = v & ((1 << (8 * wdt)) - 1)
                 if v < 0:
-                    a("    { %4du, %5du, %du }, /* %s = %d */"
-                      % (off, v & ((1 << (8 * wdt)) - 1), wdt, why, v))
+                    a("/* ITEM { %4du, %5du, %du } %s = %d */" % (off, u, wdt, why, v))
                 else:
-                    a("    { %4du, %5du, %du }, /* %s */" % (off, v, wdt, why))
+                    a("/* ITEM { %4du, %5du, %du } %s */" % (off, u, wdt, why))
+                b = bytes([u >> 8, u & 0xFF]) if wdt == 2 else bytes([u])
+                if (runs and runs[-1][0] + len(runs[-1][1]) == off
+                        and len(runs[-1][1]) + wdt <= 255):
+                    runs[-1][1].extend(b)
+                else:
+                    runs.append([off, bytearray(b)])
+            a("static const unsigned char HC_PRESET_MEM runs_%s[] = {"
+              % pr.key.lower())
+            nbytes = 0
+            for off, b in runs:
+                a("    0x%02Xu, 0x%02Xu, %du, /* offset %d */"
+                  % (off >> 8, off & 0xFF, len(b), off))
+                for i in range(0, len(b), 12):
+                    a("        " + ", ".join("0x%02Xu" % x for x in b[i:i + 12]) + ",")
+                nbytes += 3 + len(b)
             a("};")
             a("")
+            nbytes_of[pr.key] = nbytes
     if problems:
         raise SystemExit("preset generation refused:\n  " + "\n  ".join(problems))
     a("const hc_preset_t hc_engine_presets[] = {")
@@ -965,11 +983,11 @@ def gen_presets(fields):
         n = counts[pr.key]
         bd = 1 if getattr(pr, "board_default", False) else 0
         if n:
-            a("    { %du, items_%s, %du, %s, %du }, /* %s%s */"
+            a("    { %du, runs_%s, %du, %s, %du, %du }, /* %s%s */"
               % (pr.ident, pr.key.lower(), n, _target_expr(pr.target), bd,
-                 pr.name, " - BOARD DEFAULT" if bd else ""))
+                 nbytes_of[pr.key], pr.name, " - BOARD DEFAULT" if bd else ""))
         else:
-            a("    { %du, 0, 0u, 0u, %du }, /* %s - populates nothing by design */"
+            a("    { %du, 0, 0u, 0u, %du, 0u }, /* %s - populates nothing by design */"
               % (pr.ident, bd, pr.name))
     a("};")
     a("")
@@ -1138,12 +1156,12 @@ _CAPTURE_FIELDS = {"pinCrank", "pinCam1", "pinCam2"}
 #   pinFuelPump   65 (P2.12) - the one relay-class stage out_port_of() drives
 #   pinMainRelay  23 (the CJ910's own MR stage, a hardware function) or 65
 #   pinBoost      104 - the ASIC LDR stage through the frame image
-#   pinTacho, pinCam1Sol, pinCam2Sol - NO output path in this build: NONE only
+#   pinTacho      37 (P2.13 / CC13 compare mode 1, hcroutes711.c, 2026-10-11)
 _OUT_BIND_CAVITIES = {
     "pinFuelPump": {65},
     "pinMainRelay": {23, 65},
     "pinBoost": {104},
-    "pinTacho": set(),
+    "pinTacho": {37},
     "pinCam1Sol": {115, 120},  # V97: POUT0 / POUT1 (hcvvt711.c)
     "pinCam2Sol": {115, 120},
     "pinMil": {47},            # V97: the ASIC P7.0 lamp stage

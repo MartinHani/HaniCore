@@ -260,15 +260,28 @@ def main_one(stem):
     import me711_image as PI
     img = PI.image().read_bytes()
     a = T.sym("hc_io_lambda") - 0x800000
-    code = img[a:a + 32]
-    k = code.find(b"\xd4\x44")
-    near = (code[k + 2] | code[k + 3] << 8) if k >= 0 else None
-    lam_addr = None
-    if near is not None:                       # DPPn page + offset
-        lam_addr = (r.m.sfr.get(0xFE00 + 2 * (near >> 14), 0) * 0x4000
-                    + (near & 0x3FFF))
+    code = img[a:a + 48]
+
+    def first(op):
+        """the first `op Rd(=R4/RL4),[Rw+#data16]` - any base register
+        (2026-10-12: Keil indexes wb[] through R5 since the valid check;
+        the gate looked only for the R4 form and its closed-loop part was
+        skipped)"""
+        for k in range(len(code) - 3):
+            if code[k] == op and (code[k + 1] >> 4) in (4, 8):
+                return code[k + 2] | code[k + 3] << 8
+        return None
+
+    def phys(near):                            # DPPn page + offset
+        return (r.m.sfr.get(0xFE00 + 2 * (near >> 14), 0) * 0x4000
+                + (near & 0x3FFF))
+    near = first(0xD4)                         # MOV  R4,[Rw+#wb.lambda]
+    vnear = first(0xF4)                        # MOVB RL4,[Rw+#wb.valid]
+    lam_addr = phys(near) if near is not None else None
     probe = None
     if lam_addr is not None:
+        if vnear is not None:
+            r.m.w8(phys(vnear), 1)             # hc_io_lambda needs valid == 1
         r.m.w16(lam_addr, 1234)
         probe = r("hc_io_lambda", 0)
     check("the lambda the closed loop reads is addressable (wb[0].lambda)",

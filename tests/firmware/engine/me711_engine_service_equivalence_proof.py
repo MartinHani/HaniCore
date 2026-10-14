@@ -2,12 +2,26 @@
 
 Both workers receive the same ADC completion fixtures and legacy calibration.
 New policy diagnostics are intentionally separate from fuel/advance results.
+
+2026-10-12: THE THROTTLE LOAD CHANGED ON PURPOSE for the throttle load
+sources (1 alpha-N x pressure, 2 pure alpha-N). V101 fuelled from the 1/16-
+per-pass filtered throttle (a second, unstable lag - the car's quick-press
+stumble); the image now takes the throttle itself through the FR BGSRM
+filling model (hcengctl711.c hc_ec_load_lag, me711_tipin_fill_proof). For
+those sources the transient frames differ by design, so they are compared
+ONCE V101's filter has settled (SETTLE passes): the same fuel, advance and
+every other field for the same settled throttle. Source 0 (speed density)
+still matches frame by frame.
 """
 import json,os,subprocess,sys
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "tools" / "lib"))
 import hcpaths  # noqa: F401,E402  (puts every tools/ and tests/ module on sys.path)
+
+SETTLE = 140      # V101's 1/16 filter: 312 * (15/16)^140 < 0.1 count
+THROTTLE_LOAD = (1, 2)
+
 
 def worker():
     import me711_config_state_test as C
@@ -26,13 +40,14 @@ def worker():
         r.m.w16(C.sym('trg_rpm')&65535,rpm)
         r.m.w8(C.sym('trg_state')&65535,3)
         frame=[]
-        for k in range(10):
+        for k in range(SETTLE):
             ms=20*(k+1);r.m.w16(tick,ms)
             for ch,v in ((5,650),(0,400),(6,400),(14,600),(1,350),(3,650),(8,350),(9,650)):
                 r.m.w16(adc+2*ch,v);r('hc_hal_main_sample',ch,(ch<<12)|v,int(ch not in faults),ms)
             r('eng_service')
             names=('eng_sensor_err','eng_air_mg_x10','eng_rl_x10','eng_ve_x10','eng_ve_load_x10','eng_load','eng_ti_base_us','eng_ti_us','eng_deadtime_us','eng_dwell_x100','eng_adv_x10','eng_warmup_pct','eng_fuelcut')
-            frame.append([r.g16(n) for n in names])
+            if k < 10 or k == SETTLE - 1:
+                frame.append([r.g16(n) for n in names])
         results.append([source,list(faults),rpm,frame])
     print(json.dumps({'sha256':I.sha256(),'results':results}))
 
@@ -49,9 +64,13 @@ def main():
     # pair check (eng_sensor_err 0x0040) flags this fixture's two tracks.
     # Every other field, and every other error bit, must match exactly.
     NEW_DIAG=0x0040
-    def norm(res):return [res[0],res[1],res[2],[[f[0]&~NEW_DIAG]+f[1:] for f in res[3]]]
+    def norm(res):
+        fr=[[f[0]&~NEW_DIAG]+f[1:] for f in res[3]]
+        if res[0] in THROTTLE_LOAD:
+            fr=fr[-1:]               # the settled frame only (see the top)
+        return [res[0],res[1],res[2],fr]
     bad=[i for i,(old,new) in enumerate(zip(a['results'],b['results'])) if norm(old)!=norm(new)]
-    print(f"Legacy engine-service cases {len(a['results'])-len(bad)}/{len(a['results'])}, ten complete frames each")
+    print(f"Legacy engine-service cases {len(a['results'])-len(bad)}/{len(a['results'])}, ten complete frames each (throttle-load sources: the settled frame)")
     for i in bad:print('FAIL',i,a['results'][i],b['results'][i])
     return int(bool(bad))
 if __name__=='__main__':raise SystemExit(main())

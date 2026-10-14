@@ -20,8 +20,9 @@
  *     DIAG codes.
  *   the ME7.1.1 schematic (SAME-GENERATION SCHEMATIC): R1076 = 82.5 ohm Ri reference,
  *     61.9 ohm pump shunt, UA -> AN6/AN4, UR -> ASIC AN12/13.
- *   OEM binary (EXACT TARGET BINARY): pump current only when warm
- *     [0x862EAA, 0x88FDC0].
+ *   OEM binary (EXACT TARGET BINARY): PA follows a per-bank warm-up flag
+ *     [0x862EAA, 0x88FDC0]; which polarity pumps is NOT decided by it - the
+ *     car and rusEFI decide it (hcwb.h: PA is active low).
  */
 #include "hcwb.h"
 
@@ -57,6 +58,28 @@
 #define VB_OFF_DV        85u
 #define VB_MAX_DV       230u
 #define INTEG_MAX     30000    /* 0.1 mV = 3 V                              */
+/* A DIAG failure latches only after it has PERSISTED this long with the
+   supply at or above DIAG_VB_DV. The AWT car (2026-10-10) latched "heater
+   open" from one DIAG read in the starter's dip to 8 V: the CJ120 itself
+   lost verification for a moment and its heater stage cannot judge a load
+   at that voltage. Bosch suspends heater diagnosis in start; 0.5 s is the
+   over/underheat confirm time below. */
+#define DIAG_CONFIRM_MS 500u
+#define DIAG_VB_DV      105u
+/* ONE MISSED CJ120 EXCHANGE IS NOT A COLD SENSOR. A timed-out SSC exchange
+   (hcio711.c cj_tmo) unverifies the chip; the target rewrites INIT_REG1,
+   reads it back, checks IDENT and lets the analog path settle 300 ms - with
+   one bank ~0.4 s, with two ~0.45 s of samples that are not measurements.
+   Until 2026-10-10 that reset pa_ms (1 s to re-verify), cut the heater and
+   zeroed ready_ms: the AWT car showed 1..5 s of lambda lost per timeout
+   (VEHICLE_CAPTURE_20261010T180458Z, cjTmo 1..6). While the bank is CLOSED
+   or READY and its last good acquisition (ur_seen) is younger than this, the
+   heater duty, pump time, readiness and the last lambda are HELD. A longer
+   gap is the old path; a real chip loss still faults at CHIP_WAIT_MS. */
+#define GAP_HOLD_MS     600u
+/* READY -> CLOSED needs Ri outside the +-15 % band for this long (the
+   over/underheat confirm time), not one sample. */
+#define RI_BAND_CONFIRM_MS 500u
 
 static unsigned int el(unsigned int now, unsigned int then)
 {
@@ -141,28 +164,21 @@ unsigned int hcwb_ri_x10(unsigned int ur, unsigned int urc)
 static unsigned char diag_fault(unsigned char diag, unsigned char lines)
 {
     unsigned char h = (unsigned char)((diag >> 6) & 3u);
-    unsigned char c;
 
-    if (h == 0u) {
-        return HCWB_F_HEATER_GND;
+    /* heater 00 / 01 / 10 = HCWB_F_HEATER_GND / _OPEN / _UB (1 / 2 / 3) */
+    if (h != 3u) {
+        return (unsigned char)(h + 1u);
     }
-    if (h == 1u) {
-        return HCWB_F_HEATER_OPEN;
-    }
-    if (h == 2u) {
-        return HCWB_F_HEATER_UB;
-    }
+    /* a line pair is 00 or 10 (GND / UB) exactly when its LOW bit is 0
+       (01 = low battery is not a line fault, 11 = none) */
     if (lines) {
-        c = (unsigned char)((diag >> 4) & 3u);
-        if (c == 0u || c == 2u) {
+        if (!(diag & 0x10u)) {
             return HCWB_F_LINE_IAIP;
         }
-        c = (unsigned char)((diag >> 2) & 3u);
-        if (c == 0u || c == 2u) {
+        if (!(diag & 0x04u)) {
             return HCWB_F_LINE_UN;
         }
-        c = (unsigned char)(diag & 3u);
-        if (c == 0u || c == 2u) {
+        if (!(diag & 0x01u)) {
             return HCWB_F_LINE_VM;
         }
     }
@@ -183,10 +199,16 @@ static unsigned int veff_duty(unsigned int veff_dv, unsigned int vb)
     return (unsigned int)((r * r) / 10u);
 }
 
+/* Heater off - and lambda withheld: every path that stops the heater also
+   stops the measurement (step() relies on it: only the gap hold keeps the
+   previous lambda). */
 static void heat_off(hcwb_t *w)
 {
     w->duty_x10 = 0u;
     w->veff_dv = 0u;
+    w->lambda = 0u;
+    w->valid = 0u;
+    w->ip_ua = 0;
 }
 
 static void fault(hcwb_t *w, unsigned char code)
@@ -211,7 +233,18 @@ void hcwb_init(hcwb_t *w)
     w->cal_st = HCWB_CAL_NEED;
 }
 
-/* the calibration: RA + LA, pump off, verified, settled, 8 samples */
+void hcwb_clear(hcwb_t *w)
+{
+    if (w->state == HCWB_ST_FAULT) {
+        w->state = HCWB_ST_OFF;          /* the next step re-enters WAIT */
+        w->fcode = 0u;
+        w->integ = 0;
+        w->ready_ms = 0u;
+        w->cal_st = HCWB_CAL_NEED;
+    }
+}
+
+/* the calibration: RA + LA, verified, settled, 8 samples */
 static void cal(hcwb_t *w, const hcwb_in_t *in)
 {
     switch (w->cal_st) {
@@ -311,7 +344,8 @@ static void closed_loop(hcwb_t *w, const hcwb_in_t *in, unsigned int ri)
         v = (int)(v + p);
     }
     w->veff_dv = (unsigned char)((unsigned int)v / 100u);
-    if (ri != 0u && ri < RI_OVER_X10) {
+    /* ri >= 1 here (see the switch in step()) */
+    if (ri < RI_OVER_X10) {
         if (el(in->ms, w->over_mark) >= 500u) {
             fault(w, HCWB_F_OVERHEAT);
             return;
@@ -327,11 +361,13 @@ static void closed_loop(hcwb_t *w, const hcwb_in_t *in, unsigned int ri)
     } else {
         w->under_mark = in->ms;
     }
+    /* `mark` is free in CLOSED/READY (set at entry): Ri last in band */
     if (ri >= RI_OK_LO_X10 && ri <= RI_OK_HI_X10) {
+        w->mark = in->ms;
         if (w->ready_ms < 60000u) {
             w->ready_ms = (unsigned int)(w->ready_ms + 50u);
         }
-    } else {
+    } else if (el(in->ms, w->mark) >= RI_BAND_CONFIRM_MS) {
         w->ready_ms = 0u;
     }
     if (w->ready_ms >= 3000u && w->pa_ms >= 1000u) {
@@ -345,22 +381,28 @@ static void step(hcwb_t *w, const hcwb_in_t *in)
 {
     unsigned int d, ri;
     unsigned char f;
-    unsigned char ri_ok;
+    unsigned char ri_ok, gap;
     int e;
 
     d = w->started ? el(in->ms, w->last_ms) : 0u;
     w->last_ms = in->ms;
     w->started = 1u;
-    /* the pump is on while the chip has VERIFIED PA = 1 */
+    /* GAP_HOLD_MS: a regulating bank whose last qualified UR (ur_seen) is
+       recent. Only used when this step has none (!ri_ok below). */
+    gap = (unsigned char)((unsigned char)(w->state - HCWB_ST_CLOSED) < 2u
+                          && el(in->ms, w->ur_seen) < GAP_HOLD_MS);
+    /* the pump is on while the chip has VERIFIED the pump mode (PA = 0);
+       through a gap the verified time is held, not restarted */
     if (in->chip_ok && in->reg1 == HCWB_MODE_PUMP) {
-        w->pa_ms = (d >= 60000u || w->pa_ms > (unsigned int)(60000u - d)) ? 60000u
+        /* saturating at 60000 (pa_ms never exceeds it) */
+        w->pa_ms = (d > (unsigned int)(60000u - w->pa_ms)) ? 60000u
                  : (unsigned int)(w->pa_ms + d);
-    } else {
+    } else if (!gap) {
         w->pa_ms = 0u;
     }
-    w->lambda = 0u;
-    w->valid = 0u;
-    w->ip_ua = 0;
+    /* lambda / valid / Ip are cleared by heat_off() on every withholding
+       path and recomputed at the end; the gap path leaves them as they were
+       (the last measurement, < GAP_HOLD_MS old). */
 
     /* Permission is a lifecycle, not a timestamp reusable after timer wrap.
        OFF cancels a tail immediately; a tail starts only after a legitimate
@@ -405,10 +447,10 @@ static void step(hcwb_t *w, const hcwb_in_t *in)
         w->supply_mark = in->ms;
         w->ur_seen = in->ms;
         w->ur_live = 0u;
+        w->diag_mark = in->ms;
     }
     if (w->state == HCWB_ST_FAULT) {
-        heat_off(w);
-        w->want = HCWB_MODE_COLD;
+        fault(w, 0u);                    /* latched: heater off, cold mode */
         return;
     }
 
@@ -421,8 +463,6 @@ static void step(hcwb_t *w, const hcwb_in_t *in)
         }
         if (in->chip_ok) {
             cal(w, in);
-        } else if (el(in->ms, w->mark) >= CHIP_WAIT_MS) {
-            fault(w, HCWB_F_CHIP);
         }
         return;
     }
@@ -431,6 +471,7 @@ static void step(hcwb_t *w, const hcwb_in_t *in)
         return;
     }
     if (!in->chip_ok) {
+        w->diag_mark = in->ms;
         if (el(in->ms, w->chip_mark) >= CHIP_WAIT_MS) {
             fault(w, HCWB_F_CHIP);
             return;
@@ -439,7 +480,9 @@ static void step(hcwb_t *w, const hcwb_in_t *in)
         w->chip_mark = in->ms;
         f = diag_fault(in->diag, (unsigned char)(w->state >= HCWB_ST_CLOSED
                                                  && w->pa_ms >= 200u));
-        if (f) {
+        if (!f || in->vbatt_dv < DIAG_VB_DV) {
+            w->diag_mark = in->ms;
+        } else if (el(in->ms, w->diag_mark) >= DIAG_CONFIRM_MS) {
             fault(w, f);
             return;
         }
@@ -498,14 +541,28 @@ static void step(hcwb_t *w, const hcwb_in_t *in)
     /* No heater-control/temperature transition from a cached adjustment
        sample, an unacknowledged mode, or stale acquisition. */
     if (!ri_ok) {
-        heat_off(w);
-        w->ready_ms = 0u;
         w->step = in->ms;
         w->over_mark = in->ms;
         w->under_mark = in->ms;
+        if (gap) {
+            /* HOLD: heater duty, mode (want), ready_ms and pa_ms as they
+               were; lambda/Ip as last measured - a measurement < 0.6 s old.
+               The Ri-band confirm restarts like the over/under marks: a gap
+               is no evidence the sensor left its band. */
+            w->mark = in->ms;
+            /* a held value is marked as such (why HELD), never as fresh:
+               0 -> 0, 1 -> 2, 2 -> 2 (branch-free: FCODE has no room) */
+            w->valid = (unsigned char)((w->valid + 1u) & 2u);
+            return;
+        }
+        heat_off(w);
+        w->ready_ms = 0u;
         return;
     }
 
+    /* ri >= 1 from here on: the state machine runs only with the calibration
+       OK (urc inside UR0+SPAN..UR_MAX) and ri_ok (ur tagged), and then
+       hcwb_ri_x10() never returns 0 - so no "ri != 0" test is needed */
     switch (w->state) {
     case HCWB_ST_WAIT:
         w->state = HCWB_ST_PREHEAT;
@@ -514,14 +571,14 @@ static void step(hcwb_t *w, const hcwb_in_t *in)
         break;
     case HCWB_ST_PREHEAT:
         w->veff_dv = V_PREHEAT_DV;
-        if (ri != 0u && ri <= RI_CLOSED_X10) {
+        if (ri <= RI_CLOSED_X10) {
             w->state = HCWB_ST_CLOSED;           /* already hot: a restart */
             w->mark = in->ms;
             w->integ = 0;
             w->step = in->ms;
             w->over_mark = in->ms;
             w->under_mark = in->ms;
-        } else if (ri != 0u && ri <= RI_FAST_X10) {
+        } else if (ri <= RI_FAST_X10) {
             w->state = HCWB_ST_RAMP;             /* warm = dry, rusEFI */
             w->veff_dv = V_FAST_DV;
             w->step = in->ms;
@@ -540,7 +597,7 @@ static void step(hcwb_t *w, const hcwb_in_t *in)
                 w->veff_dv++;                    /* 0.1 V / 250 ms = 0.4 V/s */
             }
         }
-        if (ri != 0u && ri <= RI_CLOSED_X10) {
+        if (ri <= RI_CLOSED_X10) {
             w->state = HCWB_ST_CLOSED;
             w->mark = in->ms;
             e = (int)w->veff_dv - 75;            /* bumpless: carry the ramp */
@@ -577,6 +634,9 @@ static void step(hcwb_t *w, const hcwb_in_t *in)
                                || w->state == HCWB_ST_READY)
                               ? HCWB_MODE_PUMP : HCWB_MODE_COLD);
 
+    w->lambda = 0u;
+    w->valid = 0u;
+    w->ip_ua = 0;
     /* the raw measurement: whenever the pump zero is known and UA is
        inside the amplifier swing - a diagnostic, never lambda */
     if (w->cal_st == HCWB_CAL_OK && in->ua_sample.valid
@@ -600,7 +660,8 @@ static void step(hcwb_t *w, const hcwb_in_t *in)
         && in->ua_sample.mode == HCWB_MODE_PUMP
         && in->ua >= UA_MIN_RAW && in->ua <= UA_MAX_RAW
         && in->ur != HCWB_UR_NONE) {
-        w->lambda = hcwb_lambda_ip(ip_ua(raw_mv(in->ua) - raw_mv(w->ua0)));
+        /* every condition of the Ip block above holds here: same Ip */
+        w->lambda = hcwb_lambda_ip(w->ip_ua);
         w->valid = 1u;
     }
 }
@@ -609,7 +670,8 @@ static void step(hcwb_t *w, const hcwb_in_t *in)
 static unsigned char why(const hcwb_t *w, const hcwb_in_t *in)
 {
     if (w->valid) {
-        return HCWB_WHY_VALID;
+        /* valid 1 -> HCWB_WHY_VALID (0), 2 -> HCWB_WHY_HELD (16) */
+        return (unsigned char)((w->valid & 2u) << 3);
     }
     if (in->hold) {
         return HCWB_WHY_HOLD;

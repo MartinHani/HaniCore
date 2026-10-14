@@ -95,6 +95,15 @@
 #define DBW_F_STALE      0x0080u  /* the HAL has no backing source for a track */
 #define DBW_F_VBAT       0x0200u  /* missing/stale/implausible motor supply */
 #define DBW_F_NOTLIVE    0x0100u  /* hc_hal_outputs_live() is 0               */
+/* REVERSIBLE, NOT LATCHED: the Bosch DLR "reversible SKA" request (FR DLR
+   3.60) - the controller has been saturated longer than DLRPID1T. Kept in
+   D.ska by hc_etbcal_dlr_monitor(), never in the latched word: hclimp711.c
+   treats it like a throttle fault while it lasts and hcdiag711.c ORs this
+   bit into the published dbwFaults. */
+#define DBW_F_RANGE      0x0400u
+/* hc_etbcal_dlr_monitor() result: drop the bridge for one step (the power-
+   stage restart, FR B_dveesh) - never a fault bit. */
+#define DBW_DLR_RESTART  0x8000u
 /* DBW_F_CFG is a LIVE refusal (the page does not describe a throttle
    yet), not a latched fault: it clears the step the page is fixed. Every
    other bit latches until hc_dbw_init() or hc_dbw_clear_faults(). */

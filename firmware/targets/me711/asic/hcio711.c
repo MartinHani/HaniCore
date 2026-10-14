@@ -107,6 +107,7 @@
 #include "hcidle711.h"
 #include "hcdtc711.h"
 #include "hctrans711.h"
+#include "hcatomic.h"
 #include "hclimp711.h"
 #include "hcengine.h"
 #include "hcsafety.h"
@@ -190,8 +191,10 @@ static const unsigned int ch_bit[HC_IO_COUNT] = {
  * mode) and PA = 0 (NO PUMP CURRENT) - a hot sensor would have read Ip = 0,
  * lambda ~1.01, and the UA "alive" test withheld it as "no sensor".
  *
- * HaniCore: 0x88 cold (the OEM's default bits, pump off), 0xC8 with the
- * pump on once the sensor is at temperature, 0x9C (RA + LA) to calibrate.
+ * HaniCore (corrected 2026-10-10, hcwb.h): PA IS ACTIVE LOW. 0xC8 cold
+ * (PA = 1, pump held off), 0x88 with the pump on once the sensor is at
+ * temperature, 0x9C (RA + LA) to calibrate. V96..V102 had 0x88/0xC8 the
+ * other way round and the AWT car showed it: Ip = 0 in "pump" mode.
  * VL stays 0 (gain 8, the full -1.85..+1.19 mA LSU 4.2 range; the OEM runs
  * gain 17 near stoichiometry for resolution). */
 /* The modes, states, faults and every threshold live in the shared core,
@@ -551,11 +554,20 @@ static unsigned char ssc_byte(unsigned char b)
     SSCTB = b;
     t0 = T7;
     for (;;) {
+        /* THE TIMER IS SAMPLED BEFORE THE FLAG IS TESTED (owner OK,
+           2026-10-11). This runs at task level. Testing the flag first and
+           the timer second let an interrupt > 64 us landing between the two
+           turn a byte that completed in 8 us into a time-out - the AWT car's
+           cjTmo, ~9x more often with the engine running
+           (..\evidence\SEMISEQ_WB_FIX_20261010; me711_cj120_preempt_proof).
+           Sampled first, an expired bound is acted on only after one more
+           flag test that follows it: a completed byte is always seen. */
+        unsigned int waited = (unsigned int)(T7 - t0);
         if (SSCRIC & 0x0080u) {
             SSCRIC &= (unsigned int)~0x0080u;
             return (unsigned char)(SSCRB & 0xFFu);
         }
-        if ((unsigned int)(T7 - t0) >= US_TO_TICKS(CJ_BYTE_TMO_US)) {
+        if (waited >= US_TO_TICKS(CJ_BYTE_TMO_US)) {
             cj_tmo_flag = 1u;                   /* counted by the slot */
             return 0u;
         }
@@ -587,6 +599,11 @@ static unsigned int cj_xfer(unsigned char dev, unsigned int word)
     SSCRIC &= (unsigned int)~0x0080u;
     SSCEIC = (unsigned int)(eic & ~0x0080u);
     return (unsigned int)(((unsigned int)hi << 8) | lo);
+}
+
+unsigned char far hc_io_cj120_due(unsigned int ms, unsigned char mask)
+{
+    return (unsigned char)(mask && (unsigned int)(ms - cj_mark) >= CJ_PERIOD_MS);
 }
 
 void far hc_io_cj120_slot(unsigned int ms, unsigned char mask)
@@ -733,10 +750,20 @@ void far hc_io_lambda_service(unsigned int ms, unsigned int ua1,
     for (b = 0u; b < 2u; b++) {
         unsigned int age, since;
         unsigned char sem = (unsigned char)(b ? HC_AIN_O2_2_PRE : HC_AIN_O2_1_PRE);
-        if (cj_ok[b] && (unsigned int)(ms - CQ[b].reply_ms) > CJ_REPLY_FRESH_MS) {
-            cj_ok[b] = 0u; cj_phase[b] = 0u; CQ[b].settled = 0u;
+        {   /* the CJ120 slot runs inside the S5500 exchange, an interrupt
+               level since 2026-10-13 (CC27), and writes these three too */
+            unsigned int s, rage;
+            HC_ATOMIC_ENTER(s);
+            /* `ms` was read before this block: a reply stamped since then
+               is a "negative" age, i.e. fresh - never a wrapped 65 s */
+            rage = (unsigned int)(ms - CQ[b].reply_ms);
+            if (cj_ok[b] && rage < 0x8000u && rage > CJ_REPLY_FRESH_MS) {
+                cj_ok[b] = 0u; cj_phase[b] = 0u; CQ[b].settled = 0u;
+            }
+            HC_ATOMIC_EXIT(s);
         }
         since = (unsigned int)(ms - CQ[b].ack_ms);
+        if (since & 0x8000u) since = 0u;   /* acknowledged after `ms` was read */
         if (cj_ok[b] && !CQ[b].settled && since >= CJ_ANALOG_SETTLE_MS) {
             /* Move the boundary to settling completion and require newly
                acquired samples. It is consumed once, never reused on wrap. */
@@ -896,9 +923,15 @@ void far hc_io_knock_band(unsigned char code)
 /* a bank's measured lambda x 1000 - 0 unless it is a MEASUREMENT
    (READY, pump on, calibrated, DIAG clean: the same rule the published
    channel follows). The closed loop reads only this. */
+/* 2026-10-10 (owner): FRESH measurements only. A value HELD through an
+   acquisition gap (hcwb.c GAP_HOLD_MS, valid 2, why HCWB_WHY_HELD) is shown
+   on lambda1X1000 / lamWhy, but STFT, the VE/WUE Analyze flags and the fast
+   block's lambdaValue - every consumer of this - read 0 for it, exactly as
+   for no measurement: nothing learns from a frozen reading. */
 unsigned int far hc_io_lambda(unsigned char b)
 {
-    return wb[b & 1u].lambda;
+    b &= 1u;
+    return (wb[b].valid == 1u) ? wb[b].lambda : 0u;
 }
 
 /* Stricter eligibility for protection; does not change V101 acquisition or
@@ -908,10 +941,13 @@ unsigned int far hc_io_lambda_protection(unsigned char b)
     unsigned char sem;
     b &= 1u; sem = b ? HC_AIN_O2_2_PRE : HC_AIN_O2_1_PRE;
     if (IO_PAGE[b ? CFG_U_LAM2_SRC : CFG_U_LAM1_SRC] != HC_LAMBDA_INTERNAL_LSU
-        || !wb[b].valid || wb[b].fcode || wb[b].why != HCWB_WHY_VALID
+        /* why == VALID implies valid == 1 (fresh): neither 0 nor HELD -
+           and no latched fault (fault() zeroes valid) */
+        || wb[b].why != HCWB_WHY_VALID
         || !wb[b].permission || !wb[b].supply_ok || wb[b].state != HCWB_ST_READY
         || !cj_ok[b] || !CQ[b].settled || (unsigned char)cj_reg1[b] != HCWB_MODE_PUMP
-        || (unsigned int)(hc_tick_ms - CQ[b].reply_ms) > CJ_REPLY_FRESH_MS
+        || ((unsigned int)(hc_tick_ms - CQ[b].reply_ms) > CJ_REPLY_FRESH_MS
+            && !((unsigned int)(hc_tick_ms - CQ[b].reply_ms) & 0x8000u))
         || (unsigned int)(hc_tick_ms - wb[b].last_ms) > 100u
         || hc_hal_ain_age(sem) > 100u || hc_hal_asic_age() > 100u) return 0u;
     return wb[b].lambda;
@@ -921,6 +957,14 @@ unsigned int far hc_io_lambda_protection(unsigned char b)
 unsigned char far hc_io_wb_fault(unsigned char b)
 {
     return wb[b & 1u].fcode;
+}
+
+/* a trouble-code clear (hcdtc711.c, '!D'): re-arm a latched wideband fault
+   - the bank recalibrates and a real fault latches again (hcwb_clear) */
+void far hc_io_wb_clear(void)
+{
+    hcwb_clear(&wb[0]);
+    hcwb_clear(&wb[1]);
 }
 
 /* in three slices (part 0, 1, 2), one per main-loop pass - see
@@ -942,6 +986,23 @@ void far hc_io_publish(unsigned int boost_req_x10, unsigned char part)
         hc_deadline_publish_diag(); hc_load_publish();
         hc_evlog_service(io_last_ms);  /* the event ring + test telemetry */
         return;
+    }
+    /* PARTS 2..5 (2026-10-12). Until then this was ONE slice of ~13 800
+       instructions (~260 words and 88 ETB telemetry getters) - in c167sim
+       the bulk of the longest main-loop pass (10.5 ms between two S5500
+       services, against the 10 ms frame raster; me711_pinwrite_gap_proof).
+       Same words, same values, in five passes. */
+    if (part == 3u) {
+        goto part3;
+    }
+    if (part == 4u) {
+        goto part4;
+    }
+    if (part == 5u) {
+        goto part5;
+    }
+    if (part == 6u) {
+        goto part6;
     }
     /* MOVED FROM hcmain_me711.c update_live() (NCODE relief):
        the main relay, the configuration state, the air model, the
@@ -1034,6 +1095,8 @@ void far hc_io_publish(unsigned int boost_req_x10, unsigned char part)
                                 | (sat(cj_err[1], 255u) << 8)));
     och16(1014u, (unsigned int)(sat(cj_tmo[0], 255u)
                                 | (sat(cj_tmo[1], 255u) << 8)));
+    return;
+part3:
     /* MOVED HERE FROM hcmain_me711.c update_live() to free NCODE
        (it had 58 bytes left): the trigger configuration readback,
        the V92/V93 trigger counters and the ETB calibration telemetry -
@@ -1130,6 +1193,35 @@ void far hc_io_publish(unsigned int boost_req_x10, unsigned char part)
         och16(942u, hc_dtc.ff[2]);
         och16(944u, hc_dtc.ff[3]);
     }
+    return;
+part4:
+    /* 2026-10-11 (owner: "more than ~5 codes are not visible"): EVERY code,
+       not four slots - bit i = path i of hcdtc711.c defs[] (the INI's row
+       order, parsed from that table). Stored 1652/1654, active 1656/1658.
+       A running mask, not 1u << i (Keil V7.53 mis-compiles a variable
+       shift: me711_keil_shift_scan). */
+    {
+        unsigned int sm0 = 0u, sm1 = 0u, am0 = 0u, am1 = 0u, m = 1u;
+        unsigned char i, st;
+        for (i = 0u; i < (unsigned char)HCDTC_MAX; i++) {
+            if (i == 16u) {
+                m = 1u;
+            }
+            st = hc_dtc.p[i].st;
+            if (i < 16u) {
+                if (st & HCDTC_S_STORED) sm0 |= m;
+                if (st & HCDTC_S_ACTIVE) am0 |= m;
+            } else {
+                if (st & HCDTC_S_STORED) sm1 |= m;
+                if (st & HCDTC_S_ACTIVE) am1 |= m;
+            }
+            m = (unsigned int)(m << 1);
+        }
+        och16(1652u, sm0);
+        och16(1654u, sm1);
+        och16(1656u, am0);
+        och16(1658u, am1);
+    }
     /* engine protection (hclimp711.c / shared hclimp.c) */
     och16(946u, hc_limp.cut);
     och16(948u, hc_limp_duty_x10);
@@ -1167,13 +1259,23 @@ void far hc_io_publish(unsigned int boost_req_x10, unsigned char part)
     och16(1004u, hc_cel_state());               /* the lamp policy   */
     och16(1006u, (unsigned int)eng_ign_corr_x10); /* CLT+IAT timing */
     och16(1008u, (unsigned int)hc_idle_timing_x10());
+    return;
+part5:
     och16(1522u, hc_etbcal_value(ETBV_SWEEP_DUTY));
     och16(1524u, hc_etbcal_value(ETBV_SWEEP_FLAGS));
     och16(1526u, hc_etbcal_value(ETBV_SWEEP_RMS));
     och16(1528u, hc_etbcal_value(ETBV_SWEEP_SAT));
     {
         unsigned char j;
-        for(j=34u;j<=94u;j++) och16(1530u+2u*(j-34u),hc_etbcal_value(j));
+        for(j=34u;j<=74u;j++) och16(1530u+2u*(j-34u),hc_etbcal_value(j));
+    }
+    return;
+part6:
+    {   /* the second half of the characterization block (2026-10-12: the
+           61 getters in one slice were the longest piece of a preset APPLY
+           pass, me711_preset_gap_proof) */
+        unsigned char j;
+        for(j=75u;j<=94u;j++) och16(1530u+2u*(j-34u),hc_etbcal_value(j));
     }
     /* V97 (sequential-work NCODE relief): MOVED FROM hcmain_me711.c
        update_live() - 128..162 the engine runtime, 222..334 the trigger

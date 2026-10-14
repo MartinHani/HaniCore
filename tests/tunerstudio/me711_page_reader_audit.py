@@ -91,8 +91,76 @@ def linked_modules():
     return out
 
 
+_TGT_DEF = re.compile(r"^\s*#\s*define\s+(TGT_\w+)", re.M)
+_COND = re.compile(r"^\s*#\s*(if|ifdef|ifndef|elif|else|endif)\b(.*)$")
+_ONE = re.compile(r"^\s*(!?)\s*defined\s*\(?\s*(TGT_\w+)\s*\)?\s*$")
+
+
+def target_macros():
+    """Every TGT_ macro the ME7.1.1 target headers define."""
+    out = set()
+    for h in sorted(TGT.glob("*.h")):
+        out |= set(_TGT_DEF.findall(h.read_text(errors="replace")))
+    return out
+
+
+def active_text(text, macros):
+    """`text` without the branches the ME7.1.1 build compiles out.
+
+    A field named only inside `#if !defined(TGT_ETBCAL_FAR)` is not read by
+    this image (2026-10-12: dbwDevX10/dbwDevMs after the Bosch DLR monitor
+    replaced the deviation supervisor read as RUNTIME). Only a condition on
+    ONE TGT_ macro is decided; any other condition keeps both branches, so
+    the audit can only become stricter where it is sure."""
+    out, stack = [], []          # stack: (decided, taken, parent_on)
+    on = True
+    for ln in text.split("\n"):
+        m = _COND.match(ln)
+        if not m:
+            out.append(ln if on else "")
+            continue
+        kw, rest = m.group(1), m.group(2).split("/*")[0].split("//")[0].strip()
+        if kw in ("if", "ifdef", "ifndef"):
+            if kw == "if":
+                c = _ONE.match(rest)
+                val = None if not c else ((c.group(2) in macros) != bool(c.group(1)))
+            else:
+                val = rest in macros if rest.startswith("TGT_") else None
+                if val is not None and kw == "ifndef":
+                    val = not val
+            stack.append((val is not None, bool(val), on))
+            on = on and (val is not False)
+        elif kw == "elif":
+            decided, taken, parent = stack[-1]
+            stack[-1] = (False, taken, parent)     # undecided from here on
+            on = parent and not (decided and taken)
+        elif kw == "else":
+            decided, taken, parent = stack[-1]
+            on = parent and not (decided and taken)
+        elif kw == "endif" and stack:
+            on = stack.pop()[2]
+        out.append("")
+    return "\n".join(out)
+
+
+_COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
+
+
+def code_only(text):
+    """`text` without C comments, keeping the line count.
+
+    2026-10-12 (real TunerStudio): "Intake air ADC channel" sat on the IAT
+    page as a live setting, yet this image never reads CAL_IAT_CHANNEL - the
+    only mention in a linked module was a COMMENT in hcengine.c, and the
+    audit counted it as a read."""
+    return _COMMENT.sub(lambda m: "\n" * m.group(0).count("\n"), text)
+
+
 def classify():
-    mods = {p.name: p.read_text(errors="replace") for p in linked_modules()}
+    macros = target_macros()
+    mods = {p.name: active_text(code_only(p.read_text(errors="replace")),
+                                macros)
+            for p in linked_modules()}
     rows = re.findall(r'Meta\("((?:CAL|CFG)_[A-Z0-9_]+)",\s*"(\w+)"',
                       DEF.read_text(errors="replace"))
     out = []
@@ -132,12 +200,20 @@ def check(unused=None, exempt=None, verbose=True):
                          "it - remove it from UNUSED" % ts)
 
     text = INI.read_text(encoding="utf-8", errors="replace")
+    # 2026-10-11 (owner: "simplify"): the Unused settings pages are in the
+    # developer (forensic) project only. A dead knob may be ABSENT from the
+    # tuner's project; wherever it IS shown - either project - it must say
+    # "(not used)". Silent is the defect, not hidden.
+    dev = sorted(INI.parent.glob("hanicore_me711_*_forensic.ini"))
+    both = text + "\n".join(p.read_text(encoding="utf-8", errors="replace")
+                            for p in dev)
     for ts in sorted(unused & placed):
         labels = re.findall(r'field\s*=\s*"([^"]*)"\s*,\s*%s\d*\s*(?:,|$)'
-                            % re.escape(ts), text, re.M)
+                            % re.escape(ts), both, re.M)
         if not labels:
             fails.append("UNPLACED   %s is UNUSED and placed, but no field "
-                         "line binds it in %s" % (ts, INI.name))
+                         "line binds it in %s or the developer project"
+                         % (ts, INI.name))
         for lbl in labels:
             if "not used" not in lbl:
                 fails.append("UNLABELLED %s is shown as %r" % (ts, lbl))

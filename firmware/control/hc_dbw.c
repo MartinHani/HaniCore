@@ -387,8 +387,15 @@ void hc_dbw_drive(unsigned char dir, unsigned int duty)
     }
     batt = (unsigned long)hc_hal_ain(HC_AIN_VBAT)
            * (unsigned long)cfg_u16(CFG_ADC_BATT_FS_DV) / 1023uL;
-    /* Same plausible measurement range as hcengine, without its fallback. */
-    if (batt < 40uL || batt > 200uL) {
+    /* Same plausible measurement range as hcengine, without its fallback.
+       BELOW IT IS A STATE, NOT A FAULT (2026-10-11 car: KL15 off with the
+       engine turning latched DBW_F_VBAT). The bridge is not driven; the
+       Bosch DLR likewise only suspends its monitoring (FR B_ubdve). */
+    if (batt < 40uL) {
+        hc_dbw_shutdown(0u);
+        return;
+    }
+    if (batt > 200uL) {
         hc_dbw_shutdown(DBW_F_VBAT);
         return;
     }
@@ -463,6 +470,12 @@ static unsigned char not_ready(unsigned int now_ms)
     return (unsigned char)((unsigned int)(now_ms - D.ready_since) < DBW_READY_MS);
 }
 
+#if defined(TGT_ETBCAL_FAR)
+void hc_dbw_init(void)
+{
+    hc_etbcal_dbw_init();          /* cold: FCODE (hcetbcal.c) */
+}
+#else
 void hc_dbw_init(void)
 {
     D.st = DBW_OFF;
@@ -485,10 +498,8 @@ void hc_dbw_init(void)
     hc_dbw_shutdown(0u);
     D.st = DBW_OFF;
     D.flt = 0u;
-#if defined(TGT_ETBCAL_FAR)
-    hc_etbcal_init();                /* calibration/autotune idle */
-#endif
 }
+#endif
 
 
 void hc_dbw_clear_faults(void)
@@ -502,6 +513,9 @@ void hc_dbw_clear_faults(void)
     D.pend = 0u;
     D.settle = 0u;
     D.ready = 0u;                  /* a new driving cycle: a new window */
+#if defined(TGT_ETBCAL_FAR)
+    hc_etbcal_dlr_reset();
+#endif
     if (D.clears != 0xFFFFu) {
         D.clears++;
     }
@@ -609,6 +623,16 @@ static void dbw_step(unsigned int now_ms, unsigned int rpm, unsigned char armed)
         && (unsigned int)(now_ms - D.step_mark) > D.gap_max) {
         D.gap_max = (unsigned int)(now_ms - D.step_mark);
     }
+    /* THE REAL TIME SINCE THE LAST STEP, for the timers below: a step runs
+       on the first main-loop pass >= DBW_STEP_MS after the last one, so the
+       period is 5..10 ms on the car and counting a fixed 5 ms stretched the
+       Bosch DLR times by up to 2x (2026-10-12). Bounded to 4 steps. */
+    D.step_dt = (unsigned int)(now_ms - D.step_mark);
+    if (D.steps == 0u || D.step_dt < DBW_STEP_MS) {
+        D.step_dt = DBW_STEP_MS;
+    } else if (D.step_dt > 4u * DBW_STEP_MS) {
+        D.step_dt = 4u * DBW_STEP_MS;
+    }
     D.step_mark = now_ms;
     if (D.steps != 0xFFFFu) {
         D.steps++;
@@ -646,11 +670,18 @@ static void dbw_step(unsigned int now_ms, unsigned int rpm, unsigned char armed)
     sb = hc_etbcal_rail_faults(ovr);
     if (sb) { hc_dbw_shutdown(sb); return; }
 #endif
-    D.a1 = hc_dbw_normalise(hc_hal_ain(HC_AIN_APP1),
-                              hc_cal_u16(CAL_PEDAL1_MIN),
+    raw1 = hc_hal_ain(HC_AIN_APP1);
+    raw2 = hc_hal_ain(HC_AIN_APP2);
+#if defined(TGT_ETBCAL_FAR)
+    /* The pair is read at ONE sample time (hcfresh711.c: one track can be
+       15 ms older; a fast press then read as a disagreement and dropped
+       the bridge). The target follows the same aligned pedal 1, at most
+       15 ms behind its newest sample for 1 ms in 16. */
+    hc_fresh_app_pair(&raw1, &raw2);
+#endif
+    D.a1 = hc_dbw_normalise(raw1, hc_cal_u16(CAL_PEDAL1_MIN),
                               hc_cal_u16(CAL_PEDAL1_MAX), &ok1);
-    D.a2 = hc_dbw_normalise(hc_hal_ain(HC_AIN_APP2),
-                              hc_cal_u16(CAL_PEDAL2_MIN),
+    D.a2 = hc_dbw_normalise(raw2, hc_cal_u16(CAL_PEDAL2_MIN),
                               hc_cal_u16(CAL_PEDAL2_MAX), &ok2);
     /* The pedal is not consulted while the commissioning verify owns the
        target - it runs with the pedal released or not fitted at all. */
@@ -712,11 +743,15 @@ static void dbw_step(unsigned int now_ms, unsigned int rpm, unsigned char armed)
        board before the first enable. It is judged from the step AFTER a step
        that enabled the bridge (D.on), which is DBW_STEP_MS later: far longer
        than the part needs to release the flag. */
-    sf = (unsigned char)(D.on ? hc_hal_dbw_sf_faulted() : 0u);
-    if (sf) {
+    /* bit 0: read with the stage ON (a disabled CJ220 reads LOW by design),
+       bit 1: the flag says faulted. */
+    sf = (unsigned char)(D.on ? (hc_hal_dbw_sf_faulted() ? 3u : 1u) : 0u);
+#if !defined(TGT_ETBCAL_FAR)
+    if (sf & 2u) {
         hc_dbw_shutdown(DBW_F_SF);
         return;
     }
+#endif
 
     /* ============================ DBW_INIT ==============================
      *
@@ -963,6 +998,38 @@ static void dbw_step(unsigned int now_ms, unsigned int rpm, unsigned char armed)
               (unsigned int)mag);
     }
 
+#if defined(TGT_ETBCAL_FAR)
+    /* THE BOSCH DLR SETTING-RANGE MONITOR (FR DLR 3.60, hcetbcal.c): the
+       output beyond the configured duty ceiling (DLRPIDMAX) is what counts,
+       the status flag only matters while it is - restart the power stage,
+       latch only after DLRPID2T. Replaces V99's "not shrinking" timer. */
+    f = hc_etbcal_dlr_monitor((unsigned char)((out < 0L ? -out : out)
+                                              > (long)maxd), sf, D.step_dt);
+    if (f & DBW_DLR_RESTART) {
+        /* THE FR's B_dveesh PULSE: the power stage is released for THIS
+           control step only and re-enabled by the next one. The controller
+           keeps RUN, its integrator and the setting-range time - a restart is
+           not a re-initialisation (FR DLR 3.60). Until 2026-10-12 this was a
+           full shutdown: the 4-step INIT and the PID reset made the output
+           leave saturation every 25 ms, the setting-range timer fell faster
+           than it rose, and a dead bridge was never judged
+           (me711_dbw_dlr_monitor_proof M3 with gentler gains). D.held stays
+           set: the controller still owns the bridge. */
+#if defined(TGT_DBW_MOTOR_PRIMITIVE)
+        hc_hal_dbw_motor(0u, 0u, 0u);
+#else
+        hc_hal_out_duty(HC_OUT_THR_PWM, 0u);
+        hc_hal_out(HC_OUT_THR_EN, 0u);
+#endif
+        D.on = 0u;
+        D.duty = 0u;
+        return;
+    }
+    if (f) {
+        hc_dbw_shutdown(f);
+        return;
+    }
+#else
     /* --------------------------------------- the deviation supervisor ---- */
     /* A PLATE THAT IS GETTING THERE IS NOT JAMMED. V83..V98 timed any
        error above dbwDevX10 against the RAW target, so a sharp pedal step
@@ -996,6 +1063,7 @@ static void dbw_step(unsigned int now_ms, unsigned int rpm, unsigned char armed)
             D.dev_since = now_ms;
         }
     }
+#endif
 
     if (D.on) D.st = DBW_RUN;
 }

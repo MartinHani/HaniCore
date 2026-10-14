@@ -222,9 +222,20 @@ def analyse(log: Log) -> dict:
         def bw(i, b=b):
             return None if why[i] is None else (int(why[i]) >> (8 * b)) & 255
         if log.has("lamWhy"):
-            # a bank whose source is not on-board says OFF (1): not judged
-            inval = [running[i] and bw(i) not in (None, 0, 1)
+            # a bank whose source is not on-board says OFF (1): not judged.
+            # 2026-10-10: HELD (16) is reported on its own below - a last
+            # value carried through a CJ120 gap is neither live nor a dropout
+            inval = [running[i] and bw(i) not in (None, 0, 1, 16)
                      for i in range(len(R))]
+            held = [running[i] and bw(i) == 16 for i in range(len(R))]
+            hs = spans(held, t, 0.0)
+            if hs:
+                add("lambda_held", hs[0][0], "bank %d lambda HELD (last value "
+                    "through a CJ120 acquisition gap) %d time(s), %.1f s in "
+                    "all - NOT a live reading; the closed loop and VE/WUE "
+                    "Analyze ignored it" % (b + 1, len(hs),
+                                            sum(t[e] - t[s] for s, e in hs)),
+                    bank=b + 1, count=len(hs))
         elif b == 0:
             inval = [running[i] and not (int(lst[i] or 0) & 1)
                      for i in range(len(R))]
@@ -1175,8 +1186,8 @@ def analyse_v100(folder: Path, log) -> tuple:
     if ri and min(ri) >= 6000.0:
         note("lambda_ri_sentinel", "Ri stayed at the 6000 ohm sentinel in "
              "every row: hcwb_ri_x10() returns it for UR at the rail, which a "
-             "cold cell and an open cell can share. Fault 13 (legacy "
-             "OPEN_CELL) means UR never came off its rail despite commanded "
+             "cold cell and an open cell can share. Fault 13 "
+             "(OPEN_CELL) means UR never came off its rail despite commanded "
              "heating. It does not distinguish an open cell from missing "
              "actual H+, absent heating current or another thermal failure; "
              "measure heater feed and current before assigning the cause")
@@ -1345,6 +1356,153 @@ def analyse_v100(folder: Path, log) -> tuple:
         note("ecu_rebooted", "the ECU rebooted %d time(s) during this "
              "session - counters restart there, and snapshots.csv holds the "
              "state read on each side" % rt["reboots"])
+
+    # ================================================ 2026-10-12 RULES ===
+    # The owner's car problems of 2026-10-11, each as an automatic check.
+    tps = log.col("TPSValue")
+    adv = log.col("ignitionTiming")
+    load = log.col("engLoad")
+    lam = log.col("lambdaValue")
+    cut = log.col("fuelCut")
+    skips = log.col("sparkSkips")
+    dbws = log.col("dbwState")
+    dbwf = log.col("dbwFaults")
+    flags = log.col("engineFlags")
+
+    # ---- QUICK PRESS: throttle +15 % within 0.2 s while running, then an
+    #      rpm dip > 80 rpm within 0.6 s (the "spark cut" feeling)
+    i = 0
+    tipins = []
+    while i < len(R):
+        if running[i] and tps[i] is not None:
+            j = i
+            while j + 1 < len(R) and t[j + 1] - t[i] <= 0.2:
+                j += 1
+            if tps[j] is not None and tps[j] - tps[i] >= 15:
+                r0 = rpm[i] or 0
+                k, low, kmin = j, r0, j
+                while k + 1 < len(R) and t[k + 1] - t[i] <= 0.8:
+                    k += 1
+                    if rpm[k] is not None and rpm[k] < low:
+                        low, kmin = rpm[k], k
+                rec = dict(t_press=round(t[i], 2), rpm=r0, tps_from=tps[i],
+                           tps_to=tps[j], rpm_low=low,
+                           dip=round(r0 - low),
+                           adv_at_dip=adv[kmin], load_at_dip=load[kmin],
+                           lambda_at_dip=lam[kmin],
+                           fuel_cut=cut[kmin], spark_skips=skips[kmin],
+                           dbw_state=(int(dbws[kmin]) & 255)
+                           if dbws[kmin] is not None else None)
+                tipins.append(rec)
+                if r0 - low > 80:
+                    add("tipin_stumble", kmin, "quick press %.0f -> %.0f %% at "
+                        "%d rpm: rpm fell to %d (-%d) within 0.8 s; at the dip "
+                        "advance %s deg, load %s %%, lambda %s, fuel cut %s, "
+                        "spark skips %s"
+                        % (tps[i], tps[j], r0, low, r0 - low, adv[kmin],
+                           load[kmin], lam[kmin], cut[kmin], skips[kmin]),
+                        **rec)
+                i = j + 1
+                continue
+        i += 1
+    S["tip_ins"] = tipins
+
+    # ---- IDLE: throttle closed, engine running > 20 s after start
+    idle_rpm, idle_adv, idle_tgt = [], [], []
+    tgt = log.col("idleTargetRpm")
+    for i in run_rows:
+        if (tps[i] or 0) <= 6 and (rpm[i] or 0) < 2500:
+            idle_rpm.append(rpm[i])
+            if adv[i] is not None:
+                idle_adv.append(adv[i])
+            if tgt[i]:
+                idle_tgt.append(tgt[i])
+
+    def _med(v):
+        v = sorted(x for x in v if x is not None)
+        return v[len(v) // 2] if v else None
+    S["idle"] = {"rows": len(idle_rpm), "rpm_median": _med(idle_rpm),
+                 "target_median": _med(idle_tgt),
+                 "advance_median": _med(idle_adv)}
+    if idle_rpm and idle_tgt and _med(idle_rpm) > _med(idle_tgt) + 250:
+        note("idle_high", "idle runs at %s rpm against a target of %s - the "
+             "idle loop holds above target + band (Idle Control: band, trim "
+             "authority; the spring/minimum opening may be too high)"
+             % (_med(idle_rpm), _med(idle_tgt)))
+    if idle_adv and _med(idle_adv) > 20:
+        note("idle_advance_high", "idle ignition advance %s deg - expected "
+             "about 10-15 deg (Spark Table idle cells)" % _med(idle_adv))
+
+    # ---- THROTTLE: the Bosch setting-range monitor and latched faults
+    prev = 0
+    for i in range(len(R)):
+        f = int(dbwf[i] or 0)
+        if f & 0x400 and not prev & 0x400:
+            add("dbw_range_request", i, "throttle setting-range limp request "
+                "(output saturated > 0.6 s, FR DLR) at %s rpm - fuel is cut "
+                "above the throttle-limp rpm while it lasts" % rpm[i],
+                faults=f)
+        for bit, name in ((0x20, "BRIDGE STATUS FLAG"),
+                          (0x40, "SETTING RANGE (5 s)")):
+            if f & bit and not prev & bit:
+                add("dbw_fault_latched", i, "throttle fault latched: %s "
+                    "(faults 0x%04X) - the bridge is off until key-off"
+                    % (name, f), faults=f)
+        prev = f
+
+    # ---- RESETS: the live witness trend before each reboot
+    wit = _csv(folder / "witness.csv")
+    if wit:
+        def wv(r, k):
+            return num(r.get(k))
+        S["witness"] = {
+            "rows": len(wit),
+            "s5500_gap_max_ms": max((wv(r, "s5500_gap_max_ms") or 0)
+                                    for r in wit),
+            "asic_csum_err_last": wv(wit[-1], "asic_csum_err"),
+            "asic_timeouts_last": wv(wit[-1], "asic_timeouts"),
+            "umkom_mismatch_last": wv(wit[-1], "umkom_mismatch"),
+            "main_pass_max_T": max((wv(r, "main_pass_max_T") or 0)
+                                   for r in wit)}
+        for a, b in zip(wit, wit[1:]):
+            if (wv(b, "uptime_ms") or 0) + 500 < (wv(a, "uptime_ms") or 0) \
+                    and (wv(a, "uptime_ms") or 0) < 65000:
+                ti = num(a.get("t")) or 0.0
+                F.setdefault("reset_witness", []).append(dict(
+                    t=ti, text="ECU reset after %s ms uptime: last live "
+                    "witness %.1f V, %s rpm, S5500 checksum errors %s, "
+                    "timeouts %s, worst S5500 gap %s ms, monitoring "
+                    "mismatches %s, worst main-loop pass %s T"
+                    % (wv(a, "uptime_ms"), (wv(a, "batt_dv") or 0) / 10.0,
+                       wv(a, "rpm"), wv(a, "asic_csum_err"),
+                       wv(a, "asic_timeouts"), wv(a, "s5500_gap_max_ms"),
+                       wv(a, "umkom_mismatch"), wv(a, "main_pass_max_T"))))
+
+    # ---- BURN: completed and failed flash writes
+    com, err = log.col("nvmCommits"), log.col("nvmError")
+    pc = pe = None
+    for i in range(len(R)):
+        if com[i] is not None and pc is not None and com[i] > pc:
+            add("burn_done", i, "a Burn reached flash at %s rpm" % rpm[i])
+        if err[i] and int(err[i]) & 255 and err[i] != pe:
+            low = int(err[i]) & 255
+            why = {1: "external SRAM probe failed",
+                   2: "the page does not describe a runnable engine",
+                   3: "the staged record did not verify",
+                   4: "a flash sector would not erase",
+                   5: "a flash word would not program",
+                   6: "programmed but did not read back",
+                   7: "too many interrupted attempts",
+                   8: "record from another page layout",
+                   9: "every flash cell is used",
+                   10: "DEADLINE - no flash window while the engine turned "
+                       "(fixed 2026-10-12: a Burn while running waits for the "
+                       "engine stop)"}.get(low, "unknown")
+            add("burn_error", i, "Burn error 0x%04X (%s) - the tune was NOT "
+                "written to flash" % (int(err[i]), why), code=err[i])
+        pc = com[i] if com[i] is not None else pc
+        pe = err[i]
+
     S["config"] = log.meta.get("engine_config") or {}
     return F, S
 

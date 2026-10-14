@@ -8,6 +8,19 @@ from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "tools" / "lib"))
 import hcpaths  # noqa: F401,E402  (puts every tools/ and tests/ module on sys.path)
+import os, subprocess
+if '--control' in sys.argv:
+    # 2026-10-10: the car image 323FFF9F (raw evidence store) has no HELD
+    # state - hc_io_lambda() returns any bank lambda - so it learns from a
+    # held value and must FAIL the held-sample check.
+    ev=Path(os.environ.get('HANICORE_RAW_EVIDENCE',
+                           str(Path(__file__).resolve().parents[4]/'evidence')))
+    bins=ev/'SEMISEQ_WB_FIX_20261010'/'control_323FFF9F'
+    rc=subprocess.run([sys.executable,__file__],
+                      env=dict(os.environ,HANICORE_ME711_BINS=str(bins))).returncode
+    print('\nCONTROL (323FFF9F): %s'%('FAILS as it must' if rc else
+                                     'PASSED - the gate cannot tell'))
+    raise SystemExit(0 if rc else 1)
 import me711_config_state_test as T
 import me711_preset_apply_proof as AP
 import c166_disasm as D
@@ -32,6 +45,7 @@ def main():
     r.m.w8(T.sym('eng_cranking')&65535,0)
     r('hc_ec_init'); r('hc_evlog_init',0,0)
     addr=T.sym('hc_io_lambda')-0x800000
+    orig=bytes(r.m.flash[addr:addr+6])
     def measurement(lam):
         # MOV R4,#lam; RETS -- only this test's flash bytearray is patched.
         r.m.flash[addr:addr+6]=bytes((0xE6,0xF4,lam&255,lam>>8,0xDB,0))
@@ -54,6 +68,57 @@ def main():
     assert r('hc_ec_fuel',1000)>1000
     assert r('hc_lamdyn_alive',0)&255==0
     print('PASS: 90 s constant valid lambda, no activity flag, STFT active and VE-valid bits set')
+
+    # 2026-10-10 (owner): a value HELD through an acquisition gap (hcwb.c
+    # GAP_HOLD_MS: valid 2, why HELD) is SHOWN (lambda1X1000, lamWhy 16), but
+    # neither the closed loop nor VE/WUE Analyze may act on it. The REAL
+    # hc_io_lambda() is restored and the bank state set: wb[] is a static, so
+    # its address comes from hc_io_lambda's own code in the linked image
+    # (the CMPB of `valid` against 1 and the load of `lambda`).
+    r.m.flash[addr:addr+6]=orig
+    import re
+    asm=D.disassemble(bytes(r.m.flash),addr,16,T.sym('hc_io_lambda')>>16)
+    near_lam=int(re.search(r'MOV\s+R4, \[R\d+\+#([0-9A-F]+)h\]',asm).group(1),16)
+    mv=re.search(r'MOVB\s+RL4, \[R5\+#([0-9A-F]+)h\]',asm)
+    # an image whose hc_io_lambda never reads `valid` (before 2026-10-10):
+    # hcwb_t puts valid 4 bytes before lambda (hcwb.h)
+    near_valid=int(mv.group(1),16) if mv else near_lam-4
+    assert near_lam-near_valid==4, (hex(near_valid),hex(near_lam))
+    dpp=next(k for k,v in D.SFR.items() if v=='DPP%d'%(near_valid>>14))
+    page=r.m.sfr.get(dpp,3)
+    def phys(n): return ((page<<14)|(n&0x3FFF))&0xFFFF
+    def bank1(valid,lam):
+        r.m.w8(phys(near_valid),valid); r.m.w16(phys(near_lam),lam)
+    def s16(v): return v-65536 if v>=32768 else v
+    def run_ms(n):
+        nonlocal tick
+        for ms in range(0,n,30):
+            tick=(tick+37500)&65535; r.m.sfr[t1]=tick
+            r('hc_ec_pre',900); r('hc_ec_target_lambda',900,500)
+            r('hc_ec_post',900,500)
+        r('hc_ec_publish',0)
+    u8('CFG_U_LAM2_SRC',0)                  # bank 1 alone: one trim
+    bank1(1,1040); run_ms(3000)
+    trim0=s16(och(1156))
+    assert trim0>0 and och(1166)&0x40, (trim0,hex(och(1166)))
+    bank1(2,900)                            # rich - but only HELD
+    run_ms(5000)
+    trim1=s16(och(1156))
+    # held = not a measurement for the consumers: the trim is DROPPED (the
+    # documented rule for a non-measurement), never learned from the value
+    assert trim1==0 and och(1166)&0x40==0, (trim0,trim1,hex(och(1166)))
+    print('PASS: 5 s of a HELD rich lambda: not learned (trim %+.1f -> %+.1f '
+          '%%, dropped as for no measurement), VE/WUE-valid bit clear'
+          % (trim0/10,trim1/10))
+    # NEGATIVE CONTROL: the same value FRESH must move the trim and set the
+    # VE-valid bit - otherwise the check above could not see learning.
+    bank1(1,900); run_ms(5000)
+    trim2=s16(och(1156))
+    assert trim2<0 and och(1166)&0x40, (trim1,trim2,hex(och(1166)))
+    print('PASS: control - the same value FRESH is learned (trim %+.1f %%) '
+          'and sets the VE-valid bit' % (trim2/10))
+    measurement(0)
+
     measurement(0); r('hc_ec_post',900,500); r('hc_ec_publish',0)
     assert och(1166)&0xC0==0 and och(1200)&255==4
     print('PASS: invalid provider withdraws both consumer valid bits and trim learning')

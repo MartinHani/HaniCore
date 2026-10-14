@@ -470,10 +470,64 @@ def main():
             skipped.wait_edge(p)
         skipped.wait_edge(3 * p, 18)
     skipped.wait_edge(p)                # confirms the second gap
-    check("repeated missing edge causes named sync loss",
+    check("repeated missing edge withdraws position at once, named",
           skipped.x.u16("trg_loss_reason") in (2, 3)
-          and skipped.x.u16("trg_synclost") > 0,
-          f"reason={skipped.x.u16('trg_loss_reason')}")
+          and skipped.x.u8("trg_state") < 3,
+          f"reason={skipped.x.u16('trg_loss_reason')} state={skipped.x.u8('trg_state')}")
+    # 2026-10-11: the COUNT (syncLossCount -> P0335) waits until the crank
+    # has turned one more revolution after the loss, so the last revolution
+    # of a stopping engine is never a fault. A turning engine still counts.
+    skipped.rev(p)
+    skipped.wait_edge(p)
+    check("repeated missing edge is counted once the engine keeps turning",
+          skipped.x.u16("trg_synclost") == 1,
+          f"lost={skipped.x.u16('trg_synclost')}")
+
+    # AN OUT-OF-POSITION GAP ON A TURNING ENGINE IS COUNTED (one revolution
+    # later), AND IT REACQUIRES.
+    early, _, p = stable_case(2000)
+    for _ in range(20):
+        early.wait_edge(p)
+    early.wait_edge(4 * p, 12)          # a long interval at tooth 21
+    early.wait_edge(p)                  # confirmed by its successor: EARLY_GAP
+    check("early gap at 2000 rpm withdraws position at once",
+          early.x.u8("trg_state") < 3 and early.x.u16("trg_loss_reason") == 2
+          and early.x.u16("trg_synclost") == 0,
+          f"state={early.x.u8('trg_state')} reason={early.x.u16('trg_loss_reason')} "
+          f"lost={early.x.u16('trg_synclost')}")
+    for _ in range(2):
+        early.rev(p)
+    early.wait_edge(p)                  # confirms the reacquired gap
+    check("early gap at 2000 rpm is counted (P0335 source)",
+          early.x.u16("trg_synclost") == 1 and early.x.u8("trg_state") >= 3,
+          f"lost={early.x.u16('trg_synclost')} state={early.x.u8('trg_state')}")
+
+    # THE ENGINE STOPPING (AWT car 2026-10-10: syncLossReason 2 and P0335 at
+    # every key-off and cranking stop). The crank slows into a compression
+    # TDC and speeds up after it: a long interval between two shorter ones,
+    # out of position - then a few slow teeth and standstill.
+    stop, _, p = stable_case(300)
+    for _ in range(25):
+        stop.wait_edge(p)
+    q = p
+    for _ in range(8):                  # decelerating (every interval
+        q = q * 9 // 8                  # stays inside the 16-bit T1)
+        stop.wait_edge(q)
+    stop.wait_edge(4 * q, 18)           # slowing over compression TDC
+    stop.wait_edge(q * 3 // 2, 12)      # speeds up after it: EARLY_GAP
+    lost_now = stop.x.u8("trg_state") < 3 and stop.x.u16("trg_loss_reason") == 2
+    for k in (2, 3, 5):                 # the last few, ever slower teeth
+        stop.wait_edge(k * q, 12)
+    for _ in range(40):                 # standstill: the stall timeout
+        stop.service((stop.t + 10000) & 0xFFFF)
+        stop.t = (stop.t + 10000) & 0xFFFF
+    check("stopping engine: bogus gap withdraws position at once",
+          lost_now, f"reason={stop.x.u16('trg_loss_reason')}")
+    check("stopping engine: last revolution is NOT a counted sync loss",
+          stop.x.u16("trg_synclost") == 0 and stop.x.u8("trg_state") == 0
+          and stop.x.u16("trg_loss_reason") == 1,
+          f"lost={stop.x.u16('trg_synclost')} state={stop.x.u8('trg_state')} "
+          f"reason={stop.x.u16('trg_loss_reason')}")
 
     cam, _, p = stable_case(800)
     while not (1200 <= (cam.x.u16("trg_engine_deg_x10") % 1800) <= 1240):

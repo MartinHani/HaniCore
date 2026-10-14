@@ -106,8 +106,12 @@ def run(version_override=None, id_override=None):
           "%s vs %s" % (man["build"], me711_image.EXPECTED_BUILD))
     check(results, "manifest build carries %s" % vtag,
           man["build"].upper().startswith(vtag + "_"), man["build"])
-    check(results, "manifest version_text == TGT_VERSIONTXT",
-          man["version_text"] == vtxt, man["version_text"])
+    # 2026-10-11: the 'V' text carries the build id (source hash) as well
+    bid = man.get("build_id") or ""
+    check(results, "manifest version_text == TGT_VERSIONTXT + ' build <id>'",
+          re.fullmatch(r"[0-9A-F]{8}", bid) is not None
+          and man["version_text"] == vtxt + " build " + bid,
+          man["version_text"])
     check(results, "manifest sha256 == sha256 of the linked binary",
           man["sha256"].upper() == hashlib.sha256(img).hexdigest().upper(),
           man["sha256"][:16] + "…")

@@ -200,12 +200,24 @@ public final class AutoConnect {
                 line.idle(w5Ms);
             }
             reason = slowInit(line);
+            boolean fast = false;
+            if (R_NO_SYNC.equals(reason)) {
+                /* ISO 14230 FAST INIT (2.2.0, docs/firmware/design/
+                   ME711_OBD_KLINE.md 6.2): the tester asserts the wake-up, so
+                   it does not need the quiet line the 5-baud byte needs - the
+                   robust entry on the car's shared K-line. */
+                log("VEHICLE attempt " + attempt + ": no 5-baud sync - fast init");
+                fastInit(line);
+                fast = true;
+                reason = null;
+            }
             if (reason != null) { log("VEHICLE attempt " + attempt + ": " + reason); continue; }
-            log("VEHICLE: 5-baud 0x01 -> 55 EF 8F / 70 -> FE");
+            log(fast ? "VEHICLE: fast init wake-up sent"
+                     : "VEHICLE: 5-baud 0x01 -> 55 EF 8F / 70 -> FE");
 
             byte[] d = kwp(line, new byte[] { (byte) HcProtocol.SID_START_COMM });
             if (d == null || (d[0] & 0xFF) != HcProtocol.SID_START_COMM + HcProtocol.RESP_OFFSET) {
-                reason = R_HANDSHAKE;
+                reason = fast ? R_NO_SYNC : R_HANDSHAKE;
                 log("VEHICLE: StartCommunication: " + hex(d));
                 continue;
             }
@@ -264,6 +276,18 @@ public final class AutoConnect {
         /* waitForByte skips our own echoed 70 on its way to the FE */
         if (!waitForByte(line, (~HcProtocol.SLOW_ADDR) & 0xFF, 200)) return R_HANDSHAKE;
         return null;
+    }
+
+    /** ISO 14230-2 fast-init wake-up: TiniL 25 ms low, TiniH 25 ms high, at
+        10400. The ECU measures the low run itself (20..30 ms accepted); the
+        StartCommunication that follows is the ordinary kwp() request. */
+    private void fastInit(Line line) throws IOException {
+        line.setBaud(HcProtocol.BAUD_10400);
+        line.purge();
+        line.idle(60);
+        line.sendBreak(25);
+        line.idle(25);
+        line.purge();                     /* the break's own echo */
     }
 
     /** The address byte at 5 baud, LSB first, 8N1: BREAK for a 0, idle for a

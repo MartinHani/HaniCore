@@ -1,18 +1,18 @@
 {
- "jar": "HaniCore_KLine_Transport_2.1.0.jar",
- "version": "2.1.0",
- "sha256": "3679C1E0A8332AFC5A0B63D071D7AA07728AD53CEFB23DCA3A9A39D3B04A89DE",
+ "jar": "HaniCore_KLine_Transport_2.2.0.jar",
+ "version": "2.2.0",
+ "sha256": "C4E0FC7BE5E9C4549EF5021C03C716B9A602C5A805CE3D1E5EC237A2D6BC8F0A",
  "javac": "javac 25.0.3",
  "release": 8,
  "sources": {
-  "tools/tunerstudio/plugin/src/com/hanicore/tunerstudio/AutoConnect.java": "9196f2edbaaca3398f5a6c47024c73d2e048381b64724c8c1d2340bda2f828bc",
+  "tools/tunerstudio/plugin/src/com/hanicore/tunerstudio/AutoConnect.java": "f939db3bb06a21b46acb6360478c642404675f5d462a890cb64a845bb0264556",
   "tools/tunerstudio/plugin/src/com/hanicore/tunerstudio/AutoConnectCli.java": "77718de4a513e33b5841843eb93a61a5bebf7485502dfc2cb1c4a938a6454e5a",
   "tools/tunerstudio/plugin/src/com/hanicore/tunerstudio/Backoff.java": "1cded4649cef6b5603b9c844ad2ef2a673dcee39259ca9d901a079d9de3ed5cf",
-  "tools/tunerstudio/plugin/src/com/hanicore/tunerstudio/HaniCoreKLinePlugin.java": "770e6158b07f65e4ea8801e4d87058537772fd256ffbd52984f72f05e9d41b37",
+  "tools/tunerstudio/plugin/src/com/hanicore/tunerstudio/HaniCoreKLinePlugin.java": "b7f3d822457ebf09998e07b35e0c2b2d55a0baf9ff96e07416ef83ef1b2e2283",
   "tools/tunerstudio/plugin/src/com/hanicore/tunerstudio/HcProtocol.java": "8896a8877200989f2ac7c8a60be4262e8bda0e28e5370914061da037b8a930b0",
   "tools/tunerstudio/plugin/src/com/hanicore/tunerstudio/Line.java": "485001c105fd660aefc6e98b8d52ec267e05b6cb3a6de37f0c0556c9194281ed",
   "tools/tunerstudio/plugin/src/com/hanicore/tunerstudio/RetryPolicy.java": "fa1bde4f5c1fd5567a413ac9901a8f4324ecd043c1da3ebe209bee3dc1dd6200",
-  "tools/tunerstudio/plugin/src/com/hanicore/tunerstudio/SerialPortLine.java": "c6cb48b4bade14875ed0d9458948df68adf78df319a12b3c839375f5f50007f1",
+  "tools/tunerstudio/plugin/src/com/hanicore/tunerstudio/SerialPortLine.java": "61b8b28df63ca33783534dcaa2015239b97e7d9e9376d3affcbc49ea7956fa55",
   "tools/tunerstudio/plugin/src/com/hanicore/tunerstudio/SilenceWatch.java": "0e4046f2c35af431bc98290591fe87d083ed60545a6a76c432cd395b81816193"
  },
  "compiled_against": {

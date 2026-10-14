@@ -59,4 +59,10 @@ typedef char hc_rt_fits[(sizeof(hc_rt_t) <= 0x40u) ? 1 : -1];
 void far hc_rtmon_init(void);
 void far hc_rtmon_service(unsigned int now_ms);   /* main loop: scans, mirrors */
 unsigned char far hc_rt_byte(unsigned int off);   /* the extended window       */
+unsigned char far hc_rtwit_byte(unsigned int off); /* the reset witness         */
+void far hc_rtwit_frame_start(unsigned int t7);    /* S5500 raster, per frame   */
+void far hc_rtwit_stall_set(unsigned char ms, unsigned char every_ms); /* '!Z'  */
+void far hc_rtwit_stall_service(unsigned int now_ms); /* main loop, bench only   */
+void far hc_irq_disable_all(void);
+void far hc_rst_publish(void);                     /* reset-log target words   */                /* boot: every xxIC = 0     */
 #endif

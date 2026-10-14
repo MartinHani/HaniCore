@@ -165,13 +165,15 @@ static void test_chip_loss(void)
     m[0].chip_ok = 0u;                           /* bank 1 CJ120 stops answering */
     for (i = 0u; i < 400u; i++) {
         pstep(w, m, 3u);
-        assert(w[0].valid == 0u);                /* lambda withheld at once */
+        /* 2026-10-10: held through a one-exchange gap (< 0.6 s), then
+           withheld (hcwb.c GAP_HOLD_MS) */
+        if (i >= 60u) assert(w[0].valid == 0u);
         assert(w[1].state == HCWB_ST_READY && w[1].valid == 1u);
     }
     assert(w[0].state == HCWB_ST_FAULT && w[0].fcode == HCWB_F_CHIP);
     assert(((status >> 8) & 3u) == 2u);
-    printf("  bank 1 chip lost: lambda withheld at once, fault 7 after 3 s, "
-           "bank 2 untouched: OK\n");
+    printf("  bank 1 chip lost: lambda withheld after the 0.6 s gap hold, "
+           "fault 7 after 3 s, bank 2 untouched: OK\n");
 }
 
 static void test_bad_cal_one_bank(void)
@@ -310,7 +312,7 @@ static void test_fault_latch(void)
     pinit(w, m);
     to_ready(w, m, 3u);
     m[1].diag_force = 0xBFu;                     /* heater short to UB */
-    prun(w, m, 200u, 3u);
+    prun(w, m, 700u, 3u);                        /* DIAG confirm 0.5 s */
     assert(w[1].fcode == HCWB_F_HEATER_UB);
     m[1].diag_force = 0u;                        /* the short goes away */
     prun(w, m, 5000u, 3u);
@@ -470,8 +472,12 @@ static void test_ri_implausible(void)
     m[0].ur_force = HCWB_UR_NONE;               /* next acquisition loses tag */
     pstep(w, m, 3u);                            /* conversion completes */
     pstep(w, m, 3u);                            /* core consumes it */
-    assert(w[0].valid == 0u);                   /* withheld at once */
-    prun(w, m, 1200u, 3u);
+    assert(w[0].valid == 2u                     /* 2026-10-10: one untagged
+                                                   sample is HELD (gap)    */
+           && w[0].why == HCWB_WHY_HELD);
+    prun(w, m, 700u, 3u);
+    assert(w[0].valid == 0u);                   /* withheld after 0.6 s    */
+    prun(w, m, 500u, 3u);
     assert(w[0].state == HCWB_ST_FAULT && w[0].fcode == HCWB_F_NO_RI);
     assert(w[1].valid == 1u);
     printf("  Ri implausible: over-heat 10 / under-heat 11 / no UR 12, each on "

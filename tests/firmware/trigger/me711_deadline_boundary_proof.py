@@ -83,7 +83,12 @@ def main():
             if fn:setup_call(r,fn,args)
             _,_,umin,smin,lost,bad=execute(r,40000,inject=offset,idle_end=idle_end)
             before=r.dirs();r.idle();r.run(12000)
-            ok=(r.u16('trg_synclost')==1 and r.u16('hc_dl_generation')!=prepared.u16('hc_dl_generation') and r.dirs()==(0,0,0) and not bad)
+            # 2026-10-12: the crank position WITHDRAWN (trg_state below crank
+            # sync), not trg_synclost: since the stop-time fix (2026-10-11) the
+            # counter moves only after the crank has run another revolution,
+            # and this rig stops after the loss (me711_runtime_fault_proof S1b
+            # checks the count).
+            ok=(r.u8('trg_state')<3 and r.u16('hc_dl_generation')!=prepared.u16('hc_dl_generation') and r.dirs()==(0,0,0) and not bad)
             # Owned OFF deadlines survive normal withdrawal. Only a newly
             # asserted command after withdrawal is forbidden during the stall.
             for _,_,ports in r.log:

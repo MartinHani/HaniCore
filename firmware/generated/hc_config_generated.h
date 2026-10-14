@@ -88,7 +88,7 @@ typedef enum {
 #define HC_PINCAP_SPECIAL_LOCKED 0x8000u
 
 /* ------------------------------------------------------------ enums -- */
-/* LoadSource: Legacy load model */
+/* LoadSource: Load model */
 #define HC_LOAD_MAP                   0u
 #define HC_LOAD_TPS                   1u
 #define HC_LOAD_ALPHAN                2u
@@ -480,7 +480,7 @@ typedef enum {
 #define CFG_U_IAT_POLICY               3715u /* u8 Use intake air temperature */
 #define CFG_U_LEAN_ENABLE              3716u /* u8 Lean protection */
 #define CFG_U_LAMBDA_QUALIFIED         3717u /* u8 Wideband commissioned for protection */
-#define CFG_U_PRESSURE_GUARD           3718u /* u8 Pressure-loss cut in Legacy / Pure Alpha-N */
+#define CFG_U_PRESSURE_GUARD           3718u /* u8 Pressure-loss cut, other fuel algorithms */
 #define CFG_U_V102_PAD                 3719u /* u8 Alignment pad */
 #define CFG_U_PRESSURE_REF             3720u /* u16 Reference pressure */
 #define CFG_U_BLEND_START              3722u /* u16 Boost blend starts at (above ambient) */

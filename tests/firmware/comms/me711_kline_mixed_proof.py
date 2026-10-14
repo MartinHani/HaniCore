@@ -57,6 +57,16 @@ STEPS_PER_MS = 10000
 BYTE_MS = 10.0 / 115.2                   # one 8N1 byte at 115200
 ENGINE_TRAPS = {0x1F, 0x18, 0x19, 0x39, 0x3A}
 UNEXPLAINED_MS = 15.0
+# THE PERIODIC LEVELS ABOVE THE REPLY JOB ARE ATTRIBUTED TOO (2026-10-14).
+# The 1 ms tick (T8, ILVL 8 group 0 - the reply job is 8/1 and cannot preempt
+# it) and the S5500 exchange (CC27, ILVL 9, since the car-reset fix) run on a
+# fixed cadence whatever the link does, so their UART-empty time grows with
+# the LENGTH of a reply, not with a defect: on 474FC1E5 the 4096-byte page
+# read (716 ms) spent 22.5 ms of wire idle in the tick and 1.1 ms in CC27 -
+# the whole of its "unexplained" 29 ms beyond the reply job's own 6 ms. Each
+# single stall stays bounded by TX_RECOVERY_US (the non-RT idle check below
+# still counts them); only the per-reply SUM is no longer charged to K5.
+PERIODIC_TRAPS = {0x3E, 0x3B}            # T8 tick, CC27 S5500
 # The supported vehicle client waits 500 ms for an ordinary exchange. A full
 # 4096-byte page takes 357 ms of wire time alone and has a 1000 ms deadline.
 # The UART has two byte stages (174 us); a qualified planner span is longer
@@ -92,6 +102,7 @@ class Host:
         self._idle_rt = self._dispatch_rt = self._recover = self._recover_max = 0
         self._recover_active = False
         self._nonrt_idle = self._nonrt_idle_max = 0
+        self._idle_periodic = 0
         self.rx_ring_hwm = 0
         # Count the host/parser ring exactly when either cursor changes.
         # Firmware rx_hwm records a different buffer: pending PEC bytes.
@@ -213,6 +224,7 @@ class Host:
             self._idle_rt = self._dispatch_rt = self._recover = self._recover_max = 0
             self._recover_active = False
             self._nonrt_idle = self._nonrt_idle_max = 0
+            self._idle_periodic = 0
             return
         kind, want, chk, t0, nreq, mark = self.cur
         n = len(r.tx) - mark
@@ -238,6 +250,8 @@ class Host:
                 # Bound every non-engine instruction in that interval, not
                 # merely its tail after the last engine interrupt.
                 self._nonrt_idle += 1
+                if trap in PERIODIC_TRAPS:
+                    self._idle_periodic += 1
                 self._nonrt_idle_max = max(self._nonrt_idle_max, self._nonrt_idle)
                 if self._recover_active:
                     self._recover += 1
@@ -276,9 +290,11 @@ class Host:
         self.wire_gaps.extend(gaps)
         rt_ms = self._idle_rt / STEPS_PER_MS
         dispatch_rt_ms = self._dispatch_rt / STEPS_PER_MS
+        periodic_ms = self._idle_periodic / STEPS_PER_MS
         self.reply_stats.append(dict(kind=kind, completion_ms=ms, wire_ms=wire,
                                     rt_idle_ms=rt_ms, dispatch_rt_ms=dispatch_rt_ms,
-                                    unexplained_ms=ms - wire - rt_ms - dispatch_rt_ms,
+                                    periodic_ms=periodic_ms,
+                                    unexplained_ms=ms - wire - rt_ms - dispatch_rt_ms - periodic_ms,
                                     dispatch_ms=(r.tx_steps[mark] - t0) / STEPS_PER_MS - nreq * BYTE_MS,
                                     byte_idle_ms=max(gaps, default=0.0),
                                     recovery_us=self._recover_max / 10.0,
@@ -428,6 +444,13 @@ def main() -> int:
           "stack %s/%s B, ISR over %s, unbudgeted %s, flash writes %d"
           % (tx_us, rt["tx_bytes"], crit_us, rt["dbw_gap_max"], summary["dbw_step_gap_us"]/1000.0, watchdog_ms, svc_ms,
              summary["user_stack_used_B"], summary["sys_stack_used_B"], over_isr or "none", unknown_isr or "none", len(s.mem.flash_writes)))
+    # Where a service stretch / DBW gap went (the run-gates log keeps only
+    # the verdict line): the firmware's own per-segment stretch (wall time,
+    # interrupts included) and the simulator's exclusive time per service.
+    print("    service stretch by segment (ms): %s"
+          % {name: round(rt.get("svc_" + name, 0) * 0.0008, 2)
+             for name in ("eng", "dbw", "diag", "lambda", "other", "comms")})
+    print("    service exclusive max (us): %s" % dict(list(summary.get("svc_max_us", {}).items())[:8]))
     print("\n%d/6 checks pass" % (6 - fails))
     return 1 if fails else 0
 

@@ -92,6 +92,21 @@
 #define HCKLINE_ST_ECU_COMPL   5u   /* got it; send ECU complement (~addr)     */
 #define HCKLINE_ST_SESSION     6u   /* KWP frames                              */
 #define HCKLINE_ST_PRIVATE     7u   /* raw HaniCore mode; dormant until reset  */
+#define HCKLINE_ST_FAST        8u   /* ISO 14230-2 fast init: the target saw the
+                                       wake-up pattern (25 ms low, 25 ms high);
+                                       waiting for StartCommunication at 10400 */
+
+/* FAST INIT (2026-10-13, docs/ARCHITECTURE.md).
+ * On a shared vehicle K-line the 5-baud entry needs a quiet line to arm; the
+ * fast-init wake-up is ASSERTED by the tester, so it works on a busy bus.
+ * The TARGET recognises the wake-up (pin timing, like the 5-baud byte) and
+ * calls hckline_on_fast_init(); this core then accepts ONE StartCommunication
+ * - physical (target cfg.ecu_addr) or functional (target 0x33, ISO 15031) -
+ * answers it with the keybytes (C1 kb1 kb2, ISO 14230-2) and opens the same
+ * SESSION a 5-baud init opens. Anything else in the window is ignored; no
+ * StartCommunication within HCKLINE_FAST_WAIT_US -> IDLE. */
+#define HCKLINE_FUNC_ADDR      0x33u
+#define HCKLINE_FAST_WAIT_US   300000uL
 
 /* Sizes. A vehicle-mode KWP frame is tiny; 64 is generous and a power of two
    is not required here (no masked ring). */
@@ -193,6 +208,10 @@ void hckline_reset(hckline_t *k);
    other address is counted and ignored (a stock cluster/gateway that is
    "closed until valid 5-baud 0x01" behaves the same way). */
 void hckline_on_slow_init(hckline_t *k, unsigned char addr, unsigned long now_us);
+
+/* The target recognised an ISO 14230 fast-init wake-up pattern (and has put
+   the line at 10400). Waits for StartCommunication, see HCKLINE_ST_FAST. */
+void hckline_on_fast_init(hckline_t *k, unsigned long now_us);
 
 /* One received byte (echo already removed by the target). */
 void hckline_on_rx(hckline_t *k, unsigned char b, unsigned long now_us);

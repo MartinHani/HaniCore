@@ -525,10 +525,15 @@ def main():
     s_charge = fresh_coil(s, safe_tooth=True)
     t_d = s.t1_ext
     s.drop_teeth = 3
-    t_l = run_until(s, 20000, lambda t: RPM, lambda: s.r16("trg_synclost") != lost0, step=20)
+    # 2026-10-12: THE LOSS IS THE WITHDRAWAL (trg_state below crank sync).
+    # trg_synclost COUNTS it only after the crank has delivered another
+    # revolution (2026-10-11 overnight: a stall first is the engine
+    # stopping, not a P0335), so it no longer moves inside this 20 ms
+    # window; S1b below checks that it counts once the engine runs on.
+    t_l = run_until(s, 20000, lambda t: RPM, lambda: s.r8("trg_state") < 3, step=20)
     t_sync = run_until(s, 500000, lambda t: RPM, lambda: s.r8("trg_state") >= 3, step=20)
     t_s_end = s.t1_ext
-    res.append(("S1 dropout: sync lost %s (reason %d), quiesces %d -> %d"
+    res.append(("S1 dropout: crank position withdrawn %s (reason %d), quiesces %d -> %d"
                 % ("after %.2f ms" % ((t_l - t_d) / 1250.0) if t_l else "NOT",
                    s.r16("trg_loss_reason"), q0, s.mem.r16(RT_QUIESCE_N)),
                 s_charge is not None and t_l is not None and s.mem.r16(RT_QUIESCE_N) != q0))
@@ -547,6 +552,8 @@ def main():
     spread = [v for v in st4["spark_angle_spread_deg"].values() if v is not None]
     res.append(("S4 after resync: %d sparks in 60 ms, spread %s deg" % (st4["sparks"], spread),
                 st4["sparks"] >= 4 and spread and max(spread) <= 3.0))
+    res.append(("S1b ...and the loss IS counted once the crank runs on (trg_synclost %d -> %d)"
+                % (lost0, s.r16("trg_synclost")), s.r16("trg_synclost") == lost0 + 1))
     normal_quiesces.extend(quiesces[s_q_start:])
     count, missing, early, late = committed_releases(s, normal_quiesces)
     res.append(("F/S committed coil/injector releases: %d checked; missing %s, early %s, late %s"

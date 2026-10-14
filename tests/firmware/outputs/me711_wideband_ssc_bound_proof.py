@@ -59,12 +59,24 @@ def bound_sites(img: bytes) -> list[int]:
         F2 Fn 50 F0   MOV  Rn, T7          (0xF050, reg167.h)
         20 xx         SUB  Rn, Rt0
         46 Fn 50 00   CMP  Rn, #0x0050     (80 ticks = 64 us)
-    Found once, in FCODE (hcio711 is far)."""
+    Found once, in FCODE (hcio711 is far). SEARCHED IN THE MODULE'S OWN
+    CODE SECTION, read from the linked map (2026-10-11): the fixed window
+    0x40000..0x60000 stopped containing it when FCODE grew into SA6 (V97;
+    hcio711 links at 0x838010), and --control could no longer run."""
     out = []
-    pat = re.compile(rb"\xF2[\xF0-\xFF]\x50\xF0..\x46[\xF0-\xFF]\x50\x00",
-                     re.S)
-    for m in pat.finditer(img, 0x40000, 0x60000):
-        out.append(m.start() + 6)
+    mm = re.search(r"^([0-9A-F]{6})H\s+([0-9A-F]{6})H\s+[0-9A-F]{6}H\s+CODE"
+                   r".*\?PR\?HCIO711\s*$", PI.MAP.read_text(errors="replace"),
+                   re.M)
+    lo, hi = ((int(mm.group(1), 16) - 0x800000,
+               int(mm.group(2), 16) - 0x800000 + 1) if mm else (0, len(img)))
+    # Since the 2026-10-11 race fix the SSCRIC test sits between the T7
+    # sample (MOV Rn,T7; SUB) and the CMP, so the compare is accepted when a
+    # MOV Rn,T7 (F2 Fn 50 F0) precedes it within 32 bytes.
+    pat = re.compile(rb"\x46[\xF0-\xFF]\x50\x00")
+    t7 = re.compile(rb"\xF2[\xF0-\xFF]\x50\xF0")
+    for m in pat.finditer(img, lo, hi):
+        if t7.search(img, max(lo, m.start() - 32), m.start()):
+            out.append(m.start())
     return out
 
 
@@ -116,12 +128,26 @@ def verdict(img_path: Path) -> tuple[bool, bool]:
     ok &= check("dead: neither chip verified",
                 (dead["status"] & 0x0300) == 0,
                 "lambdaStatus 0x%04X" % dead["status"])
-    gap_ok = (dead["trap"] is None and dead["worst"] <= LIMIT_MS
+    rel_ok = (dead["trap"] is None
               and dead["worst"] <= live["worst"] + MARGIN_MS)
+    gap_ok = rel_ok and dead["worst"] <= LIMIT_MS
     ok &= check("dead: worst service gap bounded",
                 gap_ok, "%.2f ms (live %.2f, limit %.1f, margin %.1f)"
                 % (dead["worst"], live["worst"], LIMIT_MS, MARGIN_MS))
-    return ok, gap_ok
+    # 5. WHAT THE BOUND PROTECTS IS THE LOOP (2026-10-11). Since the CJ120
+    # slot only starts with >= 3 ms to the next S5500 frame, a long wait no
+    # longer shows as a longer WORST gap in this rig; it shows as fewer
+    # service passes in the same time. Measured: a 64 us bound 583 / 583,
+    # the 6.4 ms control 479 / 583.
+    loop_ok = dead["services"] >= 0.95 * live["services"]
+    ok &= check("dead: the main loop keeps >= 95 % of its live service passes",
+                loop_ok, "%d of %d" % (dead["services"], live["services"]))
+    rel_ok = rel_ok and loop_ok
+    # THE CONTROL JUDGES THE RELATIVE PART (2026-10-11): the absolute limit
+    # also fails on the ordinary main-loop worst pass (~9.2 ms with a LIVE
+    # SSC), so a control that only needed "the gap check fails" passed
+    # whatever the bound was. What the bound protects is what a DEAD SSC adds.
+    return ok, rel_ok
 
 
 def main() -> int:
@@ -145,9 +171,10 @@ def main() -> int:
         _, cgap = verdict(tmp)
         tmp.unlink()
         if cgap:
-            print("CONTROL FAILED: a 6.4 ms byte bound passed the gap check")
+            print("CONTROL FAILED: a 6.4 ms byte bound added no more than "
+                  "%.1f ms over a live SSC" % MARGIN_MS)
             return 1
-        print("CONTROL: the long bound fails the gap check - PASS")
+        print("CONTROL: the long bound adds more than the margin - PASS")
     print("RESULT: %s" % ("PASS" if ok else "FAIL"))
     return 0 if ok else 1
 

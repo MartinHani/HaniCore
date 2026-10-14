@@ -73,7 +73,7 @@ for case in (args.cases or ([args.case] if args.case else cases)):
     check(case+' bridge OFF',(r.call('hc_dbw_bridge_on')&255)==0 and r.call('hc_dbw_duty_x10')==0,r.s())
     check(case+' no calibration/PID writes',page(r)==before)
     # Verify the actual published split OCH buffer, not just its accessors.
-    for part in (0,1,2):            # hc_io_publish(boost, part): every slice
+    for part in (0,1,2,3,4,5,6):    # hc_io_publish(boost, part): every slice
         r.call('hc_io_publish',(0,part))
     for off,index in ((1522,30),(1524,31),(1526,32),(1528,33)):
         address=D.EXTRAM+D.hdr_int(D.HDR,'TGT_RAM_OCH2')+off-1024

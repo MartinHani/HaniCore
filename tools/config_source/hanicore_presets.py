@@ -92,6 +92,10 @@ S_CONN = "tools/config_source/data/me71_connector_121.csv <- Bosch Steckerb. ME7
 S_PORTMAP = "tools/config_source/data/me711_iomap.csv <- Bosch me7_port.xls, the " \
             "OEM ME7.1.1's own column"
 S_TRIGEV = "ME7.1.1 trigger evidence (OEM firmware trigger setup, bench captures)"
+# The stock AWT-family ME7.5 image (restored 2026-10-10 at the owner's
+# request: the AWT preset carries the stock engine's own values again).
+S_BIN = ("EXACT TARGET BINARY reference/ME7Sum/bins/4B0906018DC.bin (stock "
+         "'4B0906018DC 1.8L R4/5VT', SW 4016.31): ")
 S_HCTARGET711 = "firmware/targets/me711/hctarget.h"
 
 
@@ -618,11 +622,21 @@ ENGINE_PRESETS: list[Preset] = [
                # switches at its own twin event. If the camPhaseLevel
                # assignment is inverted the engine stalls seconds after
                # cycleSync: flip camPhaseLevel (operator card).
-               "injStrategy": Value(2, P, "INJ_SEQUENTIAL with the batch-like "
-                                    "fallback until the cycle is known (V97)"),
-               "ignStrategy": Value(2, P, "IGN_SEQUENTIAL_COP with the wasted "
-                                    "COP fallback until the cycle is known "
-                                    "(V97); one coil per cylinder"),
+               # 2026-10-10: THE FIRST START IS CRANK-ONLY. Which cam LEVEL
+               # marks cylinder 1's compression is still unmeasured
+               # (ME711_CAM_QUALIFICATION.md step 5): a wrong level puts
+               # every sequential spark on the exhaust stroke. Wasted COP
+               # and semi-sequential fire on both revolutions and need no
+               # cam. Select 2 / 2 once the car shows the cam phase right.
+               # 2026-10-11 CAR: sequential with camPhaseLevel 1 ran (rpm sd
+               # 1.4 %, lambda 1.00, seqActive 1); level 0 cranked and did not
+               # start. Sequential falls back to two halves / wasted COP by
+               # itself until the cam has given the cycle (V97).
+               "injStrategy": Value(2, P, "INJ_SEQUENTIAL: car 2026-10-11 "
+                                    "ran with camPhaseLevel 1 (wasted "
+                                    "fallback until the cycle is known)"),
+               "ignStrategy": Value(2, P, "IGN_SEQUENTIAL_COP: car 2026-10-11 "
+                                    "(wasted fallback until the cycle)"),
                "injTimingMode": Value(1, P,
                                     "END of injection (Bosch ME7 KFWEE, "
                                     "rusEFI's usual mode)"),
@@ -726,20 +740,37 @@ ENGINE_PRESETS: list[Preset] = [
                                          "AUTO - the only mode the native "
                                          "stage can honour; hc_validate "
                                          "refuses OFF/ON on it"),
-               # ---- ENGINE FACTS ------------------------------------------------
-               # Injector, coil, pressure-sensor and base-map data are NOT
-               # part of this preset (see gaps): HaniCore ships no calibration
-               # taken from an OEM image. A fresh page keeps the injector flow
-               # at 0, which delivers no fuel until the fitted injector's data
-               # are entered.
-               "displacementCc": Value(1781, V,
-                   "AWT engine: bore 81.0 mm x stroke 86.4 mm x 4 = 1781 cc"),
+               # ---- STOCK AWT ENGINE DATA (restored 2026-10-10) -----------------
+               # Injector, coil, pressure-sensor, base maps and knock monitor
+               # come from the stock AWT ECU's own image (S_BIN). Removed on
+               # 2026-10-09; the car then cranked with injector flow 0 = NO
+               # FUEL (VEHICLE_CAPTURE_20261010T154357Z). Every value stays an
+               # ordinary editable field after APPLY.
+               "displacementCc": Value(1781, V, S_BIN +
+                   "KUMSRL @0x810E33 = 88/128000 (kg/h)/(rpm*%) = "
+                   "30*VH*1.293/100 -> VH 1.762..1.782 L (byte quantisation); "
+                   "AWT 81.0 x 86.4 mm = 1781 cc"),
+               "injFlowCcMin": Value(301, P, S_BIN +
+                   "KRKTE 0.104889 ms/% -> Qstat 213.4 g/min (FR RKTI 11.40) "
+                   "-> 300.7 cc/min petrol at HaniCore's 0.745 g/cc. FKKVS "
+                   "(+-9 %) is not representable"),
                "injRefPressureKpa": Value(300, P,
-                   "the AWT fuel pressure regulator: 3.0 bar, manifold-"
-                   "referenced. HaniCore's fuel path does not read it yet"),
+                   "FR RKTI 11.40: Qstat is measured at pdr_evmes, 'meist "
+                   "3000hPa'; the AWT regulator is manifold-referenced "
+                   "(FRLFSDP = 1). HaniCore's fuel path does not read it yet"),
                # 0 = the dwell-vs-battery curve decides while cranking too.
+               "deadtimeVal": Value([1877, 1850, 1085, 685, 557, 437, 267, 267],
+                                    V, S_BIN + "TVUB @0x813EB0 (tinjection_sy "
+                                    "/375): 1.877/1.085/0.685/0.437/0.267 ms at "
+                                    "7.96/10.00/11.97/14.01/15.98 V"),
+               "dwellBattVal": Value([1000, 800, 420, 320, 290, 270, 240, 200],
+                                     V, S_BIN + "KFSZT 10.0/8.0/4.2/3.2/2.9/"
+                                     "2.7/2.4/2.0 ms at 5.98..17.95 V"),
+               "dwellBattAx": Value([598, 803, 1000, 1197, 1302, 1401, 1598,
+                                     1795], V,
+                   S_BIN + "KFSZT @0x81A6DC ub axis 85..255 x 0.0704 V"),
                "crankingDwellMsX100": Value(0, V,
-                   "0 = use the dwell-vs-battery curve while cranking"),
+                   "FR ZUESZ: dwell in start is KFSZT(ub) - the curve above"),
                # ---- LOAD SOURCE: ALPHA-N x INLET PRESSURE -----------------------
                # The AWT's only pressure sensor (cavity 101) measures the
                # pressure BEFORE the throttle, so speed density cannot see
@@ -747,6 +778,11 @@ ENGINE_PRESETS: list[Preset] = [
                # measured inlet pressure (ambient, or boost) - Speeduino's
                # alpha-N + multiplyMAP. A failed sensor uses the MAP estimate
                # table (rpm x throttle).
+               "mapSensOff": Value(0, P, S_BIN +
+                   "DSLOFS -16.4 hPa; the field is unsigned, 0 = +1.6 kPa"),
+               "mapSensGrd": Value(2642, P, S_BIN +
+                   "DSLGRAD 541.0 hPa/V at 5 V/1024 counts. PROBABLE: cavity "
+                   "101's front end on this board is not measured"),
                "loadSource": Value(1, V, "CAL_LOAD_TPS: alpha-N x inlet "
                                    "pressure - the AWT sensor is upstream of "
                                    "the throttle"),
@@ -757,7 +793,7 @@ ENGINE_PRESETS: list[Preset] = [
                # stale reading as valid, and takes 0 C on an IAT fault; the
                # modern model delivers no air without the pressure and takes
                # 20 C. Those are this calibration's fault semantics.
-               "fuelModel": Value(0, V, "Legacy compatibility: keeps the "
+               "fuelModel": Value(0, V, "Choose by load model: keeps the "
                                   "pressure-estimate and IAT fault fallbacks "
                                   "this calibration was made with"),
                # The hardware truth, explicit (a page migrated from the
@@ -783,6 +819,27 @@ ENGINE_PRESETS: list[Preset] = [
                # (generate_config.TABLE_ORDER). Until V97 they were written
                # [rpm][load] and TunerStudio displayed them transposed.
                # ---- DBW ------------------------------------------------
+               "veTable": Value([
+                      90,   48,   32,   24,   20,   16,   14,   12,   11,   10,    9,    8,    8,    7,    7,    6,
+                     181,   95,   64,   48,   39,   32,   28,   24,   22,   20,   18,   16,   15,   14,   13,   12,
+                     301,  159,  106,   79,   64,   53,   46,   40,   36,   32,   29,   27,   25,   23,   21,   20,
+                     444,  234,  157,  118,   95,   79,   68,   60,   53,   48,   44,   40,   37,   34,   32,   30,
+                     557,  309,  209,  157,  126,  105,   90,   79,   71,   64,   58,   53,   49,   46,   43,   40,
+                     680,  448,  302,  226,  181,  152,  130,  113,  100,   90,   83,   76,   70,   65,   61,   57,
+                     741,  559,  395,  296,  237,  198,  169,  146,  129,  117,  108,   99,   91,   85,   79,   74,
+                     799,  695,  567,  444,  358,  302,  260,  228,  203,  181,  163,  148,  136,  126,  117,  110,
+                     820,  758,  671,  578,  492,  423,  369,  325,  290,  260,  235,  212,  192,  178,  166,  156,
+                     833,  799,  745,  684,  611,  541,  479,  428,  387,  351,  322,  291,  264,  244,  228,  214,
+                     841,  826,  798,  767,  718,  665,  613,  561,  514,  473,  437,  397,  363,  337,  315,  295,
+                     845,  841,  829,  819,  796,  773,  750,  715,  678,  640,  596,  551,  509,  474,  443,  416,
+                     847,  846,  840,  838,  825,  814,  804,  778,  752,  732,  708,  669,  632,  599,  569,  540,
+                     848,  852,  851,  857,  856,  860,  868,  859,  851,  854,  854,  826,  798,  776,  755,  734,
+                     849,  853,  854,  863,  864,  872,  885,  881,  879,  891,  899,  876,  853,  836,  822,  806,
+                     850,  856,  858,  869,  874,  888,  909,  912,  919,  943,  967,  952,  938,  932,  929,  926,
+               ], P, S_BIN + "0.1 % counts (V98r2 u16): stock throttle model "
+                  "KFMSNWDK/KLAF/KFURL/KFPRG/KUMSRL solved at 1013 hPa 20 C "
+                  "(FR BGMSZS/BGSRM; me711_awt_base_calibration.ve_model); "
+                  "MSLG from X505P"),
                "dbwEnable": Value(0, V,
                                   "DELIBERATELY OFF. The throttle body has "
                                   "never been driven, no calibration below is "
@@ -862,9 +919,8 @@ ENGINE_PRESETS: list[Preset] = [
                # coil-to-cylinder check, not by this preset. -78 fails SAFE:
                # correct, or retarded - never 76 deg over-advanced.
                "trigAngleX10": Value(-780, P,
-                   "78.0 deg BTDC: rusEFI Quick-Start/B6 phase -74..-80, "
-                   "the car's compression stalls and tooth-speed ripple, "
-                   "timing-gun practice on the 1.8T. "
+                   "78.0 deg BTDC: stock AWT grundwert 72 + the 6 deg tooth "
+                   "WNWRPS puts the reference mark on; cam/stall/ripple agree. "
                    "The car page's -2.0 (old 358.0) contradicts it - "
                    "docs/firmware/design/ME711_CRANK_REFERENCE.md"),
                # THE PEDAL, MEASURED ON THIS CAR (VEHICLE_CAPTURE_20260926T
@@ -889,12 +945,14 @@ ENGINE_PRESETS: list[Preset] = [
                "tps1Max": Value(954, V, "AWT Grab 2026-09-27 open"),
                "tps2Min": Value(919, V, "AWT Grab 2026-09-27 closed (falling track = cavity 84)"),
                "tps2Max": Value(71, V, "AWT Grab 2026-09-27 open"),
-               # ---- TABLE AXES AND JUDGEMENT MAPS --------------------------------
-               # No VE or ignition table is set (see gaps). The axes are
-               # HaniCore's own grid; the target-lambda, warm-up and pedal
-               # maps below are stated engineering judgement.
-               "ignRpmAx": Value([500 + 450 * i for i in range(16)], V,
-                   "HaniCore's default rpm grid, = fuelRpmAx"),
+               # ---- IGNITION (stock KFZW via the throttle model) + JUDGEMENT ----
+               # Ignition: stock AWT KFZW/KFZW2 through the stock throttle
+               # model (tools/calibration/me711_awt_base_calibration.py). The
+               # target-lambda, warm-up and pedal maps are stated judgement.
+               "ignRpmAx": Value([
+                    500, 800, 1000, 1250, 1500, 1750, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500, 6000, 6800,
+                   ], V,
+                   "me711_awt_base_calibration.py: KFZW rpm range"),
                "ignLoadAx": Value([
                       0,  10,  20,  30,  40,  55,  70, 100, 130, 160, 200, 250, 300, 400, 500, 1000,
                    ], V,
@@ -913,8 +971,21 @@ ENGINE_PRESETS: list[Preset] = [
                # inlet pressure without boost. Under boost it reads low (lean
                # by the boost ratio); boost control already drops the valve
                # on a pressure fault, leaving only wastegate-spring boost.
-               "mapEstimate": Value([100] * 64, V,
-                   "atmospheric inlet pressure, kPa; no boost assumed"),
+               "mapEstTpsAx": Value([0, 50, 100, 200, 400, 600, 800, 1000],
+                                    V, "throttle %, 0.1 %"),
+               "mapEstRpmAx": Value([800, 1500, 2000, 2500, 3000, 4000,
+                                     5000, 6500], V, "rpm"),
+               "mapEstimate": Value([
+                    100, 100, 100, 100, 100, 100, 100, 100,
+                    100, 100, 100, 100, 100, 100, 100, 100,
+                    100, 100, 100, 100, 100, 100, 100, 100,
+                    100, 100, 100, 100, 100, 100, 100, 100,
+                    100, 100, 100, 100, 100, 100, 100, 100,
+                    100, 100, 105, 115, 125, 125, 120, 115,
+                    100, 100, 110, 125, 140, 140, 135, 125,
+                    100, 105, 115, 135, 150, 150, 145, 135,
+                   ], P, "judgement from the stock AWT boost targets "
+                   "(LDRXN ~1.5 bar abs); rich side, NOT measured"),
                # V98: closed-loop fuel ON - it acts only while lambda 1
                # reads READY (CJ120 heater closed loop, pump on, DIAG clean)
                # and the engine is warm. Regions [idle, overrun, power,
@@ -937,8 +1008,11 @@ ENGINE_PRESETS: list[Preset] = [
                # on (with DBW off the limp throttle sits at ~6 % and DFCO
                # never arms). Warm only (dfcoMinClt 60 C), never with a
                # failed pedal/TPS/coolant sensor (V98 B4).
-               "overrunRpm": Value(1500, P, "rusEFI coastingFuelCutRpmHigh"),
-               "overrunResume": Value(1300, P, "rusEFI coastingFuelCutRpmLow"),
+               # 2026-10-11 CAR: a cut released at 1300 rpm in neutral left the
+               # engine at 1151 rpm (lambda 1.79) before the fuel caught up -
+               # resume 300 rpm higher, cut from 2000.
+               "overrunRpm": Value(2000, P, "car 2026-10-11 (rusEFI 1500)"),
+               "overrunResume": Value(1600, P, "car 2026-10-11: 1300 dipped to 1151"),
                "overrunTpsX10": Value(20, P, "rusEFI coastingFuelCutTps 2 %"),
                # V98r2: coolant protection ON at 115 C (fuel cut above the
                # coolant rev limit, 0 = 3000 rpm; a failed sensor is not
@@ -951,6 +1025,41 @@ ENGINE_PRESETS: list[Preset] = [
                # defaults; the V91 car idled ~1000 rpm on the 6.4 % limp
                # opening, which brackets them.
                "idleEnable": Value(1, P, "throttle floor + PI, ETB only"),
+               # 2026-10-11 CAR (DBW on, warm 70-80 C): a 4.0-4.4 % plate held
+               # 1400-1500 rpm with 25-33 deg idle timing - above target +
+               # band, where the loop holds (in-gear coasting must not close
+               # the throttle). Base 0.5 % lower than the owner's car page,
+               # band 600 so a high idle is inside the loop, timing 12 deg.
+               "idleBaseVal": Value([61, 56, 51, 46, 41, 36, 36, 36], P,
+                                    "owner's car page (6.6..4.1 %) - 0.5 %"),
+               "idleRpmBand": Value(600, P, "car 2026-10-11: 1400 rpm idle was "
+                                    "above 860 + 400 - never regulated"),
+               "ignMap": Value([
+                     64,  64,  64,  64,  66,  72,  80,  95,  97,  97,  96,  96, 100, 107, 114, 120,
+                     64,  64,  64,  64,  66,  72,  80,  95,  97,  97,  96,  96, 100, 107, 114, 120,
+                     60,  64,  64,  64,  66,  72,  80,  95,  97,  97,  96,  96, 100, 107, 114, 120,
+                     51,  64,  64,  64,  66,  72,  80,  95,  97,  97,  96,  96, 100, 107, 114, 120,
+                     45,  64,  64,  64,  66,  72,  80,  95,  97,  97,  96,  96, 100, 107, 114, 120,
+                     40,  64,  64,  66,  70,  76,  82,  98,  97,  97,  96,  96, 100, 107, 114, 120,
+                     40,  60,  68,  72,  78,  86,  92, 116, 107,  97,  96,  96, 100, 107, 114, 120,
+                     40,  51,  61,  75,  83,  92,  98, 110, 120, 124, 122, 105, 101, 107, 114, 120,
+                     40,  49,  56,  68,  76,  84,  90, 103, 113, 118, 122, 118, 117, 116, 116, 120,
+                     40,  47,  53,  64,  71,  78,  83,  98, 106, 111, 116, 116, 113, 114, 118, 122,
+                     40,  46,  51,  60,  66,  72,  76,  93, 100, 104, 108, 109, 108, 110, 116, 121,
+                     40,  46,  50,  58,  64,  69,  72,  88,  93,  99, 102, 102, 101, 103, 109, 116,
+                     40,  44,  48,  55,  59,  63,  66,  77,  82,  89,  91,  92,  91,  94, 101, 106,
+                     40,  42,  45,  49,  53,  56,  58,  61,  60,  65,  65,  66,  69,  76,  82,  89,
+                     40,  40,  43,  47,  46,  47,  48,  51,  48,  54,  57,  58,  60,  66,  73,  78,
+                     40,  40,  43,  47,  46,  47,  48,  51,  48,  54,  57,  58,  60,  66,  73,  78,
+                   ], P,
+                   "stock AWT KFZW/KFZW2 via the stock throttle model - "
+                   "me711_awt_base_calibration.py, EXCEPT the idle region "
+                   "(throttle <= 7 %, <= 2000 rpm): min(stock, 12 deg at "
+                   "idle blending to the stock map by 2000 rpm) - the stock "
+                   "ME7 idles retarded from its KFZW base (torque reserve "
+                   "for the idle controller); the car idled at 25-33 deg "
+                   "2026-10-11 and the owner's spec is 10-15 deg. Only ever "
+                   "retarded from stock. NOT KNOCK-TESTED"),
                "afrMap": Value([
                     147, 147, 147, 147, 147, 147, 147, 147, 147, 147, 147, 147, 147, 147, 147, 147,
                     147, 147, 147, 147, 147, 147, 147, 147, 147, 147, 147, 147, 147, 147, 147, 147,
@@ -1013,7 +1122,8 @@ ENGINE_PRESETS: list[Preset] = [
                # (P 0.1 deg/rpm, +-10 deg, I 0) and canam's 1 s soft entry;
                # OFF like idleEnable (no AWT idle calibration located:
                # docs/ARCHITECTURE.md)
-               "idleTimingEnable": Value(0, P, "off until idle control is on"),
+               "idleTimingEnable": Value(1, P, "rusEFI idle timing PID: spark "
+                                         "holds the idle (12 deg base)"),
                "idleTimingKp": Value(100, P, "rusEFI default 0.1 deg/rpm"),
                "idleTimingMinX10": Value(-100, P, "rusEFI default -10 deg"),
                "idleTimingMaxX10": Value(100, P, "rusEFI default +10 deg"),
@@ -1026,6 +1136,18 @@ ENGINE_PRESETS: list[Preset] = [
                # V97: the check-engine lamp on the AWT's own MIL wire - the
                # AWT ME7.5 map puts the MIL lamp on cavity 47 (the harness
                # plugs it onto this ECU's ASIC P7.0 low side)
+               # 2026-10-11: the cluster's rev counter. Porsche cavity 37
+               # A_T_TN <- CJ920 <- P2.13 (the ME7.1.1 schematic W12 sheet, SAME-
+               # GENERATION); the VAG 121-pin harness has the tach on 37 too
+               # (rusEFI hellen121vag "37 - TACH", SOFTWARE REFERENCE), so
+               # no terminal moves. Frequency = rpm x cylinders / 120. NOT
+               # physically qualified: a logic analyser on 37 at the bench.
+               # 2026-10-11 CAR: on its spring this warm engine idles 2000-2500
+               # rpm; a 1500 rpm throttle-fault limit cut the fuel every
+               # ~0.8 s (1200..1530 rpm) instead of limping.
+               "etbLimpRpm": Value(3000, P, "car 2026-10-11: spring idle "
+                                   "2000-2500 rpm warm"),
+               "pinTacho": Value(37, P, "me711.pdf W12 sheet: TN_P213 -> CJ920 S6500 -> cavity 37 A_T_TN (SAME-GENERATION); Bosch ME7.1.1 port map P2.13 = TN (SAME-FAMILY); rusEFI hellen121vag 37 = Tach Out on the VAG harness (SOFTWARE REFERENCE)"),
                "pinMil": Value(47, P, "docs/HANICORE_ENGINE_IO_MAP.md: AWT MIL "
                                "lamp 47; me711.pdf W12 sheet: LUES2_PX70 -> CJ920 -> cavity 47 A_S_LUES2/A_S_SPOEKUE/A_S_MIL (SAME-GENERATION); family table 47 = MIL_S"),
                # V98r2: ON (project decision; the car page already ran
@@ -1048,9 +1170,54 @@ ENGINE_PRESETS: list[Preset] = [
                "pinCam1Sol": Value(115, P, "docs/HANICORE_ENGINE_IO_MAP.md: "
                                    "AWT N205 cam adjust valve on 115"),
                "vvtFreqHz": Value(250, V, "OEM 250 Hz [BIN 0x8C0D78]"),
-               "knockMode": Value(0, V, "OFF: no knock calibration for this "
-                                  "engine is shipped; calibrate window and "
-                                  "thresholds from a MONITOR log"),
+               "knockMode": Value(1, P, "MONITOR: first sessions log knock "
+                                  "per cylinder without retarding"),
+               "knockDiagN": Value(100, P, "JUDGEMENT: 100 windows"),
+               "knockSafeQ": Value(60, P, "sibling KRDWSN 15 deg"),
+               "knockMaxQ": Value(72, P, "sibling KRMXN 18 deg"),
+               "knockStepQ": Value(9, P, "sibling KRFKN 2.25 deg"),
+               "knockStopN": Value(0, P, "off (sibling DKRAMX 255 = never)"),
+               "knockLearn": Value(20, P, "JUDGEMENT: 20 quiet windows"),
+               "knockRefMax": Value(1000, P, "JUDGEMENT: below saturation"),
+               "knockRefMin": Value(5, P, "JUDGEMENT: an open sensor reads ~0"),
+               "knockDiagRpm": Value(1500, P, "JUDGEMENT: above idle"),
+               "knockReapplyMs": Value(800, P, "sibling KRVFN ~ constant time "
+                                       "(~2.4 s per 0.75 deg)"),
+               "knockRefInit": Value(204, P, "sibling REFINI 0.996 V"),
+               "knockCltMin": Value(10390, P, "sibling TMKR 39 C"),
+               "knockRpmMin": Value(400, P, "sibling NKRF"),
+               "knockLoadMin": Value(22, P, "sibling LKRN ~22 % rl"),
+               "knockTpDyn": Value(4, P, "sibling KRFTP2/3"),
+               "knockTp": Value(16, P, "sibling KRFTP1"),
+               "knockKefDyn": Value(18, P, "sibling FKENDY/FKELDY 1.125"),
+               "knockKef": Value([43, 43, 42, 40, 35, 32], P,
+                                 "sibling KFKEF1 2.69..2.0 (x16) - the "
+                                 "threshold to CALIBRATE from a MONITOR log"),
+               "knockKefRpm": Value([1000, 2000, 3000, 4000, 5000, 6000], P,
+                                    "sibling KFKEF1 rpm points"),
+               "knockWinLen": Value([270, 270, 278, 330, 360, 398, 413, 413],
+                                    P, "sibling KEMLN (SAME-FAMILY)"),
+               "knockWinStart": Value([120, 195, 165, 172, 195, 202, 180,
+                                       180], P,
+                                      "Porsche ME7.1.1 sibling KFMAKR at rl "
+                                      "99.75 % (tools/analysis/me711_knock_evidence.py, "
+                                      "SAME-FAMILY, not the AWT's)"),
+               "knockRpmAx": Value([800, 1600, 2400, 3200, 4000, 4800, 5600,
+                                    6400], P, "the sibling's KR rpm grid"),
+               "knockSensor": Value([1, 1, 0, 0, 0, 0, 0, 0], P,
+                                    "INFERENCE: AWT G61 (AWT cavity 107 = "
+                                    "Porsche KS2, sensor 2) sits between "
+                                    "cylinders 1/2, G66 (106 = KS1, sensor 1) "
+                                    "between 3/4 - verify from a MONITOR log "
+                                    "(each cylinder's reference)"),
+               "knockGain": Value([2, 2, 2, 2], P, "x8: the OEM's initial "
+                                  "gain step [BIN 0x81136F = 2]; the AWT's own "
+                                  "start value is not located - tune from "
+                                  "knockRef in a MONITOR log"),
+               "knockBand": Value(7, V, "14 kHz: the stock AWT 4B0906018DC "
+                                  "FMFKRB0..3 = 14 [0x8195C6..C9], located by "
+                                  "the band-switch code signature (0x07447A, "
+                                  "same code and code table as this ECU)"),
                "pedalRpmAx": Value([500 + 450 * i for i in range(16)], V, "= ignRpmAx"),
                "pedalAx": Value([
                       0,  50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 800, 850, 900, 950, 1000,
@@ -1085,9 +1252,10 @@ ENGINE_PRESETS: list[Preset] = [
                # and the mapping inherits the unresolved crank offset. The
                # next capture shows camPhaseStatus / camLow/HighWidthX10.
                "camPhaseMode": Value(1, V, "LEVEL - Bosch quick-start wheel"),
-               "camPhaseLevel": Value(0, V,
-                   "LOW in the TDC#1-compression revolution (rusEFI QS sync, "
-                   "sectors W,N,N,W after the edges at physical 114/294)"),
+               "camPhaseLevel": Value(1, V,
+                   "PHYSICAL, car 2026-10-11: sequential ran with level 1 "
+                   "(rpm sd 1.4 %, lambda 1.00, seqActive 1), level 0 did "
+                   "not start"),
                "camPhaseAngleX10": Value(1260, V,
                    "engine 126.0 = physical 204 after tooth #1 at trigger "
                    "angle -78.0 (mid-sector, 50 deg margin either way); the "
@@ -1110,16 +1278,18 @@ ENGINE_PRESETS: list[Preset] = [
                # (autocal, autotune, commissioning, slams). Battery
                # compensation (13.5 V) is the page default.
                "dbwMaxDutyX10": Value(800, P,
-                   "80 %: the limit the bench DBW qualification ran with"),
+                   "Bosch DLRPIDMAX 80 % (AWT 4B0906018DC @0x813B52)"),
                # MEASURED, not a reference value: at 0 (the value every page
                # carried until now) the integrator winds 3.5 % duty/s on the
                # irreducible one-count position quantum and never settles, so
                # the plate is held by a ramp instead of by the bias curve.
                # bench measurements; hcdefaults711.c says why 2.
+               "dbwFaultDebounceMs": Value(140, P,
+                   "Bosch TVPWDK12 0.14 s (AWT 4B0906018DC @0x810C3F)"),
                "dbwPwmHz": Value(2000, V,
-                   "2 kHz: this board's bridge frequency (the ME7.1.1 port "
-                   "initialisation, hctarget.h); the bench DBW qualification "
-                   "ran at 2 kHz, 20 kHz starved the plate on the car"),
+                   "the OEM ME7.1.1 bridge frequency (PP2 = 19999 at f_CPU, "
+                   "4B0906018DC-era port init @0xC0D96); 20 kHz was refuted "
+                   "on this car in V92"),
                "dbwFrictionX10": Value(80, V,
                    "MEASURED on the VAG bench body (2026-10-05, 12.5 V, 2 kHz): "
                    "break-away band 31-40 %; 8.0 % cut hold error 0.35 -> "
@@ -1206,8 +1376,8 @@ ENGINE_PRESETS: list[Preset] = [
                    "and was refused by hc_validate (me711_preset_routing_"
                    "proof now gates it). Since 2026-09-25 it routes to the "
                    "NATIVE stage, cavity 23 - see the value's note.",
-               "displacementCc (history)": "unset until V88; now 1781 from "
-                                 "the engine's bore and stroke.",
+               "displacementCc (history)": "unset until V88; now 1781, "
+                                 "checked against KUMSRL in the stock binary.",
                "TPS and APP calibration": "CAL_TPS1_MIN/MAX, CAL_TPS2_MIN/MAX, "
                                           "CAL_PEDAL1_MIN/MAX, "
                                           "CAL_PEDAL2_MIN/MAX are properties "
@@ -1232,32 +1402,13 @@ ENGINE_PRESETS: list[Preset] = [
                                  "curve ARE seeded since V83, from rusEFI's "
                                  "setBoschVAGETB (a reference, not a "
                                  "measurement) - tune them on the body.",
-               "injFlowCcMin / deadtimeVal": "INTENTIONALLY NOT SET - "
-                                 "enter the fitted injector's rated flow and "
-                                 "dead time vs battery voltage from its data "
-                                 "sheet or a flow test. Until then the "
-                                 "injector flow is 0 on a fresh page and NO "
-                                 "fuel is delivered.",
-               "dwellBattAx / dwellBattVal": "INTENTIONALLY NOT SET - the "
-                                 "coil's dwell vs battery voltage comes from "
-                                 "its data sheet; the firmware's generic "
-                                 "curve (6.0 ms at 8 V .. 2.4 ms at 16.4 V) "
-                                 "applies until then, and the overdwell "
-                                 "limit bounds every charge.",
-               "mapSensGrd / mapSensOff": "INTENTIONALLY NOT SET - the "
-                                 "pressure sensor's transfer function from "
-                                 "its data sheet; the firmware default is a "
-                                 "generic 2.5 bar sensor.",
-               "veTable / ignMap": "INTENTIONALLY NOT SET - HaniCore ships "
-                                 "no base maps derived from an OEM "
-                                 "calibration. The firmware's generic "
-                                 "defaults (flat 80 % VE, 10..24 deg timing, "
-                                 "12 deg at full load) are placeholders: "
-                                 "calibrate both on the engine before any "
-                                 "load.",
-               "knock calibration": "INTENTIONALLY NOT SET - knockMode is "
-                                 "OFF. Window, gain, band and thresholds are "
-                                 "calibrated from a MONITOR log of the engine.",
+               "FKKVS / FSZTM / TEMIN": "stock fuel-system correction "
+                                 "(nmot x te, +-9 %), coil copper-temperature "
+                                 "dwell factor (x1.25 below 50 C) and minimum "
+                                 "te have no HaniCore field.",
+               "injector part number": "NOT in the binary. KRKTE fixes the "
+                                 "flow class (Qstat 213 g/min n-heptane); the "
+                                 "part number on the car is the operator's.",
                "cranking fuel": "ME7.5 start fuel is a start-rk/wall-film "
                                  "model, not a mass-vs-CLT curve; crankPwVal "
                                  "(mg per cylinder per cycle since V98) "

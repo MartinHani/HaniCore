@@ -270,6 +270,10 @@ class Rig:
         self.stale.clear()
         fs = self.call("cfg_u16", (62,))
         self.set_adc(5, (135 * 1023 + fs - 1) // fs)
+        # The ENGINE's battery value too (the main loop writes it on the ECU;
+        # this rig has no main loop): the Bosch DLR monitor is suspended
+        # below 6.5 V, and at 0 every DLR vector here passed vacuously.
+        self.mem.w16(sym("eng_batt_dv") & 0xFFFF, 135)
         self.set8("CAL_DBW_ENABLE", 1)
         self.set16("CAL_PEDAL1_MIN", 100); self.set16("CAL_PEDAL1_MAX", 900)
         self.set16("CAL_PEDAL2_MIN", 100); self.set16("CAL_PEDAL2_MAX", 900)
@@ -523,11 +527,20 @@ def main() -> int:
     t = r.steps(3, start=t)
     k1 = r.s()
     r.set16("CAL_DBW_SF_MODE", hdr_int(GEN_H, "HC_DBW_SF_LOW_IS_FAULT"))
-    r.steps(2, start=t)
+    # 2026-10-12: THE BOSCH DLR SETTING-RANGE MONITOR (FR DLR 3.60,
+    # hcetbcal.c). The status flag alone does not latch: with the plate on
+    # target (output not at its limit) a faulted flag changes nothing - the
+    # V83..2026-10-11 rule latched DBW_F_SF on the first read, the car's
+    # "CEL and DBW off at start". The plate here is held on target, so the
+    # bridge must stay up and nothing latch. The saturated half (restart
+    # pulses, DBW_F_SF after 5 s) is me711_dbw_dlr_monitor_proof's.
+    t = r.steps(6, start=t)
     k2 = r.s()
-    check("the SF pin faulted stops a RUNNING bridge",
-          k1["on"] == 1 and k2["on"] == 0 and (k2["faults"] & F["SF"]) != 0,
-          "running on=%d, then faults=0x%04X" % (k1["on"], k2["faults"]))
+    check("a faulted SF with the output in range does NOT latch (Bosch DLR)",
+          k1["on"] == 1 and (k2["faults"] & F["SF"]) == 0
+          and k2["state"] == ST["RUN"],
+          "running on=%d, then state=%d faults=0x%04X"
+          % (k1["on"], k2["state"], k2["faults"]))
 
     # ---- 12. the deviation supervisor -----------------------------------
     r.baseline()
@@ -556,13 +569,23 @@ def main() -> int:
           l1["on"] == 1 and (l1["faults"] & F["DEV"]) == 0,
           "state=%d faults=0x%04X after ~40 ms of a 200 ms window"
           % (l1["state"], l1["faults"]))
-    for _ in range(30):
+    # 2026-10-12: the Bosch DLR times the OUTPUT AT ITS LIMIT, not the
+    # deviation (dbwDevMs is not read on ME7.1.1): 0.6 s = the reversible
+    # fuel-cut request, 5 s = the latched DBW_F_DEV. Neither the old 200 ms
+    # window nor 0.5 s may latch anything.
+    for _ in range(50):                 # +0.5 s: still running, no fault
         r.service(t)
         t += 10
     l2 = r.s()
-    check("and DOES trip once the window expires",
-          l2["on"] == 0 and (l2["faults"] & F["DEV"]) != 0,
-          "faults=0x%04X" % l2["faults"])
+    for _ in range(500):                # +5.0 s more: latched
+        r.service(t)
+        t += 10
+    l3 = r.s()
+    check("and trips at the Bosch DLR time (5 s at the limit), not dbwDevMs",
+          l2["on"] == 1 and (l2["faults"] & F["DEV"]) == 0
+          and l3["on"] == 0 and (l3["faults"] & F["DEV"]) != 0,
+          "after 0.5 s faults=0x%04X on=%d, after 5.5 s faults=0x%04X on=%d"
+          % (l2["faults"], l2["on"], l3["faults"], l3["on"]))
 
     # ---- 13. invalid calibration ----------------------------------------
     def bad_travel():

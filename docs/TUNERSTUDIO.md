@@ -53,11 +53,17 @@ port. Stock TunerStudio handles neither, so HaniCore ships a connection plugin.
 
 On open, the plugin probes the ECU directly at TunerStudio's baud rate.
 Failing that, it performs the KWP entry (5-baud init, handshake, rate change)
-and hands the port to TunerStudio, removing the echo. It also re-enters a
-session that went silent. The ECU starts at 57600 baud and follows the host
-to 115200 (stock TunerStudio offers no 124800). The direct connection on
-cavity 43 is proven on the bench and in the car; the car's shared OBD K-line
-path is not yet proven.
+and, if the 5-baud address gets no answer, an ISO 14230 fast init; then it
+hands the port to TunerStudio, removing the echo. It also re-enters a session
+that went silent. The ECU starts at 57600 baud and follows the host to 115200
+(stock TunerStudio offers no 124800). A rate change is kept only once a
+request arrives at the new rate; otherwise the ECU returns to 10400.
+
+On the car's diagnostic port the K-line is shared with the instrument cluster.
+The ECU therefore stays silent until a request has proven the link: a stray
+byte from other traffic never produces a reply. The direct connection on
+cavity 43 is proven on the bench and in the car; the OBD path is proven on the
+bench (5-baud and fast init through the same adapter) and awaits the car.
 
 The plugin contains only HaniCore classes. It is compiled against
 TunerStudio's plugin API and uses TunerStudio's serial library at run time;

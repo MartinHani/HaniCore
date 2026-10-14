@@ -141,6 +141,10 @@
    version string does not contain the version in its own output stem, so
    this cannot silently lag a build again. */
 #define TGT_VERSIONTXT        "HaniCore V102 DEV / Bosch ME7.1.1"
+/* + " build XXXXXXXX" (TGT_BUILD_SUFFIX): the source hash of THIS image,
+   written by tools/build/build_hanicore_me711.py before every compile, so
+   the 'V' reply names the exact build (2026-10-11). */
+#include "build/hc_build_id.h"
 
 /* HC_COLD marks the public functions of the modules compiled MOD167
    MEDIUM (FCODE, segment 0x85): validation, the config manager, the bench
@@ -326,7 +330,7 @@ void hc_rt_wdt_mark(void);
    rather than assuming: the yield hook services the raster DURING the reply,
    so the worst gap is bounded by the yield period and not by the reply
    length. TGT_RAM_OCH_LIMIT is 1024, so the region has ample room. */
-#define TGT_OCH_SIZE          1652    /* must match ochBlockSize in the .ini; +16 (1636..1651 proposed bias axis); +36 (1600..1635 ETB friction band: midpoint, width, spread per position); +2 (1598 dbwPwmAppliedHz: the frequency the bridge is really switching at); V99 +24 (vehicle-test telemetry 1224..1247: ETB stop decision, lambda dynamics, spark skips, event ring head); V98 +92 (1132..1135 unused, the FAST BLOCK 1136..1199, engine control 1200..1223); V97 +20 (VVT 1112..1131); V97 +96 (knock 1024..1111, OCH2 region; 1016..1023 unused); V97 +6 (wideband reason / CJ120 link 1010..1015); V97 +2 (idle timing 1008); V97 +2 (ignition correction 1006); V97 +2 (check-engine lamp 1004); V97 +12 (transient fuel 992..1003); V97 +18 (sequential state, injection width, fuel per cycle, dead time 974..991); V97 +24 (DBW terms / battery factor / pending faults / commissioning verify 950..973); V97 +78 (lam1IpUa / lam2IpUa 872..875, cam PATTERN 876..891, boost 892..905, idle 906..913, DTC 914..945, limp 946..949); V96 +8 (wideband 850..870, with V95 linkDiag 848); V79 +30 (hcio711); V86 +12 (engine preset apply, 764..775); V90 +4 (ETB calibration 776, overdwell 778); V91 +4 (control CLT 780, 782 overdwell latch); V92 +40 (tooth profile, corrections, cycle, cam 784..804; ETB cal/autotune 806..820; 822 reserved); V93 +40 (ETB procedure telemetry 822..838, wideband/boot/load 840..862) */
+#define TGT_OCH_SIZE          1660    /* must match ochBlockSize in the .ini; +8 (1652..1659 trouble-code masks: stored, active - every code, not four slots); +16 (1636..1651 proposed bias axis); +36 (1600..1635 ETB friction band: midpoint, width, spread per position); +2 (1598 dbwPwmAppliedHz: the frequency the bridge is really switching at); V99 +24 (vehicle-test telemetry 1224..1247: ETB stop decision, lambda dynamics, spark skips, event ring head); V98 +92 (1132..1135 unused, the FAST BLOCK 1136..1199, engine control 1200..1223); V97 +20 (VVT 1112..1131); V97 +96 (knock 1024..1111, OCH2 region; 1016..1023 unused); V97 +6 (wideband reason / CJ120 link 1010..1015); V97 +2 (idle timing 1008); V97 +2 (ignition correction 1006); V97 +2 (check-engine lamp 1004); V97 +12 (transient fuel 992..1003); V97 +18 (sequential state, injection width, fuel per cycle, dead time 974..991); V97 +24 (DBW terms / battery factor / pending faults / commissioning verify 950..973); V97 +78 (lam1IpUa / lam2IpUa 872..875, cam PATTERN 876..891, boost 892..905, idle 906..913, DTC 914..945, limp 946..949); V96 +8 (wideband 850..870, with V95 linkDiag 848); V79 +30 (hcio711); V86 +12 (engine preset apply, 764..775); V90 +4 (ETB calibration 776, overdwell 778); V91 +4 (control CLT 780, 782 overdwell latch); V92 +40 (tooth profile, corrections, cycle, cam 784..804; ETB cal/autotune 806..820; 822 reserved); V93 +40 (ETB procedure telemetry 822..838, wideband/boot/load 840..862) */
 /* V53 grew it by 16 bytes - eight channels - for the reclaim. The store is
    erased at runtime now, and that has never happened on this ECU; a bench
    that cannot see the slice count has no way to tell a slow erase from one
@@ -364,7 +368,10 @@ void hc_rt_wdt_mark(void);
 /* AND THE RUNTIME HEALTH RECORD after the event ring
    (system/hcrtmon711.h, 32 big-endian words). */
 #define TGT_RT_EXPORT_BYTES   64u
-#define TGT_OCH_READ_SIZE     (TGT_OCH_SIZE + 344u + TGT_TL_EXPORT_BYTES + TGT_BH_EXPORT_BYTES + TGT_EV_EXPORT_BYTES + TGT_RT_EXPORT_BYTES)
+/* AND THE RESET WITNESS after the runtime health record (hcrtmon711.c,
+   64 words: 32 live, 32 of the boot before - big-endian). */
+#define TGT_WT_EXPORT_BYTES   128u
+#define TGT_OCH_READ_SIZE     (TGT_OCH_SIZE + 344u + TGT_TL_EXPORT_BYTES + TGT_BH_EXPORT_BYTES + TGT_EV_EXPORT_BYTES + TGT_RT_EXPORT_BYTES + TGT_WT_EXPORT_BYTES)
 unsigned char HC_COLD hc_lf_export_byte(unsigned int offset);
 unsigned char HC_COLD hc_och_ext_byte(unsigned int offset);
 #define HCTS_TARGET_OCH_EXT_READ(offset) hc_och_ext_byte(offset)
@@ -572,6 +579,10 @@ unsigned char HC_COLD hc_och_ext_byte(unsigned int offset);
    (hcts.c, "THE LINK RATE"). */
 #define TGT_S0BG_ALT          0x0A
 #define TGT_S0BG_ALT2         0x09
+/* THE CAR'S K-LINE IS SHARED (cluster + tester, ME711_OBD_KLINE.md): answer
+   no plain byte and no error reply until a CRC-valid request has locked
+   the link (hcts.c HCTS_MAY_ANSWER_NOISE). 2026-10-13. */
+#define TGT_KLINE_SHARED_BUS  1
 /* the VAG/KWP vehicle entry (hckwp_me711.c + comms/hckline.c): a
    5-baud 0x01 on RXD0 opens a KWP session at 10400; a HaniCore GOFAST hands
    the line to TunerStudio at 57600 or 124800. While it owns the line the
@@ -681,6 +692,21 @@ extern unsigned char far hc_kwp_active(void);
 #define TGT_GLVL_PLAN         0
 #define TGT_PLAN_IC           CC26IC
 #define TGT_PLAN_IR           CC26IR
+/* THE S5500 EXCHANGE LEVEL (2026-10-13). The 2026-10-13 car reset 9 times
+ * while running (long hardware reset 0x1C): the exchange was clocked by the
+ * main loop, whose passes stretch under engine interrupt load, and the S5500
+ * resets MAIN on frames later than ~25 ms (bench: a 20 ms main-loop hold
+ * every 100 ms -> 0x1C in 0.8 s, 0 monitoring mismatches). The 1 ms tick
+ * REQUESTS this software interrupt, which runs hc_asic_start_service() - the
+ * OEM's 10 ms OS task, as a level. CAPCOM2 channel 27, compare mode 0 like
+ * CC26: only software sets its request. ILVL 9 = the planner's level, GROUP 1:
+ * the two never nest (same level), so the worst stack nest keeps the
+ * planner's 168 B and the planner (group 0) is taken first when both wait. */
+#define TGT_TRAP_ASICX        0x3B    /* CC27INT, software-triggered        */
+#define TGT_ILVL_ASICX        9
+#define TGT_GLVL_ASICX        1
+#define TGT_ASICX_IC          CC27IC
+#define TGT_ASICX_IR          CC27IR
 /* How far past the next delivered tooth the planner publishes (hcsched_dry.c
    plan_tooth): 2500 T1 ticks = 2.0 ms, the publication allowance that covers
    the walk period and the planner level's own latency. */
@@ -1174,6 +1200,52 @@ unsigned char hc_tlog_byte(unsigned int i);
 #if ((TGT_RAM_CEL + TGT_RAM_CEL_LIMIT) > TGT_RAM_IGNIDLE)
 #error "lamp and idle-timing SRAM regions overlap"
 #endif
+/* the tacho output state (hal/hcroutes711.c, 2026-10-11) */
+#define TGT_RAM_TACHO               0x6F60uL
+#define TGT_RAM_TACHO_LIMIT         0x0010uL
+#if ((TGT_RAM_IGNIDLE + TGT_RAM_IGNIDLE_LIMIT) > TGT_RAM_TACHO)
+#error "idle-timing and tacho SRAM regions overlap"
+#endif
+/* the Burn owed since the engine ran (hc_config_manager.c, 2026-10-11) */
+#define TGT_RAM_BURNDEFER           0x6F70uL
+#define TGT_RAM_BURNDEFER_LIMIT     0x0008uL   /* 6 used; 0x10 until 2026-10-13 */
+#if ((TGT_RAM_TACHO + TGT_RAM_TACHO_LIMIT) > TGT_RAM_BURNDEFER)
+#error "tacho and Burn-defer SRAM regions overlap"
+#endif
+/* THE RESET WITNESS (hcrtmon711.c, 2026-10-11): what the ECU saw last
+   before a reset - 32 words live, 32 words copied at the next boot. The car
+   reset with the engine running (long hardware reset, KL15 on, 14 V) and
+   nothing said why; IRAM is zeroed by the startup, this SRAM is not. */
+#define TGT_RAM_RSTWIT              0x6F80uL
+#define TGT_RAM_RSTWIT_LIMIT        0x0080uL
+/* THE SHARED-BUS K-LINE ENTRY (hckwp_me711.c, 2026-10-13): the ISO 14230
+   fast-init wake-up detector and the GOFAST proof timer - 8 bytes the far
+   modules' XRAM no longer has (docs/ARCHITECTURE.md). */
+#define TGT_RAM_KLINE               0x6F78uL
+#define TGT_RAM_KLINE_LIMIT         0x0008uL
+#if ((TGT_RAM_BURNDEFER + TGT_RAM_BURNDEFER_LIMIT) > TGT_RAM_KLINE)
+#error "Burn-defer and K-line SRAM regions overlap"
+#endif
+#if ((TGT_RAM_KLINE + TGT_RAM_KLINE_LIMIT) > TGT_RAM_RSTWIT)
+#error "K-line and reset-witness SRAM regions overlap"
+#endif
+#if ((TGT_RAM_RSTWIT + TGT_RAM_RSTWIT_LIMIT) > TGT_RAM_HALCENSUS)
+#error "reset-witness and HAL-census SRAM regions overlap"
+#endif
+/* THE TACHO OUTPUT (2026-10-11). Cavity 37 A_T_TN <- CJ920 S6500 IN 39
+   "TN_P213" -> OUT 38, pulled up to UBR by R6540..R6542 (the ME7.1.1 schematic p1, the
+   Audi W12 ME7.1.1: SAME-GENERATION BOSCH SCHEMATIC); main CPU P2.13 /
+   CC13IO = "TN, tN-Signal (Drehzahlausgang)" in BOTH ME7.1.1 columns of the
+   Bosch port map (tools/config_source/data/me711_iomap.csv: SAME-FAMILY);
+   rusEFI hellen121vag (the VAG 121-pin harness): cavity 37 = "Tach Out",
+   low side (SOFTWARE REFERENCE). Polarity ACTIVE LOW by INFERENCE: the same
+   CJ920 drives the fuel pump from P2.12, MEASURED active LOW on this ECU
+   (V76). A square wave's frequency does not depend on it; the RESTING state
+   does, and resting is a released pin (stage off, line at UBR). NOT
+   physically qualified: a logic analyser on cavity 37 is the bench test. */
+#define TGT_TACHO_CAV               37u
+#define TGT_TACHO_BIT               13u
+#define TGT_TACHO_ACTIVE_HIGH       0
 #if ((TGT_RAM_IGNIDLE + TGT_RAM_IGNIDLE_LIMIT) > TGT_RAM_HALCENSUS)
 #error "idle-timing and HAL-census SRAM regions overlap"
 #endif

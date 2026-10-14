@@ -76,7 +76,7 @@ static void provenance(void)
     hcwb_t w;
     model_t m;
     hcwb_in_t in;
-    unsigned int n;
+    unsigned int n, duty;
     hcwb_init(&w); model_init(&m);
     m.heat_policy = HCWB_HEAT_IGNITION;
     run(&w, &m, 30000u); assert(w.valid);
@@ -84,10 +84,15 @@ static void provenance(void)
     in.ua_sample.mode = HCWB_MODE_CAL;
     hcwb_step(&w, &in);
     assert(!w.valid && !w.lambda);
+    duty = w.duty_x10;
     in.ua_sample.mode = HCWB_MODE_PUMP;
     in.ur_sample.valid = 0u;
     hcwb_step(&w, &in);
-    assert(!w.valid && !w.duty_x10 && !w.ri_x10);
+    /* 2026-10-10 (owner): one stale sample is a GAP - no Ri from it, no
+       lambda published from it (the row before was withheld), and the heater
+       is neither cut nor re-regulated: it keeps its last duty (hcwb.c
+       GAP_HOLD_MS). A stale UR for longer is the old path (below: NO_RI). */
+    assert(!w.valid && !w.ri_x10 && w.duty_x10 == duty && duty != 0u);
     hcwb_init(&w); model_init(&m);
     m.heat_policy = HCWB_HEAT_IGNITION;
     run(&w, &m, 1500u);
@@ -133,7 +138,8 @@ static void steady_activity(void)
         (void)hcwb_dyn_step(&dyn, w.valid, m.ua_cached, 1u, m.ms);
         assert(w.valid);
     }
-    m.freeze_adc = 1u; run(&w, &m, 200u);
+    /* 2026-10-10: a frozen ADC is withheld once the 0.6 s gap hold ends */
+    m.freeze_adc = 1u; run(&w, &m, 800u);
     assert(!w.valid);
     (void)hcwb_dyn_step(&dyn, w.valid, m.ua_cached, 1u, m.ms);
     assert(!dyn.alive && !dyn.stuck && !dyn.on);

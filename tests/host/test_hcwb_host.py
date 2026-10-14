@@ -119,6 +119,39 @@ def main() -> int:
         print("FAIL: control - a reason that hides the withheld row passed")
         return 1
     print("PASS: control - a reason that hides a withheld row fails")
+    # NEGATIVE CONTROL 5 (2026-10-10 car): one DIAG read in the starter's
+    # supply dip latched the sensor dead until key-off - must fail.
+    if not mutant_fails(cc, env, "diagdip",
+                        "} else if (el(in->ms, w->diag_mark) >= DIAG_CONFIRM_MS) {",
+                        "} else if (1) {", TEST):
+        print("FAIL: control - a DIAG fault latched by one read passed")
+        return 1
+    print("PASS: control - a DIAG fault latched by one read in a crank dip fails")
+    # NEGATIVE CONTROL 6 (2026-10-10 car): one missed CJ120 SSC exchange
+    # reset the pump time, cut the heater and dropped lambda for 1..5 s -
+    # a core without the gap hold must fail test_ssc_gap.
+    if not mutant_fails(cc, env, "nogap",
+                        "&& el(in->ms, w->ur_seen) < GAP_HOLD_MS);",
+                        "&& 0);", TEST):
+        print("FAIL: control - a core that drops lambda on one missed "
+              "exchange passed")
+        return 1
+    print("PASS: control - dropping lambda on one missed CJ120 exchange fails")
+    # NEGATIVE CONTROL 8 (owner, 2026-10-10): a held value that is published
+    # as a FRESH one - a frozen reading looking live - must fail.
+    if not mutant_fails(cc, env, "heldlive",
+                        "w->valid = (unsigned char)((w->valid + 1u) & 2u);",
+                        "(void)0;", TEST):
+        print("FAIL: control - a held lambda published as fresh passed")
+        return 1
+    print("PASS: control - a held lambda published as fresh fails")
+    # NEGATIVE CONTROL 7: READY demoted by ONE out-of-band Ri sample
+    if not mutant_fails(cc, env, "riband",
+                        "} else if (el(in->ms, w->mark) >= RI_BAND_CONFIRM_MS) {",
+                        "} else if (1) {", TEST):
+        print("FAIL: control - READY lost on one Ri sample passed")
+        return 1
+    print("PASS: control - READY demoted by one out-of-band Ri sample fails")
     return 0
 
 

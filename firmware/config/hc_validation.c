@@ -541,7 +541,9 @@ static unsigned int check_strategy(unsigned int n_cyl)
             n_ign++;
         }
     }
-    if (inj == HC_INJ_SEQUENTIAL && n_inj != 0u && n_inj != n_cyl) {
+    /* Semi-sequential too: every cylinder fires its OWN injector output
+       (hc_plan.c, 2026-10-10), so a half-wired page would run half lean. */
+    if (inj != HC_INJ_BATCH && n_inj != 0u && n_inj != n_cyl) {
         bad(CFG_U_PIN_INJ);
         f |= HC_VAL_FAULT_STRATEGY;
     }

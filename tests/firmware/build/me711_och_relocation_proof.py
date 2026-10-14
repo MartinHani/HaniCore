@@ -108,7 +108,8 @@ def main() -> int:
     # 2026-10-07: the publication is three bounded slices (part 0..2,
     # hcdiag711.c hc_diag_publish_step); an image without the argument
     # ignores it and publishes everything three times.
-    for part in (0, 1, 2):
+    # 2026-10-12: seven slices (parts 2..6 = the old part 2, split).
+    for part in (0, 1, 2, 3, 4, 5, 6):
         r("hc_io_publish", 0, part, steps=2_000_000)
     bad = []
     for off in sorted(want):

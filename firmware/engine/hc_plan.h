@@ -169,17 +169,19 @@ unsigned char hc_plan_inj_cyls(unsigned char cylinders,
 /* Cylinder -> logical slot. Two cylinders that SHARE an output map to the same
  * slot, and their two events - 360 degrees apart on an even-firing engine -
  * are exactly the two firings that output needs per cycle. That is why a
- * wasted-spark pair and a semi-sequential injector pair need no repeat count
- * and no special case: the second cylinder in the pair generates the second
- * event, at its own angle, which is also correct on an UNEVEN-firing engine
- * where "+360 degrees" would not have been. */
+ * wasted-spark pair needs no repeat count and no special case: the second
+ * cylinder in the pair generates the second event, at its own angle, which is
+ * also correct on an UNEVEN-firing engine where "+360 degrees" would not have
+ * been. SEMI-SEQUENTIAL INJECTION IS NOT A SHARED OUTPUT: every cylinder has
+ * its own injector, so it keeps its own slot and repeats (the pair model drove
+ * half the injectors - AWT car, 2026-10-10). */
 unsigned char hc_plan_ign_slot(unsigned char cyl, unsigned char cylinders,
                                unsigned char ign_strategy);
 unsigned char hc_plan_inj_slot(unsigned char cyl, unsigned char cylinders,
                                unsigned char inj_strategy);
 
 /* THE PAIR A PAIRED OUTPUT SERVES, BY FIRING ORDER. Two cylinders share
- * a wasted-spark coil or a semi-sequential injector when their TDCs are 360
+ * a wasted-spark coil (ignition only) when their TDCs are 360
  * degrees apart - positions p and p + n/2 in the FIRING order. The pair
  * functions above assumed cylinder index == firing position, which is false
  * for 1-3-4-2 (they paired 1/3, whose TDCs are 180 apart). Returns the
@@ -193,18 +195,20 @@ unsigned char hc_plan_pair_lead(const unsigned int *tdc, unsigned char cyl,
 /* How many times a WALKED cylinder's event repeats within the cycle, at one
  * revolution's spacing.
  *
- * Only two strategies need this, and for the same reason: they have no second
+ * Three strategies need this, and for the same reason: they have no second
  * cylinder mapped to the slot to supply the second event.
  *
  *   WASTED COP     one coil per cylinder, fired at its own compression TDC
  *                  and again 360 degrees later on the exhaust stroke. That
  *                  second spark is what removes the need for a cam.
  *   BATCH          one bank event per revolution, half a charge each time.
+ *   SEMI-SEQ       one injector per cylinder, at its TDC and 360 later, half
+ *                  a charge each time.
  *
- * Wasted PAIRED, semi-sequential, sequential and distributor all return 1: for
- * the first two the pair supplies the second event, and the last two genuinely
- * fire once per cycle. On a two-stroke the cycle IS a revolution and every
- * count collapses to one. */
+ * Wasted PAIRED, sequential and distributor return 1: for the first the pair
+ * supplies the second event, and the last two genuinely fire once per cycle
+ * (the scheduler adds sequential's fallback twin itself). On a two-stroke the
+ * cycle IS a revolution and every count collapses to one. */
 unsigned char hc_plan_ign_repeats(unsigned char ign_strategy,
                                   unsigned char strokes);
 unsigned char hc_plan_inj_repeats(unsigned char inj_strategy,

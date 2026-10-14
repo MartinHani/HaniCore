@@ -154,6 +154,7 @@ void far hc_dtc_service(unsigned int now_ms)
     if (hc_dtc_clear_req) {                    /* '!D' - OBD mode 04 */
         hc_dtc_clear_req = 0u;
         hcdtc_clear(&hc_dtc);
+        hc_io_wb_clear();                      /* a latched wideband re-arms */
     }
     if (!have_last) {                          /* events count from here */
         last_sync = trg_synclost;

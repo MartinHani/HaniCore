@@ -44,6 +44,7 @@ typedef char bias_fits[(sizeof(hc_bias_t)<=TGT_RAM_ETBBIAS_LIMIT)?1:-1];
 #define ETB_ADC_LO        10u
 #define ETB_ADC_HI      1013u
 #define AT_TARGET_X10    500u
+#define AT_NOISE_X10       5u      /* relay noise band: +-0.5 % around 50 % */
 #define AT_AMP_MIN        50u
 #define AT_AMP_MAX       300u
 #define AT_AMP_DEFAULT   200u      /* rusEFI autotuneAmplitude = 20         */
@@ -52,7 +53,7 @@ typedef char bias_fits[(sizeof(hc_bias_t)<=TGT_RAM_ETBBIAS_LIMIT)?1:-1];
 #define AT_BAND_LO       200u
 #define AT_BAND_HI       800u
 #define AT_APPROACH_MS  1500u
-#define AT_RUN_MS      15000u
+#define AT_RUN_MS      25000u      /* two measurements (2026-10-11)        */
 #define AT_TU_CLAMP     2000u
 #define AT_A_MIN           5u      /* 0.5 %                                 */
 #define AT_A_MAX         300u      /* 30 %                                  */
@@ -68,7 +69,17 @@ typedef char bias_fits[(sizeof(hc_bias_t)<=TGT_RAM_ETBBIAS_LIMIT)?1:-1];
 #define VFY_OVER_MAX      50u      /* 5 % of travel                           */
 #define VFY_ERR_MAX       15u      /* 1.5 % mean over the last 100 ms         */
 #define VFY_TAIL_MS      100u
-#define VFY_RETRIES        3u      /* bounded candidate damping, never faults */
+/* NO DAMPING RETRIES (2026-10-11). Each retry halved KP/KD (or doubled
+   KI) and retested, so the published gains were the relay rule / 1, 2, 4
+   or 8 depending on the run - the owner's "P 1.x one time, 3.x the next".
+   The candidate now carries one FIXED derating (KP, KD x 0.5: every
+   passing bench autotune had needed exactly that, 2026-10-05) and the
+   verify only accepts or refuses it: the same body gives the same gains,
+   or nothing is written. */
+/* The relay measurement is taken TWICE; amplitude and period must agree
+   within 1/AT_AGREE_DIV (25 %) or the result is "not repeatable" and
+   nothing is written. The gains come from the mean of the two. */
+#define AT_AGREE_DIV       4u
 #define VFY_RUN_MAX    22000u
 static const unsigned int vfy_tgt[VFY_STEPS] = { 200u, 600u, 200u, 40u, 150u };
 
@@ -88,6 +99,9 @@ typedef struct {
     unsigned int  cycles, tcyc, pmin, pmax;
     unsigned int  sum_a, sum_t;
     unsigned int  a_x10, tu_ms, a_live, tu_live;
+    unsigned int  a1_x10, tu1_ms;    /* the first of the two measurements   */
+    unsigned char pass, pass_pad;
+    unsigned int  ps1, ps2;          /* the last two positions (median of 3) */
     unsigned int  k[3];
     /* V97 verify */
     unsigned char vstep, vset;
@@ -114,6 +128,19 @@ typedef char hc_etbcal_fits[(sizeof(hc_etbcal_t) <= TGT_RAM_ETBCAL_LIMIT)
 static unsigned int udiff(unsigned int a, unsigned int b)
 {
     return (unsigned int)((a > b) ? (a - b) : (b - a));
+}
+
+/* THE RELAY AMPLITUDE FROM A MEDIAN OF 3 (2026-10-11): max - min of the RAW
+   position picks up the sensor noise at both peaks - +-2 counts on a ~3 %
+   oscillation moved the gains 13..18 % between two runs on the same plant
+   (me711_etb_autocal_proof). A median of three consecutive samples removes
+   a one-sample spike without the call-rate-dependent shrinkage a smoothing
+   filter would add (the loop period varies on the car). */
+static unsigned int med3(unsigned int a, unsigned int b, unsigned int c)
+{
+    if (a > b) { unsigned int t = a; a = b; b = t; }
+    if (b > c) { b = c; }
+    return (a > b) ? a : b;
 }
 
 
@@ -250,6 +277,7 @@ void far hc_etbcal_init(void)
     E.e1[0] = 0u; E.e1[1] = 0u; E.e2[0] = 0u; E.e2[1] = 0u;
     E.s1[0] = 0u; E.s1[1] = 0u; E.h1 = 0u; E.h2 = 0u; E.detail = 0u;
     E.ready = 0u;
+    hc_etbcal_dlr_reset();
     E.above = 0u; E.cycles = 0u; E.tcyc = 0u; E.pmin = 1000u; E.pmax = 0u;
     E.sum_a = 0u; E.sum_t = 0u; E.a_x10 = 0u; E.tu_ms = 0u;
     E.a_live = 0u; E.tu_live = 0u; E.k[0] = 0u; E.k[1] = 0u; E.k[2] = 0u;
@@ -454,16 +482,33 @@ static unsigned char tune_publish_candidate(unsigned int a, unsigned int t)
     unsigned int kk[3];            /* near (stack): hc_dbw_gains takes near */
     unsigned char clip;
 
+    unsigned int ki;
+
     if (a < AT_A_MIN) a = AT_A_MIN;
     if (t < 5u) t = 5u;
+    /* THE ONE FIXED DERATING (2026-10-11): KP and KD at half the relay
+       rule, KI at the rule. Both rules are 1/a, so the halves are the rule
+       of 2a - computed BEFORE the page-field clip, so a clip flag says what
+       is actually written (halving after a clip wrote 32767 and said 65535). */
     clip = hc_dbw_gains(a, t, kk);
-    E.k[0] = kk[0]; E.k[1] = kk[1]; E.k[2] = kk[2];
+    ki = kk[1];
+    clip = (unsigned char)((clip & 2u)
+           | (hc_dbw_gains((a > 0x7FFFu) ? 0xFFFFu : (unsigned int)(a << 1),
+                           t, kk) & 5u));
+    E.k[0] = kk[0]; E.k[1] = ki; E.k[2] = kk[2];
     return clip;
 }
 
 static void tune_step(unsigned int now_ms, unsigned int pos)
 {
-    unsigned char above = (unsigned char)(pos > AT_TARGET_X10);
+    /* THE RELAY HAS A NOISE BAND (2026-10-11): it flips only once the plate
+       is AT_NOISE_X10 past the target, so TPS noise near 50 % cannot chatter
+       it (Astrom-Hagglund relay with hysteresis; the Arduino PID autotune
+       rusEFI's descends from calls it noiseBand). Without it two runs on the
+       same plant differed 15 % (me711_etb_autocal_proof). */
+    unsigned char above = (unsigned char)(E.above
+        ? (pos + AT_NOISE_X10 > AT_TARGET_X10)
+        : (pos > AT_TARGET_X10 + AT_NOISE_X10));
     int out;
     unsigned int amp = tune_amp(), mag, bias;
     unsigned char opening, cfgdir;
@@ -474,6 +519,7 @@ static void tune_step(unsigned int now_ms, unsigned int pos)
             phase(ETB_CAL_TUNE, now_ms);
             E.tcyc = now_ms;
             E.pmin = 1000u; E.pmax = 0u;
+            E.ps1 = pos; E.ps2 = pos;
         } else if ((unsigned int)(now_ms - E.tph) >= AT_APPROACH_MS) {
             E.detail = E.pmax;
             finish(ETB_RES_FAIL, ETB_WHY_UNREACHED);
@@ -485,8 +531,13 @@ static void tune_step(unsigned int now_ms, unsigned int pos)
             finish(ETB_RES_FAIL, ETB_WHY_BAND);
             return;
         }
-        if (pos < E.pmin) E.pmin = pos;
-        if (pos > E.pmax) E.pmax = pos;
+        {
+            unsigned int m = med3(pos, E.ps1, E.ps2);
+            E.ps2 = E.ps1;
+            E.ps1 = pos;
+            if (m < E.pmin) E.pmin = m;
+            if (m > E.pmax) E.pmax = m;
+        }
         /* End of a relay cycle: the plate crossed back below the target. */
         if (!above && E.above) {
             unsigned int a = (E.pmax > E.pmin) ? (unsigned int)(E.pmax - E.pmin)
@@ -513,6 +564,27 @@ static void tune_step(unsigned int now_ms, unsigned int pos)
                     finish(ETB_RES_FAIL, ETB_WHY_IMPLAUS);
                     return;
                 }
+                if (E.pass != 1u) {
+                    /* the first measurement: keep cycling for the second */
+                    E.a1_x10 = E.a_x10; E.tu1_ms = E.tu_ms;
+                    E.pass = 1u;
+                    E.cycles = AT_WARM;
+                    E.sum_a = 0u; E.sum_t = 0u;
+                    E.above = above;
+                    return;
+                }
+                if (udiff(E.a_x10, E.a1_x10) * AT_AGREE_DIV
+                        > (E.a_x10 > E.a1_x10 ? E.a_x10 : E.a1_x10)
+                    || udiff(E.tu_ms, E.tu1_ms) * AT_AGREE_DIV
+                        > (E.tu_ms > E.tu1_ms ? E.tu_ms : E.tu1_ms)) {
+                    E.detail = E.a1_x10;
+                    finish(ETB_RES_FAIL, ETB_WHY_REPEAT);
+                    return;
+                }
+                E.a_x10 = (unsigned int)((E.a_x10 >> 1) + (E.a1_x10 >> 1)
+                                         + (E.a_x10 & E.a1_x10 & 1u));
+                E.tu_ms = (unsigned int)((E.tu_ms >> 1) + (E.tu1_ms >> 1)
+                                         + (E.tu_ms & E.tu1_ms & 1u));
                 /* A gain larger than its page field holds (KI above 65.5 /s
                    is the realistic one at a 5 ms raster) is written at the
                    field's maximum - LOWER than the rule, the conservative
@@ -602,12 +674,6 @@ static void verify_step(unsigned int now_ms, unsigned int rpm,
                    plant. Damp and retest within the same bounded budget
                    (bench, 2026-10-05: every failed autotune hunted here on
                    the undamped relay gains; every pass had been halved). */
-                if (E.above < VFY_RETRIES) {
-                    E.k[0] >>= 1; E.k[2] >>= 1;
-                    E.above++;
-                    verify_begin(now_ms);
-                    return;
-                }
                 E.detail = 0u;
                 finish(ETB_RES_FAIL, ETB_WHY_V_SLOW);
             }
@@ -628,31 +694,11 @@ static void verify_step(unsigned int now_ms, unsigned int rpm,
                 return;
             }
             if (E.vover > VFY_OVER_MAX) {
-                if (E.above < VFY_RETRIES) {
-                    /* Reduce proportional/derivative aggression while
-                       retaining integral recovery against spring/friction.
-                       Retest ALL five targets from the start.
-                       Sensor, supply and bridge faults never enter here. */
-                    E.k[0] >>= 1; E.k[2] >>= 1;
-                    E.above++;
-                    verify_begin(now_ms);
-                    return;
-                }
                 E.detail = E.vstep;
                 finish(ETB_RES_FAIL, ETB_WHY_V_OVER);
                 return;
             }
             if (e > VFY_ERR_MAX) {
-                if (E.above < VFY_RETRIES && E.k[1] < 65535u) {
-                    /* A settled plate can still need more integral recovery
-                       after spring/friction reversal. Do not relax the tail
-                       error limit or publish the unverified candidate. */
-                    E.k[1] = E.k[1] >= 32768u ? 65535u
-                                             : (unsigned int)(E.k[1] << 1);
-                    E.above++;
-                    verify_begin(now_ms);
-                    return;
-                }
                 E.detail = E.vstep;
                 finish(ETB_RES_FAIL, ETB_WHY_V_ERROR);
                 return;
@@ -816,6 +862,7 @@ static void start(unsigned char tune, unsigned int now_ms)
     E.above = 0u; E.cycles = 0u; E.tcyc = now_ms;
     E.pmin = 1000u; E.pmax = 0u;
     E.sum_a = 0u; E.sum_t = 0u; E.a_live = 0u; E.tu_live = 0u;
+    E.pass = 0u; E.a1_x10 = 0u; E.tu1_ms = 0u;
     if (tune) {
         E.a_x10 = 0u; E.tu_ms = 0u;
         E.k[0] = 0u; E.k[1] = 0u; E.k[2] = 0u;
@@ -1027,10 +1074,44 @@ static void sweep_tick(unsigned int now)
     hc_dbw_override(target);
 }
 
+/* hc_dbw_init()'s body, cold, in FCODE (NCODE reserve, 2026-10-11). The
+   state is in external SRAM with no ?C_INIT - every field set here. */
+void far hc_etbcal_dbw_init(void)
+{
+    D.st = DBW_OFF;
+    D.ready = 0u; D.ready_since = 0u; D.gap_max = 0u;
+    D.flt = 0u;
+    D.tgt = 0u; D.act = 0u; D.duty = 0u; D.pedal = 0u;
+    D.a1 = 0u; D.a2 = 0u; D.t1 = 0u; D.t2 = 0u;
+    D.err = 0; D.dir = 0u; D.on = 0u;
+    D.integ = 0L; D.irem = 0L; D.prev_act = 0;
+    D.step_mark = 0u; D.dev_since = 0u; D.dev_pending = 0u; D.dev_e = 0;
+    D.steps = 0u; D.tgt_ramped = 0u; D.settle = 0u;
+    D.p_t = 0; D.d_t = 0; D.ff_t = 0; D.out_t = 0; D.vfac = 1000u;
+    D.pend = 0u; D.pend_since = 0u; D.ovr = 0xFFFFu; D.clears = 0u; D.requested = 0u;
+    D.busy = 0u; D.align_pending = 0u; D.align_since = 0u;
+    D.key = 1u;        /* a boot is not a key-on edge: nothing to clear */
+    /* FORCE ONE UNCONDITIONAL RELEASE: `held` starts at whatever the last
+       power cycle left; claiming it makes the release happen. */
+    D.held = 1u;
+    hc_dbw_shutdown(0u);
+    D.st = DBW_OFF;
+    D.flt = 0u;
+    hc_etbcal_init();                /* calibration/autotune idle + DLR */
+}
+
 unsigned char far hc_etbcal_service(unsigned int now_ms, unsigned int rpm,
                                     unsigned char armed,
                                     unsigned char dbw_running)
 {
+    /* A FLASH BURN OWNS THE STOPPED ECU (hc_etbcal_burn_hold()): the closed
+       loop lets go for the ~3 s commit, nothing else runs; a calibration in
+       progress keeps its raster (it refuses to start during a Burn). */
+    if (E.ph == ETB_CAL_IDLE && hc_etbcal_burn_hold()) {
+        if (D.held || D.on) hc_dbw_shutdown(0u);
+        if (D.st == DBW_RUN) D.st = DBW_INIT;
+        return 1u;
+    }
     if (E.req != 0u) {
         unsigned char q = E.req;
         E.req = 0u;
@@ -1470,4 +1551,105 @@ unsigned char far hc_etbcal_tps_pair_fault(void)
     if (!ok1 || !ok2) return 0u; /* rail/range has separate indicators */
     return hc_etbcal_pair_bad(p1, p2, hc_cal_u8(CFG_U_TPS_CORR),
                               hc_cal_u16(CFG_U_TPS_TOL_X10));
+}
+
+/* ============================ THE BOSCH DLR SETTING-RANGE MONITOR ========
+ *
+ * FR "Audi R4-5V T 132kW ME7.1", DLR 3.60 pp. 1337-1338 (reference/
+ * funktionsrahmen): the stock 10 ms task does NOT react to the CJ220 status
+ * flag (P3.15) on its own. It watches the controller output: while it is
+ * beyond DLRPIDMAX/DLRPIDMIN the error time dlrpidc grows, otherwise it falls
+ * by TDLRPIDC per task. Only then -
+ *   dlrpidc > DLRPID1T : reversible safety fuel cut request (B_dlrbe);
+ *   dlrpidc > DLRPID2T : status flag low -> DV-E power-stage error,
+ *                        else "DLR setting range at limit" (both latched);
+ *   status flag low    : after DVEEST the power stage is restarted (the
+ *                        shutdown request B_dveesh pulses, its edge
+ *                        re-enables the CJ220).
+ * All of it only with the battery OK (B_ubdve, hysteresis SY_UBDEDIS /
+ * SY_UBDEEN). HaniCore V83..2026-10-11 latched DBW_F_SF on the FIRST status
+ * read and a "not shrinking" deviation after dbwDevMs (200 ms): the car's
+ * "CEL and DBW off at start" and the idle bridge-fault limp (2026-10-11).
+ *
+ * VALUES, EXACT TARGET-FAMILY CALIBRATION: Porsche ME7.1.1 A1104F
+ * (the A1104F A2L + 44HETL07.hex, the EPK matches) DLRPID0T 0.15 s @0x814664,
+ * DLRPID1T 0.60 s @0x814666, DLRPID2T 5.00 s @0x814668, DLRPIDMAX/MIN 80 %,
+ * TDLRPIDC 0.20 s @0x81468A, DVEEST 0.02 s @0x81056E, SY_UBDEDIS 92 /
+ * SY_UBDEEN 106 x 0.0704 V = 6.48 / 7.46 V. The AWT's own 4B0906018DC holds
+ * the same DLRPID0T/1T/2T and DLRPIDMAX at 0x813B4C..0x813B52. The 80 %
+ * limit is this page's dbwMaxDuty (AWT preset 80 %, DLRPIDMAX). */
+#define DLR_PID1T_MS     600u
+#define DLR_PID2T_MS    5000u
+#define DLR_DEC_PER10   200u     /* TDLRPIDC, per 10 ms of task time        */
+#define DLR_VEEST_MS      20u
+#define DLR_UB_OFF_DV     65u    /* 6.48 V                                 */
+#define DLR_UB_ON_DV      75u    /* 7.46 V                                 */
+
+void far hc_etbcal_dlr_reset(void)
+{
+    D.dlrpidc = 0u; D.dveesc = 0u; D.ska = 0u; D.ubok = 1u; D.sf_last = 0u;
+}
+
+/* The reversible request, OUTSIDE the latched fault word on purpose: every
+   "is there a fault" test in hc_dbw.c reads D.flt, and this must never hold
+   the controller in DBW_FAULT. hclimp711.c and the telemetry read it here. */
+unsigned char far hc_etbcal_dlr_ska(void)
+{
+    return D.ska;
+}
+
+/* THE FLASH BURN OWNS THE ENGINE-STOPPED ECU FOR ~3 s (2026-10-11 car).
+   hc_nvm_service() admits a flash word only when no output is busy, and a
+   driven throttle bridge is busy: with dbwEnable 1 the bridge holds the
+   plate at its idle position whenever the key is on, so EVERY window was
+   refused and every Burn ran to the 6 s deadline and failed. While a Burn
+   is staged/committing and the engine is stopped the closed loop lets go
+   (the plate rests on its spring - nothing to control with the engine
+   stopped) and resumes through DBW_INIT when the store is idle. */
+unsigned char far hc_etbcal_burn_hold(void)
+{
+    unsigned int s;
+
+    if (trg_rpm != 0u || trg_state != TRG_NO_SIGNAL) return 0u;
+    s = hc_nvm_state();
+    return (unsigned char)(s == HCNV_ST_STAGING || s == HCNV_ST_PENDING
+                           || s == HCNV_ST_ARMED || s == HCNV_ST_COMMITTING);
+}
+
+unsigned int far hc_etbcal_dlr_monitor(unsigned char saturated,
+                                       unsigned char sf, unsigned int step_ms)
+{
+    unsigned int dec;
+
+    /* `sf` bit 0 = read with the stage on, bit 1 = faulted: a disabled
+       CJ220 reads LOW by design, so only an "on" reading counts. */
+    if (sf & 1u) D.sf_last = (unsigned char)((sf >> 1) & 1u);
+    sf = D.sf_last;
+    if (eng_batt_dv < DLR_UB_OFF_DV) D.ubok = 0u;
+    else if (eng_batt_dv > DLR_UB_ON_DV) D.ubok = 1u;
+    if (!D.ubok) {                       /* monitoring suspended          */
+        D.ska = 0u; D.dveesc = 0u;
+        return 0u;
+    }
+    if (!saturated) {
+        dec = (unsigned int)((DLR_DEC_PER10 / 10u) * step_ms);
+        D.dlrpidc = (D.dlrpidc > dec) ? (unsigned int)(D.dlrpidc - dec) : 0u;
+        D.dveesc = 0u; D.ska = 0u;
+        return 0u;
+    }
+    if (D.dlrpidc < DLR_PID2T_MS + 10u) D.dlrpidc += step_ms;
+    if (D.dlrpidc > DLR_PID2T_MS) {
+        return sf ? DBW_F_SF : DBW_F_DEV;
+    }
+    D.ska = (unsigned char)(D.dlrpidc > DLR_PID1T_MS);
+    if (sf) {
+        D.dveesc += step_ms;
+        if (D.dveesc >= DLR_VEEST_MS) {
+            D.dveesc = 0u;
+            return DBW_DLR_RESTART;
+        }
+    } else {
+        D.dveesc = 0u;
+    }
+    return 0u;
 }

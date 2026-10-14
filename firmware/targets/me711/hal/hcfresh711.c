@@ -45,6 +45,9 @@ typedef struct {
     unsigned int raw[2][8], ms[2][8];
     unsigned int seq[2], pair[2], pair_ms;
     unsigned char head[2], n[2], valid;
+    /* each PEDAL track's previous sample (raw, tick ms), for
+       hc_fresh_app_pair() */
+    unsigned int app_raw[2], app_ms[2];
 } hc_tps_history_t;
 #define H (*(hc_tps_history_t huge *)(TGT_EXTRAM_BASE + TGT_RAM_TPS_HISTORY))
 typedef char history_fits[(sizeof(hc_tps_history_t) <= TGT_RAM_TPS_HISTORY_LIMIT) ? 1 : -1];
@@ -63,6 +66,7 @@ void far hc_fresh_init(void)
     H.head[0] = 0u; H.head[1] = 0u; H.n[0] = 0u; H.n[1] = 0u;
     H.seq[0] = 0u; H.seq[1] = 0u; H.pair[0] = 0u; H.pair[1] = 0u;
     H.pair_ms = 0u; H.valid = 0u;
+    H.app_raw[0] = 0u; H.app_raw[1] = 0u; H.app_ms[0] = 0u; H.app_ms[1] = 0u;
     for (i = 0u; i < 8u; i++) {
         H.raw[0][i] = 0u; H.raw[1][i] = 0u;
         H.ms[0][i] = 0u; H.ms[1][i] = 0u;
@@ -82,10 +86,14 @@ void far hc_fresh_service(void)
         }
         HC_ATOMIC_EXIT(ps);
     }
+    /* the S5500 reply is stamped by the CC27 exchange level since
+       2026-10-13: read the clock and the stamp as one, like the main ADC */
+    HC_ATOMIC_ENTER(ps);
     if (ASIC_SAMPLE_LIVE
         && (unsigned int)(hc_tick_ms - ASIC_SAMPLE_MS) > TGT_ASIC_FRESH_MS) {
         ASIC_SAMPLE_LIVE = 0u;
     }
+    HC_ATOMIC_EXIT(ps);
     /* Control ownership has a deadline even if ADC scans keep completing
        while serial work delays the ordinary control raster. */
     /* This service also runs from serial yields. It only releases existing
@@ -125,6 +133,12 @@ void far hc_hal_main_sample(unsigned char ch, unsigned int word,
         H.valid = 0u;
         return;
     }
+    for (track = 0u; track < 2u; track++) {
+        if (ch == channel((unsigned char)(HC_AIN_APP1 + track))
+            && (MAIN_SEEN & sample_mask)) {
+            H.app_raw[track] = adc_raw[ch]; H.app_ms[track] = ADC_META[2u * ch];
+        }
+    }
     /* Publish the value and its qualification as one transaction. The old
        MAIN path qualified first, then wrote adc_raw separately. */
     adc_raw[ch] = (unsigned int)(word & 0x03FFu);
@@ -144,8 +158,12 @@ void far hc_hal_main_sample(unsigned char ch, unsigned int word,
 
 unsigned int far hc_hal_asic_age(void)
 {
-    return (ASIC_SAMPLE_LIVE && hc_asic_run_live)
+    unsigned int ps, age;
+    HC_ATOMIC_ENTER(ps);                /* stamped by the CC27 level */
+    age = (ASIC_SAMPLE_LIVE && hc_asic_run_live)
         ? (unsigned int)(hc_tick_ms - ASIC_SAMPLE_MS) : 0xFFFFu;
+    HC_ATOMIC_EXIT(ps);
+    return age;
 }
 
 static unsigned char channel(unsigned char sem)
@@ -406,6 +424,54 @@ static unsigned char tps_pair(unsigned int *r1, unsigned int *r2,
     }
     *r1 = H.pair[0]; *r2 = H.pair[1]; *sample_ms = H.pair_ms;
     return 1u;
+}
+
+/* THE PEDAL PAIR AT ONE SAMPLE TIME (2026-10-11).
+ *
+ * The 1 ms tick converts one channel per millisecond, so each pedal track is
+ * refreshed every 16 ms, AN8 one millisecond before AN9: for one millisecond
+ * in sixteen, one track is 15 ms older than the other. Compared as they
+ * stand, a pedal moving at 0.7 %/ms (a fast press) disagreed by more than the
+ * 10 % pair tolerance and hc_dbw.c dropped the bridge on the first suspect
+ * pair - the AWT's "cut-out on a fast pedal press" (2026-10-10). The NEWER
+ * track is brought back to the older track's sample time by interpolating
+ * between its own previous and latest samples; both are real observations,
+ * nothing is predicted. A gap more than 1 ms, or a previous sample that does
+ * not bracket the time, leaves the pair as read. Same lock-free sequence
+ * check as hc_fresh_tps_pair(). Main-CPU channels only; *r1/*r2 come in as
+ * hc_hal_ain() read them. */
+static unsigned int back_to(unsigned char k, unsigned int raw, unsigned int t,
+                            unsigned int to)
+{
+    unsigned int span = (unsigned int)(t - H.app_ms[k]);
+    unsigned int dt = (unsigned int)(to - H.app_ms[k]);
+    unsigned int v0 = H.app_raw[k], delta, move;
+
+    if (span == 0u || span > 64u || dt > span) return raw;
+    delta = (raw > v0) ? (unsigned int)(raw - v0) : (unsigned int)(v0 - raw);
+    move = (unsigned int)((delta / span) * dt + ((delta % span) * dt) / span);
+    return (raw >= v0) ? (unsigned int)(v0 + move) : (unsigned int)(v0 - move);
+}
+
+void far hc_fresh_app_pair(unsigned int *r1, unsigned int *r2)
+{
+    unsigned char a = channel(HC_AIN_APP1), b = channel(HC_AIN_APP2), tries;
+    unsigned int s, ta, tb, v1, v2;
+    int d;
+
+    if (a >= TGT_ADC_CH_COUNT || b >= TGT_ADC_CH_COUNT) return;
+    for (tries = 0u; tries < 3u; tries++) {
+        s = (unsigned int)(ADC_META[2u * a + 1u] + ADC_META[2u * b + 1u]);
+        ta = ADC_META[2u * a]; tb = ADC_META[2u * b];
+        v1 = adc_raw[a]; v2 = adc_raw[b];
+        d = (int)(ta - tb);
+        if (d > 1) v1 = back_to(0u, v1, ta, tb);
+        else if (d < -1) v2 = back_to(1u, v2, tb, ta);
+        if (s == (unsigned int)(ADC_META[2u * a + 1u] + ADC_META[2u * b + 1u])) {
+            *r1 = v1; *r2 = v2;
+            return;
+        }
+    }
 }
 
 /* Preserve the source/qualification cause instead of folding all failures

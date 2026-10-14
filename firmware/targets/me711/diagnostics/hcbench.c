@@ -706,7 +706,7 @@ static unsigned int why_not(unsigned char mode, unsigned char ch)
            The CJ120s' DIAG heater bits show which one reaches a heater gate
            (tools/me711_v93_bench_session.py). Fixed stages, no route. */
         /* 8..13 hold BOTH CJ120s in one INIT_REG1 for the test
-           value's ms (200..5000): 8 0x88 cold, 9 RA, 10 LA, 11 PA (0xC8),
+           value's ms (200..5000): 8 0xC8 cold, 9 RA, 10 LA, 11 pump (0x88),
            12 the calibration 0x9C, 13 the V79..V95 0x90 - the experiment
            that proves the register's bits on this board (UR with RA,
            UA with LA, DIAG with PA). Heater off, lambda withheld. */
@@ -743,6 +743,13 @@ static unsigned int why_not(unsigned char mode, unsigned char ch)
         }
         if (!hc_hal_out_class_live(HC_OUT_THR_EN)) {
             r |= HCB_R_PERMIT;
+        }
+        /* hc_dbw_drive() refuses every pulse (and latches DBW_F_CFG) when
+           the page has no throttle duty ceiling - a page that does not
+           describe a throttle yet. Say so before the run, not after it. */
+        if (hc_cal_u16(CFG_U_DBW_MAX_DUTY_X10) == 0u
+            || hc_cal_u16(CFG_U_DBW_MAX_DUTY_X10) > 1000u) {
+            r |= HCB_R_CFG;
         }
         /* SF IS NOT A PRE-RUN CONDITION. A CJ220 whose DI is inactive
            reports SF LOW by design (truth table rows 5 and 9), and before the
@@ -1082,6 +1089,17 @@ void hcbench_service(unsigned int tick_ms)
         }
         if (tps_pair_bad()) {
             hcbench_abort(HCB_A_TPSPAIR);
+            return;
+        }
+        /* THE DRIVE ITSELF. hc_dbw_drive() and the motor primitive refuse
+           quietly - a lost throttle permission (key off) or a latched
+           fault that blocks the bridge - and the run used to count its
+           pulses and report DONE having driven nothing. */
+        if (!hc_hal_out_class_live(HC_OUT_THR_EN)
+            || (hc_dbw_faults() & (DBW_F_CFG | DBW_F_TPS_RANGE
+                                   | DBW_F_TPS_PAIR | DBW_F_SF | DBW_F_DEV
+                                   | DBW_F_STALE | DBW_F_VBAT)) != 0u) {
+            hcbench_abort(HCB_A_DRIVE);
             return;
         }
         /* NO PULSE UNTIL SF HAS BEEN JUDGED. The bridge sits enabled

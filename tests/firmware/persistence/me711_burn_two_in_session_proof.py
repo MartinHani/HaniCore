@@ -292,12 +292,13 @@ def main():
                 for n in OCH_NAMES}
 
     def version_text():
-        hdr = (ROOT / "firmware/targets/me711"
-                      "/hctarget.h").read_text()
-        m = re.search(r'#define\s+TGT_VERSIONTXT\s+"([^"]+)"', hdr)
-        if not m:
-            raise SystemExit("TGT_VERSIONTXT missing")
-        return m.group(1).encode()
+        # the image's own 'V' text (TGT_VERSIONTXT + " build <id>" since
+        # 2026-10-11), as its build manifest records it
+        import me711_image as _PI
+        v = _PI.metadata().get("version_text")
+        if not v:
+            raise SystemExit("version_text missing from the manifest")
+        return v.encode()
 
     def burn(label, limit_ms=BURN_LIMIT_MS):
         return transact(label, envelope(b"B"), lambda d: d == b"\0", limit_ms)
@@ -375,6 +376,11 @@ def main():
     print("\n  --- ordinary traffic IMMEDIATELY after BURN #1, no reconnect ---")
     transact("version command still answers", envelope(b"V"),
              lambda d: d == b"\0" + version_text(), PLAIN_LIMIT_MS)
+    # 2026-10-12: the status words are PUBLISHED in slices, one cycle every
+    # 40 ms (hcdiag711.c hc_diag_publish_step, 13 slices): read them one
+    # cycle after the Burn, not in the same breath as its reply. The
+    # record itself is checked in flash above, at once.
+    rig.run(ms(60))
     after = och_read()
     p = page_read()
     check("the burned byte reads back from the live page",
@@ -450,6 +456,7 @@ def main():
     check("the second burned byte reads back live",
           p is not None and p[1] == 0x5A,
           f"0x{p[1]:02X}" if p else "no reply")
+    rig.run(ms(60))                # one publication cycle (see above)
     final = och_read()
     if final:
         check("the published generation is 2 after the second Burn",

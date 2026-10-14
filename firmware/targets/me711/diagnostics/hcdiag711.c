@@ -37,6 +37,7 @@
 #include "hcdtc711.h"
 #include "hclimp711.h"
 #include "hckwp_me711.h"      /* VAG/KWP vehicle entry (far) */
+#include "hcrtmon711.h"      /* '!Z' raster experiment (far) */
 
 
 extern unsigned int hc_badvec, hc_firstvec, hc_lastvec, hc_tick_ms;
@@ -149,7 +150,7 @@ static void update_forensics_live(unsigned char part)
    free stretch, then; still the longest wait for DBW and eng_service once the
    planner had its own level). hc_diag_publish_step() runs ONE slice per
    main-loop pass - the platform, the runtime and store, the live-Burn and
-   decoder words, three parts of hc_io_publish(), the tail - and says when a
+   decoder words, seven parts of hc_io_publish(), the tail - and says when a
    cycle is complete; hcmain_me711.c starts one every 40 ms. A channel is
    still written whole, by one slice, so a reply can mix two cycles' slices
    but never two halves of one value (and hcserial711.c sends each 16-bit
@@ -233,7 +234,8 @@ static void pub_platform(void)
     put16(46, (unsigned int)hc_asic_state);
     put16(48, (unsigned int)
           ((hc_asic_start_ok || hc_asic_run_ok)
-           && ((unsigned int)(tick_ms - hc_asic_last_ok_ms) < 100u)));
+           && (((unsigned int)(tick_ms - hc_asic_last_ok_ms) < 100u)       /* or a stamp */
+               || ((unsigned int)(tick_ms - hc_asic_last_ok_ms) & 0x8000u))));  /* after tick_ms */
     put16(50, (unsigned int)(hc_asic_start_tx + hc_asic_run_tx));
     put16(52, (unsigned int)(hc_asic_start_rx + hc_asic_run_rx));
     put16(54, hc_asic_start_ok);
@@ -365,7 +367,8 @@ static void pub_runtime(void)
     put16(400, (unsigned int)((unsigned int)hc_dbw_state()
                               | ((unsigned int)hc_dbw_bridge_on() << 8)
                               | ((unsigned int)hc_dbw_dir() << 9)));
-    put16(402, hc_dbw_faults());
+    put16(402, (unsigned int)(hc_dbw_faults()
+                              | (hc_etbcal_dlr_ska() ? DBW_F_RANGE : 0u)));
     put16(404, hc_dbw_pedal_x10());
     put16(406, hc_dbw_target_x10());
     put16(408, hc_dbw_actual_x10());
@@ -469,7 +472,10 @@ static void pub_runtime(void)
                                  of the key, which the native main-relay stage
                                  on cavity 23 follows. */
                               | ((P6 & (1u << TGT_KL15STAT_PORT_BIT))
-                                 ? 0x0080u : 0u)));
+                                 ? 0x0080u : 0u)
+                              /* bit 8 (2026-10-11): the tacho output on
+                                 cavity 37 is running (hcroutes711.c) */
+                              | ((unsigned int)hc_tacho_running() << 8)));
 
 }
 
@@ -496,7 +502,11 @@ static void pub_live(void)
     put16(644, hc_ssc_pec_rx_left());
     put16(646, hc_ssc_sscon());
     put16(648, hc_asic_state);
-    put16(650, (unsigned int)(tick_ms - hc_asic_last_ok_ms));
+    {   /* the CC27 exchange level may stamp after tick_ms was read
+           (2026-10-13): a 'negative' age is 0 */
+        unsigned int a = (unsigned int)(tick_ms - hc_asic_last_ok_ms);
+        put16(650, (a & 0x8000u) ? 0u : a);
+    }
     put16(652, trg_rpm);
     put16(654, hc_nvm_words_total());
     put16(656, hc_nvm_words_completed());
@@ -617,8 +627,12 @@ unsigned char far hc_diag_publish_step(void)
     case 3u: hc_io_publish(io_boost_req, 0u); break;
     case 4u: hc_io_publish(io_boost_req, 1u); break;
     case 5u: hc_io_publish(io_boost_req, 2u); break;
-    case 6u: update_forensics_live(0u); break;
-    case 7u: update_forensics_live(1u); break;
+    case 6u: hc_io_publish(io_boost_req, 3u); break;   /* 2026-10-12 */
+    case 7u: hc_io_publish(io_boost_req, 4u); break;
+    case 8u: hc_io_publish(io_boost_req, 5u); break;
+    case 9u: hc_io_publish(io_boost_req, 6u); break;
+    case 10u: update_forensics_live(0u); break;
+    case 11u: update_forensics_live(1u); break;
     default:
         pub_tail();
         pub_stage = 0u;
@@ -644,8 +658,10 @@ void far hc_diag_publish(void)
 #define PRESET_V_INVALID      5u   /* whole page refused - NOTHING changed    */
 #define PRESET_V_BENCH_BUSY   6u
 #define PRESET_V_PENDING      7u
-#define PRESET_REFRESH_MS     2500u
+#define PRESET_REFRESH_MS     1000u   /* rusEFI needToTriggerTsRefresh(): 1 s */
 
+/* hcmain_me711.c preset_hold() reads 770/774 for this window (rusEFI
+   [tag:popular_vehicle]: TunerStudio's writes and Burns are ignored). */
 void far hc_preset_cmd_service_cold(void);   /* public: me711_preset_apply_proof calls it */
 void far hc_preset_cmd_service_cold(void)
 {
@@ -859,6 +875,18 @@ void far hc_target_cmd_cold(unsigned char *p, unsigned int n)
            recorded; hc_dtc_service() clears on its next pass. A fault
            still present re-confirms after its set time. */
         hc_dtc_clear_req = 1u;
+        break;
+    case 'Z':
+        /* BENCH EXPERIMENT (2026-10-13): hold the main loop p[2] ms every
+           p[3] ms without servicing the S5500 - engine stopped only,
+           cleared by every boot (hcrtmon711.c). '!Z' 0 stops it. */
+        hc_rtwit_stall_set((unsigned char)((n >= 3) ? p[2] : 0u),
+                           (unsigned char)((n >= 4) ? p[3] : 0u));
+        break;
+    case 'N':
+        /* TEST THE REV COUNTER (cavity 37): engine stopped, the needle runs
+           at p[2] x 100 rpm (0/absent = 3000) for 6 s (hcroutes711.c). */
+        hc_tacho_test((unsigned char)((n >= 3) ? p[2] : 0u));
         break;
     case 'E':
         /* APPLY AN ENGINE PRESET - rusEFI's "Base Tunes" button.

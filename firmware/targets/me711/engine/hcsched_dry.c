@@ -635,17 +635,16 @@ static unsigned char g_inj_eoi;
  * WASTED COP repeats each one 360 degrees later. Twelve cylinders x two
  * repeats = 24.
  *
- * INJECTION never reaches that. hc_plan_inj_repeats() returns 2 for exactly
- * one strategy, BATCH, and hc_plan_inj_cyls() walks exactly ONE cylinder for
- * batch - so batch is 1 x 2 = 2. Every other strategy repeats once, so the
- * worst case is twelve cylinders x one = 12. Sizing this 24 "to match" would
- * cost twelve words of near RAM to hold entries nothing can generate. */
+ * INJECTION: batch walks ONE cylinder twice (1 x 2 = 2); semi-sequential and
+ * sequential walk each cylinder twice (its event + 360), bounded by the
+ * board's eight injector drivers - see INLIST_N. */
 #define IGLIST_N    (HC_PLAN_MAX_CYL * 2u)   /* wasted COP repeats each one  */
 /* SEQUENTIAL injection now plans each cylinder AND its fallback twin
    (x2), which is at most 8 x 2 on this board - it has eight injector
    drivers (ev_drive() takes slots 1..8), so a sequential engine with more
-   cylinders than that cannot be routed. Semi-sequential still walks every
-   cylinder once (12). 16 covers both; list_insert() refuses beyond it. */
+   cylinders than that cannot be routed. Semi-sequential does the same
+   (each cylinder on its own output, twice a cycle): 8 x 2 as well. 16
+   covers both; list_insert() refuses beyond it. */
 #define INLIST_N    16u
 
 unsigned int  hc_plan_ign_anchors[IGLIST_N];    /* ignition anchors, ASCENDING */
@@ -841,10 +840,10 @@ static void geometry_refresh(void)
     }
     for (i = 0u; i < g_inj_cyls; i++) {
         unsigned int a = g_tdc[i];
+        /* NO PAIR REMAP FOR INJECTION: semi-sequential gives every cylinder
+           its own output, fired at its TDC and 360 later (hc_plan.c). The
+           pair-lead remap above is the wasted-paired COIL model only. */
         unsigned char s = hc_plan_inj_slot(i, g_cyl, g_inj_strat);
-        if (g_inj_strat == HC_INJ_SEMI_SEQ) {
-            s = (unsigned char)(hc_plan_pair_lead(g_tdc, i, g_cyl) + 1u);
-        }
         for (r = 0u; r < g_inj_rep; r++) {
             if (r) {
                 a = hc_plan_next_rev_x10(a, hc_plan_cycle);
@@ -1639,8 +1638,16 @@ static void publish_edge(unsigned int target, unsigned int stamp,
     if (planner_generation != hc_dl_generation) return;
     dry_sched_next_angle = target;
     if (type == HC_DRY_DWELL_START) {
-        if (((slot & HC_SLOT_TWIN) && g_ign_seq && trg_state >= TRG_SYNC_FULL)
-            || spark_skip()) {
+        /* The twin of a sequential spark is dropped BY DESIGN once the
+           cycle is known - it is not a cut and is not counted (2026-10-12:
+           the car's sequential run showed 2686 "skipped sparks" that a log
+           reader took for a spark cut). sparkSkips counts the cut ratio
+           only: rev limiter, launch, flat shift, anti-lag, rotational idle. */
+        if ((slot & HC_SLOT_TWIN) && g_ign_seq && trg_state >= TRG_SYNC_FULL) {
+            SCHED_SUPPRESS();
+            return;
+        }
+        if (spark_skip()) {
             if (dry_spark_skips != 0xFFFFu) dry_spark_skips++;
             SCHED_SUPPRESS();
             return;
@@ -1686,7 +1693,11 @@ static void publish_edge(unsigned int target, unsigned int stamp,
         if((unsigned int)(period>>16)<g_tooth_x10)
             period=(unsigned int)(period/(unsigned int)g_tooth_x10);
         else period/=g_tooth_x10;
-        if (!whole && g_inj_rep > 1u) period /= g_inj_rep;
+        /* NO SECOND DIVISION BY THE REPEAT COUNT (2026-10-10): next_angle[]
+           (geometry_refresh) is already the shortest interval between two
+           firings of THIS output - 360 deg for batch, semi-sequential and
+           the sequential fallback. Dividing it by g_inj_rep again capped
+           every pulse at 180 deg = 50 % duty: lean at high load / boost. */
         duration=hc_deadline_inj_request(mask,fuel,eng_deadtime_us,period);
     } else return;
     /* A changed offset can put a previously uncommitted event behind its

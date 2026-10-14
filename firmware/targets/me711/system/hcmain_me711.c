@@ -176,6 +176,15 @@ sbit NLEN_FR_DIR   = DP3 ^ TGT_NLEN_FR_PORT_BIT;
  * serial drain: a bench image that resets is nearly always an image that armed
  * something it did not understand.
  */
+/* THE S5500 EXCHANGE (2026-10-13): requested by the 1 ms tick, one state
+   transition per request - see TGT_TRAP_ASICX in hctarget.h and the note at
+   the end of hc_tick_isr(). Same level as the planner, so its bank too. */
+void hc_asic_isr(void) interrupt TGT_TRAP_ASICX using PLANBANK
+{
+    HC_PROBE_CLAIM(TGT_TRAP_ASICX);
+    hc_asic_start_service(tick_ms);
+}
+
 void hc_tick_isr(void) interrupt TGT_TRAP_T8INT using TICKBANK
 {
     unsigned int lf_now;
@@ -189,9 +198,16 @@ void hc_tick_isr(void) interrupt TGT_TRAP_T8INT using TICKBANK
     tick_ms++;
     asic_tick();
     if (yield_armed) {
+        /* THE S5500 EXCHANGE IS CLOCKED HERE (2026-10-13), not by the main
+           loop: see the note at the end of this routine. */
+        TGT_ASICX_IR = 1;
+        /* the K-line pin, exactly once a ms: fast-init wake-up timing */
+        hc_kl_tick((unsigned char)((P3 & 0x0800u) ? 1u : 0u),
+                   (unsigned char)DSTP6, tick_ms);
         adc_service();   /* the main ADC's only owner (above) */
     }
     hc_rt_supervise();   /* CC25 liveness, stack guard (hcsafety.h) */
+    hc_tacho_tick();     /* re-arm the CC13 toggle after a match */
     if (rx_irq_mode) {
         hc_pecrx_tick(); /* K-line bytes PEC6 stored -> hcts ring */
     }
@@ -202,9 +218,26 @@ void hc_tick_isr(void) interrupt TGT_TRAP_T8INT using TICKBANK
         if (lf_gap > HC_LF_WORD(LF_TICK_MAX_GAP))
             HC_LF_WORD(LF_TICK_MAX_GAP) = lf_gap;
     }
-    /* The ASIC handshake is NOT serviced here. It copies 96 words and runs a
-       state machine; that belongs in the main loop, where it cannot delay the
-       serial drain. The tick only advances time. */
+    /* THE S5500 EXCHANGE RUNS IN THIS TICK (2026-10-13). Until then it was
+       "NOT serviced here ... it belongs in the main loop, where it cannot
+       delay the serial drain" - but the serial drain is PEC6 since
+       2026-10-06, and a main-loop-clocked exchange is what reset the car:
+       9 long hardware resets (0x1C) with the engine running on 2026-10-13,
+       the raster 10.7-10.8 ms on average while running (main-loop pass
+       9.2-9.4 ms, 4.9 engine off), and on the bench a main loop held 20 ms
+       every 100 ms (frame periods 27 ms) reset the ECU with 0x1C in 0.8 s
+       with zero monitoring mismatches - the S5500 resets on LATE frames
+       (evidence/CAR_20261013_RESETS). The OEM runs this dialogue from a
+       10 ms OS task. Here: one state transition per tick, a frame started
+       on the millisecond whatever the main loop is doing; the reply
+       snapshot is taken at the accept (hc_hal_ain_capture), the CJ120 slot
+       in the idle window stays inside the machine (SSC exclusive), and a
+       flash word window still excludes a start (asic_start_transfer refuses
+       while hc_nvm_word_owned(); hc_asic_isr is masked inside the window).
+       It runs as its own level (TGT_TRAP_ASICX, ILVL 9 group 1) that this
+       tick requests: the exchange's 60-byte frame on top of the tick level
+       took the worst stack nest to 506 of 512 B; at the planner's level it
+       nests with nothing new. */
     /* V2's chip-select stimulus is deliberately gone. Nothing in this build
        drives P6.4, in either half. */
 }
@@ -527,7 +560,8 @@ void hcts_target_yield(void)
      * spent weeks on.  Servicing unconditionally here would MASK a frozen
      * tick, and a watchdog that cannot fire is not a watchdog. */
     hc_srvwdt();
-    hc_asic_start_service(tick_ms);
+    /* hc_asic_start_service() is NOT here any more: the 1 ms tick clocks the
+       S5500 exchange (2026-10-13, hc_tick_isr). */
     /* a DUE bench pulse ends here too, so a TunerStudio reply cannot
        stretch it (measured 605 ms for 500 on V76). Only the end - see
        hcbench_yield_service(). */
@@ -586,8 +620,24 @@ unsigned char hcts_cfg_read(unsigned int off)
     return hc_cfg_mgr_read_u8(off);
 }
 
+/* rusEFI [tag:popular_vehicle] (tunerstudio.cpp): while TunerStudio is told
+   to re-read the page after a preset (OCH 770, set with the tick at 774 by
+   hcdiag711.c for its 1 s PRESET_REFRESH_MS), its page writes and Burns are
+   IGNORED - it otherwise sends its own stale snapshot back one value at a
+   time (pageValueWrite + interWriteDelay), undoing the preset and keeping the
+   link busy for seconds. NCODE: FCODE has no reserve left. */
+static unsigned char preset_hold(void)
+{
+    return (unsigned char)((OCH[770] | OCH[771]) != 0u
+        && (unsigned int)(tick_ms - (((unsigned int)OCH[774] << 8) | OCH[775]))
+           < 1000u);
+}
+
 void hcts_cfg_write(unsigned int off, unsigned char v)
 {
+    if (preset_hold()) {
+        return;              /* TunerStudio's stale snapshot after a preset */
+    }
     hc_cfg_mgr_write_u8(off, v);
     /* "the page has been edited since the last burn" - one comparison and a
        byte, so it can afford to be on the per-byte path. It is what puts the
@@ -607,6 +657,15 @@ void hcts_cfg_write(unsigned int off, unsigned char v)
  * B without burning, and it is A that becomes permanent. */
 unsigned char hcts_cfg_burn(void)
 {
+    if (preset_hold()) {
+        return TS_OK;        /* rusEFI: no Burn of the stale snapshot either */
+    }
+    if (trg_rpm != 0u || trg_state != TRG_NO_SIGNAL) {
+        /* THE ENGINE IS TURNING: standby page now, flash at the stop
+           (hc_config_manager.h hc_cfg_mgr_burn_defer) - answered at once. */
+        (void)hc_cfg_mgr_burn_defer();
+        return TS_OK;
+    }
     if (hc_nvm_request() == HCNV_ERR_NONE) {
         /* The shared protocol holds Burn's TS_OK until DONE has been read
            back, the NOR is explicitly in read-array mode, and this runtime
@@ -663,29 +722,8 @@ unsigned char hcts_cfg_burn(void)
  * - its P1H.3 is SWRST_SM, "Abschaltung SG-Rechner". RESETDIAG_V1 keeps the
  * link isolated, so these should all stay at zero: if they do not, something
  * touched the SSC that this build believes it never enables. */
-static void rst_publish(void)
-{
-    unsigned int t[RST_TGT_WORDS];
-
-    /* Five words survive a reset, and after four experiments that answered
-       "still resets" and nothing else, these are the five worth having:
-       how far the handshake got, whether the ASIC ever answered at all, and
-       when. [PART V of the brief.] */
-    /* Five words survive a reset. After V4 these are the five that decide
-       whether the TRANSPORT worked, because that is the question a reset
-       otherwise erases. */
-    t[0] = (unsigned int)((hc_asic_state & 0x00FFu)
-                          | ((hc_asic_reinits & 0xFFu) << 8));
-    t[1] = (unsigned int)((hc_asic_start_tx & 0x00FFu)
-                          | ((hc_asic_start_rx & 0xFFu) << 8));
-    t[2] = (unsigned int)((hc_ssc_rx_vec & 0x00FFu)
-                          | ((hc_ssc_err_vec & 0xFFu) << 8));
-    t[3] = (unsigned int)((hc_asic_pec_tx_end & 0x00FFu)
-                          | ((hc_asic_pec_rx_end & 0xFFu) << 8));
-    t[4] = hc_asic_reply_w0;
-    hc_rst_progress(tick_ms, loop_count, hc_firstvec, hc_lastvec,
-                    hc_wdt_services, t);
-}
+/* rst_publish() lives in hcrtmon711.c as hc_rst_publish() (far, 2026-10-14:
+   NCODE reserve). */
 
 /* reset_report(), banner() and step_line() are REMOVED, not merely
  * uncalled - real-hardware K-line tracing over a genuine KKL cable (no
@@ -783,25 +821,8 @@ static void rst_publish(void)
  * S0TIC and ADBSY, and taking an interrupt clears the very request flag those
  * polls wait on. Every interrupt control register is cleared before IEN goes
  * up, and only what is enabled afterwards can fire. */
-static void irq_disable_all(void)
-{
-    CC0IC  = 0; CC1IC  = 0; CC2IC  = 0; CC3IC  = 0;
-    CC4IC  = 0; CC5IC  = 0; CC6IC  = 0; CC7IC  = 0;
-    CC8IC  = 0; CC9IC  = 0; CC10IC = 0; CC11IC = 0;
-    CC12IC = 0; CC13IC = 0; CC14IC = 0; CC15IC = 0;
-    CC16IC = 0; CC17IC = 0; CC18IC = 0; CC19IC = 0;
-    CC20IC = 0; CC21IC = 0; CC22IC = 0; CC23IC = 0;
-    CC24IC = 0; CC25IC = 0; CC26IC = 0; CC27IC = 0;
-    CC28IC = 0; CC29IC = 0; CC30IC = 0; CC31IC = 0;
-    T0IC   = 0; T1IC   = 0; T2IC   = 0; T3IC   = 0;
-    T4IC   = 0; T5IC   = 0; T6IC   = 0; T7IC   = 0;
-    T8IC   = 0;
-    ADCIC  = 0; ADEIC  = 0;
-    S0TIC  = 0; S0RIC  = 0; S0EIC  = 0; S0TBIC = 0;
-    SSCTIC = 0; SSCRIC = 0; SSCEIC = 0;
-    CRIC   = 0; PWMIC  = 0;
-    XP0IC  = 0; XP1IC  = 0; XP2IC  = 0; XP3IC  = 0;
-}
+/* irq_disable_all() lives in hcrtmon711.c as hc_irq_disable_all() (far,
+   boot-only, 2026-10-13: NCODE reserve). */
 
 static void stage(unsigned int s)
 {
@@ -878,7 +899,7 @@ void main(void)
 
     hc_wdt_services = 0;
     hc_srvwdt();
-    irq_disable_all();
+    hc_irq_disable_all();
 
     /* BEFORE ANYTHING DEEP RUNS. hc_stack_prime() writes a pattern over the
        part of the user stack nothing has reached yet, so hc_stack_used() can
@@ -1050,6 +1071,7 @@ void main(void)
        touch. */
     hcbench_init();
     hc_fuelpump_init();
+    hc_tacho_init();       /* P2.13 released, CC13 compare off */
     hc_dbw_init();
     /* Seeded from the HAL's own default so the first pass is not a
        spurious 'the page changed' - hc_hal_init() has already chosen
@@ -1127,6 +1149,7 @@ void main(void)
     hc_limp_init();        /* no protection cut */
     hc_kwp_init();         /* KWP core idle, 5-baud decoder qualifying */
     hc_asic_start_init();
+    TGT_ASICX_IC = HC_IC(TGT_ILVL_ASICX, TGT_GLVL_ASICX);   /* hc_asic_isr */
     /* The ASIC state machine now owns its own state, so the serial waits may
        start servicing it. NOT ONE LINE EARLIER - see hcts_target_yield(). */
     yield_armed = 1;
@@ -1153,7 +1176,7 @@ void main(void)
     och_mark = tick_ms;
     alive_mark = tick_ms;
     rst_mark = tick_ms;
-    rst_publish();
+    hc_rst_publish();
 
     for (;;) {
         wdt_main();
@@ -1168,6 +1191,8 @@ void main(void)
            idle; hb_service() itself is left defined, unused, for possible
            interrupt-driven reinstatement later, but must not be called from
            the main loop. See tools/me711_idle_silence_proof.py. */
+
+        hc_rtwit_stall_service(tick_ms);   /* '!Z' bench experiment */
 
         if (hc_stall_req) {
             unsigned int ms = hc_stall_req;
@@ -1195,7 +1220,7 @@ void main(void)
            a serial line to finish before it becomes diagnosable. */
         if ((unsigned int)(tick_ms - rst_mark) >= 10u) {
             rst_mark = tick_ms;
-            rst_publish();
+            hc_rst_publish();
         }
 
         /* The page is only acted on once it has stopped moving. TunerStudio
@@ -1224,8 +1249,7 @@ void main(void)
            liveness line every 100 ms until somebody talks to us. hc_trace_on is
            cleared by the shared core the moment a byte arrives, so connecting
            TunerStudio silences the text without a command. */
-        /* One state transition per pass, in task context. */
-        hc_asic_start_service(tick_ms);
+        /* The S5500 exchange is clocked by the 1 ms tick (2026-10-13). */
         hc_serial_boundary();
 
         /* --- THE HANICORE RUNTIME --------------------------------------
@@ -1321,6 +1345,7 @@ void main(void)
                     (unsigned char)((P6 & (1u << TGT_KL15STAT_PORT_BIT)) != 0u),
                     (unsigned char)(hc_hal_main_relay_bound() == 2u),
                     (unsigned char)(hc_nvm_word_owned()
+                                    || hc_cfg_mgr_burn_pending()
                                     || hc_nvm_phase() != HCNV_PH_NONE
                                     || ((1u << hc_nvm_state())
                                         & ((1u << HCNV_ST_PENDING)
@@ -1390,6 +1415,7 @@ void main(void)
                             trg_rpm, trg_state,
                             (unsigned char)(cfg_fault_cache != 0u
                                             ? FP_FAULT_CFG : 0u));
+        hc_tacho_service();   /* cavity 37: rpm x cylinders / 120 Hz */
 
         /* THE CLOSED-LOOP THROTTLE. Its permission is hc_dbw_allowed - the
            ALWAYS set: page valid, S5500 link, not keyed off, and NOT the
@@ -1464,6 +1490,10 @@ void main(void)
          * this loop. The deferred Burn reply is not sent until the DONE record
          * has been read back, scanned and selected live; there is no SRST or
          * TunerStudio reconnect on a successful V40 Burn. Read hcnvm.h. */
+        if (hc_cfg_mgr_burn_due(tick_ms, (unsigned char)(trg_rpm == 0u
+                                    && trg_state == TRG_NO_SIGNAL))) {
+            (void)hc_nvm_request();  /* the Burn owed since the engine ran */
+        }
         hc_nvm_service(tick_ms, trg_rpm,
                        (unsigned char)(trg_state >= TRG_COUNTING),
                        (unsigned char)(hcb_state == HCB_RUNNING || (hc_etbcal_status() & 0x00F0u)

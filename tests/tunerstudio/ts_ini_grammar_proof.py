@@ -381,9 +381,11 @@ MUTATIONS = [
     ("a table line with a missing field",
      lambda t: re.sub(r'(   table = ignMapTbl, ignMapTblMap, "[^"]*"), 1\n',
                       lambda m: m.group(1) + "\n", t, count=1)),
+    # 2026-10-11: every curve axis now carries its tracer (`xBins = cltEnrAx,
+    # coolant`), so the anchor is the traced line
     ("a curve axis pointing at nothing",
-     lambda t: t.replace("      xBins = cltEnrAx\n",
-                         "      xBins = notAThing\n", 1)),
+     lambda t: t.replace("      xBins = cltEnrAx, coolant\n",
+                         "      xBins = notAThing, coolant\n", 1)),
     # STRUCTURAL, LIKE THE FRONTPAGE ONE BELOW, AND FOR THE SAME REASON.
     # This anchored on the literal `xAxis = 0, 65535, 9`, which existed only
     # while the curve axes were emitted in RAW counts. Converting them to

@@ -207,6 +207,10 @@
 #define HCB_A_TPSMOVE     0x0020u  /* DBW: the plate moved past the band    */
 #define HCB_A_TPSPAIR     0x0040u  /* DBW: the tracks stopped agreeing      */
 #define HCB_A_SUPERVISOR  0x0080u  /* the S5500 link stopped mid-run        */
+#define HCB_A_DRIVE       0x0100u  /* DBW: the throttle drive refused (key off,
+                                      a latched throttle fault) - the run
+                                      reported DONE having driven nothing
+                                      until 2026-10-12 */
 
 /* Modes that HAVE a proven port on this board. Anything else is refused with
    HCB_R_MODE. The values are HC_TEST_* from hc_config_generated.h; they are

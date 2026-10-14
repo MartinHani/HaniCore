@@ -51,7 +51,7 @@ def main():
     # (CC7/8/9/15 are masked before `start`, the anchor above, and are
     # checked by the persistence forensics gates.)
     flash_backed = {0xF160: 'CC16', 0xF172: 'CC25', 0xF174: 'CC26 planner',
-                    0xF19C: 'S0TB reply'}
+                    0xF176: 'CC27 S5500 exchange', 0xF19C: 'S0TB reply'}
     m=S.Mem(image);c=S.CPU(m,0,0)
     m.w16(0xFE10,0xFC00);m.w16(0xFE12,0xF700);m.w16(0xFF10,0)
     for ic in flash_backed: m.w16(ic,0xF4)

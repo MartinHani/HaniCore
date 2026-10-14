@@ -30,7 +30,10 @@ def main():
             r.call('hc_drysched_tooth',tooth*60%7200,stamp,dt)
             r.call('hc_drysched_service',stamp,state)
         spans=[r.m.r16(0x3872f0+2*b) for b in range(4)]
-        expected=[3600,3600,7200,7200] if mode==1 else [3600]*4
+        # 2026-10-12: semi-sequential fires EVERY injector twice per cycle
+        # since the 2026-10-11 fix (the 2026-10-10 car fuelled only 2 of 4);
+        # the old [3600,3600,7200,7200] was that defect.
+        expected=[3600]*4
         D.check(f'{label} {rpm}: actual repeated-output interval is precomputed',spans==expected,str(spans))
         accepted=[r.m.r16(0x387290+4*b)|(r.m.r16(0x387292+4*b)<<16) for b in range(4)]
         limit=(dt*(7200 if state==4 else 3600)//60-125)*4//5

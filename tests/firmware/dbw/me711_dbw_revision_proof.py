@@ -83,9 +83,22 @@ b.r('hc_cal_set_u8',E.AP.off('CFG_U_DBW_BATT_COMP'),1)
 b.r('hc_dbw_drive',0,400)
 check('compensation Off preserves raw authority',b.r('hc_dbw_duty_x10')==400)
 b.r('hc_dbw_shutdown',0)
-for dv in (0,39,201):
+# 2026-10-12: BELOW 4.0 V IS A STATE, NOT A FAULT (hc_dbw_drive; the
+# 2026-10-11 car: KL15 off with the engine turning latched DBW_F_VBAT and
+# kept the throttle off for the rest of the drive). The bridge is released,
+# nothing latches, and it drives again when the supply returns - the Bosch
+# DLR likewise only suspends (B_ubdve). Over-voltage still latches.
+for dv in (0,39):
     b=E.Bench(); supply(b,dv); b.r('hc_dbw_drive',0,500)
-    check('invalid supply refuses and latches without division by zero',
+    check('supply below 4 V: released, nothing latched, no division by zero',
+          b.released() and not b.r('hc_dbw_faults') & 0x200,dv)
+    supply(b,135); b.r('hc_dbw_drive',0,500)
+    check('...and it drives again when the supply returns',
+          not b.released() and b.r('hc_dbw_duty_x10') > 0,dv)
+    b.r('hc_dbw_shutdown',0)
+for dv in (201,):
+    b=E.Bench(); supply(b,dv); b.r('hc_dbw_drive',0,500)
+    check('over-voltage refuses and latches without division by zero',
           b.released() and b.r('hc_dbw_faults') & 0x200,dv)
     supply(b,135); b.r('hc_dbw_drive',0,500)
     check('fresh VBAT cannot silently recover latched supply fault',b.released(),dv)

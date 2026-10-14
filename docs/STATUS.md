@@ -37,7 +37,8 @@ HaniCore-owned boot region.
 |---|---|---|
 | Boot from the HaniCore-owned boot region (no OEM code) | **BENCH** | cold boots, Burn, restore from flash; earlier vehicle runs used the OEM boot block |
 | Boot-mode flashing over the K-line | **BENCH** | full readback after every write |
-| TunerStudio over the K-line, 57600 / 115200 baud | **VEHICLE** | direct on cavity 43; the car's OBD K-line not yet proven |
+| TunerStudio over the K-line, 57600 / 115200 baud | **VEHICLE** | direct on cavity 43 |
+| Diagnostic-port entry on a shared K-line: silent to foreign traffic, 5-baud and ISO 14230 fast init, rate change kept only when proven | **BENCH** | the car's OBD path (through the instrument cluster) awaits the car |
 | VAG/KWP 5-baud entry (plugin) | **BENCH** | |
 | Calibration persistence (Burn, append-only store, sector reclaim) | **BENCH** | proven by boot-mode readback |
 | S5500 link and runtime supervision | **VEHICLE** | precondition for every output |
@@ -117,6 +118,15 @@ crank-interrupt fraction. 9600 rpm is headroom above the
 AWT's ~6800 rpm; a deeper ring or a bounded planner pass would restore
 margin there.
 
+**Fixed: the ECU reset while the engine ran.** On the car the processor reset
+nine times in ten minutes with the engine running (a long hardware reset, no
+supply dip, no fault). The S5500 frame exchange was clocked by the main loop,
+and under engine load the main loop slowed until frames came late; the S5500
+then resets the processor. Reproduced on the bench by holding the main loop
+20 ms of every 100 ms (reset within 0.8 s). The exchange now runs at its own
+interrupt level: with the main loop held 50 ms of every 52 ms the frame period
+stays at 9.96–10.04 ms and nothing resets. Awaits the car.
+
 **Fixed: coil edges cleared the upper half of port 2.** The coil executor
 wrote `P2 &= (unsigned int)~physical` with an 8-bit `physical`; the compiler
 complements only the low byte, so every coil ON edge cleared the P2.8–P2.15
@@ -148,10 +158,19 @@ ECU.
 
 **Main-loop pass length.** With the engine stopped, a main-loop pass takes
 2.4 ms (median) and up to 9–10.7 ms when several services and the telemetry
-publication coincide. The S5500 exchange is started from the main loop on a
-10 ms raster, so its gap gates (target: 6.5 ms) are red. No ASIC reset has
-been seen in any bench session; the long passes are the next optimisation
-item.
+publication coincide. Since the S5500 exchange runs at its own interrupt
+level (the reset fix above) a long pass no longer delays it, and its gap
+gates pass. At 9600 rpm with TunerStudio saturating the link the main loop
+gets only ~10 % of the processor: its longest service stretch is 13.9 ms and
+the throttle step gap 21 ms against gate limits of 12 and 20 ms. At 7000 rpm
+the same traffic gives 5.9 ms and 9.7 ms.
+
+**Fixed: the link's rate hunt counted one bad request twice.** It treats the
+bytes of one request as one piece of evidence until the line has been quiet
+for 2 ms, but measured that quiet time before taking the bytes already
+received; after a main-loop pass longer than 2 ms the rest of the same
+request counted again. A locked link then moved to another rate after two bad
+requests instead of three, and the hunt could pass the host's rate.
 
 ## Limitations and open items
 
@@ -163,10 +182,8 @@ item.
 4. AWT cam level assignment; per-channel output measurement.
 5. Near-code reserve ~3 KiB, near RAM at its reserve, static system stack at
    its 85 % limit: new hot-path features need code moved out first.
-6. No CAN, tacho output, oil-pressure input or firmware update without
-   opening the ECU.
+6. No CAN, oil-pressure input or firmware update without opening the ECU.
+   The tacho output (cavity 37) is implemented and simulator-proven, not
+   yet measured on hardware.
 7. A request sent while a Burn commits gets no reply (above).
-8. Changing the baud rate on a live link: the ECU's rate hunt can pass the
-   host's rate once before it locks (simulation). Connecting at a fixed rate,
-   as the plugin does, is unaffected.
-9. Red gates: [TESTING.md](TESTING.md#current-results).
+8. Red gates: [TESTING.md](TESTING.md#current-results).

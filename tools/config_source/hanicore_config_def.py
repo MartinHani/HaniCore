@@ -94,7 +94,7 @@ ENUM_LOAD_SOURCE = ConfigEnum("LoadSource", [
     (0, "LOAD_MAP", "Speed density (manifold pressure)"),
     (1, "LOAD_TPS", "Alpha-N + measured pressure"),
     (2, "LOAD_ALPHAN", "Pure Alpha-N (no pressure sensor)"),
-], "Legacy load model")
+], "Load model")
 
 # V98: rusEFI's firing_order_e numbering (controllers/algo/firing_order.h),
 # so a rusEFI tune's firingOrder maps 1:1 - except 0, which rusEFI spends on
@@ -357,7 +357,7 @@ ALL_ENUMS = [
     ENUM_CAM_PATTERN,
 ]
 
-ENUM_FUEL_MODEL = ConfigEnum("FuelModel", [(0,"FUEL_LEGACY","Legacy compatibility"),(1,"FUEL_ALPHAN","Pure Alpha-N (TPS)"),(2,"FUEL_MANIFOLD","Speed density (manifold pressure)"),(3,"FUEL_CHARGE","Boosted Alpha-N (TPS + charge pressure)")], "Fuel model")
+ENUM_FUEL_MODEL = ConfigEnum("FuelModel", [(0,"FUEL_LEGACY","Choose by load model"),(1,"FUEL_ALPHAN","Pure Alpha-N (TPS)"),(2,"FUEL_MANIFOLD","Speed density (manifold pressure)"),(3,"FUEL_CHARGE","Boosted Alpha-N (TPS + charge pressure)")], "Fuel model")
 ENUM_PRESSURE_ROLE = ConfigEnum("PressureRole", [(0,"PRESSURE_NONE","None fitted"),(1,"PRESSURE_MANIFOLD","Manifold pressure (after the throttle)"),(2,"PRESSURE_CHARGE","Charge pressure (before the throttle)")], "Where the pressure sensor measures")
 ENUM_DENSITY_POLICY = ConfigEnum("DensityPolicy", [(0,"DENSITY_FIXED","Reference pressure - Pure Alpha-N"),(1,"DENSITY_ABSOLUTE","Measured pressure - Speed density / Boosted Alpha-N"),(2,"DENSITY_BLEND","Ambient + boost blend - Boosted Alpha-N")], "Air density pressure")
 ENUM_BARO_SOURCE = ConfigEnum("BaroSource", [(0,"BARO_FIXED","Reference pressure (fixed)"),(1,"BARO_STOPPED","Pressure sensor with the engine stopped"),(2,"BARO_DEDICATED","Onboard barometric sensor")], "Ambient pressure source")
@@ -627,7 +627,7 @@ LEGACY: list[Meta] = [
          lo=0, hi=1023, safety_critical=True, category="DBW"),
 
     # ---- strategy selectors already in the page --------------------------
-    Meta("CAL_LOAD_SOURCE", "loadSource", "Legacy load model", Z,
+    Meta("CAL_LOAD_SOURCE", "loadSource", "Load model", Z,
          G.ENGINE_SETUP, lo=0, hi=2, enum=ENUM_LOAD_SOURCE, category="Engine",
          note="Speed density: VE(rpm, MAP) x density(MAP, intake air) - needs "
               "a true manifold pressure sensor; on a sensor fault the MAP "
@@ -2576,7 +2576,7 @@ for _slot, _ts, _label, _enum, _hi in [
     ("IAT_POLICY","fuelUseIat","Use intake air temperature",None,1),
     ("LEAN_ENABLE","leanGuardEnable","Lean protection",None,1),
     ("LAMBDA_QUALIFIED","lambdaPhysicalQualified","Wideband commissioned for protection",None,1),
-    ("PRESSURE_GUARD","pressureGuardEnable","Pressure-loss cut in Legacy / Pure Alpha-N",None,1),
+    ("PRESSURE_GUARD","pressureGuardEnable","Pressure-loss cut, other fuel algorithms",None,1),
     ("V102_PAD","v102Pad","Alignment pad",None,255),
 ]:
     UNIVERSAL.append(NewField("CFG_U_"+_slot,"u8",1,Meta("CFG_U_"+_slot,_ts,_label,Z,G.ENGINE_SETUP,lo=0,hi=_hi,enum=_enum,category="Load and protection",safety_critical=True),"V102 independent load/protection policy"))

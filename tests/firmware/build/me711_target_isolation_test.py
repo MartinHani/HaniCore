@@ -81,7 +81,7 @@ def presets():
     # opposite of the truth. Trailing fields are now tolerated and the four
     # this check actually uses are still pinned by position.
     for m in re.finditer(r"\{\s*(\d+)u,\s*(\w+|0),\s*(\d+)u,"
-                         r"\s*(0x[0-9A-Fa-f]+|0)u?,\s*(\d+)u\s*\}", body):
+                         r"\s*(0x[0-9A-Fa-f]+|0)u?,\s*(\d+)u(?:,\s*\d+u)*\s*\}", body):
         out.append((int(m.group(1)), m.group(2), int(m.group(3)),
                     int(m.group(4), 0), int(m.group(5))))
     return out

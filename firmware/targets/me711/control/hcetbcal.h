@@ -110,6 +110,7 @@ unsigned char far hc_etbcal_tune_take(unsigned int *k);
 #define ETB_WHY_ALIGN      28u   /* no bracketed common sample time */
 #define ETB_WHY_CONTROL    29u   /* calibration/control raster missed */
 #define ETB_WHY_NOSAMPLE   30u   /* routed source never completed */
+#define ETB_WHY_REPEAT     31u   /* autotune: two measurements disagree > 25 % */
 /* Telemetry, see hcetbcal.c ETBV_* */
 unsigned int  far hc_etbcal_value(unsigned char i);
 
@@ -151,6 +152,13 @@ void far hc_etbcal_bias_service(unsigned int now);
 int far hc_etbcal_friction(int err);
 int far hc_etbcal_derivative(unsigned int sample_ms, unsigned char entry,
                              unsigned int gain);
+/* The Bosch DLR setting-range monitor, one control step (hc_dbw.c). */
+unsigned int far hc_etbcal_dlr_monitor(unsigned char saturated,
+                                       unsigned char sf, unsigned int step_ms);
+void far hc_etbcal_dlr_reset(void);
+unsigned char far hc_etbcal_dlr_ska(void);
+unsigned char far hc_etbcal_burn_hold(void);
+void far hc_etbcal_dbw_init(void);
 
 
 #endif

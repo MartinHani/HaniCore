@@ -183,11 +183,25 @@ void asic_isolate(void)
  * agreement.] */
 unsigned int hc_asic_frame_sum(unsigned char n)
 {
-    unsigned int s = 0;
-    unsigned char i;
+    /* 2026-10-13: the exchange runs at an interrupt level now (CC27), and
+       this loop was 58 % of it (117 reads through a volatile FAR pointer,
+       up to three sums per frame). No transfer is in flight when a sum is
+       taken (built before the start, checked after the end), so a plain
+       pointer into the system page (DPP3 = page 3: 0xC000-0xFFFF) reads the
+       same words. */
+    const unsigned int *p = (const unsigned int *)TGT_ASIC_FRAME;
+    unsigned int s = 0u;
+    unsigned char i = (unsigned char)(n - 1u);
 
-    for (i = 0; i < (unsigned char)(n - 1u); i++) {
-        s = (unsigned int)(s + FRAME[i]);
+    while (i >= 4u) {             /* four a pass: twice per 10 ms frame, at
+                                     the planner's level (2026-10-14)      */
+        s = (unsigned int)(s + p[0] + p[1] + p[2] + p[3]);
+        p += 4;
+        i = (unsigned char)(i - 4u);
+    }
+    while (i != 0u) {
+        s = (unsigned int)(s + *p++);
+        i--;
     }
     return s;
 }
@@ -280,8 +294,8 @@ void asic_init(void)
    back in a millisecond. */
 unsigned char asic_start_transfer(unsigned char n)
 {
-    /* live_admit() claims this before its atomic IC masking setup.  ASIC
-       service is task-only, but making its only hardware-launch primitive
+    /* live_admit() claims this before its in-flight test and its IC masking
+       setup.  The ASIC service runs in the 1 ms tick (2026-10-13), and its only hardware-launch primitive
        reject the claim is the interleaving contract: no code path may arm
        PEC or touch SSCCON while an admitted AM29 word owns the window. */
     if (hc_nvm_word_owned()) {

@@ -82,6 +82,19 @@ public final class SerialPortLine implements Line {
     }
 
     public void sendBreak(int ms) throws IOException {
+        if (ms > 0 && ms <= 50) {
+            /* A SHORT BREAK IS ONE 0x00 BYTE AT A LOW RATE (2.2.0, the fast-init
+               wake-up): start bit + 8 zero bits = 9 bit times low, timed by the
+               UART - 25 ms is one 0x00 at 360 baud. jssc's sendBreak sleeps, and
+               a Windows sleep can turn 25 ms into 31; the ECU accepts 20..30. */
+            int old = getBaud();
+            int rate = Math.round(9000f / ms);
+            setBaud(rate);
+            write(new byte[] { 0 });
+            idle(ms + 3 + 1000 / rate);   /* the byte and its stop bit leave */
+            setBaud(old);
+            return;
+        }
         try {
             port.sendBreak(ms);
         } catch (SerialPortException e) {

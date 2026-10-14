@@ -27,6 +27,9 @@ import java.util.concurrent.atomic.AtomicLong;
  * before. No helper script, no terminal. Settings (optional, one file):
  * ~/.efiAnalytics/HaniCore/kline.properties - mode=AUTO|DIRECT|VEHICLE|OFF.
  *
+ * 2.2.0: ISO 14230 FAST INIT after a silent 5-baud attempt (the car's shared
+ * K-line, docs/ARCHITECTURE.md); short breaks timed by the
+ * UART (one 0x00 at a low rate) instead of a sleep.
  * 2.1.0: RECOVERY. TunerStudio's own re-establish (A.f.r()) closes and reopens
  * inside its RS232 class; the proxy now re-enters the ECU between the two.
  * And a session that goes silent while TunerStudio keeps polling (SilenceWatch:
@@ -41,7 +44,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class HaniCoreKLinePlugin implements ApplicationPlugin {
     private static final String CONNECTION_ID = "HaniCore K-Line";
     private static final String DESCRIPTION = "RS232 / KKL: HaniCore auto-connect (direct or VAG 5-baud) + K-Line echo filtering";
-    private static final String VERSION = "2.1.0";
+    private static final String VERSION = "2.2.0";
 
     private static volatile String lastConnect = "Not attempted yet";
     private static volatile String lastTrace = "";

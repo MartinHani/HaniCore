@@ -350,6 +350,8 @@ void far hc_ec_init(void)
     E.dt_ms = 0u;
     E.run_ms = 0u;
     E.flags = 0u;
+    E.lag_ok = 0u;          /* the filling model starts from the throttle */
+    E.lag_x16 = 0u;
     E.dfco = 0u;
     E.dfco_cond = 0u;
     E.dfco_cond_ms = 0u;
@@ -783,6 +785,57 @@ unsigned int far hc_ec_target_lambda(unsigned int rpm, unsigned int fuel_load)
     E.lambda_x1000 = (cell == 0u) ? 1000u
                    : DIV32U((unsigned long)(unsigned int)cell * 1000u, 147u);
     return E.lambda_x1000;
+}
+
+/* ================================== THE INTAKE-MANIFOLD FILLING MODEL ===
+ *
+ * FR "Audi R4-5V T 132kW ME7.1" BGSRM 17.10 (pp. 292-294): the stock ME7
+ * never takes the throttle angle as the cylinder load. Air through the
+ * throttle fills the intake manifold, an integrator per segment with
+ *     KISRM = zkorr / (z * Vs/VH)        (z = 4, Vs/VH = 2.2, zkorr 0.90
+ *                                         -> 0.1023: the FR's own example)
+ * so a throttle step reaches the cylinders over ~(Vs/VH)/zkorr x 2 = 4.9
+ * crank revolutions (0.23 s at 1300 rpm). HaniCore's alpha-N used the
+ * throttle directly: a quick press at 1300 rpm moved the fuel AND the
+ * ignition load from 5 % to 50 % in one sample - the ignition table's
+ * full-load cells (3-7.5 deg) fired into a manifold that had not filled
+ * (car 2026-10-11 s4 218.8 s: advance 29 -> 9 -> 3 deg, rpm 1465 -> 1236,
+ * no cut, no reset). Per ms the integrator moves KISRM x z x rpm / 120000
+ * of the distance = rpm / 71.6 in Q12 (z cancels). Below 400 rpm and while
+ * cranking the manifold is at the throttle's own value. A failed throttle
+ * (0xFFFF) passes through and restarts the model. */
+#define SRM_Q12_DIV  72u
+
+unsigned int far hc_ec_load_lag(unsigned int x, unsigned int rpm)
+{
+    unsigned int f, y, t, d, s;
+
+    if (x == 0xFFFFu) {
+        E.lag_ok = 0u;
+        return x;
+    }
+    if (x > 1000u) {
+        x = 1000u;
+    }
+    t = (unsigned int)(x << 4);
+    if (!E.lag_ok || rpm < 400u || eng_cranking) {
+        E.lag_x16 = t;
+        E.lag_ok = 1u;
+        return x;
+    }
+    f = DIV32U((unsigned long)(unsigned int)rpm * E.dt_ms, SRM_Q12_DIV);
+    if (f > 4096u) {
+        f = 4096u;
+    }
+    y = E.lag_x16;
+    d = (t > y) ? (unsigned int)(t - y) : (unsigned int)(y - t);
+    s = DIV32U((unsigned long)(unsigned int)d * f, 4096u);
+    if (s == 0u && d != 0u) {
+        s = 1u;                         /* it reaches its target (V89 filt) */
+    }
+    y = (t > y) ? (unsigned int)(y + s) : (unsigned int)(y - s);
+    E.lag_x16 = y;
+    return (unsigned int)((y + 8u) >> 4);
 }
 
 /* =================================================================== pre */

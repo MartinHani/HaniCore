@@ -150,33 +150,45 @@ unsigned int hc_s5500_val(unsigned char i)
  * asic_frame_word() already exists in hcasic.c and returns exactly this
  * buffer. NOTHING in the frozen platform layer had to change.
  */
+/* 2026-10-13: THE EXCHANGE RUNS AT AN INTERRUPT LEVEL NOW (CC27, requested
+   by the 1 ms tick - hcasicstart.c), so
+   the main loop can no longer be relied on to see a reply before the next
+   build() zeroes it: hc_asic_start_service() calls hc_hal_ain_capture() at
+   the accept itself, at that level, before anything can rebuild the buffer.
+   The service below keeps the freshness work and the staleness verdict. */
 void hc_hal_ain_service(void)
 {
+    hc_fresh_service();
+    if (!ASIC_SAMPLE_LIVE) din_live = 0u;
+    if (din_live && !hc_asic_healthy()) {
+        din_live = 0u;                /* the link stopped answering          */
+    }
+}
+
+/* Called by hcasicstart.c the moment a runtime reply is accepted (CC27
+   level, ILVL 9): the reply is in the buffer and nothing can rebuild it before this
+   returns. Single words - every reader takes one word at a time. */
+void hc_hal_ain_capture(void)
+{
+    /* the in-place buffer read directly (near, system page): this runs at
+       the CC27 level, and 32 far function calls were most of its cost */
+    const unsigned int *fw = (const unsigned int *)TGT_ASIC_FRAME;
     unsigned char i;
     unsigned int all = 1u;
 
-    hc_fresh_service();
-    if (!ASIC_SAMPLE_LIVE) din_live = 0u;
-
-    if (hc_asic_run_ok == s5500_last_ok) {
-        if (din_live && !hc_asic_healthy()) {
-            din_live = 0u;            /* the link stopped answering          */
-        }
-        return;                       /* no new accepted frame               */
-    }
     s5500_last_ok = hc_asic_run_ok;
     if (!hc_asic_run_live) return;
     ASIC_SAMPLE_MS = hc_asic_last_ok_ms;
     ASIC_SAMPLE_LIVE = 1u;
     for (i = 0; i < (unsigned char)HC_SWITCH_ASIC_N; i++) {
-        din_snap[i] = asic_frame_word(din_word[i]);
+        din_snap[i] = fw[din_word[i]];
     }
     din_t = hc_tick_ms;
     din_live = 1u;
 
     hc_s5500_idx = 0;
     for (i = 0; i < (unsigned char)S5500_N; i++) {
-        unsigned int w = asic_frame_word((unsigned char)(hc_s5500_base + i));
+        unsigned int w = fw[(unsigned char)(hc_s5500_base + i)];
 
         WIN_RAW(i) = w;
         WIN_VAL(i) = (unsigned int)(w & 0x03FFu);
@@ -1328,6 +1340,9 @@ unsigned char hc_hal_out_bindable(unsigned int field, unsigned char cav)
     }
     if (field == CFG_U_PIN_MIL) {            /* the ASIC P7.0 lamp stage */
         return (unsigned char)((cav == TGT_MIL_CAV) ? 1u : 0u);
+    }
+    if (field == CFG_U_PIN_TACHO) {          /* P2.13 / CC13 (hcroutes711) */
+        return (unsigned char)((cav == TGT_TACHO_CAV) ? 1u : 0u);
     }
     if (field == CFG_U_PIN_CAM1_SOL || field == CFG_U_PIN_CAM2_SOL) {
         /* POUT0 / POUT1 (hcvvt711.c) */

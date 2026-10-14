@@ -19,6 +19,8 @@ unsigned char far hc_fresh_tps_why(void);
 unsigned char far hc_fresh_reason(unsigned char sem);
 unsigned char far hc_fresh_tps_pair(unsigned int *r1, unsigned int *r2,
                                     unsigned int *sample_ms);
+/* the pedal pair brought to one sample time (main-CPU channels) */
+void far hc_fresh_app_pair(unsigned int *r1, unsigned int *r2);
 
 void far hc_fresh_init(void);
 void far hc_fresh_service(void);

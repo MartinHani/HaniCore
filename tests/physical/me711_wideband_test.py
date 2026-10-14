@@ -7,7 +7,7 @@ one pass. Close TunerStudio first. Three modes:
         ENGINE OFF, key on (bench or car). Holds BOTH CJ120s in each
         INIT_REG1 mode for 1.5 s with the V96 bench command '!T 5 8..13' and
         records UR (ASIC AN12/13), UA (AN6/AN4), DIAG and the read-back:
-          8 0x88 cold   9 RA   10 LA   11 PA (0xC8)   12 CAL 0x9C   13 0x90
+          8 0xC8 cold   9 RA   10 LA   11 PUMP (0x88, PA=0)   12 CAL 0x9C   13 0x90
         Proves the register's bits on THIS board: RA must move UR onto the
         82.5 ohm reference, LA must put UA at the pump zero (0.285..0.315
         VCC). Heater stays OFF throughout. Page values (lambda sources,
@@ -62,8 +62,8 @@ import me711_commission as MC             # noqa: E402
 
 TOOL_VERSION = "1.1 (V97)"
 HCB_TEST_ASIC = 5
-MODES = {8: ("COLD", 0x88), 9: ("RA", 0x98), 10: ("LA", 0x8C),
-         11: ("PA", 0xC8), 12: ("CAL", 0x9C), 13: ("V95 0x90", 0x90)}
+MODES = {8: ("COLD", 0xC8), 9: ("RA", 0xD8), 10: ("LA", 0xCC),
+         11: ("PUMP", 0x88), 12: ("CAL", 0x9C), 13: ("V95 0x90", 0x90)}
 STATES = ["OFF", "WAIT", "PREHEAT", "RAMP", "CLOSED", "READY", "FAULT"]
 FAULTS = ["-", "heater short GND", "heater open / no sensor",
           "heater short UB", "IA/IP line", "UN line", "VM line", "chip",

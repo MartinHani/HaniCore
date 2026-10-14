@@ -97,6 +97,7 @@ IC_TRAP = {
     0xFF9C: 0x2E,   # T0IC
     0xF172: 0x39,   # ME711 CC25 deadline compare
     0xF174: 0x3A,   # CC26IC  ME711 planner - a SOFTWARE-set request (2026-10-06)
+    0xF176: 0x3B,   # CC27IC  ME711 S5500 exchange - SOFTWARE-set by the tick (2026-10-13)
     0xF19C: 0x47,   # S0TBIC  ASC0 transmit buffer empty (ME711 reply job, 2026-10-06)
     0xF17A: 0x3D,   # T7IC
     0xF17C: 0x3E,   # T8IC    MEASURED
@@ -167,6 +168,7 @@ CC_CHAN = {
     30: (0xFEBC, 0xF196, "T7"),    # P7.6  injector EV1
     8:  (0xFE90, 0xFF88, "T0"),    # P2.8  cam,   NWDG
     9:  (0xFE92, 0xFF8A, "T0"),    # P2.9  cam 2, NWDG2
+    13: (0xFE9A, 0xFF92, "T0"),    # P2.13 tacho TN (compare mode 1, 2026-10-11)
     15: (0xFE9E, 0xFF96, "T0"),    # P2.15 crank, KWDG
 }
 
@@ -181,6 +183,12 @@ class Mem:
         self.lram = bytearray(LRAM_HI - LRAM_LO + 1)
         self.sfr = {}
         self.esfr = {}
+        # INPUT PINS THAT READ HIGH WHATEVER THE LATCH HOLDS (2026-10-14):
+        # silicon reads the pin of an input, and the K-line RXD (P3.11) idles
+        # high through its pull-up. Returning the latch (0) showed the
+        # firmware a line held LOW forever. A rig that drives the line clears
+        # the bit here (or overrides the read, as the KWP tester does).
+        self.pin_hi = {0xFFC4: 0x0800}
         # Firmware may write an IC register with IR already set (notably the
         # live-Burn save/restore path).  Hardware arbitrates that request; an
         # earlier simulator revision only knew about requests raised by its
@@ -279,7 +287,8 @@ class Mem:
                 return 0x00
             if a & ~1 == 0xFF1E:
                 return 0xFF
-            return (self.sfr.get(a & ~1, 0) >> (8 * (a & 1))) & 0xFF
+            return ((self.sfr.get(a & ~1, 0) | self.pin_hi.get(a & ~1, 0))
+                    >> (8 * (a & 1))) & 0xFF
         if XRAM_LO <= a <= XRAM_HI:
             return self.xram[a - XRAM_LO]
         if ASIC_LO <= a <= ASIC_HI:
@@ -521,6 +530,7 @@ class CPU:
         self.pec6_moved = 0          # ASC0 bytes PEC6 stored (2026-10-06)
         self.pec6_lost = 0           # ... arriving with PECC6 COUNT at zero
         self.compares_hit = 0        # compare matches raised
+        self.cc_toggles = []         # (channel, steps) compare-mode-1 pin toggles
         # irq_log IS CAPPED AT 4000 ENTRIES, so it is a sample and not a
         # census. irq_count is the census: one uncapped counter per trap.
         #
@@ -547,7 +557,9 @@ class CPU:
     # on every simulated instruction and the harnesses do not override these
     # addresses.
     def _sget(self, a):
-        return (self.m.esfr if a < 0xFE00 else self.m.sfr).get(a, 0)
+        if a < 0xFE00:
+            return self.m.esfr.get(a, 0)
+        return self.m.sfr.get(a, 0) | self.m.pin_hi.get(a, 0)
 
     def _sset(self, a, v):
         (self.m.esfr if a < 0xFE00 else self.m.sfr)[a] = v & 0xFFFF
@@ -591,11 +603,22 @@ class CPU:
         """
         for ch, (ccx, ccic, tname) in CC_CHAN.items():
             reg, shift = self.CCM_OF[ch]
-            if ((self._sget(reg) >> shift) & 0x07) < 4:
+            mode = (self._sget(reg) >> shift) & 0x07
+            if mode < 4:
                 continue                  # not a compare mode
             tname = self.cc_timebase(ch, tname)
             if self._sget(ccx) != self._sget(TIMERS[tname][0]):
                 continue
+            # COMPARE MODE 1 (CCMOD 101) DRIVES THE PIN (2026-10-11, the
+            # tacho on CC13/P2.13): "the corresponding port output latch is
+            # toggled" on EVERY match - whether or not the previous request
+            # is still standing (C167CR UM, CAPCOM compare modes). Modes 0
+            # and 2 leave the pin alone; mode 3 (set on match, clear on
+            # overflow) is not used by any image and not modelled. CAPCOM1
+            # channel n is P2.n. Each toggle is logged for gates.
+            if mode == 5 and ch < 16:
+                self._sset(0xFFC0, self._sget(0xFFC0) ^ (1 << ch))
+                self.cc_toggles.append((ch, self.steps))
             if self._sget(ccic) & 0x80:
                 continue                  # request already standing
             self._sset(ccic, self._sget(ccic) | 0x80)
@@ -614,7 +637,8 @@ class CPU:
               16: (0xFF22, 0),
               23: (0xFF26, 12), 28: (0xFF2A, 0), 29: (0xFF2A, 4),
               30: (0xFF2A, 8),
-              8: (0xFF56, 0), 9: (0xFF56, 4), 15: (0xFF58, 12)}
+              8: (0xFF56, 0), 9: (0xFF56, 4), 13: (0xFF58, 4),
+              15: (0xFF58, 12)}
 
     def cc_timebase(self, channel, declared):
         """Which timer this channel is actually running against.

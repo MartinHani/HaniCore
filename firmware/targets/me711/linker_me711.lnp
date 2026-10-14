@@ -281,11 +281,14 @@ CLASSES (
   ; FCODE ends inside SA8, below the constant classes; each class keeps its
   ; >=1024-byte reserve (me711_resource_budget_proof). The store sectors
   ; (SA9.., 0x860000) are never used for code.
-  FCODE  (0x830000-0x837FFF, 0x838010-0x83FFFF, 0x850000-0x85B4BF),
+  FCODE  (0x830000-0x837FFF, 0x838010-0x83FFFF, 0x850000-0x85CCBF),
   ; V98r2: HCONST - the generated preset item tables (hc_presets.c,
   ; HC_PRESET_MEM huge) had filled NCONST; 16 KB out of FCODE's SA8 tail
   ; (FCODE used 3 KB of 0x850000-0x85BFFF).
-  HCONST (0x85B4C0-0x85E1FF),
+  ; 2026-10-11: the presets are byte runs (generate_config.py), HCONST
+  ; 10530 -> 2890 bytes; 6 KB (0x85B4C0-0x85CCBF) go back to FCODE, which
+  ; was at its reserve. HCONST keeps 5440 bytes (> 2 x its use + reserve).
+  HCONST (0x85CCC0-0x85E1FF),
   ; NCONST stays inside the near-constant page 0x85C000-0x85FFFF.
   NCONST (0x85E200-0x85FFFF),
 

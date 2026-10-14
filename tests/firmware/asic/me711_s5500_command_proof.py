@@ -54,6 +54,13 @@ import me711_image as PI                 # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 LIVE_INI = ROOT / "tunerstudio/hanicore_me711.ini"
+# 2026-10-11: the S5500 window buttons are a developer page, in the
+# FORENSIC project only (gen_ts_ini_me711.DEV_ONLY); the tuner's project no
+# longer declares cmdS5500Win*. The forensic file carries the same page,
+# channels and commands as the tuner's, plus the developer pages.
+_DEV = sorted((ROOT / "tunerstudio").glob("hanicore_me711_*_forensic.ini"))
+if _DEV:
+    LIVE_INI = _DEV[-1]
 
 # Where the window base and the decode index sit in the output-channel block.
 # READ FROM THE .INI, never typed here: that is the whole lesson of the V29

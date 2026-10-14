@@ -285,6 +285,11 @@ static unsigned int gap_pending_expected, gap_pending_count, slot;
 /* 1 while the last reference mark was a +/-1 tooth correction. A
    second one in a row is a loss. */
 static unsigned char corr_run;
+/* A withdrawn position waiting to be COUNTED (trg_synclost): counted only
+   once the crank has delivered more than one revolution of edges after it.
+   A stall first means it was the engine stopping (see lose_sync()). */
+static unsigned char loss_pend;
+static unsigned int loss_mark;
 static unsigned int disagreements, stall_mark, stall_t;
 static unsigned long stall_ticks, stall_limit, rev_ticks;
 static unsigned int min_edge_ticks, metric_num, metric_den, source_live;
@@ -396,11 +401,27 @@ static unsigned int longer(unsigned int cand, unsigned int neighbour)
  * - an early or missing gap, a cam out of its window - was indistinguishable
  * from switching the engine off. The engine stopping is still reported,
  * exactly as before, by syncLossReason 1 and stallState; the counter now
- * means only "the decoder withdrew a position it had". */
+ * means only "the decoder withdrew a position it had".
+ *
+ * NOR IS THE LAST REVOLUTION OF A STOPPING ENGINE (2026-10-11). On the AWT
+ * (2026-10-10, both car sessions) every key-off and every cranking stop
+ * ended with syncLossReason 2: the crank slows at a compression TDC and
+ * speeds up after it, which is a long interval between two shorter ones -
+ * a gap, out of position - so P0335 and the MIL came on at every stop. The
+ * position is still withdrawn AT ONCE (the scheduler is cancelled here, as
+ * before); only the COUNT waits until the crank has delivered more than one
+ * revolution of edges after the loss (crank_edge()). An engine that is
+ * stopping never does - the stall comes first and drops the pending count -
+ * while a real gap error on a turning engine is counted one revolution
+ * later (20 ms at 3000 rpm). */
 static void lose_sync(unsigned int reason)
 {
-    if (reason != TRG_LOSS_STALL && trg_state >= TRG_SYNC_CRANK
-        && trg_synclost != 0xFFFFu) trg_synclost++;
+    if (reason == TRG_LOSS_STALL) {
+        loss_pend = 0u;
+    } else if (trg_state >= TRG_SYNC_CRANK && !loss_pend) {
+        loss_pend = 1u;
+        loss_mark = trg_teeth_seen;
+    }
     trg_state = TRG_COUNTING;
     trg_loss_reason = reason;
     trg_stall_state = (unsigned int)(reason == TRG_LOSS_STALL);
@@ -716,7 +737,7 @@ void trg_init(void)
     trg_phase_lost = 0; trg_sim_rpm = 0; trg_loss_reason = TRG_LOSS_NONE;
     trg_noise_edges = 0; trg_gap_metric_x10 = 0; trg_gap_detected = 0;
     trg_gap_pending = 0; trg_last_edge_t1 = 0; trg_tooth_corr = 0;
-    corr_run = 0u; gap_pending_count = 0;
+    corr_run = 0u; gap_pending_count = 0; loss_pend = 0u; loss_mark = 0u;
     trg_engine_deg_x10 = 0; trg_stall_state = 1; trg_crank_period = 0;
     trg_cam1_edges = 0; trg_cam2_edges = 0;
     trg_cam1_tooth = 0xFFFFu; trg_cam2_tooth = 0xFFFFu;
@@ -824,6 +845,10 @@ static void crank_edge(unsigned int t)
     unsigned int dt;
 
     trg_teeth_seen++;
+    if (loss_pend && (unsigned int)(trg_teeth_seen - loss_mark) > g_real) {
+        loss_pend = 0u;                 /* still turning: a real loss */
+        if (trg_synclost != 0xFFFFu) trg_synclost++;
+    }
     if (!have_edge) {
         have_edge = 1; last_t = t; trg_last_edge_t1 = t; trg_state = TRG_COUNTING;
         trg_stall_state = 0;

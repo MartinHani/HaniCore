@@ -103,6 +103,12 @@ def T(text):
     return ("t", text)
 
 
+def N(text):
+    """A short note shown IN the window (blue, TunerStudio's '#' line), as
+    Speeduino does - never moved to the help page."""
+    return ("n", text)
+
+
 def B():
     return ("t", "")
 
@@ -122,9 +128,20 @@ def C(cmd, label, guard=None):
 
 def PV(panel, visible):
     """A panel SHOWN only while `visible` holds - rusEFI's
-    `panel = x, {1}, { condition }` (rusefi_proteus_f7.ini:8786). The
-    trouble-code list uses it so an empty slot is not a row."""
+    `panel = x, {1}, { condition }` (rusefi_proteus_f7.ini:8786).
+    THE CONDITION MUST BE ON SETTINGS, NEVER ON A LIVE (ECU-sent) CHANNEL:
+    TunerStudio does not evaluate a panel's visibility on output channels,
+    so such a panel never shows (the 2026-10-12 empty DTC list; rusEFI's
+    INIs never do it). ts_ini_ux_contract_proof refuses it."""
     return ("v", panel, visible)
+
+
+def S(label, options, guard=None):
+    """A 'common sensors' dropdown (TunerStudio settingSelector): each option
+    writes ordinary page values, in DISPLAY units. options = [(name,
+    [(field, value), ...]), ...]. Speeduino's mapCal / rusEFI's cltSensor
+    pattern; the values are computed in ts_sensor_presets_me711."""
+    return ("s", label, options, guard)
 
 
 def E(ts, guard=None):
@@ -242,14 +259,13 @@ UNUSED = {
     "lambda2CylMask": "closed loop trims every cylinder from its sensor",
     "pinMapSwitch": "no map switching exists",
     # B6 (V98): pins a dialog showed with no reader and no label
-    "pinBaro": "the ambient sensor is on the ECU board (Sensors > Ambient pressure)",
+    "pinBaro": "the ambient sensor is on the ECU board (Tools > Barometric sensor)",
     "pinOilPress": "no oil pressure input path exists",
     "pinFuelPress": "no fuel pressure input path exists",
     "pinFlex": "no flex fuel input exists",
     "pinGenericAin": "no generic analog input exists yet",
     "pinGenericPwm": "no generic PWM output exists yet",
     "pinGenericOut": "no generic on/off output exists yet",
-    "pinTacho": "no tachometer output path exists yet",
     "testPin": "the bench command itself selects the output",
     "pinVss": "no vehicle speed input is read",
     "trigDecoder": "selects which validation rules apply; the decoder is "
@@ -273,6 +289,15 @@ UNUSED = {
     "testMode": "the bench command itself selects the mode",
     "testTimeoutMs": "bench timing is clamped in code",
     "iatDefault": "an invalid IAT reads -40 C; each consumer has its own fallback",
+    # 2026-10-12: the Bosch setting-range monitor (FR DLR 3.60, hcetbcal.c)
+    # replaced the deviation supervisor on this ECU; its times are Bosch's.
+    "dbwDevX10": "the Bosch setting-range monitor judges the output limit, "
+                 "not a deviation",
+    "dbwDevMs": "the Bosch setting-range monitor uses 0.6 s / 5 s",
+    # 2026-10-12 (real TunerStudio): an ME7.5 HAL field - on this ECU the IAT
+    # input is the routed cavity (pinIat); only a comment named it, and the
+    # page reader audit counted that as a read.
+    "iatChannel": "the intake air input is chosen by its pin",
 }
 
 # Housekeeping the validator or the page manager checks, shown on purpose in
@@ -319,30 +344,9 @@ panel("hcEnginePreset", "Engine base tune", [
     T("!after a Burn and a key cycle."),
 ])
 
-# rusEFI engineChars: cylinders, displacement, firing order, FUEL STRATEGY.
-panel("hcEngineBasics", "Engine", [
-    F("cylinders"),
-    F("strokes"),
-    F("displacementCc"),
-    B(),
-    T("#Fuel model (set in Fuel > Fuel model):"),
-    P("hcPanelLoadSummary"),
-    B(),
-    T("#Maximum engine speed: the highest speed the trigger decoder and"),
-    T("#scheduler accept. An engineering limit, not a rev limiter"),
-    T("#(Setup > Limits and protection)."),
-    F("revMax", "Maximum engine speed"),
-    B(),
-    T("A complete engine setup is loaded from Controller > Base Tunes."),
-])
 
-panel("hcEngineFiring", "Firing order", [
-    T("#Pick the firing order; the ECU places each cylinder's TDC."),
-    T("#Custom: enter each cylinder's TDC angle (odd-fire engines)."),
-    T("#Pins are assigned per cylinder (Injection / Ignition hardware):"),
-    T("#never rearrange them to match the firing order."),
-    F("firingOrder"),
-    T("#TDC of each cylinder, degrees after cylinder 1 (Custom only):"),
+panel("hcEngineFiring", "Odd-fire angles", [
+    N("Firing order Custom only: TDC after cylinder 1"),
     E("tdcCylDegX10", "firingOrder == 0"),
 ])
 
@@ -398,7 +402,7 @@ panel("hcLimitsBoost", "Overboost cut", [
 panel("hcProtPressure", "Pressure-loss protection", [
     T("#Cuts fuel under load when the pressure reading is missing or stale."),
     T("#Always active for Speed density and Boosted Alpha-N (which also get"),
-    T("#no air without it); switch it on here for Legacy and Pure Alpha-N."),
+    T("#no air without it); switch it on here for the other algorithms."),
     T("#Any pressure loss also closes the boost valve."),
     F("pressureGuardEnable"),
     F("pressureGuardRpm"),
@@ -423,63 +427,7 @@ panel("hcProtLean", "Lean protection", [
 ])
 
 
-# ----------------------------------------------------------------- TRIGGER --
-# rusEFI triggerConfiguration: "Primary Trigger" beside "Cam Inputs", xAxis.
-panel("hcTriggerWheel", "Primary trigger", [
-    T("#Teeth of the complete wheel and how many are missing (60-2: 60 and"),
-    T("#2). The live values on the right show what the decoder resolved."),
-    F("syTeeth"),
-    F("syGap"),
-    F("trigEdge"),
-    T("#Trigger angle: where tooth #1 - the first tooth after the gap - is,"),
-    T("#in crank degrees after cylinder 1 TDC; negative = before TDC (a tooth"),
-    T("#78 deg BTDC is -78.0). Every other angle follows it."),
-    T("!Verify it with fixed timing and a timing light, or the tooth profile."),
-    F("trigAngleX10"),
-    F("pinCrank"),
-])
-
-panel("hcTriggerSync", "Synchronisation", [
-    F("syncMode"),
-    F("trigSource"),
-    F("trigGapRatioX10"),
-    F("trigMinTeeth"),
-    F("trigTimeoutMs"),
-])
-
-panel("hcTriggerCam", "Cam inputs", [
-    T("#A cam input lets the ECU know the 720 deg cycle, which sequential"),
-    T("#fuel and coil-on-plug need. With reference edges, one edge per cycle"),
-    T("#resolves it; an even count of equal edges never can."),
-    F("camEnable"),
-    F("camEdge", None, "camEnable == 1"),
-    F("camRefs", None, "camEnable == 1"),
-    F("camRefX10", None, "camEnable == 1"),
-    F("camWindowX10", None, "camEnable == 1"),
-    T("#Level: for the Bosch quick-start wheel (VAG 1.8T, VR6) - the cam"),
-    T("#level at one crank angle, alternating every revolution."),
-    F("camPhaseMode", None, "camEnable == 1"),
-    F("camPhaseAngleX10", None, "camEnable == 1 && camPhaseMode == 1"),
-    F("camPhaseLevel", None, "camEnable == 1 && camPhaseMode == 1"),
-    F("camPhaseConfirm", None, "camEnable == 1 && camPhaseMode != 0"),
-    T("#Pattern: pick each cam's wheel; teeth are identified by their"),
-    T("#spacing. The acceptance window is also the VVT range."),
-    F("cam1Pattern", None, "camEnable == 1 && camPhaseMode == 2"),
-    F("cam2Pattern", None, "camEnable == 1 && camPhaseMode == 2"),
-    F("cam2RefX10", None, "camEnable == 1 && camPhaseMode == 2"),
-    F("camToothTol", None, "camEnable == 1 && camPhaseMode == 2"),
-    F("pinCam1", None, "camEnable == 1"),
-    F("pinCam2", None, "camEnable == 1"),
-])
-
-rpanel("hcReadTrigger", 2, ["rpmGauge", "crankSyncGauge", "cycleSyncGauge",
-                            "crankToothIndexGauge", "syncLossCountGauge",
-                            "crankEdgesGauge", "toothCorrectionsGauge",
-                            "cycleSyncLostGauge", "camPhaseNoAltGauge",
-                            "camLowWidthX10Gauge", "camHighWidthX10Gauge",
-                            "trigCfgAngleX10Gauge",
-                            "cam1PatClassGauge", "cam2PatClassGauge",
-                            "cam1VvtX10Gauge", "cam2VvtX10Gauge"])
+rpanel("hcReadTrigger", 2, ["rpmGauge", "syncLossCountGauge", "toothCorrectionsGauge", "cycleSyncLostGauge"])
 
 # V92: THE TOOTH PROFILE - a crank-angle reference that needs no timing
 # light. hcsched_dry.c sums every synchronised tooth period per 6-degree bin;
@@ -505,34 +453,6 @@ ipanel("hcPanelToothLog", 1, [
         "white, black, yellow, black"),
 ])
 
-# -------------------------------------------------------------------- FUEL --
-# rusEFI injectorConfig: "Injection" + "Injector Settings" + "Fuel
-# characteristics".
-panel("hcInjectorHw", "Injector settings", [
-    T("#Flow turns the fuel mass into an opening time; the dead time (curve,"),
-    T("#centre) is added afterwards and never scaled by it."),
-    F("injFlowCcMin"),
-    B(),
-    T("#Fuel characteristics"),
-    F("stoichAfrX100"),
-])
-
-# V97: rusEFI injectionSettings ("Injection mode", "Injection timing control
-# mode", injection phase) with the sequential state beside it.
-panel("hcInjectorStrategy", "Injection", [
-    T("#Sequential runs two half pulses per cylinder until the cam confirms"),
-    T("#the cycle, then one whole pulse, with the same fuel per intake."),
-    T("#Batch and semi-sequential need only crank sync."),
-    F("injStrategy"),
-    F("injTimingMode"),
-    F("injPhaseMode"),
-    F("injStartDegX10", None, "injPhaseMode == 0"),
-    T("Angle = degrees BEFORE the cylinder's compression TDC; 360 = its"),
-    T("gas-exchange TDC. End of injection ~400..460 = closed-valve."),
-    T("Table: Fuel / Injection timing (rpm x fuel load)."),
-    P("hcPanelSeq"),
-    P("hcReadSeq"),
-])
 
 ipanel("hcPanelSeq", 2, [
     IND("cycleSync == 1", "CYCLE: NOT KNOWN (fallback)", "CYCLE: KNOWN",
@@ -600,30 +520,6 @@ rpanel("hcReadFuel", 2, ["RPMValueGauge", "fuelLoadGauge",
                          "stftBank1Gauge", "fuelCorrectionGauge",
                          "airMassGauge", "injectorPulseWidthGauge"])
 
-# V98: rusEFI fuelClosedLoopCorrection - short-term trim, per region.
-panel("hcStft", "Closed loop fuel correction", [
-    T("#Short-term trim: measured against target lambda, integrated with the"),
-    T("#region's time constant and limited to its add / remove. Active only"),
-    T("#with a valid wideband, engine warm, after the start delay, outside"),
-    T("#the deadband; held after a fuel cut or an enrichment. Bank 2 trims"),
-    T("#from lambda 2 when fitted. Off = no trim."),
-    F("stftEnable"),
-    F("stftStartDelay", None, "stftEnable == 1"),
-    F("stftMinClt", None, "stftEnable == 1"),
-    F("stftDeadband", None, "stftEnable == 1"),
-    F("stftLambdaMin", None, "stftEnable == 1"),
-    F("stftLambdaMax", None, "stftEnable == 1"),
-    F("stftAfterDfco", None, "stftEnable == 1"),
-    F("stftAfterAe", None, "stftEnable == 1"),
-    T("#Regions: idle below the rpm, overrun below / power above the load,"),
-    T("#cruise otherwise."),
-    F("stftIdleRpm", None, "stftEnable == 1"),
-    F("stftOverrunLoad", None, "stftEnable == 1"),
-    F("stftPowerLoad", None, "stftEnable == 1"),
-    E("stftMaxAdd", "stftEnable == 1"),
-    E("stftMaxRemove", "stftEnable == 1"),
-    E("stftTimeConst", "stftEnable == 1"),
-])
 
 rpanel("hcReadStft", 2, ["stftBank1Gauge", "stftBank2Gauge",
                          "lambdaValueGauge", "lambda2ValueGauge",
@@ -635,28 +531,10 @@ ipanel("hcPanelStft", 1, [
         "CLOSED LOOP CORRECTING", "white, black, green, black"),
 ])
 
-panel("hcStftRight", "", [
-    P("hcPanelStft"),
-    P("hcReadStft"),
-    LG("hcStftGraph", "Lambda: target vs measured, trim", "South",
-       ["targetLambda", "lambdaValue", "stftBank1"]),
-])
 
 # ---------------------------------------------------------------- IGNITION --
-# rusEFI ignitionSettings: "Spark / Mode / ... Timing Mode / Fixed Timing"
-# beside "Ignition Outputs". Fixed timing lives HERE, as in rusEFI.
-panel("hcIgnitionBasics", "Ignition", [
-    T("#Running dwell is the Ignition > Dwell curve (against battery)."),
-    F("ignStrategy"),
-    B(),
-    T("#Fixed timing holds one angle at every speed and load, with no"),
-    T("#corrections, so a timing light shows exactly what the ECU commands."),
-    T("#Use it to verify the trigger angle (Setup > Trigger) before trusting"),
-    T("#the ignition table."),
-    F("timingModeCfg"),
-    F("fixedTimingX10", None, "timingModeCfg == 1"),
-    T("Commanded advance is limited to -30.0 (after TDC) .. 60.0 deg BTDC."),
-])
+# 2026-10-11: spark mode and fixed timing are in hcSparkMain / hcSparkLocked
+# (Speeduino "Spark Settings"), next to the window that uses them.
 
 panel("hcIgnitionPins", "Ignition outputs", [
     T("#Physical connector cavities, one per cylinder number."),
@@ -680,12 +558,33 @@ rpanel("hcReadSpark", 2, ["RPMValueGauge", "ignitionTimingGauge",
 # rusEFI cltSensor: settings West, gauges East. HaniCore's calibration is a
 # counts->temperature CURVE, so the curve itself sits in the middle - the way
 # rusEFI embeds cltFuelCorrCurve, fan1PwmCurve and 29 others in dialogs.
-panel("hcSensorClt", "CLT sensor", [
+# 2026-10-11 (owner): PICK THE SENSOR, as Speeduino / rusEFI do. Every
+# choice is a curve COMPUTED FOR THIS BOARD'S INPUT (ts_sensor_presets_me711:
+# 2.61 k + the 340 R stage the board holds on, 38.3 k pull-down; checked
+# against the ECU's own curve within ~1 C). The curve below stays editable.
+import ts_sensor_presets_me711 as _SENS    # noqa: E402
+
+
+def _temp_options(which, ax_name, val_name):
+    out = []
+    for label, ax, val in _SENS.temperature_options(which):
+        sets = [("%s%d" % (ax_name, i + 1), a) for i, a in enumerate(ax)]
+        sets += [("%s%d" % (val_name, i + 1), v) for i, v in enumerate(val)]
+        out.append((label, sets))
+    return out
+
+
+panel("hcSensorClt", "Coolant temperature sensor", [
     T("#The curve maps raw ADC counts to temperature; the default is this"),
     T("#ECU's own OEM curve. An invalid input displays -40 C and sets the"),
     T("#coolant fault (P0115); fuel, ignition and idle then use their own"),
     T("#safe fallback values."),
     F("pinClt"),
+    S("Common coolant sensors", _temp_options("clt", "cltSensAx",
+                                              "cltSensVal")),
+    T("Pick your sensor; the curve is filled for this ECU."),
+    T("#This input's 340 R pull-up suits Bosch-type sensors: high-resistance"),
+    T("#sensors (Ford, Chrysler) read coarsely below about 20 C."),
     P("hcPanelCltValid"),
 ])
 
@@ -694,25 +593,30 @@ ipanel("hcPanelCltValid", 1, [
         "white, black, red, black"),
 ])
 
-panel("hcSensorIat", "IAT sensor", [
+panel("hcSensorIat", "Intake air temperature sensor", [
     T("#A raw-count to temperature curve, like coolant. An invalid input"),
     T("#displays -40 C and sets the intake air fault; the fuel model then"),
     T("#uses 0 C and the timing correction 0."),
     T("!AWT harness: the IAT signal must be moved to cavity 26."),
     F("pinIat"),
-    F("iatChannel"),
+    S("Common air temperature sensors", _temp_options("iat", "iatSensAx",
+                                                      "iatSensVal")),
+    T("Pick your sensor; the curve is filled for this ECU."),
 ])
 
 panel("hcSensorMap", "Pressure sensor", [
     T("#One external pressure sensor, manifold (MAP) or charge pressure."),
     T("#Where it measures is set in Fuel > Fuel model (Pressure sensor"),
-    T("#location). Linear transfer: kPa x10 = offset + counts x gradient / 1000."),
-    T("#Example: 0.5 V = 0 kPa and 4.5 V = 400 kPa gives gradient"),
-    T("#4000 x 1000 / (921 - 102) and offset -gradient x 102 / 1000."),
+    T("#location). Linear transfer: kPa = offset + counts x gradient / 1000,"),
+    T("#5 V = 1024 counts."),
     T("!VAG 1.8T (AWT): cavity 101 is CHARGE pressure, before the throttle."),
     F("pinMap"),
-    F("mapSensOff"),
-    F("mapSensGrd"),
+    S("Common pressure sensors",
+      [(lab, [("mapSensOff", _SENS.pressure_fields(p0, p5)[0]),
+              ("mapSensGrd", _SENS.pressure_fields(p0, p5)[1])])
+       for lab, p0, p5, _src in _SENS.PRESSURE_SENSORS]),
+    F("mapSensOff", "Pressure at 0 V (0 counts)"),
+    F("mapSensGrd", "Pressure rise per 1000 counts"),
     F("pressureMaxAge"),
 ])
 
@@ -744,12 +648,14 @@ panel("hcSensorMisc", "Mass air flow input", [
     T("a MAF, and an absent or failed one never affects fuelling."),
 ])
 
-rpanel("hcReadClt", 1, ["cltDcGauge", "cltCtrlDcGauge", "cltRawAsicGauge"])
-rpanel("hcReadIat", 1, ["iatDcGauge"])
+# 2026-10-12 (real TunerStudio, 2560 px screen): a gauge column EAST of the
+# curve was clipped - the dialog opened narrower than its content (horizontal
+# scrollbar, "Clt raw asi..."), and still did with the settings WEST of the
+# curve: settings on top, the curve in the middle, the gauges in a row under it.
+rpanel("hcReadClt", 3, ["coolantGauge", "cltCtrlDcGauge", "cltRawAsicGauge"])
+rpanel("hcReadIat", 2, ["intakeGauge", "iatRawAsicGauge"])
 rpanel("hcReadMap", 2, ["mapKpaX10Gauge", "engLoadGauge", "rlX10Gauge"])
-rpanel("hcReadBaro", 2, ["ambientUsedGauge", "ambientPressureGauge",
-                         "ambientVoltageGauge", "baroRawGauge",
-                         "mapKpaX10Gauge", "ambientAgeSecondsGauge"])
+rpanel("hcReadBaro", 2, ["ambientUsedGauge", "ambientPressureGauge"])
 
 rpanel("hcReadBattery", 2, ["battDvGauge", "batteryGauge", "adc05_UBATGauge"])
 rpanel("hcReadNvm", 2, ["nvmGenerationGauge", "nvmCommitsGauge",
@@ -757,15 +663,7 @@ rpanel("hcReadNvm", 2, ["nvmGenerationGauge", "nvmCommitsGauge",
                         "ramProbeResultGauge"])
 # The wideband state beside the wideband setup (it was only in Diagnostics).
 # V97: both banks the same, left column bank 1, right column bank 2.
-rpanel("hcReadLambda", 2, ["lambda1X1000Gauge", "lambda2X1000Gauge",
-                           "lambda1StateGauge", "lambda2StateGauge",
-                           "lambda1ValidGauge", "lambda2ValidGauge",
-                           "heater1StateGauge", "heater2StateGauge",
-                           "heater1DutyGauge", "heater2DutyGauge",
-                           "lam1RiX10Gauge", "lam2RiX10Gauge",
-                           "lam1IpUaGauge", "lam2IpUaGauge",
-                           "lam1FaultGauge", "lam2FaultGauge",
-                           "cj1DiagGauge", "cj2DiagGauge"])
+rpanel("hcReadLambda", 2, ["lambda1X1000Gauge", "lambda2X1000Gauge", "heater1StateGauge", "heater2StateGauge"])
 
 # V97: per bank, in words - why lambda is withheld, the latched fault, the
 # heater, and whether the CJ120 answers (rusEFI's wideband status texts).
@@ -805,7 +703,6 @@ rpanel("hcReadLambdaLink", 2, ["cj1ErrGauge", "cj2ErrGauge",
 panel("hcLambdaRight", "", [
     P("hcPanelLambda"),
     P("hcReadLambda"),
-    P("hcReadLambdaLink"),
 ])
 
 # ------------------------------------------------------------------ LAMBDA --
@@ -833,7 +730,7 @@ panel("hcLambdaStrategy", "Wideband O2 (on-board controllers)", [
 # ETB bench test in the SAME dialog. TPS and pedal calibration are Sensors.
 panel("hcEtbBase", "Base ETB settings", [
     T("#Enable only after AutoCal ETB has passed and the pedal is"),
-    T("#calibrated (Sensors > Pedal position sensor)."),
+    T("#calibrated (Tools > Calibrate pedal sensor)."),
     F("dbwEnable"),
     F("dbwMinX10", None, "dbwEnable == 1"),
     F("dbwMaxX10", None, "dbwEnable == 1"),
@@ -857,14 +754,12 @@ panel("hcEtbPid", "PID settings", [
     F("dbwKp"),
     F("dbwKi"),
     F("dbwKd"),
-    T("Feed-forward: Advanced / ETB bias curve."),
+    T("Feed-forward: ETB > Characterization details and bias curve."),
 ])
 
 panel("hcEtbSafety", "ETB jam / deviation detection", [
-    T("#Deviation for a duration is what makes a stuck plate a fault rather"),
-    T("#than a permanent large error the integrator chases."),
-    F("dbwDevX10"),
-    F("dbwDevMs"),
+    T("#Stuck plate (Bosch): output at its limit 0.6 s = fuel cut above"),
+    T("#the limp rpm, 5 s = throttle fault. Bridge flag: stage restarted."),
     T("#A pedal/TPS range or pair error must persist this long before it"),
     T("#latches (the output is held meanwhile). Key-on clears a latch."),
     F("dbwFaultDebounceMs"),
@@ -978,10 +873,12 @@ panel("hcEtbAutotune", "AutoCal ETB", [
 ])
 
 # the live values a throttle setup is judged by, in one place
-rpanel("hcReadEtbLive", 2, ["tpsX10Gauge", "tps2X10Gauge",
+# 2026-10-12 (real TunerStudio): the fast-block channels, not the "(raw
+# block)" duplicates; no bare "Dbw state" number (the status lines say it).
+rpanel("hcReadEtbLive", 2, ["TPSValueGauge", "tps2X10Gauge",
                             "pedalX10Gauge", "pedal2X10Gauge",
-                            "dbwTargetX10Gauge", "dbwActualX10Gauge",
-                            "dbwDutyX10Gauge", "dbwStateGauge"])
+                            "etbTargetGauge", "etbActualGauge",
+                            "dbwDutyX10Gauge"])
 
 rpanel("hcReadEtbTune", 3, ["etbTuneCyclesGauge", "etbTuneAmpLiveX10Gauge",
                             "etbTuneTuLiveMsGauge", "etbTuneKpGauge",
@@ -1047,41 +944,9 @@ rpanel("hcReadDbwTerms", 4, ["dbwTermPGauge", "dbwIntegGauge",
                              "dbwTermDGauge", "dbwTermFfGauge",
                              "dbwOutRawGauge", "dbwBattFactorGauge",
                              "dbwPendFaultsGauge", "dbwFaultClearsGauge"])
-rpanel("hcReadTps", 2, ["tps1RawGauge", "tps2RawGauge",
-                        "tps1VoltageGauge", "tps2VoltageGauge",
-                        "tpsX10Gauge", "tps2X10Gauge",
-                        "dbwTps1X10Gauge", "dbwTps2X10Gauge"])
-rpanel("hcReadApp", 2, ["app1RawGauge", "app2RawGauge",
-                        "app1VoltageGauge", "app2VoltageGauge",
-                        "pedalX10Gauge", "pedal2X10Gauge",
-                        "dbwApp1X10Gauge", "dbwApp2X10Gauge"])
+rpanel("hcReadTps", 2, ["tpsX10Gauge", "tps2X10Gauge", "tps1RawGauge", "tps2RawGauge"])
+rpanel("hcReadApp", 2, ["pedalX10Gauge", "pedal2X10Gauge", "app1RawGauge", "app2RawGauge"])
 
-# -------------------------------------------------------------------- IDLE --
-panel("hcIdleBase", "Idle settings", [
-    T("#Idle through the electronic throttle: a floor under the throttle"),
-    T("#target = base position by coolant + a PI trim toward the target rpm,"),
-    T("#limited by the trim authority. The loop runs with the pedal released,"),
-    T("#after the post-start delay, below target + band; otherwise the trim"),
-    T("#is held. Off: the pedal map at 0 % and the minimum throttle position."),
-    F("idleEnable"),
-    F("idleKp", None, "idleEnable == 1"),
-    F("idleKi", None, "idleEnable == 1"),
-    F("idleRangeX10", None, "idleEnable == 1"),
-    F("idleRpmBand", None, "idleEnable == 1"),
-    F("idlePedalX10", None, "idleEnable == 1"),
-    F("idleStartMs", None, "idleEnable == 1"),
-    T("#Pedal blend: the idle opening is added to the pedal map, which is"),
-    T("#compressed into what remains. 0 = the larger of the two."),
-    F("etbIdleRange", None, "idleEnable == 1"),
-    # V97: rusEFI "Extra Idle Features" - the dashpot
-    T("#Dashpot: after a pedal release the floor carries the adder for the"),
-    T("#hold time, then decays it to 0 (the trim is held meanwhile)."),
-    F("idleDashX10", "Dashpot adder", "idleEnable == 1"),
-    F("idleDashHoldMs", "Dashpot hold time",
-      "idleEnable == 1 && idleDashX10 > 0"),
-    F("idleDashDecayMs", "Dashpot decay time",
-      "idleEnable == 1 && idleDashX10 > 0"),
-])
 
 rpanel("hcReadIdle", 2, ["rpmGauge", "idleTargetRpmGauge",
                          "idleFloorX10Gauge", "idleTrimX10Gauge"])
@@ -1097,46 +962,10 @@ ipanel("hcIdleState", 2, [
         "white, black, red, black"),
 ])
 
-# V97: rusEFI idleTimingPidCorrDialog, "Closed-loop Ignition idle timing"
-panel("hcIdleTiming", "Closed-loop idle timing", [
-    T("#Adds advance below the idle target and removes it above, while the"),
-    T("#idle throttle loop is closed. Spark answers within a cycle, the"),
-    T("#throttle more slowly. Gain is degrees per 100 rpm of error (start at"),
-    T("#10); proportional only - the throttle trim integrates."),
-    F("idleTimingEnable"),
-    F("idleTimingKp", None, "idleTimingEnable == 1"),
-    F("idleTimingMinX10", None, "idleTimingEnable == 1"),
-    F("idleTimingMaxX10", None, "idleTimingEnable == 1"),
-    F("idleTimingSoftMs", None, "idleTimingEnable == 1"),
-])
 
 rpanel("hcReadIdleTiming", 2, ["rpmGauge", "idleTargetRpmGauge",
                                "idleTimingX10Gauge", "ignCorrX10Gauge"])
 
-# ------------------------------------------------------------------- BOOST --
-panel("hcBoostBase", "Boost control options", [
-    T("#Open loop: the base duty table (rpm x TPS) x the CLT and IAT"),
-    T("#multipliers. Closed loop: that duty + a PID on the measured boost"),
-    T("#pressure toward the target table, every 20 ms, on cavity 104 in"),
-    T("#10 ms steps. The valve is closed below the rpm / TPS floor, at the"),
-    T("#overboost cut, on a pressure sensor fault and at key-off."),
-    F("boostEnable"),
-    F("boostMode", None, "boostEnable == 1"),
-    F("boostMinRpm", None, "boostEnable == 1"),
-    F("boostMinTpsX10", None, "boostEnable == 1"),
-    F("pinBoost", None, "boostEnable == 1"),
-])
-
-panel("hcBoostPid", "Boost PID", [
-    T("#Gains per 20 ms step, duty 0.1 % per 0.1 kPa of error. D acts on the"),
-    T("#pressure. I waits until the pressure is within the band below target"),
-    T("#and never winds up into a saturated output."),
-    F("boostKp", None, "boostMode == 1"),
-    F("boostKi", None, "boostMode == 1"),
-    F("boostKd", None, "boostMode == 1"),
-    F("boostClMinKpa", None, "boostMode == 1"),
-    F("boostIBand", None, "boostMode == 1"),
-])
 
 rpanel("hcReadBoost", 2, ["boostTargetX10Gauge", "boostReqX10Gauge",
                           "mapKpaX10Gauge", "boostOpenX10Gauge",
@@ -1161,17 +990,6 @@ panel("hcOutMainRelay", "Main relay output", [
     P("hcPanelRelay"),
 ])
 
-panel("hcOutFuelPump", "Fuel pump", [
-    T("#Auto: one prime per key cycle (max 5 s), on while the engine turns,"),
-    T("#off when it stalls. Cavity 65 is a low-side sink: relay coil from"),
-    T("#switched +12 V to cavity 65; it is open when off, unpowered or in"),
-    T("#reset."),
-    F("fuelPumpMode"),
-    F("pinFuelPump"),
-    F("fuelPumpPrimeMs"),
-    C("cmdTestPump", "Test Fuel Pump"),
-    P("hcPanelPump"),
-])
 
 panel("hcOutMisc", "Cam solenoid outputs", [
     F("pinCam1Sol"),
@@ -1188,10 +1006,6 @@ panel("hcOutMisc", "Cam solenoid outputs", [
 # V98: rusEFI launch_control / shift_torque_reduction / antilag_system /
 # rotational idle. Every function OFF by default; each needs its switch
 # (cavity 86/87 when no cam uses it) or, without one, its pedal condition.
-_MS_NOTE = T("Switch inputs: cavities 38/39/40/55/56/57/75/76 (switch to "
-             "+12 V) or the cam inputs 86/87 (switch to ground, only when no "
-             "cam uses them); each entry names its polarity.")
-
 panel("hcMsLaunch", "Launch control", [
     T("#Standing start: held at the launch rpm by a spark cut that ramps"),
     T("#in across the window below it, timing set to the launch value"),
@@ -1284,11 +1098,7 @@ ipanel("hcPanelSwitchRaw", 2, [
 ])
 
 panel("hcMotorsport", "", [
-    _MS_NOTE,
-    P("hcReadMs"),
-    T("#Inputs: the pin level (left) and each function's state after"),
-    T("#polarity and a 10 ms debounce."),
-    P("hcPanelSwitchRaw"),
+    N("Switch inputs: pick the cavity; each entry names its polarity."),
 ])
 
 # ------------------------------------------------------------- CONTROLLER --
@@ -1331,6 +1141,8 @@ panel("hcUnusedEngine", "Engine and trigger", [
     F("oilPressMinKpa"),
     F("oilPressMinRpm"),
     E("cylBank", "cylinders"),
+    F("dbwDevX10"),
+    F("dbwDevMs"),
 ])
 
 panel("hcUnusedFuel", "Fuel and sensors", [
@@ -1342,6 +1154,7 @@ panel("hcUnusedFuel", "Fuel and sensors", [
     F("cltPullupOhm"),
     F("iatPullupOhm"),
     F("iatDefault"),
+    F("iatChannel"),
     F("boostFreqHz"),
     F("lambda1Bank"),
     F("lambda1CylMask"),
@@ -1527,8 +1340,10 @@ ipanel("hcPanelRamProbe", 1, [
 ipanel("hcPanelBenchState", 1, [
     IND("hcbState == 0", "{ Bench: bitStringValue(hcBenchStateList, hcbState)}",
         "Bench idle", GREEN),
-    IND("benchSafe", "BENCH-SAFE BUILD: NO OUTPUTS", "Output backends present",
-        GREEN),
+    # 2026-10-12 (real TunerStudio): the texts were swapped - every NORMAL
+    # build (benchSafe 0) read "BENCH-SAFE BUILD: NO OUTPUTS".
+    IND("benchSafe", "Output backends present", "BENCH-SAFE BUILD: NO OUTPUTS",
+        RED),
 ])
 
 ipanel("hcPanelPlatform", 2, [
@@ -1584,36 +1399,40 @@ def dialog(did, title, items, layout=None, help_topic=None):
 # ------------------------------------------------------------------ SETUP --
 # rusEFI engineChars ("Vehicle Information" / "Base engine"): cylinders,
 # displacement, firing order, fuel strategy.
-dialog("hcSetupEngine", "Base engine", [
-    P("hcEngineBasics"),
-    P("hcEngineFiring"),
-    P("hcEngineFiringExt", None, "cylinders > 8"),
-], layout="xAxis", help_topic="hcHelpFiringOrder")
+dialog("hcSetupEngine", "Engine constants", [
+    P("hcEngineWest", "West"),
+    P("hcEngineFiring", "East"),
+    P("hcEngineFiringExt", "South", "cylinders > 8"),
+], layout="border", help_topic="hcHelpFiringOrder")
 
-columns("hcSetupLimitsCols",
-        ["hcLimitsRev", "hcLimitsProtect"],
-        ["hcLimitsBoost", "hcProtPressure"],
-        "hcProtLean")
 
-dialog("hcSetupLimits", "Limits and protection", [
-    P("hcSetupLimitsCols"),
+# Speeduino's protection status lights, in the window that sets them
+ipanel("hcProtLights", 3, [
+    IND("flagRevLimit", "REV LIMIT OFF", "REV LIMIT", RED),
+    IND("(limpCut & 1) > 0", "COOLANT PROTECT OFF", "COOLANT PROTECT", RED),
+    IND("(limpCut & 2) > 0", "THROTTLE LIMP OFF", "THROTTLE LIMP", RED),
+    IND("(limpCut & 8) > 0", "INJ DUTY PROTECT OFF", "INJ DUTY PROTECT", RED),
+    IND("(limpCut & 16) > 0", "FLOOD CLEAR OFF", "FLOOD CLEAR", YELLOW),
+    IND("flagBoostCut", "BOOST CUT OFF", "BOOST CUT", RED),
 ])
 
-# rusEFI triggerConfiguration: primary | cams, xAxis; the sync state beside it.
-columns("hcTriggerWheelCol",
-        "hcTriggerWheel",
-        ["hcTriggerSync", "hcTriggerCam"])
 
-dialog("hcSetupTrigger", "Trigger", [
-    P("hcTriggerWheelCol", "West"),
-    P("hcSetupTriggerLive", "East"),
-], layout="border", help_topic="hcHelpTrigger")
+# rusEFI triggerConfiguration: primary | cams, xAxis. 2026-10-11: settings
+# only (Speeduino's Trigger Settings); the live check is its own entry.
+dialog("hcSetupTrigger", "Trigger settings", [
+    P("hcTriggerWheel"),
+    P("hcTriggerSync"),
+], help_topic="hcHelpTrigger")
 
 panel("hcSetupTriggerLive", "", [
     P("hcReadTrigger"),
     P("hcPanelTrigger"),
-    P("hcToothProfile"),
 ])
+
+dialog("hcTriggerLiveDlg", "Trigger live check and tooth profile", [
+    P("hcSetupTriggerLive", "West"),
+    P("hcToothProfile", "East"),
+], layout="border", help_topic="hcHelpTrigger")
 
 dialog("hcSensorBatteryDlg", "Battery", [
     P("hcSensorBattery", "West"),
@@ -1645,36 +1464,79 @@ ipanel("hcPanelCel", 1, [
 ])
 
 # rusEFI outputsDialog: every output with its own test, in one place.
-dialog("hcSetupOutputs", "Outputs", [
+# rusEFI outputsDialogLeft / outputsDialogRight: two columns, not five.
+panel("hcOutColLeft", "", [
     P("hcOutMainRelay"),
-    P("hcOutFuelPump"),
+])
+panel("hcOutColRight", "", [
     P("hcOutCel"),
     P("hcOutMisc"),
+])
+dialog("hcSetupOutputs", "Outputs", [
+    P("hcOutColLeft"),
+    P("hcOutColRight"),
 ], layout="xAxis", help_topic="hcHelpRouting")
 
-# ------------------------------------------------------------------ FUEL ---
-# rusEFI groupMenu "Injector Setup": Injection configuration | Injection
-# hardware. The dead time curve sits in the configuration it belongs to.
-panel("hcInjCfgLeft", "", [
-    P("hcInjectorStrategy"),
-    P("hcInjectorHw"),
-])
 
-dialog("hcFuelInjector", "Injection configuration", [
-    P("hcInjCfgLeft", "West"),
-    P("deadtimeCurve", "Center"),
-    P("hcReadFuel", "East"),
-], layout="border", help_topic="hcHelpInjMode")
+dialog("hcFuelInjector", "Injector characteristics", [
+    P("hcInjectorHw"),
+    P("hcInjOpenTime"),
+    P("hcInjectorStrategy"),
+], layout="yAxis", help_topic="hcHelpInjMode")
+
+# 2026-10-11 (owner, Speeduino "VE Table"): each main table with the
+# options that decide what it means right under it.
+# Speeduino's VE Table window: the table, the one option that decides what
+# its numbers mean. Owner 2026-10-12: no "legacy" wording anywhere.
+panel("hcVeLegacy", "Load model", [
+    T("Used only when Fuel algorithm is \"Choose by load model\"."),
+    F("loadSource", "Load model", "fuelModel == 0"),
+    F("alphaNUseIat", "Use intake air temperature",
+      "fuelModel == 0 && loadSource == 2"),
+])
+panel("hcVeOptions", "", [
+    F("fuelModel", "Fuel algorithm"),
+    P("hcVeLegacy"),
+])
+dialog("hcVeDlg", "VE table", [
+    P("veTableTbl", "North"),
+    P("hcVeOptions", "South"),
+], layout="border")
+
+panel("hcIgnTblOptions", "", [
+    F("ignLoadMode", "Ignition table load"),
+    F("timingModeCfg", "Fixed / locked timing"),
+    F("fixedTimingX10", "Fixed angle", "timingModeCfg == 1"),
+])
+dialog("hcIgnTblDlg", "Ignition advance table", [
+    P("ignMapTbl", "North"),
+    P("hcIgnTblOptions", "South"),
+], layout="border")
+
+panel("hcLambdaTblOptions", "", [
+    F("lambdaLoadMode", "Target lambda table load"),
+    F("stoichAfrX100"),
+])
+dialog("hcLambdaTblDlg", "Target lambda table", [
+    P("afrMapTbl", "North"),
+    P("hcLambdaTblOptions", "South"),
+], layout="border")
+
+panel("hcInjTimingTblOptions", "", [
+    F("injTimingMode"),
+    F("injPhaseMode"),
+    F("injStartDegX10", None, "injPhaseMode == 0"),
+])
+dialog("hcInjTimingTblDlg", "Injection timing table", [
+    P("injPhaseTbl", "North"),
+    P("hcInjTimingTblOptions", "South"),
+], layout="border")
 
 dialog("hcFuelInjHw", "Injection hardware", [
     P("hcInjectorPins"),
     P("hcTestInjectors"),
 ], layout="xAxis", help_topic="hcHelpRouting")
 
-dialog("hcFuelCorrections", "Acceleration enrichment", [
-    P("hcFuelEnrich", "West"),
-    P("hcReadFuel", "East"),
-], layout="border")
 
 # V97: TRANSIENT FUEL (firmware/engine/hctrans.c) - rusEFI's wall-wetting AE, on the
 # fuel per cycle. Settings and the live causal chain west, the two film
@@ -1695,91 +1557,69 @@ rpanel("hcReadTrans", 3, ["transBaseUsGauge", "transWantUsGauge",
                           "wallFilmUsGauge", "afterStartPmGauge",
                           "injWidthUsGauge", "tpsX10Gauge", "rpmGauge"])
 
-panel("hcTransLeft", "", [
-    P("hcTransSettings"),
-    P("hcReadTrans"),
-    LG("hcTransGraph", "Tip-in: throttle, film share, fuel", "South",
+# 2026-10-11 (owner, Speeduino "Acceleration Enrichment"): ONE window - the
+# enrichment curves on top, the live graph, the settings, the deceleration
+# fuel cut at the bottom.
+columns("hcTransCurves", "wwXCurve", "wwTauCurve")
+
+panel("hcAccelGraph", "", [
+    LG("hcTransGraph", "Tip-in: throttle, film share, fuel", "Center",
        ["tpsX10", "transCorrUs", "injCycleUs"]),
 ])
 
-panel("hcTransCurves", "", [
-    P("wwXCurve", None, "transEnable == 1"),
-    P("wwTauCurve", None, "transEnable == 1"),
-])
+columns("hcAccelSettings", "hcTransSettings", "hcFuelEnrich")
 
-dialog("hcFuelTransient", "Transient fuel (wall film, after-start)", [
-    P("hcTransLeft", "West"),
-    P("hcTransCurves", "East"),
+dialog("hcAccelDlg", "Acceleration enrichment", [
+    P("hcTransCurves", "North", "transEnable == 1"),
+    P("hcAccelGraph", "Center"),
+    P("hcAccelSettings", "West"),
+    P("hcFuelOverrun", "South"),
 ], layout="border", help_topic="hcHelpTransient")
 
-dialog("hcFuelDfco", "Deceleration fuel cutoff (DFCO)", [
-    P("hcFuelOverrun", "West"),
-    P("hcReadFuel", "East"),
-], layout="border")
-
-# -------------------------------------------------------------- CRANKING ---
-# rusEFI crankingDialog: cranking rpm, fuel, ignition (fixed cranking advance,
-# cranking dwell) - and here the cranking fuel curve, embedded.
-panel("hcCranking", "Cranking settings", [
-    T("#What the engine gets while the starter turns it: the numbers that"),
-    T("#make an engine CATCH are not the numbers that make it RUN."),
-    F("crankRpmMax"),
-    B(),
-    T("#Ignition"),
-    F("ignAdvanceDegX10"),
-    # 0 is a SENTINEL (hcengine.c eng_service, rusEFI's semantics): the dwell
-    # curve decides while cranking too. Proven on the car, 2026-09-26: with
-    # 0 the cranking dwell was KFSZT(battery): 4.4..5.75 ms at 9.9..9.3 V
-    # turning, 7.68 ms at 8.2 V in the starter inrush.
-    F("crankingDwellMsX100", label="Cranking dwell (0 = battery curve)"),
-    T("0 = the Ignition / Dwell curve (dwell vs battery) decides - NOT zero"),
-    T("dwell. Any other value replaces the curve while cranking."),
-    B(),
-    T("#Fuel: mass per cylinder per cycle against coolant (curve), through"),
-    T("#the injector model like running fuel. A failed coolant sensor uses"),
-    T("#the 20 C point."),
-    B(),
-    T("#Priming: one pulse on every injector at key-on, engine stopped,"),
-    T("#after the delay. Mass against coolant (curve); 0 = none. Repeated"),
-    T("#key-ons without a start prime less (flooding guard)."),
-    F("primeDelay"),
-])
-
-panel("hcCrankingCurves", "", [
-    P("crankPwCurve"),
-    P("primeCurve"),
-])
 
 dialog("hcCrankingDlg", "Cranking settings", [
-    P("hcCranking", "West"),
-    P("hcCrankingCurves", "Center"),
-    P("hcReadFuel", "East"),
-], layout="border")
+    P("hcCranking"),
+    P("hcCrankFuel"),
+    P("hcCrankTiming"),
+], layout="yAxis")
+
+
+dialog("hcAseDlg", "After-start enrichment (ASE)", [
+    P("hcAse"),
+])
 
 dialog("hcStftDlg", "Closed loop fuel correction", [
     P("hcStft", "West"),
     P("hcStftRight", "East"),
 ], layout="border", help_topic="hcHelpLambda")
 
-# -------------------------------------------------------------- IGNITION ---
-dialog("hcIgnitionHw", "Ignition hardware", [
-    P("hcIgnitionBasics"),
+
+dialog("hcIgnitionHw", "Spark settings", [
+    P("hcSparkMain"),
+    P("hcSparkLocked"),
+], layout="yAxis", help_topic="hcHelpIgnition")
+
+dialog("hcIgnOutDlg", "Ignition outputs", [
     P("hcIgnitionPins"),
     P("hcTestCoils"),
-    P("hcReadSpark"),
 ], layout="xAxis", help_topic="hcHelpIgnition")
+
+
+dialog("hcDwellDlg", "Dwell settings", [
+    P("hcDwell"),
+])
 
 # --------------------------------------------------------------- SENSORS ---
 dialog("hcSensorCltDlg", "CLT sensor", [
-    P("hcSensorClt", "West"),
+    P("hcSensorClt", "North"),
     P("cltSensCurve", "Center"),
-    P("hcReadClt", "East"),
+    P("hcReadClt", "South"),
 ], layout="border", help_topic="hcHelpThermistor")
 
 dialog("hcSensorIatDlg", "IAT sensor", [
-    P("hcSensorIat", "West"),
+    P("hcSensorIat", "North"),
     P("iatSensCurve", "Center"),
-    P("hcReadIat", "East"),
+    P("hcReadIat", "South"),
 ], layout="border", help_topic="hcHelpThermistor")
 
 dialog("hcSensorMapDlg", "Pressure sensor (MAP / charge pressure)", [
@@ -1823,15 +1663,24 @@ panel("hcEtbTpsDiag", "TPS", [
     P("hcReadTps"),
 ])
 
-dialog("hcEtbTpsCalDlg", "Throttle position sensor", [
-    P("hcEtbTpsDiag"),
-], help_topic="hcHelpTpsCal")
+# 2026-10-11 (owner: "sensor calibrations under Tools, like Speeduino"):
+# Tools > Calibrate TPS is THE place for the endpoints and the Grabs, with
+# the live tracks beside them. AutoCal (the motor finds the stops) stays in
+# the ETB window; nothing appears in two places.
+columns("hcEtbTpsCalCols",
+        "hcEtbTpsCal",
+        ["hcPanelGrab", "hcPanelThrottleState"])
+
+dialog("hcEtbTpsCalDlg", "Calibrate TPS", [
+    P("hcEtbTpsCalCols", "West"),
+    P("hcEtbTpsDiag", "East"),
+], layout="border", help_topic="hcHelpTpsCal")
 
 panel("hcEtbCharacterizeControls", "ETB characterization", [
     T("!Engine off only. Keep clear of the throttle; no pedal is needed."),
-    T("Holds and ramps from 2 to 90 %, pedal-map slams and ramps, then"),
-    T("break-away tests at 5..80 %: the friction band and its midpoint."),
-    T("It changes no calibration; every exit switches the bridge off."),
+    T("#Holds and ramps from 2 to 90 %, pedal-map slams and ramps, then"),
+    T("#break-away tests at 5..80 %: the friction band and its midpoint."),
+    T("#It changes no calibration; every exit switches the bridge off."),
     C("cmdEtbCharacterize", "Run ETB Characterization"),
     C("cmdEtbAutoCalAbort", "Abort"),
     C("cmdEtbSaveBias", "Save Measured Bias / Feedforward", "sweepBiasState == 1 && etbCalResult == 7"),
@@ -1846,12 +1695,7 @@ panel("hcEtbCharacterizeControls", "ETB characterization", [
     IND("(sweepFindings & 128) != 0", "Rate limit: not observed", "TARGET RATE LIMIT active during pedal slam"),
     IND("(sweepFindings & 256) != 0", "-", "INCONCLUSIVE: inspect traces / analyze log"),
     IND("etbCalResult == 7 && sweepFindings == 0", "-", "GOOD within this profile; inspect traces"),
-    T("Battery compensation is not judged from a single run: log runs at"),
-    T("other voltages to compare. Save writes the measured bias curve to"),
-    T("RAM only (PID, TPS and battery settings unchanged) - review, rerun"),
-    T("and compare, then Burn."),
-    P("hcEtbBiasCompare"),
-    P("hcEtbFrictionBand"),
+    N("Save writes the bias curve to RAM - then Burn."),
 ])
 # TunerStudio accepts indicators only inside an indicatorPanel.
 _controls = PANELS[-1][2]
@@ -1866,8 +1710,6 @@ _diagnosis_text = [
     "{ Secondary issue: bitStringValue(hcSweepIssueList, sweepSecondary)}",
     "{ Recommended next action: bitStringValue(hcSweepActionList, sweepAction)}",
     "{ Feed-forward proposal: bitStringValue(hcSweepBiasList, sweepBiasState)}",
-    "{ Save updates ONLY the supported range - see Supported from / Supported to}",
-    "{ Positions rejected by a confidence gate: bitStringValue(hcSweepBiasList, sweepBiasExcludedWhy)}",
 ]
 ipanel("hcEtbCharacterizeDiagnosis", 1, [
     *[IND("(tickMs & 512) != 0", label, label,
@@ -1896,9 +1738,27 @@ panel("hcEtbCharacterizeMotion", "", [LG("hcEtbSweepMotion", "ETB motion and sig
     ["sweepRequested", "sweepTarget", "sweepActual", "sweepMotor"] )])
 panel("hcEtbCharacterizeTerms", "", [LG("hcEtbSweepTerms", "ETB controller contributions", "South",
     ["sweepP", "sweepI", "sweepD", "sweepFf", "battDv"] )])
+# 2026-10-11 (owner: windows too big): the run, its findings and the
+# motion graph here; the bias/friction tables and the controller-terms
+# graph in their own dialog beside it in the menu.
+# 2026-10-11 round 2 (owner: "why so many Point position values ... what
+# should a tuner do with that data"): the tuner's window is Run / Abort /
+# Save, the state, the verdict and the motion graph. The measurement data
+# (proposed points, friction band, controller terms, run statistics) is the
+# DEVELOPER window - in the forensic project only (gen_ts_ini DEV_ONLY).
+ipanel("hcEtbCharFindings", 1, _findings)
+
 dialog("hcEtbCharacterizeDlg", "ETB characterization", [
-    P("hcEtbCharacterizeControls", "West"), P("hcEtbCharacterizeResults", "East"),
-    P("hcEtbCharacterizeMotion", "South"), P("hcEtbCharacterizeTerms", "Center"),
+    P("hcEtbCharacterizeControls", "West"),
+    P("hcEtbCharacterizeMotion", "South"),
+], layout="border")
+
+columns("hcEtbCharDetailCols", "hcEtbBiasCompare", "hcEtbFrictionBand",
+        ["hcEtbCharacterizeResults", "hcEtbCharFindings"])
+
+dialog("hcEtbCharDetailDlg", "ETB characterization raw data (developer)", [
+    P("hcEtbCharDetailCols", "North"),
+    P("hcEtbCharacterizeTerms", "South"),
 ], layout="border")
 
 dialog("hcEtbCommissionDlg", "ETB AutoCal results", [
@@ -1923,34 +1783,47 @@ dialog("hcEtbMain", "Electronic Throttle Body", [
     P("hcEtbGraph", "South"),
 ], layout="border", help_topic="hcHelpDbw")
 
-# V97: the ONE throttle workflow - base settings, TPS calibration and the
-# motor-direction bench test West; AutoCal ETB, status, live TPS/pedal and
-# PID East. Pedal calibration stays under Sensors (a different sensor).
+# 2026-10-11 (owner: "too much on the tuner front end, I have to scroll
+# every window on the laptop"): TWO columns - the settings a tuner uses
+# West, the AutoCal buttons and the live values East. The TPS endpoint
+# calibration, the jam/limp/rev limits and the bench nudge share ONE more
+# dialog; the throttle is ONE group in Advanced (owner: "too many ETB
+# options in Advanced") - every field stays reachable.
 columns("hcEtbLeft",
-        ["hcEtbBase", "hcEtbSafety"],
-        ["hcEtbTpsCal", "hcPanelGrab", "hcPanelThrottleState"])
+        ["hcEtbBase", "hcEtbPid"])
 
-# V98r2: four columns of at most 28 rows and the graph below - one column
-# was 42 rows and TunerStudio clipped it.
 columns("hcEtbRight",
-        ["hcEtbAutotune", "hcEtbPid"],
-        ["hcReadEtbLive", "hcEtbNudge"])
+        ["hcEtbAutotune", "hcReadEtbLive"])
+
+columns("hcEtbSetupCols",
+        "hcEtbSafety",
+        "hcEtbNudge")
+
+dialog("hcEtbSetupDlg", "ETB limits and bench test", [
+    P("hcEtbSetupCols"),
+], help_topic="hcHelpDbw")
+
 
 panel("hcEtbGraph", "", [
     LG("hcEtbLiveGraph", "Throttle: target vs actual", "South",
-       ["dbwTargetX10", "dbwActualX10", "dbwDutyX10", "pedalX10"]),
+       ["etbTarget", "etbActual", "dbwDutyX10", "pedalPosition"]),
 ])
 
 dialog("hcBoostDlg", "Boost control options", [
     P("hcBoostBase"),
     P("hcBoostPid", None, "boostEnable == 1"),
-    P("hcReadBoost"),
 ], layout="xAxis")
 
-columns("hcMotorsportCols", ["hcMsLaunch", "hcMsFlat"],
-        ["hcMsAls"], ["hcMsPit", "hcMotorsport"])
+# 2026-10-11 (owner: "simplify"): Speeduino's "Launch Control / Flat
+# shift" window; anti-lag and the pit limiter are their own window.
+columns("hcMotorsportCols", "hcMsLaunch", ["hcMsFlat", "hcMotorsport"])
+columns("hcAlsCols", "hcMsAls", "hcMsPit")
 
-dialog("hcMotorsportDlg", "Launch, flat shift, anti-lag, pit limiter", [
+dialog("hcAlsDlg", "Anti-lag, pit limiter, rotational idle", [
+    P("hcAlsCols"),
+])
+
+dialog("hcMotorsportDlg", "Launch control / flat shift", [
     P("hcMotorsportCols"),
 ])
 
@@ -1958,19 +1831,23 @@ dialog("hcMotorsportDlg", "Launch, flat shift, anti-lag, pit limiter", [
 # rusEFI softwareKnock: "Sense" (with the cylinder -> sensor mapping) and
 # "Response" West, the threshold curve Center; HaniCore adds the CC195's
 # own knobs (band, gain per sensor, window curves) and the live chain East.
-panel("hcKnockSense", "Sense", [
-    T("!Monitor measures, detects and logs per cylinder without touching the"),
-    T("!spark - calibrate there first. Active retards the knocking cylinder."),
-    F("knockMode"),
-    F("knockBand", None, "knockMode > 0"),
-    E("knockGain", "knockMode > 0"),
-    P("knockWinStartCurve", None, "knockMode > 0"),
-    P("knockWinLenCurve", None, "knockMode > 0"),
+# 2026-10-11 (owner: "the knock window is massive, can't read anything"):
+# Speeduino's Knock Settings arrangement - "Settings" West, "Detection and
+# Response" East, the status lights under them. The sensor calibration (gains,
+# diagnosis, the window and threshold curves) and the live numbers
+# are their own "advanced" window, opened only to calibrate.
+panel("hcKnockSense", "Settings", [
+    F("knockMode", "Knock mode"),
+    F("knockBand", "Band-pass frequency", "knockMode > 0"),
+    N("Monitor only logs. Active retards the knocking cylinder."),
 ])
-panel("hcKnockMap", "Select the nearest sensor for each cylinder", [
+panel("hcKnockGains", "Sensor gains", [
+    E("knockGain", "knockMode > 0"),
+])
+panel("hcKnockMap", "Sensor for each cylinder", [
     E("knockSensor", "knockMode > 0"),
 ])
-panel("hcKnockResponse", "Response", [
+panel("hcKnockResponse", "Detection and response", [
     F("knockStepQ", None, "knockMode > 0"),
     F("knockMaxQ", None, "knockMode > 0"),
     F("knockReapplyMs", None, "knockMode > 0"),
@@ -2006,37 +1883,40 @@ ipanel("hcPanelKnock", 2, [
     IND("(knockFlags & 255) > 0", "NO CYLINDER AT STOP", "CYLINDER AT STOP",
         "white, black, red, black"),
 ])
-rpanel("hcReadKnock", 2, ["knockLastCylGauge", "knockLastIkrGauge",
-                          "knockRetardX10Gauge", "knockCountGauge",
-                          "knockWinStartX10Gauge", "knockWinLenX10Gauge",
-                          "knockWindowsGauge", "knockSamplesGauge",
-                          "knockLateGauge", "knockStaleGauge",
-                          "knockWinUsGauge", "knockAdcFailGauge"])
+rpanel("hcReadKnock", 2, ["knockLastCylGauge", "knockRetardX10Gauge",
+                          "knockCountGauge", "knockWindowsGauge"])
 rpanel("hcReadKnockCyl", 4,
        ["knockLevel%dGauge" % (i + 1) for i in range(4)]
        + ["knockRet%dGauge" % (i + 1) for i in range(4)]
-       + ["knockRef%dGauge" % (i + 1) for i in range(4)]
-       + ["knockCnt%dGauge" % (i + 1) for i in range(4)]
        + ["knockLevel%dGauge" % (i + 5) for i in range(4)]
-       + ["knockRet%dGauge" % (i + 5) for i in range(4)]
-       + ["knockRef%dGauge" % (i + 5) for i in range(4)]
-       + ["knockCnt%dGauge" % (i + 5) for i in range(4)])
+       + ["knockRet%dGauge" % (i + 5) for i in range(4)])
 panel("hcKnockLeft", "", [
     P("hcKnockSense"),
     P("hcKnockMap"),
-    P("hcKnockResponse"),
+])
+dialog("hcKnockDlg", "Knock settings", [
+    P("hcKnockLeft", "West"),
+    P("hcKnockResponse", "East"),
+    P("hcPanelKnock", "South"),
+], layout="border", help_topic="hcHelpKnock")
+
+# the calibration window: gains, diagnosis, the curves, and the
+# live numbers the calibration is judged by
+panel("hcKnockAdvLeft", "", [
+    P("hcKnockGains"),
     P("hcKnockReference"),
 ])
-panel("hcKnockRight", "", [
-    P("hcPanelKnock"),
+columns("hcKnockAdvCurves", "knockWinStartCurve", "knockWinLenCurve",
+        "knockKefCurve")
+panel("hcKnockAdvLive", "", [
     P("hcReadKnock"),
-    T("#Per cylinder: level (KI / reference), retard, reference, knocks"),
+    N("Per cylinder: knock level and retard"),
     P("hcReadKnockCyl"),
 ])
-dialog("hcKnockDlg", "Knock control", [
-    P("hcKnockLeft", "West"),
-    P("knockKefCurve", "Center"),
-    P("hcKnockRight", "East"),
+dialog("hcKnockAdvDlg", "Knock sensor calibration (advanced)", [
+    P("hcKnockAdvLeft", "West"),
+    P("hcKnockAdvCurves", "North"),
+    P("hcKnockAdvLive", "East"),
 ], layout="border", help_topic="hcHelpKnock")
 
 # -------------------------------------------------------------------- VVT --
@@ -2087,7 +1967,6 @@ rpanel("hcReadVvt", 2, ["vvt1TargetGauge", "vvt2TargetGauge",
                         "vvt1DutyGauge", "vvt2DutyGauge"])
 panel("hcVvtRight", "", [
     P("hcPanelVvt"),
-    P("hcReadVvt"),
 ])
 dialog("hcVvtDlg", "VVT outputs and PID", [
     P("hcVvtConfig", "West"),
@@ -2095,11 +1974,39 @@ dialog("hcVvtDlg", "VVT outputs and PID", [
     P("hcVvtRight", "East"),
 ], layout="border", help_topic="hcHelpVvt")
 
-# ------------------------------------------------------------------ IDLE ---
-dialog("hcIdleDlg", "Idle settings",
-       [P("hcIdleBase"), P("hcReadIdle"), P("hcIdleState")], layout="xAxis")
-dialog("hcIdleTimingDlg", "Closed-loop idle timing",
-       [P("hcIdleTiming"), P("hcReadIdleTiming")], layout="xAxis")
+dialog("hcIdleDlg", "Idle control",
+       [P("hcIdleBase"), P("hcIdleCurves"), P("hcIdleState")],
+       layout="xAxis")
+dialog("hcIdleTimingDlg", "Idle advance",
+       [P("hcIdleTiming"), P("idleTargetCurve")], layout="xAxis")
+
+# 2026-10-11: the settings windows are Speeduino-style (settings only);
+# the live values that sat beside them are here, one window to keep open
+# while tuning (Diagnostics > Live tuning values).
+rpanel("hcReadLiveEssentials", 3, [
+    "RPMValueGauge", "mapControlGauge", "TPSValueGauge",
+    "lambdaValueGauge", "targetLambdaGauge", "stftBank1Gauge",
+    "veValueGauge", "injectorPulseWidthGauge", "injectorDutyGauge",
+    "ignitionTimingGauge", "ignCorrX10Gauge", "afterStartPmGauge",
+    "idleTargetRpmGauge", "idleTrimX10Gauge", "idleTimingX10Gauge"])
+
+dialog("hcDiagLive", "Live tuning values", [
+    P("hcReadLiveEssentials"),
+])
+
+rpanel("hcDevTrimmed", 2, ["crankSyncGauge", "cycleSyncGauge", "crankToothIndexGauge", "crankEdgesGauge", "camPhaseNoAltGauge", "camLowWidthX10Gauge", "camHighWidthX10Gauge", "trigCfgAngleX10Gauge", "cam1PatClassGauge", "cam2PatClassGauge", "cam1VvtX10Gauge", "cam2VvtX10Gauge", "tps1VoltageGauge", "tps2VoltageGauge", "dbwTps1X10Gauge", "dbwTps2X10Gauge", "app1VoltageGauge", "app2VoltageGauge", "dbwApp1X10Gauge", "dbwApp2X10Gauge", "lambda1StateGauge", "lambda2StateGauge", "lambda1ValidGauge", "lambda2ValidGauge", "heater1DutyGauge", "heater2DutyGauge", "lam1RiX10Gauge", "lam2RiX10Gauge", "lam1IpUaGauge", "lam2IpUaGauge", "lam1FaultGauge", "lam2FaultGauge", "cj1DiagGauge", "cj2DiagGauge", "ambientVoltageGauge", "baroRawGauge", "ambientAgeSecondsGauge", "knockLastIkrGauge", "knockWinStartX10Gauge", "knockWinLenX10Gauge", "knockSamplesGauge", "knockLateGauge", "knockStaleGauge", "knockWinUsGauge", "knockAdcFailGauge", "knockRef1Gauge", "knockRef2Gauge", "knockRef3Gauge", "knockRef4Gauge", "knockRef5Gauge", "knockRef6Gauge", "knockRef7Gauge", "knockRef8Gauge", "knockCnt1Gauge", "knockCnt2Gauge", "knockCnt3Gauge", "knockCnt4Gauge", "knockCnt5Gauge", "knockCnt6Gauge", "knockCnt7Gauge", "knockCnt8Gauge"])
+
+# EVERY number box the user windows no longer show, for debugging - the
+# developer (forensic) project only (gen_ts_ini_me711 DEV_ONLY).
+columns("hcDevLiveCols",
+        ["hcReadFuel", "hcReadSeq", "hcReadTrans", "hcReadSpark"],
+        ["hcReadIdle", "hcReadIdleTiming", "hcReadStft", "hcReadVvt"],
+        ["hcReadBoost", "hcReadMs", "hcReadLoadModel", "hcReadLambdaLink"],
+        ["hcDevTrimmed", "hcPanelSwitchRaw", "hcPanelLoadState"])
+
+dialog("hcDevLiveAll", "All live values (developer)", [
+    P("hcDevLiveCols"),
+])
 
 # ------------------------------------------------------------ CONTROLLER ---
 # rusEFI engineTypeDialog, "Base Tunes" - under Controller, as there.
@@ -2142,7 +2049,6 @@ panel("hcUnusedIn", "Inputs", [
     E("pinGenericAin"),
 ])
 panel("hcUnusedPwm", "PWM outputs", [
-    F("pinTacho"),
     E("pinGenericPwm"),
 ])
 panel("hcUnusedOut", "On/off outputs, bench", [
@@ -2200,22 +2106,35 @@ dialog("hcWhyNoSpark", "Why is there no spark?", [
 # yellow, the freeze-frame code marked), ONE indicator per row so the
 # code text gets the full width (hcDtcRowList). The raw dtcActive1.. / dtcStored1..
 # words stay channels for the logger.
-_DTC_ROWS = []
-for _i in range(1, 5):
-    _pid = "hcDtcRow%d" % _i
-    ipanel(_pid, 1, [
-        IND("(dtcS%dSt & 1) == 1" % _i,
-            "{ bitStringValue(hcDtcRowList, dtcS%dRow)}" % _i,
-            "{ bitStringValue(hcDtcRowList, dtcS%dRow)}" % _i,
-            "yellow, black, red, white")])
-    _DTC_ROWS.append((_pid, "dtcStored%d != 0" % _i))
+# 2026-10-11 (owner: "more than ~5 codes are not visible"): ONE ROW PER
+# CODE the firmware can set, shown only while that code is stored - every
+# stored code, not the first four. Bit i of dtcStoredMask/dtcActiveMask =
+# path i of hcdtc711.c defs[] (gen_ts_ini_me711.DTC_PATHS); red = active
+# now, yellow = stored only.
+import ts_dtc_me711 as _GI          # noqa: E402  (the code set and its text)
+# 2026-10-12 (owner, real TunerStudio: "why are there no DTCs?"): the rows
+# were panels SHOWN ON A LIVE CHANNEL ({ dtcStoredMask0 bit }), and
+# TunerStudio does not evaluate a dialog panel's visibility on output
+# channels - nothing ever appeared, not even "No trouble codes". None of
+# rusEFI's 40 generated INIs does it (indicators and command buttons ARE
+# evaluated live). So the list is ALWAYS VISIBLE: one row per code, two
+# indicators - the code (highlighted while stored) and ACTIVE NOW (red).
+# A bit is tested with & and a literal mask: rusEFI's INIs use no >>.
+_DTC_BOARD = []
+for _i, _code in enumerate(_GI.DTC_PATHS):
+    _w, _b = ("Mask0", _i) if _i < 16 else ("Mask1", _i - 16)
+    _bit = 1 << _b
+    _txt = "P%04d - %s" % (_code, _GI.DTC_TEXT[_code])
+    _DTC_BOARD.append(IND("(dtcStored%s & %d) != 0" % (_w, _bit), _txt, _txt,
+                          "white, black, yellow, black"))
+    _DTC_BOARD.append(IND("(dtcActive%s & %d) != 0" % (_w, _bit), "-",
+                          "ACTIVE NOW", "white, black, red, white"))
+ipanel("hcDtcBoard", 2, _DTC_BOARD)
 
 ipanel("hcDtcNone", 1, [
-    IND("dtcStoredN == 0", "-", "No trouble codes", GREEN)])
-ipanel("hcDtcMore", 1, [
-    IND("dtcStoredN > 4", "-",
-        "More codes stored than shown - clear, then read again",
-        "white, black, yellow, black")])
+    IND("dtcStoredN == 0",
+        "Codes stored - highlighted below (red = present now)",
+        "No trouble codes", "yellow, black, green, black")])
 ipanel("hcDtcLamp", 1, [
     IND("dtcMil", "CEL OFF", "CEL ON", RED)])
 ipanel("hcDtcFfCode", 1, [
@@ -2224,11 +2143,9 @@ ipanel("hcDtcFfCode", 1, [
         "white, black, white, black")])
 
 panel("hcDtcList", "Trouble codes", [
-    T("#Status  |  Code - Description"),
-    PV("hcDtcNone", "dtcStoredN == 0")]
-    + [PV(p, v) for p, v in _DTC_ROWS]
-    + [PV("hcDtcMore", "dtcStoredN > 4")])
-rpanel("hcReadDtcFf", 4, ["dtcFfRpmGauge", "dtcFfCltGauge",
+    P("hcDtcNone"),
+    P("hcDtcBoard")])
+rpanel("hcReadDtcFf", 4, ["dtcFfRpmGauge", "dtcFfCltShownGauge",
                           "dtcFfMapGauge", "dtcFfTpsGauge"])
 panel("hcDtcSide", "", [
     P("hcDtcLamp"),
@@ -2282,7 +2199,7 @@ panel("hcHelpSteps", "Setup order", [
     T("#   review, Burn, then cycle the key."),
     T("#2  Fuel > Fuel model: check the model and where the pressure sensor"),
     T("#   measures."),
-    T("#3  Advanced > Electronic Throttle Body: AutoCal ETB. Sensors > Pedal"),
+    T("#3  Advanced > Electronic Throttle Body: AutoCal ETB. Tools > Pedal"),
     T("#   position sensor: Grab both ends; the two tracks must agree. Burn."),
     T("#4  Sensors: coolant, intake air, pressure, ambient and battery read"),
     T("#   plausibly (Diagnostics > Why? > Which sensor failed?)."),
@@ -2329,8 +2246,292 @@ dialog("hcHelpInfo", "HaniCore - setup order", [
 # A `(dialog, label)` pair here; a `("GROUP", label, [children])` for a
 # groupMenu; "SEP" for rusEFI's std_separator.
 # ==========================================================================
+
+# ==========================================================================
+# SPEEDUINO WINDOWS (owner, 2026-10-11: "make everything as Speeduino does on
+# the user interface"). Each window below is Speeduino's window of the same
+# job (speeduino-*/reference/speeduino.ini), field by field in its
+# order, with its box titles; a Speeduino line HaniCore has no setting for
+# is left out. The MENUS stay HaniCore's (owner). redialog() replaces a
+# window by its id, so menu entries and help topics keep working. No text
+# is copied (docs/CONTRIBUTING.md class F).
+# ==========================================================================
+def redialog(did, title, items, layout=None, help_topic=None):
+    for i, d in enumerate(WORKFLOWS):
+        if d[0] == did:
+            WORKFLOWS[i] = (did, title, items, layout, help_topic)
+            return did
+    return dialog(did, title, items, layout, help_topic)
+
+
+# ---- Engine Constants ------------------------------------------------------
+rpanel("swReadReqFuel", 1, ["requiredFuelGauge"])
+panel("swReqFuel", "Calculate Required Fuel", [
+    P("swReadReqFuel"),
+    F("displacementCc", "Engine displacement"),
+    F("cylinders", "Number of cylinders"),
+    F("injFlowCcMin", "Injector flow"),
+    N("Required fuel: injector time per cylinder at VE 100 %"),
+])
+panel("swEngine", "", [
+    F("fuelModel", "Control algorithm"),
+    F("strokes", "Engine stroke"),
+    F("firingOrder", "Engine type / firing order"),
+])
+panel("swBoard", "HaniCore board", [
+    T("!This is a critical setting!"),
+    T("Outputs fire wrong if the layout does not match the wiring"),
+    F("stoichAfrX100", "Stoichiometric ratio"),
+    F("injStrategy", "Injector layout"),
+    F("pressureRole", "MAP sensor location"),
+    F("revMax", "Maximum engine speed"),
+])
+panel("swEngineWest", "", [
+    P("swReqFuel"),
+    P("swEngine"),
+    P("swBoard"),
+])
+redialog("hcSetupEngine", "Engine Constants", [
+    P("swEngineWest", "West"),
+    P("hcEngineFiring", "East"),
+    P("hcEngineFiringExt", "South", "cylinders > 8"),
+], layout="border", help_topic="hcHelpFiringOrder")
+
+# ---- Injector Characteristics ---------------------------------------------
+panel("swInjOpen", "Injector opening time", [
+    P("deadtimeCurve"),
+])
+panel("swInjAngle", "Injector close angles", [
+    F("injStrategy", "Injection mode"),
+    F("injTimingMode", "Angle refers to"),
+    F("injPhaseMode", "Injection angle from"),
+    F("injStartDegX10", "Injection angle", "injPhaseMode == 0"),
+    N("The angle table: Fuel > Injection timing table"),
+])
+redialog("hcFuelInjector", "Injector Characteristics", [
+    P("swInjOpen"),
+    P("swInjAngle"),
+], layout="yAxis", help_topic="hcHelpInjMode")
+
+# ---- Trigger Settings -------------------------------------------------------
+panel("swTrigger", "Trigger Settings", [
+    F("syncMode", "Trigger pattern"),
+    F("syTeeth", "Primary base teeth"),
+    F("syGap", "Missing teeth"),
+    F("trigAngleX10", "Trigger angle (deg)"),
+    T("This number represents the angle ATDC when"),
+    T("tooth #1 passes the primary sensor."),
+    B(),
+    F("trigMinTeeth", "Teeth before sync"),
+    T("Note: good teeth required before the injectors and"),
+    T("coils are fired"),
+    F("trigEdge", "Trigger edge"),
+    F("camEnable", "Secondary trigger"),
+    F("camEdge", "Secondary trigger edge", "camEnable == 1"),
+    F("camPhaseLevel", "Level for 1st phase",
+      "camEnable == 1 && camPhaseMode == 1"),
+    F("camPhaseMode", "Secondary trigger type", "camEnable == 1"),
+    F("camPhaseAngleX10", "Level check angle",
+      "camEnable == 1 && camPhaseMode == 1"),
+    F("cam1Pattern", "Cam 1 wheel", "camEnable == 1 && camPhaseMode == 2"),
+    F("cam2Pattern", "Cam 2 wheel", "camEnable == 1 && camPhaseMode == 2"),
+    F("cam2RefX10", "Cam 2 tooth 0 angle",
+      "camEnable == 1 && camPhaseMode == 2"),
+    F("camToothTol", "Cam tooth tolerance",
+      "camEnable == 1 && camPhaseMode == 2"),
+    F("camRefs", "Cam references per cycle",
+      "camEnable == 1 && camPhaseMode == 0"),
+    F("camRefX10", "First cam reference angle",
+      "camEnable == 1 && camPhaseMode == 0"),
+    F("camWindowX10", "Cam acceptance window", "camEnable == 1"),
+    F("camPhaseConfirm", "Phase confirmations",
+      "camEnable == 1 && camPhaseMode != 0"),
+    F("trigGapRatioX10", "Trigger filter (gap ratio)"),
+    F("trigTimeoutMs", "Stall timeout"),
+    F("trigSource", "Trigger arming source"),
+    F("pinCrank", "Crank sensor pin"),
+    F("pinCam1", "Cam 1 pin", "camEnable == 1"),
+    F("pinCam2", "Cam 2 pin", "camEnable == 1"),
+])
+redialog("hcSetupTrigger", "Trigger Settings", [
+    P("swTrigger"),
+], help_topic="hcHelpTrigger")
+
+# ---- Engine Protection (Speeduino's group of windows) ----------------------
+redialog("swProtCommon", "Common Engine Protection", [
+    P("hcLimitsProtect"),
+    P("hcProtLights"),
+], layout="yAxis")
+redialog("swProtRev", "Rev Limiters", [P("hcLimitsRev")])
+redialog("swProtBoost", "Boost Cut", [P("hcLimitsBoost")])
+redialog("swProtAfr", "AFR Protection", [P("hcProtLean")])
+redialog("swProtPressure", "Pressure-loss Protection", [P("hcProtPressure")])
+
+# ---- AFR/O2 --------------------------------------------------------------
+panel("swEgo", "", [
+    F("lambda1Source", "Sensor type"),
+    N("Please calibrate your O2 sensor in the Tools menu"),
+    F("stftEnable", "Closed loop correction"),
+    F("stftLambdaMin", "Only correct above lambda", "stftEnable == 1"),
+    F("stftLambdaMax", "and correct below lambda", "stftEnable == 1"),
+    F("stftMinClt", "Active above coolant", "stftEnable == 1"),
+    F("stftStartDelay", "EGO delay after start", "stftEnable == 1"),
+    F("stftDeadband", "Deadband", "stftEnable == 1"),
+    F("stftAfterDfco", "Hold after fuel cut", "stftEnable == 1"),
+    F("stftAfterAe", "Hold after acceleration enrichment", "stftEnable == 1"),
+])
+panel("swEgoRegions", "Controller authority by region", [
+    F("stftIdleRpm", "Idle below", "stftEnable == 1"),
+    F("stftOverrunLoad", "Overrun below load", "stftEnable == 1"),
+    F("stftPowerLoad", "Power above load", "stftEnable == 1"),
+    E("stftMaxAdd", "stftEnable == 1"),
+    E("stftMaxRemove", "stftEnable == 1"),
+    E("stftTimeConst", "stftEnable == 1"),
+])
+redialog("hcStftDlg", "AFR/O2", [
+    P("swEgo"),
+    P("swEgoRegions"),
+], layout="xAxis", help_topic="hcHelpLambda")
+
+# ---- Spark Settings / Dwell -----------------------------------------------
+panel("swSpark", "Spark Settings", [
+    F("ignLoadMode", "Ignition load source"),
+    F("ignStrategy", "Spark output mode"),
+    F("ignAdvanceDegX10", "Cranking advance angle"),
+])
+panel("swSparkLocked", "Locked timing", [
+    F("timingModeCfg", "Enabled fixed/locked timing"),
+    F("fixedTimingX10", "Fixed angle", "timingModeCfg == 1"),
+    N("Note: during cranking the cranking advance angle above applies"),
+])
+redialog("hcIgnitionHw", "Spark Settings", [
+    P("swSpark"),
+    P("swSparkLocked"),
+], layout="yAxis", help_topic="hcHelpIgnition")
+panel("swDwell", "Dwell Settings", [
+    F("crankingDwellMsX100", "Cranking dwell"),
+    T("0 = the running dwell curve below applies"),
+    N("Running dwell, against battery voltage:"),
+    P("dwellBattCurve"),
+])
+redialog("hcDwellDlg", "Dwell Settings", [P("swDwell")])
+
+# ---- Cranking Settings / ASE ----------------------------------------------
+panel("swCrankOpts", "", [
+    F("crankRpmMax", "Cranking RPM (max)"),
+    F("floodClearX10", "Flood clear level"),
+    F("fuelPumpPrimeMs", "Fuel pump prime duration"),
+    F("primeDelay", "Injectors priming delay"),
+])
+panel("swCrankEnrich", "Cranking Enrichment", [
+    P("crankPwCurve"),
+    N("Note"),
+    T("Values are fuel mass per cylinder per cycle by coolant."),
+])
+panel("swCrankTiming", "Cranking Timing", [
+    F("ignAdvanceDegX10", "Cranking advance angle"),
+])
+redialog("hcCrankingDlg", "Cranking Settings", [
+    P("swCrankOpts", "North"),
+    P("swCrankEnrich", "Center"),
+    P("swCrankTiming", "South"),
+], layout="border")
+panel("swAseAmount", "Enrichment amount (%)", [
+    T("Defines the fuel enrichment percentage after start."),
+    T("This is needed to keep the engine running after start."),
+    P("asCurve"),
+])
+panel("swAseTime", "Duration (s)", [
+    T("How long the enrichment takes to fade out after start."),
+    F("asDecayMs", "Transition time to disable", "transEnable == 1"),
+])
+redialog("hcAseDlg", "Afterstart Enrichment (ASE)", [
+    N("Runs with transient fuel on (Fuel > Acceleration Enrichment)"),
+    P("swAseAmount"),
+    P("swAseTime"),
+], layout="yAxis")
+
+# ---- Idle Control / Idle Advance -------------------------------------------
+panel("swIdle", "Idle Settings", [
+    F("idleEnable", "Idle control type"),
+    F("idleStartMs", "Crank to run taper", "idleEnable == 1"),
+])
+panel("swIdleCl", "Closed loop Idle", [
+    F("idleKp", "P", "idleEnable == 1"),
+    F("idleKi", "I", "idleEnable == 1"),
+    F("idleRangeX10", "Maximum valve value (trim authority)", "idleEnable == 1"),
+    F("idleRpmBand", "Active up to target +", "idleEnable == 1"),
+    F("idlePedalX10", "Active below pedal", "idleEnable == 1"),
+    F("etbIdleRange", "Throttle blend range", "idleEnable == 1"),
+])
+panel("swIdleDash", "Dashpot", [
+    F("idleDashX10", "Dashpot adder", "idleEnable == 1"),
+    F("idleDashHoldMs", "Dashpot hold time",
+      "idleEnable == 1 && idleDashX10 > 0"),
+    F("idleDashDecayMs", "Dashpot decay time",
+      "idleEnable == 1 && idleDashX10 > 0"),
+])
+redialog("hcIdleDlg", "Idle Settings", [
+    P("swIdle"),
+    P("swIdleCl"),
+    P("swIdleDash"),
+    P("hcIdleState"),
+], layout="yAxis")
+panel("swIdleAdv", "Idle Advance Settings", [
+    F("idleTimingEnable", "Idle advance mode"),
+    F("idleTimingKp", "Advance per rpm error", "idleTimingEnable == 1"),
+    F("idleTimingMinX10", "Most retard", "idleTimingEnable == 1"),
+    F("idleTimingMaxX10", "Most advance", "idleTimingEnable == 1"),
+    F("idleTimingSoftMs", "Delay before idle control starts",
+      "idleTimingEnable == 1"),
+])
+redialog("hcIdleTimingDlg", "Idle Advance Settings", [
+    P("swIdleAdv"),
+    P("idleTargetCurve"),
+], layout="xAxis")
+
+# ---- Accessories: Fuel pump / Tacho / Boost --------------------------------
+redialog("swFuelPumpDlg", "Fuel pump", [
+    F("pinFuelPump", "Fuel pump pin"),
+    F("fuelPumpPrimeMs", "Fuel pump prime duration"),
+    F("fuelPumpMode", "Fuel pump mode"),
+    C("cmdTestPump", "Test fuel pump"),
+    P("hcPanelPump"),
+])
+redialog("swTachoDlg", "Tacho", [
+    F("pinTacho", "Output pin"),
+    C("cmdTachoTest", "Test: 3000 rpm for 6 s (engine stopped)"),
+])
+panel("swBoost", "Boost Control", [
+    F("boostEnable", "Boost control enabled"),
+    F("boostMode", "Boost control type", "boostEnable == 1"),
+    F("pinBoost", "Boost output pin", "boostEnable == 1"),
+    F("boostMinRpm", "Active above rpm", "boostEnable == 1"),
+    F("boostMinTpsX10", "Active above throttle", "boostEnable == 1"),
+    P("hcLimitsBoost"),
+    T("Closed loop settings"),
+    F("boostClMinKpa", "Closed loop above pressure",
+      "boostEnable == 1 && boostMode == 1"),
+    F("boostIBand", "Integrate within", "boostEnable == 1 && boostMode == 1"),
+    F("boostKp", "P", "boostEnable == 1 && boostMode == 1"),
+    F("boostKi", "I", "boostEnable == 1 && boostMode == 1"),
+    F("boostKd", "D", "boostEnable == 1 && boostMode == 1"),
+])
+redialog("hcBoostDlg", "Boost Control", [P("swBoost")])
+redialog("swBoostLoadDlg", "Boost Targets/Duty", [
+    F("boostMode", "Mode"),
+    P("swBoostTgt"),
+    P("swBoostDuty"),
+], layout="yAxis")
+panel("swBoostTgt", "Boost target table (closed loop)", [P("boostTgtTbl")])
+panel("swBoostDuty", "Base duty table (open loop)", [P("boostDutyTbl")])
+
+
 SEP = ("SEP", None)
 NOT_USED = " (not used)"
+# tables shown INSIDE a window (with their options), not as a bare grid:
+# gen_ts_ui_me711.table_dialog_lines() emits no separate grid dialog
+EMBEDDED_TABLES = {"boostTgtTbl", "boostDutyTbl", "veTableTbl", "ignMapTbl", "afrMapTbl", "injPhaseTbl"}
 
 # THE FUEL MODEL: one dialog that owns every setting deciding how air is
 # estimated - the model, the legacy variant, where the pressure sensor
@@ -2366,7 +2567,6 @@ rpanel("hcReadLoadModel", 2, ["veValueGauge", "veAxisInputGauge",
 
 panel("hcLoadModelInfo", "", [
     P("hcPanelLoadSummary"),
-    P("hcPanelLoadState"),
     T("#Pure Alpha-N: VE by throttle; density from the reference pressure,"),
     T("#  optionally corrected for ambient. No pressure sensor needed."),
     T("#Speed density: VE by manifold pressure; density from the same"),
@@ -2374,10 +2574,9 @@ panel("hcLoadModelInfo", "", [
     T("#Boosted Alpha-N: VE by throttle; density from the charge pressure"),
     T("#  before the throttle - measured, or ambient + boost blend. For"),
     T("#  engines whose only sensor is before the throttle (VAG 1.8T AWT)."),
-    T("#Legacy compatibility: HaniCore's original models, kept so existing"),
-    T("#  calibrations run unchanged; pick the variant in Legacy load model."),
+    T("#Choose by load model: Load model picks Speed density, Alpha-N +"),
+    T("#  measured pressure or Pure Alpha-N; existing tunes run unchanged."),
     T("!Changing the model does not rescale the VE table - retune it."),
-    P("hcReadLoadModel"),
 ])
 
 dialog("hcLoadPolicies", "Fuel model", [
@@ -2387,106 +2586,107 @@ dialog("hcLoadPolicies", "Fuel model", [
 
 MENU = [
     ("&Setup", [
-        ("hcSetupEngine", "Base engine"),
-        ("hcSetupTrigger", "Trigger"),
+        ("hcSetupEngine", "Engine Constants"),
+        ("hcFuelInjector", "Injector Characteristics"),
+        ("hcSetupTrigger", "Trigger Setup"),
+        ("hcTriggerLiveDlg", "Trigger live check"),
         SEP,
-        ("hcSensorBatteryDlg", "Battery"),
         ("hcSetupOutputs", "Outputs"),
         SEP,
-        ("hcSetupLimits", "Limits and protection"),
+        ("GROUP", "Engine Protection", [
+            ("swProtCommon", "Common Engine Protection"),
+            ("swProtRev", "Rev Limiters"),
+            ("swProtBoost", "Boost Cut"),
+            ("swProtAfr", "AFR Protection"),
+            ("swProtPressure", "Pressure-loss Protection"),
+        ]),
     ]),
 
     ("&Fuel", [
         ("hcLoadPolicies", "Fuel model"),
-        ("veTableTblEdit", "VE"),
-        ("veTableTbl3D", "VE 3D view"),
-        ("GROUP", "Injector setup", [
-            ("hcFuelInjector", "Injection configuration"),
-            ("hcFuelInjHw", "Injection hardware"),
-        ]),
+        ("hcVeDlg", "VE Table"),
+        ("hcLambdaTblDlg", "Lambda Target Table"),
+        ("hcInjTimingTblDlg", "Injection timing table"),
         SEP,
-        ("afrMapTblEdit", "Target lambda"),
-        ("afrMapTbl3D", "Target lambda 3D view"),
-        ("hcStftDlg", "Closed loop fuel correction"),
+        ("hcAccelDlg", "Acceleration Enrichment"),
+        ("hcStftDlg", "AFR/O2"),
         SEP,
-        ("cltEnrCurve", "Warmup enrichment"),
-        # rusEFI: groupMenu "TPS Acceleration Enrichment / Wall Wetting AE"
-        ("GROUP", "Acceleration enrichment", [
-            ("hcFuelTransient", "Wall wetting (transient fuel)"),
-            ("hcFuelCorrections", "TPS acceleration enrichment"),
-        ]),
-        ("hcFuelDfco", "Deceleration fuel cutoff (DFCO)"),
-        ("injPhaseTblEdit", "Injection timing"),
-        ("injPhaseTbl3D", "Injection timing 3D view"),
+        ("hcFuelInjHw", "Injector outputs"),
         SEP,
         ("mapEstimateTblEdit", "Pressure estimate (sensor fault)"),
-        ("mapEstimateTbl3D", "Pressure estimate 3D view"),
     ]),
 
     ("&Ignition", [
-        ("ignMapTblEdit", "Ignition timing"),
-        ("ignMapTbl3D", "Ignition timing 3D view"),
-        ("ignCltCorrCurve", "CLT timing correction"),
-        ("ignIatCorrCurve", "IAT timing correction"),
-        ("dwellBattCurve", "Dwell"),
+        ("hcIgnitionHw", "Spark Settings"),
+        ("hcIgnTblDlg", "Spark Table"),
+        ("hcDwellDlg", "Dwell settings"),
+        ("ignIatCorrCurve", "IAT Retard"),
+        ("ignCltCorrCurve", "Cold Advance"),
         SEP,
-        ("hcIgnitionHw", "Ignition hardware"),
+        ("hcIgnOutDlg", "Ignition outputs"),
         SEP,
-        ("hcKnockDlg", "Knock control"),
+        ("hcKnockDlg", "Knock Settings"),
+        ("hcKnockAdvDlg", "Knock sensor calibration (advanced)"),
     ]),
 
     ("&Cranking", [
-        ("hcCrankingDlg", "Cranking settings"),
-        ("asCurve", "After-start enrichment"),
+        ("hcCrankingDlg", "Cranking Settings"),
+        ("primeCurve", "Priming Pulsewidth"),
+        ("cltEnrCurve", "Warmup Enrichment"),
+        ("hcAseDlg", "Afterstart Enrichment (ASE)"),
     ]),
 
     ("&Idle", [
-        ("hcIdleDlg", "Idle settings"),
-        ("idleTargetCurve", "Idle target RPM from CLT"),
-        ("idleBaseCurve", "Idle position from CLT"),
+        ("hcIdleDlg", "Idle Control"),
+        ("idleTargetCurve", "Idle - RPM targets"),
+        ("idleBaseCurve", "Idle - throttle position"),
         SEP,
-        ("hcIdleTimingDlg", "Closed-loop idle timing"),
+        ("hcIdleTimingDlg", "Idle Advance Settings"),
     ]),
 
     ("&Advanced", [
-        ("hcMotorsportDlg", "Launch / flat shift / anti-lag / pit limiter"),
+        ("hcMotorsportDlg", "Launch Control / Flat Shift"),
+        ("swFuelPumpDlg", "Fuel Pump"),
+        ("hcAlsDlg", "Anti-lag / pit limiter"),
         SEP,
-        ("hcVvtDlg", "VVT outputs and PID"),
-        ("vvtTarget1TblEdit", "VVT cam 1 (intake) target"),
-        ("vvtTarget1Tbl3D", "VVT cam 1 target 3D"),
-        ("vvtTarget2TblEdit", "VVT cam 2 (exhaust) target"),
-        ("vvtTarget2Tbl3D", "VVT cam 2 target 3D"),
-        SEP,
-        ("GROUP", "Boost control", [
-            ("hcBoostDlg", "Boost control options"),
-            ("boostDutyTblEdit", "Boost control open loop base duty"),
-            ("boostDutyTbl3D", "Boost control open loop base duty 3D"),
-            ("boostTgtTblEdit", "Boost control target"),
-            ("boostTgtTbl3D", "Boost control target 3D"),
-            ("boostCltCurve", "CLT boost duty multiplier"),
-            ("boostIatCurve", "IAT boost duty multiplier"),
+        ("GROUP", "VVT", [
+            ("hcVvtDlg", "VVT outputs and PID"),
+            ("vvtTarget1TblEdit", "VVT cam 1 (intake) target"),
+            ("vvtTarget2TblEdit", "VVT cam 2 (exhaust) target"),
         ]),
         SEP,
-        ("hcEtbMain", "Electronic Throttle Body"),
-        ("dbwBiasCurve", "ETB bias curve (feed forward)"),
-        ("pedalMapTblEdit", "ETB pedal target"),
-        ("pedalMapTbl3D", "ETB pedal target 3D view"),
-        ("hcEtbCommissionDlg", "ETB AutoCal results"),
-        ("hcEtbCharacterizeDlg", "ETB characterization"),
+        ("hcBoostDlg", "Boost Control"),
+        ("swBoostLoadDlg", "Boost Targets/Duty"),
+        ("boostCltCurve", "Boost duty by coolant"),
+        ("boostIatCurve", "Boost duty by intake air"),
+        SEP,
+        ("swTachoDlg", "Tacho Output"),
+        SEP,
+        ("GROUP", "Electronic throttle (ETB)", [
+            ("hcEtbMain", "Electronic Throttle Body"),
+            ("pedalMapTblEdit", "Pedal target"),
+            ("hcEtbSetupDlg", "Limits and bench test"),
+            ("hcEtbCommissionDlg", "AutoCal results"),
+            ("hcEtbCharacterizeDlg", "Characterization"),
+            ("dbwBiasCurve", "Bias curve (feed forward)"),
+            ("hcEtbCharDetailDlg", "Characterization raw data (developer)"),
+        ]),
     ]),
 
-    ("&Sensors", [
-        ("hcSensorCltDlg", "CLT sensor"),
-        ("hcSensorIatDlg", "IAT sensor"),
-        SEP,
-        ("hcEtbTpsCalDlg", "TPS"),
-        ("hcEtbAppCalDlg", "Pedal position sensor"),
-        SEP,
-        ("hcSensorMapDlg", "MAP / charge pressure sensor"),
-        ("hcSensorBaroDlg", "Baro sensor (onboard)"),
-        SEP,
-        ("hcSensorLambdaDlg", "Wideband O2 sensors"),
-        SEP,
+    # 2026-10-11 (owner): the sensor calibrations in TunerStudio's OWN Tools
+    # menu, as Speeduino does (speeduino.ini: menuDialog = main, menu =
+    # "Tools", "Calibrate TPS" ... "Calibrate AFR Sensor"); TunerStudio merges
+    # a menu called "Tools" into its own. rusEFI has a top-level Sensors
+    # menu instead - the owner chose Speeduino's arrangement.
+    ("Tools", [
+        ("hcEtbTpsCalDlg", "Calibrate TPS"),
+        ("hcEtbAppCalDlg", "Calibrate pedal sensor"),
+        ("hcSensorMapDlg", "Calibrate pressure sensor (MAP)"),
+        ("hcSensorBaroDlg", "Barometric sensor (onboard)"),
+        ("hcSensorCltDlg", "Calibrate coolant temperature sensor"),
+        ("hcSensorIatDlg", "Calibrate intake air temperature sensor"),
+        ("hcSensorLambdaDlg", "Calibrate AFR sensor (wideband)"),
+        ("hcSensorBatteryDlg", "Calibrate voltage reading"),
         ("hcSensorMiscDlg", "MAF input"),
     ]),
 ]
@@ -2509,7 +2709,7 @@ NOT_SHOWN = {
     # Seeds the ambient value for the first main-loop pass after power-up;
     # from then on the Ambient pressure source decides (hcload711.c). Not a
     # setting a tuner should meet.
-    "baroDefault": "power-up seed only - Sensors > Baro sensor (onboard) "
+    "baroDefault": "power-up seed only - Tools > Barometric sensor "
                    "chooses the ambient source",
     "transPad": "alignment byte after transEnable",
     "idleTimingPad": "alignment byte after idleTimingEnable",
@@ -2606,7 +2806,8 @@ def place_report():
 
     # Every P() must name a panel that exists.
     known = {p[0] for p in PANELS} | {p[0] for p in IND_PANELS} \
-        | {p[0] for p in READ_PANELS} | {c[0] for c in UI.CURVES}
+        | {p[0] for p in READ_PANELS} | {c[0] for c in UI.CURVES} \
+        | {t[0] for t in UI.TABLES}
     for src, items in ([(p[0], p[2]) for p in PANELS]
                        + [(d[0], d[2]) for d in WORKFLOWS]):
         for it in items:
@@ -2661,11 +2862,71 @@ def _q(s):
     return s if s.startswith("{") else '"%s"' % s
 
 
+# 2026-10-11 COMPACT DIALOGS (owner: every window needs zooming on a
+# laptop). A run of "#" note lines - two or more, or one longer than 50
+# characters - is not drawn in the dialog: it goes into the dialog's help
+# topic (TunerStudio's "?" button), generated per dialog when it has none.
+# Short one-line headings stay. Nothing is lost: gen_ts_ini_me711 writes
+# NOTE_TOPICS with the other help topics.
+COMPACT_NOTES = True
+NOTE_TOPICS: dict = {}          # topic id -> (title, [paragraphs])
+_PANEL_NOTES: dict = {}         # panel id -> [paragraphs]
+
+
+def _split_notes(items):
+    """-> (items without the long note runs, [paragraphs])"""
+    if not COMPACT_NOTES:
+        return list(items), []
+    out, paras, run = [], [], []
+
+    def flush():
+        if not run:
+            return
+        texts = [t[1][1:].strip() for t in run]
+        if len(run) >= 2 or len(texts[0]) > 50:
+            paras.append(" ".join(texts))
+        else:
+            out.extend(run)
+        del run[:]
+    for it in items:
+        if it[0] == "t" and it[1].startswith("#"):
+            run.append(it)
+            continue
+        flush()
+        out.append(it)
+    flush()
+    return out, paras
+
+
+def _dialog_notes(items, seen=None):
+    """the note paragraphs of a dialog: its own and every panel it embeds"""
+    seen = set() if seen is None else seen
+    paras = []
+    for it in items:
+        if it[0] == "p" and it[1] not in seen:
+            seen.add(it[1])
+            paras += _PANEL_NOTES.get(it[1], [])
+            sub = _PANEL_ITEMS.get(it[1])
+            if sub:
+                paras += _dialog_notes(sub, seen)
+    return paras
+
+
+_PANEL_ITEMS: dict = {}
+
+
+def _num(v):
+    """a settingOption value: integer when it is one"""
+    return ("%d" % v) if float(v).is_integer() else ("%.2f" % v).rstrip("0")
+
+
 def _emit_items(out, items, by_ts, indent="      "):
     for it in items:
         kind = it[0]
         if kind == "t":
             out.append('%sfield = "%s"' % (indent, it[1].replace('"', "'")))
+        elif kind == "n":
+            out.append('%sfield = "#%s"' % (indent, it[1].replace('"', "'")))
         elif kind == "f":
             ts, override, guard = it[1], it[2], it[3]
             line = '%sfield = "%s", %s' % (indent, _label(by_ts, ts, override),
@@ -2698,6 +2959,16 @@ def _emit_items(out, items, by_ts, indent="      "):
                 elif g:
                     line += ", { %s }" % g
                 out.append(line)
+        elif kind == "s":
+            label, options, guard = it[1], it[2], it[3]
+            line = '%ssettingSelector = "%s"' % (indent, label)
+            if guard:
+                line += ", { %s }" % guard
+            out.append(line)
+            for name, sets in options:
+                out.append('%s   settingOption = "%s", %s' % (
+                    indent, name.replace('"', "'"),
+                    ", ".join("%s=%s" % (f, _num(v)) for f, v in sets)))
         elif kind == "g":
             out.append("%sgauge = %s" % (indent, it[1]))
         elif kind == "r":
@@ -2766,12 +3037,19 @@ def emit(by_ts, gauges, commands, dynamic):
         _emit_items(out, items, by_ts)
         out.append("")
 
+    NOTE_TOPICS.clear()
+    _PANEL_NOTES.clear()
+    _PANEL_ITEMS.clear()
+    for pid, title, items in PANELS:
+        _PANEL_ITEMS[pid] = items
     for pid, title, items in PANELS:
         head = '   dialog = %s, "%s"' % (pid, title)
         if PANEL_LAYOUT.get(pid):
             head += ", " + PANEL_LAYOUT[pid]
         out.append(head)
-        _emit_items(out, items, by_ts)
+        kept, paras = _split_notes(items)
+        _PANEL_NOTES[pid] = paras
+        _emit_items(out, kept, by_ts)
         out.append("")
 
     for did, title, items, layout, help_topic in WORKFLOWS:
@@ -2779,9 +3057,17 @@ def emit(by_ts, gauges, commands, dynamic):
         if layout:
             head += ", " + layout
         out.append(head)
+        kept, paras = _split_notes(items)
+        paras += _dialog_notes(items)
+        if paras and not help_topic:
+            help_topic = "hcNotes_" + did
+        if paras:
+            t0, p0 = NOTE_TOPICS.get(help_topic, (title, []))
+            NOTE_TOPICS[help_topic] = (t0, p0 + [p for p in paras
+                                                 if p not in p0])
         if help_topic:
             out.append('      topicHelp = "%s"' % help_topic)
-        _emit_items(out, items, by_ts)
+        _emit_items(out, kept, by_ts)
         out.append("")
 
     # The honesty checks, run on what was ACTUALLY emitted rather than on the
@@ -2857,14 +3143,33 @@ def emit_menu(extra_tail, declared):
 # ==========================================================================
 # V98 (real TunerStudio): the FAST-BLOCK channels (ts_gauges_me711.FAST_TWINS)
 # - the old-offset twins are titled "(raw block)" and cost the fast poll.
+# 2026-10-11 round 2 (owner: Speeduino's default screen): Speeduino's eight -
+# engine speed, throttle, pulse width, duty / MAP, inlet air, coolant,
+# mixture (measured lambda: HaniCore has no AFR channel).
 FRONT_GAUGES = [
+    "RPMValueGauge",
+    "TPSValueGauge",
+    "injectorPulseWidthGauge",
+    "injectorDutyGauge",
+    "MAPValueGauge",
+    "intakeGauge",
+    "coolantGauge",
+    "lambdaValueGauge",
+]
+_OLD_FRONT_GAUGES = [
     "RPMValueGauge",       # rusEFI RPMGauge
     "coolantGauge",        # rusEFI CLTGauge
     "TPSValueGauge",       # rusEFI TPSGauge
     "MAPValueGauge",       # rusEFI MAPGauge
-    "afrX10Gauge",         # rusEFI afr1Gauge - the TARGET, until a sensor is real
-    "VBattGauge",          # rusEFI VBattGauge
-    "coilDwellGauge",      # rusEFI dwellGauge
+    # 2026-10-11 (owner: the car test must SEE the essentials): the measured
+    # lambda beside its target and the injector duty replace the target AFR,
+    # battery and dwell - the battery has its own BATT FAULT lamp below,
+    # dwell is under Ignition. rusEFI's slots 5..7 (afr1, VBatt, dwell)
+    # assume a working wideband and a known fuel system; this car has neither
+    # proven yet.
+    "lambdaValueGauge",    # rusEFI lambdaGauge (0 = withheld, see LAMBDA lamp)
+    "targetLambdaGauge",   # rusEFI targetLambdaGauge
+    "injectorDutyGauge",   # rusEFI injectorDutyCycleGauge
     "ignitionTimingGauge",  # rusEFI correctedIgnAdvGauge
 ]
 
@@ -2878,11 +3183,34 @@ FRONT_GAUGES = [
 # and the bench-safe bit moved to Diagnostics; noSync duplicated crankSync;
 # the non-volatile / pending-staging lines are Diagnostics > Calibration
 # storage.
+#
+# 2026-10-11 (owner, Speeduino's default screen): WHAT THE ENGINE IS DOING
+# comes first - Running, Cranking, ASE, WUE, Accel, DFCO, closed loop,
+# idle, the limiters and protections - each "X OFF" / "X", lit while it
+# acts; the faults follow. Every expression is a published state bit
+# (engineFlags, seqActive, idleState, limpCut, fuelCut, knockRetardMax),
+# through named flag channels: the .dash encodes a bare `&` wrongly.
 FRONT_INDICATORS = [
-    ("setupFault", "CONFIG OK", "CONFIG ERROR", RED),
-    ("nvmNotBurned", "TUNE SAVED", "BURN PENDING", YELLOW),
+    ("flagRunning", "NOT RUNNING", "RUNNING", GREEN),
+    ("flagCranking", "NOT CRANKING", "CRANKING", GREEN),
     ("crankSync", "NO CRANK SYNC", "CRANK SYNC", GREEN),
     ("cycleSync", "NO PHASE SYNC", "PHASE SYNC", GREEN),
+    ("seqActive != 0", "BATCH / WASTED", "SEQUENTIAL", GREEN),
+    ("flagAse", "ASE OFF", "ASE", GREEN),
+    ("flagWarmup", "WUE OFF", "WUE", GREEN),
+    ("flagTransient", "ACCEL OFF", "ACCEL ENRICH", GREEN),
+    ("flagDfco", "DFCO OFF", "DFCO", GREEN),
+    ("flagStft", "OPEN LOOP", "CLOSED LOOP", GREEN),
+    ("flagIdleCtrl", "IDLE CTRL OFF", "IDLE CONTROL", GREEN),
+    ("flagRevLimit", "REV LIMIT OFF", "REV LIMIT", RED),
+    ("limpCut != 0", "PROTECT OFF", "ENGINE PROTECT", RED),
+    ("flagBoostCut", "BOOST CUT OFF", "BOOST CUT", RED),
+    ("knockRetardMax > 0", "KNOCK OFF", "KNOCK RETARD", YELLOW),
+    ("flagLaunch", "LAUNCH OFF", "LAUNCH", YELLOW),
+    ("flagFlatShift", "FLAT SHIFT OFF", "FLAT SHIFT", YELLOW),
+    ("flagMapEst", "MAP MEASURED", "MAP ESTIMATE", YELLOW),
+    ("setupFault", "CONFIG OK", "CONFIG ERROR", RED),
+    ("nvmNotBurned", "TUNE SAVED", "BURN PENDING", YELLOW),
     # THE POLARITY IS THE EXPRESSION'S, NOT THE WISH'S. TunerStudio shows the
     # SECOND caption when the expression is TRUE. rusEFI writes the cut
     # indicators as `{ fuelCutReason != 0 }, "Injection OK", "Fuel cut"` for
@@ -2893,6 +3221,9 @@ FRONT_INDICATORS = [
     # V97: the MIL request (rusEFI's check-engine line). The DTC framework
     # owns it - a stored code alone does not light it (docs/ARCHITECTURE.md).
     ("dtcMil", "CEL", "CEL", RED),
+    # bank 1 lambda is a fresh measurement (lam1Why 0); the reason it is
+    # not is the "Lam why" gauge / Diagnostics > Wideband
+    ("flagLambdaOk", "LAMBDA WAIT", "LAMBDA OK", GREEN),
     ("sensorsValid", "SENSOR FAULT", "SENSORS OK", GREEN),
     ("outputsPermitted", "OUTPUTS BLOCKED", "OUTPUTS OK", GREEN),
     # V75: these two were `mainRelayMode == 2` - lit for AUTO whether or not
@@ -2913,7 +3244,7 @@ FRONT_INDICATORS = [
     ("app1Error", "PEDAL1 OK", "PEDAL1 FAULT", RED),
     ("app2Error", "PEDAL2 OK", "PEDAL2 FAULT", RED),
     ("appPairError", "PEDAL OK", "PEDAL MISMATCH", RED),
-    ("hcbState == 1", "BENCH IDLE", "BENCH TEST", YELLOW),
+    ("flagBenchTest", "BENCH IDLE", "BENCH TEST", YELLOW),
 ]
 
 

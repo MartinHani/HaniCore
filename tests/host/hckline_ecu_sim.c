@@ -18,6 +18,7 @@
  *
  * PROTOCOL (one command per line; every command answers exactly one line)
  *   cfg <key> <value>     echo 0|1, silent 0|1, stock 0|1, gate 0|1,
+ *                         noslow 0|1 (ignore 5-baud; fast init still works),
  *                         boot <baud>, hunt_follow n, lock_follow n,
  *                         sig <text>
  *   reset                 the ECU power-cycles (boots hunting at 57600)
@@ -50,6 +51,8 @@ static long last_host_baud = 0;
 static int gate = 0, gate_open = 0;   /* a K-line that opens only after a
                                          valid 5-baud 0x01 (the case that
                                          makes the vehicle path necessary) */
+static int noslow = 0;                /* 2026-10-13: the 5-baud entry is deaf */
+static unsigned int lo_ms = 0;        /* the current low run (fast init)   */
 static int gofasts = 0;               /* GOFAST requests the ECU acted on /
                                          received (stock)                   */
 static unsigned char sk[64];          /* stock ECU: frame assembly          */
@@ -148,7 +151,8 @@ static void ecu_ms(void)
     now_us += US_PER_MS;
     /* 5-baud decoder: falling edge after >= 300 ms high, sample bit centres */
     if (fb_st == 0) {
-        if (!line_hi && hi_ms >= 300u) { fb_st = 1; fb_t = 0; fb_byte = 0; fb_i = 0; }
+        /* hckwp_me711.c FB_IDLE_MS: 20 ms since 2026-10-13 (300 before) */
+        if (!line_hi && hi_ms >= 20u) { fb_st = 1; fb_t = 0; fb_byte = 0; fb_i = 0; }
     } else {
         fb_t++;
         if (fb_t == 100u && line_hi) fb_st = 0;          /* not a start bit */
@@ -161,7 +165,7 @@ static void ecu_ms(void)
                at the END of the stop bit, not at its centre */
             {
                 fb_st = 0;
-                if (!silent) {
+                if (!silent && !noslow) {
                     ts_burst_end();
                     req_n = 0;
                     if (fb_byte == 0x01) gate_open = 1;
@@ -172,6 +176,20 @@ static void ecu_ms(void)
                 }
             }
         }
+    }
+    /* ISO 14230 FAST INIT (hckwp_me711.c kl_wakeup: the tick measures the
+       low run; 20..30 ms opens the core's StartCommunication window) */
+    if (line_hi) {
+        if (lo_ms >= 20u && lo_ms <= 30u && !kw_on && !silent && !stock) {
+            ts_burst_end();
+            req_n = 0;
+            gate_open = 1;
+            hckline_on_fast_init(&kw, now_us);
+            kw_on = 1; ecu_baud = 10400; sk_n = 0;
+        }
+        lo_ms = 0u;
+    } else if (lo_ms < 60000u) {
+        lo_ms++;
     }
     hi_ms = line_hi ? hi_ms + 1u : 0u;
     if (!kw_on) return;
@@ -293,6 +311,7 @@ int main(void)
             else if (!strcmp(key, "silent")) silent = (int)v;
             else if (!strcmp(key, "stock")) stock = (int)v;
             else if (!strcmp(key, "gate")) gate = (int)v;
+            else if (!strcmp(key, "noslow")) noslow = (int)v;
             else if (!strcmp(key, "boot")) ecu_baud = v;
             else if (!strcmp(key, "hunt_follow")) hunt_follow = (int)v;
             else if (!strcmp(key, "lock_follow")) lock_follow = (int)v;

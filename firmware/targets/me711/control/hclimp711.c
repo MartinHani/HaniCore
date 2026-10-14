@@ -23,6 +23,7 @@
 #include "hctrigger.h"
 #include "hcengine.h"
 #include "hc_dbw.h"
+#include "hcetbcal.h"          /* hc_etbcal_dlr_ska() (far) */
 #include "hclimp.h"
 #include "hclimp711.h"
 #include "hcdeadline711.h"
@@ -115,7 +116,10 @@ void far hc_limp_service(unsigned int now_ms)
     in.clt_ok = (unsigned char)((eng_sensor_err & ENG_ERR_CLT) == 0u);
     in.oil_kpa = 0u;
     in.oil_ok = 0u;
-    in.etb_fault = (unsigned char)(dbw_on && (hc_dbw_faults() & ETB_FAULTS) != 0u);
+    /* + the Bosch DLR's reversible request (FR DLR 3.60, hcetbcal.c): the
+       controller saturated beyond DLRPID1T - lifted when it recovers. */
+    in.etb_fault = (unsigned char)(dbw_on && ((hc_dbw_faults() & ETB_FAULTS) != 0u
+                                              || hc_etbcal_dlr_ska()));
     in.duty_x10 = hc_limp_duty_x10;
     in.pedal_x10 = dbw_on ? hc_dbw_pedal_x10() : eng_tps_x10;
     (void)hclimp_step(&hc_limp, &c, &in, ms);

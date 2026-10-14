@@ -75,6 +75,7 @@ FAST = {
     "ts_ini_och_scale_proof", "ts_ini_terminology_proof", "ts_ini_ux_contract_proof",
     "ts_ini_command_shape_proof", "ts_ini_dead_knob_proof", "ts_ini_scaling_proof",
     "ts_dash_proof", "ts_signature_layout_proof", "ts_pin_dropdown_agreement_proof",
+    "ts_ini_tracer_proof",
 }
 
 # TIER 1: the milestone check of the TunerStudio interface against the image

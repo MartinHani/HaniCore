@@ -59,7 +59,6 @@ void far hc_hal_ain_bind_f(unsigned char sem, unsigned char adc_ch)
     hc_hal_ain_bind(sem, adc_ch);
 }
 unsigned char far hc_hal_ain_phys_f(unsigned char sem)     { return hc_hal_ain_phys(sem); }
-unsigned char far hc_hal_ain_bound_f(unsigned char sem)    { return hc_hal_ain_bound(sem); }
 unsigned char far hc_hal_dbw_sf_faulted_f(void)            { return hc_hal_dbw_sf_faulted(); }
 unsigned char far hc_hal_dbw_sf_level_f(void)              { return hc_hal_dbw_sf_level(); }
 /* V92 */
@@ -78,7 +77,6 @@ unsigned char far hc_dbw_bridge_on_f(void) { return hc_dbw_bridge_on(); }
 unsigned int far hc_dbw_duty_x10_f(void) { return hc_dbw_duty_x10(); }
 void          far hc_dbw_drive_f(unsigned char dir, unsigned int duty) { hc_dbw_drive(dir, duty); }
 void          far hc_dbw_shutdown_f(unsigned int fault_bits) { hc_dbw_shutdown(fault_bits); }
-void far hc_dbw_clear_faults_f(void) { hc_dbw_clear_faults(); }
 unsigned char far hc_dbw_gains_f(unsigned int a_x10, unsigned int tu_ms,
                                  unsigned int *k)
 {
@@ -122,10 +120,9 @@ unsigned int  far cfg_u16_f(unsigned char off)            { return cfg_u16(off);
 void          far hc_hal_out_f(unsigned char sem, unsigned char on) { hc_hal_out(sem, on); }
 void far hc_hal_out_duty_f(unsigned char sem, unsigned int duty)
 { hc_hal_out_duty(sem, duty); }
-/* The bridge PWM frequency: hcetbcal.c sets it while evaluating candidates and
-   publishes what the hardware ended up switching at. */
-void far hc_hal_dbw_pwm_hz_f(unsigned int hz)
-{ hc_hal_dbw_pwm_hz(hz); }
+/* What the bridge PWM ended up switching at (hcetbcal.c publishes it).
+   2026-10-14: the unused setter thunk, hc_hal_ain_bound_f and
+   hc_dbw_clear_faults_f were removed - no far module calls them. */
 unsigned int far hc_hal_dbw_pwm_applied_hz_f(void)
 { return hc_hal_dbw_pwm_applied_hz(); }
 unsigned char far hc_hal_out_class_live_f(unsigned char sem) { return hc_hal_out_class_live(sem); }
@@ -290,6 +287,11 @@ unsigned char far hc_power_hold_state_f(void) { return hc_power_hold_state(); }
 unsigned char far hc_power_nl_predict_f(unsigned char nlen_fr, unsigned char nlen_as) { return hc_power_nl_predict(nlen_fr, nlen_as); }
 
 unsigned int far hc_rst_get_f(unsigned int off) { return hc_rst_get(off); }
+/* hcrtmon711.c hc_rst_publish (moved out of NCODE, 2026-10-14) */
+void far hc_rst_progress_f(unsigned int ms, unsigned int loops,
+                           unsigned int fv, unsigned int lv,
+                           unsigned int wdt, unsigned int *tgt)
+{ hc_rst_progress(ms, loops, fv, lv, wdt, tgt); }
 
 unsigned int far hc_s5500_raw_f(unsigned char i) { return hc_s5500_raw(i); }
 

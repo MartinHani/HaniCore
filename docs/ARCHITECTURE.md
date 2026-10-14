@@ -192,11 +192,18 @@ Engine events run in interrupt context, by priority:
 | crank, cam capture | 12 | record a timestamp, request the planner when a walk is due |
 | edge executor (CC25 compare) | 11 | drive coil and injector edges at their deadline |
 | planner (CC26 software request) | 9 | convert angles to deadlines and publish them |
-| 1 ms tick, reply transmit | 8 | ADC, freshness, output supervisor; K-line transmit |
+| S5500 exchange (CC27 software request) | 9 | one step of the S5500 frame exchange per millisecond; the frame starts on the millisecond whatever the main loop is doing |
+| 1 ms tick, reply transmit | 8 | ADC, freshness, output supervisor, K-line pin timing; requests the S5500 exchange; K-line transmit |
 | main loop | 0 | engine and control calculations, DBW, diagnostics, TunerStudio |
 
 Each level has its own register bank; critical sections raise the interrupt
 level (never clear the global enable) and stay below 50 µs.
+
+The S5500 supervision chip resets the processor when its 10 ms frames arrive
+late (measured: repeated gaps above ~25 ms reset it within a second). The
+frame exchange therefore never depends on the main loop: it runs at the
+planner's level, requested by the tick, and the reply's analog and switch
+words are copied the moment the reply is accepted.
 
 Output safety is structural:
 

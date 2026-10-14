@@ -2,6 +2,36 @@
 r"""
 me711_vehicle_test.py - THE HaniCore vehicle diagnostic / flight recorder.
 
+    py tools\vehicle\me711_vehicle_test.py      THE GUIDED VEHICLE TEST (2026-10-10):
+                                    one session that walks you through every
+                                    system the engine needs, records all of
+                                    it, and ends with PASS / WARN / FAIL per
+                                    system (report.md, summary.txt):
+        0 PREFLIGHT  identity, config, battery, CLT/IAT, MAP vs baro, pedal /
+                     TPS at rest, trouble codes, wideband warm-up, boot history
+        1 K-LINE     OBD (VAG 5-baud / KWP) first, else move the KKL to pin 43
+        2 PEDAL      released / full / slow sweep / fast stabs
+        3 THROTTLE   engine off: direction A/B, AutoCal, optional autotune
+        4 START      crank -> sync -> cam -> running, battery dip, sync losses
+        5 IDLE       60 s: EVERY injector channel opens, coils, scheduler,
+                     rpm stability, wideband stays valid, mixture, warm-up
+        6 DRIVE      DBW on (RAM only, engine stopped to apply): slow ramp,
+                     5 fast tip-ins (cause of any stumble named), overrun
+                     fuel cut, blip, 2500 rpm hold
+        7 STRATEGY   optional: batch / semi-seq / sequential, cam level 0/1
+        8 KEY-OFF    run-on, hot restart
+        9 REPORT     + the automatic log analysis
+      --phase <name> runs one phase; --resume <folder> continues a session.
+      Every actuating step needs your ENTER after a safety line; Ctrl+C or
+      a failure sends '!X' and restores every RAM value it changed. FULLY
+      AUTOMATIC (2026-10-11): it asks only for physical actions. A PASSED
+      throttle calibration (phase 3) is BURNED at once (engine off); a
+      PASSED drive test (phase 6) keeps the electronic throttle ON and is
+      burned at the end after you stop the engine; everything else (the
+      strategy / cam-level experiments) is put back. Every Burn is verified
+      by reading the page back.
+    py tools\vehicle\me711_vehicle_test.py --recorder   the plain recorder
+                                    (K-line + record everything until ENTER)
     py tools\vehicle\me711_vehicle_test.py --port COM2 --kline      link qualification
     py tools\vehicle\me711_vehicle_test.py --port COM2 --autocal    ETB direction / AutoCal
     py tools\vehicle\me711_vehicle_test.py --port COM2 --runtime    engine flight recorder
@@ -149,6 +179,20 @@ import me711_vehicle_capture as VC        # noqa: E402  (Ini, pick_ini, ...)
 TOOL_VERSION = "2.0 (V100 multi-rate)"
 RATE_CODE = {10400: 0x01, 57600: 0x02, 124800: 0x03, 115200: 0x04}
 EXT_RING = 344 + 120 + 168        # the ring follows LF, tooth profile, boots
+# 2026-10-11: THE RESET WITNESS follows the event ring (916 B) and the runtime
+# health record (64 B): 32 big-endian words live + 32 of the boot before
+# (hcrtmon711.c). Older images answer nothing there.
+EXT_WITNESS = EXT_RING + 916 + 64
+WT_FIELDS = ("magic", "seq", "uptime_ms", "rpm", "batt_dv", "etb_status",
+             "asic_run_ok", "asic_csum_err", "asic_timeouts",
+             "umkom_mismatch", "umkom_health_expect", "umkom_last_rx",
+             "s5500_gap_max_ms", "nvm_state_trg", "main_pass_max_T",
+             "wdt_gap_max_ms", "cc25_beat_age_max_ms", "rt_fault",
+             "user_stack_hwm", "sys_stack_hwm", "svc_dbw_T", "svc_comms_T",
+             # 2026-10-13: the S5500 runtime raster, start to start (T = 0.8 us)
+             "s5500_per_max_T", "s5500_per_min_T", "s5500_n_gt10_5ms",
+             "s5500_n_gt11ms", "s5500_n_gt12ms", "s5500_n_gt15ms",
+             "s5500_n_lt9_5ms", "s5500_prev_start_T", "stall_cfg", "stall_last")
 EV_HDR, EV_REC = 16, 10
 
 # ======================================================= V100: the groups ==
@@ -206,12 +250,20 @@ GROUPS = {
         veLoadX10 dbwTermP dbwTermD dbwTermFf dbwBattFactor dbwPendMs
         dbwSteps etbVfySettleMs etbVfyOverX10 etbVfyErrX10 etbVfyStep
         dbwFaultClears etbProc etbDrive etbPhaseMs
+        inj1RequestedUs inj1DeliveredUs inj2RequestedUs inj2DeliveredUs
+        inj3RequestedUs inj3DeliveredUs inj4RequestedUs inj4DeliveredUs
+        inj5RequestedUs inj5DeliveredUs inj6RequestedUs inj6DeliveredUs
+        inj7RequestedUs inj7DeliveredUs inj8RequestedUs inj8DeliveredUs
+        runOn dtcActive1 dtcActive2 dtcActive3 dtcActive4 rstBootCount
+        cfgDirtyGroups cfgApplyRefused
         idleFloorX10 idleTrimX10 idleTargetRpm idleState idleTarget
         boostState boostCmdX10 boostReqX10 boostTargetX10 boostDuty boostCuts
         motorsportState revLimitNow fuelPumpState fuelPumpReason
         dtcMil dtcActiveN celState cjErr cjTmo
         knockState knockWindows knockLate knockStale knockSelFault knockCount
         knockFlags vvt1State vvt1Err vvt2State vvt2Err switchRaw
+        dtcStoredMask0 dtcStoredMask1 dtcActiveMask0 dtcActiveMask1
+        dtcStoredN
     """.split(),
 }
 
@@ -241,6 +293,7 @@ ON_CHANGE = """
     dtcMil dtcActive1 dtcActive2 dtcActive3 dtcActive4 celState switchRaw
     knockSelFault knockCodes vvt1State vvt2State toothLogState presetResult
     linkState kwpState linkDiag seqActive stftState primeState
+    dtcStoredMask0 dtcStoredMask1 dtcActiveMask0 dtcActiveMask1
 """.split()
 
 # ---------------------------------------------------- the logging profiles --
@@ -310,7 +363,8 @@ DBW_STATE = {0: "OFF", 1: "INIT", 2: "RUN", 3: "FAULT"}
 DBW_FAULT = {1: "calibration", 2: "pedal pair", 4: "throttle pair",
              8: "pedal range", 16: "throttle range", 32: "bridge SF",
              64: "OFF TARGET TOO LONG", 128: "no sensor source",
-             256: "outputs not live"}
+             256: "outputs not live", 512: "motor supply",
+             1024: "saturated > 0.6 s (limp request)"}
 KLINE_CTR = {0: "resync", 1: "hw overrun", 2: "framing", 3: "ring overflow",
              4: "echo lost"}
 ENGINE = {0: "STOPPED", 1: "CRANKING", 2: "RUNNING"}
@@ -374,6 +428,21 @@ class SerialPort:
         self.ser.break_condition = False
         self.reset_input()
 
+    def wakeup(self):
+        """ISO 14230 fast init: 25 ms break, 25 ms idle, at 10400. The ECU
+        times the low run itself (accepts 20..30 ms) - a busy wait, not a
+        sleep, because Windows sleeps in 15 ms steps."""
+        self.set_baud(10400)
+        t0 = time.perf_counter()
+        self.ser.break_condition = True
+        while time.perf_counter() - t0 < 0.025:
+            pass
+        self.ser.break_condition = False
+        t1 = time.perf_counter()
+        while time.perf_counter() - t1 < 0.025:
+            pass
+        self.reset_input()
+
     def close(self):
         try:
             self.ser.close()
@@ -385,17 +454,26 @@ class SerialPort:
 class Session:
     """The folder, the console, the CSV writers - one per run."""
 
-    def __init__(self, out: Path, quiet=False):
+    def __init__(self, out: Path, quiet=False, resume=False):
         self.dir = out
         out.mkdir(parents=True, exist_ok=True)
         self.t0 = time.monotonic()
         self.quiet = quiet
+        self.resume = resume
         self._w = {}
         self._f = {}
         self._hdr = {}
         self.summary = []
         self.meta = {"tool": "me711_vehicle_test", "tool_version": TOOL_VERSION,
                      "started_utc": utc(), "phases": {}}
+        if resume and (out / "metadata.json").exists():
+            # --resume: the earlier part of THIS session stays the record
+            try:
+                self.meta = json.loads((out / "metadata.json").read_text())
+            except Exception:
+                pass
+            self.meta.setdefault("phases", {})
+            self.meta.setdefault("resumed_utc", []).append(utc())
         self._con = open(out / "console.log", "a", encoding="utf-8")
 
     def t(self):
@@ -410,10 +488,12 @@ class Session:
 
     def writer(self, name, header):
         if name not in self._w:
-            f = open(self.dir / (name + ".csv"), "w", newline="",
-                     encoding="utf-8")
+            p = self.dir / (name + ".csv")
+            append = self.resume and p.exists() and p.stat().st_size > 0
+            f = open(p, "a" if append else "w", newline="", encoding="utf-8")
             w = csv.writer(f)
-            w.writerow(header)
+            if not append:
+                w.writerow(header)
             self._f[name], self._w[name] = f, w
             self._hdr[name] = list(header)
         elif self._hdr.get(name) != list(header):
@@ -668,18 +748,24 @@ class Kline:
         p.five_baud(0x01)
         sync = p.read(3, 0.8)
         r["sync"] = sync.hex()
+        r["entry"] = "5-baud"
         if not sync:
-            return "NO INIT RESPONSE", "no sync byte after the 5-baud address 0x01", r
-        if sync != b"\x55\xEF\x8F":
+            # ISO 14230 FAST INIT (2026-10-13, ME711_OBD_KLINE.md 6.2): the
+            # tester asserts the wake-up, so it does not need the quiet line
+            # the 5-baud byte needs - the robust entry on the car's shared bus
+            r["entry"] = "fast init"
+            p.wakeup()
+        elif sync != b"\x55\xEF\x8F":
             return "BAD KEYBYTES", "sync/keybytes %s (want 55ef8f)" % sync.hex(), r
-        link.stage = "kwp keybyte complement"
-        p.write(b"\x70")
-        echo = p.read(1, 0.3)
-        fe = p.read(1, 0.3)
-        r["complement"] = fe.hex()
-        if fe != b"\xFE":
-            return "NO COMPLEMENT", "ECU complement %r (want fe), echo %r" % (
-                fe.hex(), echo.hex()), r
+        else:
+            link.stage = "kwp keybyte complement"
+            p.write(b"\x70")
+            echo = p.read(1, 0.3)
+            fe = p.read(1, 0.3)
+            r["complement"] = fe.hex()
+            if fe != b"\xFE":
+                return "NO COMPLEMENT", "ECU complement %r (want fe), echo %r" % (
+                    fe.hex(), echo.hex()), r
 
         def kwp_req(data, stage, timeout=0.5):
             link.stage = stage
@@ -704,6 +790,10 @@ class Kline:
 
         d = kwp_req(b"\x81", "kwp StartCommunication")
         if not d or d[0] != 0xC1:
+            if r["entry"] == "fast init":
+                return "NO INIT RESPONSE", ("no sync byte after the 5-baud "
+                                            "address 0x01, and no answer to a "
+                                            "fast init"), r
             return "STARTCOMM FAILED", "StartCommunication reply %r" % (
                 d.hex() if d is not None else None), r
         d = kwp_req(b"\xB0HC", "kwp IDENTIFY")
@@ -749,7 +839,8 @@ class Kline:
         stage, why, r = self.kwp(link, self.baud)
         res.update(kwp=r, stage=stage, detail=why)
         if stage == "OK":
-            res["how"] = "KWP 5-baud -> GOFAST %d" % self.baud
+            res["how"] = "KWP %s -> GOFAST %d" % (r.get("entry", "5-baud"),
+                                                  self.baud)
             return link, res
         port.close()
         return None, res
@@ -819,10 +910,29 @@ class Kline:
         return {"answered_with_key_off": off_answer, "ok": bool(n), "how": how,
                 "ms": round((time.perf_counter() - t0) * 1e3, 1)}
 
-    def run(self, block_hint=1248, quality=True):
+    def run(self, block_hint=1248, quality=True, keycycle=True):
         out = {}
+        # 2026-10-11 car: both OBD attempts ran with the ECU UNPOWERED (its
+        # boot history puts the first boot in the car a minute later); only
+        # the KKL - fed from OBD pin 16 - echoed. Nothing on the K-line can
+        # tell "ignition off" from "wrong wire", so ask first.
+        self.ask("Ignition ON (engine off): the ECU must be powered for the "
+                 "K-line test. Press Enter when it is on")
         link, r1 = self.attempt(self.first_path)
         out[self.first_path] = r1
+        if link is None and self.first_path == "OBD":
+            self.s.say("")
+            self.s.say("OBD: the ECU did not answer (stage: %s%s)" % (
+                r1["stage"], (" - " + r1["detail"]) if r1.get("detail") else ""))
+            # 2026-10-13 car: the operator HAD the ignition on and the cable
+            # verified - a hint that blames them is wrong. State the facts.
+            self.s.say("     The KKL's own echo came back (the cable reaches the "
+                       "OBD port); the ECU did not answer the 5-baud address "
+                       "or fast init.")
+            if self.ask("Press Enter to try OBD again (s + Enter: skip)",
+                        allow_skip=True):
+                link, r1b = self.attempt("OBD")
+                out["OBD (retry)"] = r1b
         if link is None:
             if self.first_path == "OBD":
                 self.s.say("")
@@ -857,7 +967,8 @@ class Kline:
                       else " - TREAT THE PATH LABEL WITH CARE"))
         if link is not None and quality:
             out["quality"] = self.quality(link, block_hint)
-            out["keycycle"] = self.keycycle(link)
+            if keycycle:
+                out["keycycle"] = self.keycycle(link)
         return link, out
 
 
@@ -918,6 +1029,77 @@ class Ecu:
             (sess.dir / "page.bin").write_bytes(self.page)
             sess.meta["engine_config"] = self.page_config()
         sess.save_meta()
+
+    def boot_history(self, tag):
+        """The ECU's own ring of the last 16 boots (why each boot ended, KL15,
+        minimum battery): at session start and end, so a reset during a
+        crank is on record even when the link dropped (2026-10-10 car)."""
+        body, err, _ = self.link.och(self.block + VC.BH_EXT_OFF, VC.BH_BYTES)
+        if body is None or len(body) != VC.BH_BYTES or body[:2] != b"BH":
+            self.s.say("BOOT HISTORY (%s): not readable - %s" % (tag, err))
+            return
+        (self.s.dir / ("boothist_%s.bin" % tag)).write_bytes(body)
+        recs = VC.decode_boothist(body)
+        self.s.meta.setdefault("boot_history", {})[tag] = recs
+        self.s.save_meta()
+        self.s.say("BOOT HISTORY (%s): %d boots recorded" % (tag, len(recs)))
+
+    def witness_live(self):
+        """The LIVE half of the reset witness (hcrtmon711.c updates it all
+        the time): S5500 frame counters and worst gap, monitoring
+        mismatches, worst main-loop pass, watchdog gap, stack peaks. Logged
+        every slow cycle (witness.csv), so the minutes BEFORE a reset show
+        their trend, not only the last state. None when unreadable."""
+        try:
+            body, _err, _ = self.link.och(self.block + EXT_WITNESS, 128)
+        except Exception:                 # a fake link in a unit test
+            return None
+        if body is None or len(body) != 128:
+            return None
+        w = [(body[i] << 8) | body[i + 1] for i in range(0, 64, 2)]
+        d = dict(zip(WT_FIELDS, w[:len(WT_FIELDS)]))
+        return d if d.get("magic") == 0x5257 else None
+
+    def reset_witness(self, tag):
+        """What the ECU saw last before its previous reset (hcrtmon711.c):
+        battery, rpm, the S5500 frame counters and worst gap, the monitoring
+        mismatches, the worst main-loop pass. Read at session start and after
+        every reboot; printed when the boot before left one."""
+        try:
+            body, err, _ = self.link.och(self.block + EXT_WITNESS, 128)
+        except Exception as ex:           # a fake link in a unit test
+            body, err = None, str(ex)
+        if body is None or len(body) != 128:
+            self.s.say("RESET WITNESS (%s): not readable - %s" % (tag, err))
+            return None
+        w = [(body[i] << 8) | body[i + 1] for i in range(0, 128, 2)]
+        live = dict(zip(WT_FIELDS, w[:len(WT_FIELDS)]))
+        prev = dict(zip(WT_FIELDS, w[32:32 + len(WT_FIELDS)]))
+        (self.s.dir / ("reset_witness_%s.bin" % tag)).write_bytes(bytes(body))
+        self.s.meta.setdefault("reset_witness", {})[tag] = {"live": live,
+                                                            "prev": prev}
+        self.s.save_meta()
+        if prev.get("magic") == 0x5257:
+            self.s.say(
+                "RESET WITNESS (%s) - the last state BEFORE this boot: uptime "
+                "%d ms, %d rpm, battery %.1f V, S5500 frames ok %d / checksum "
+                "errors %d / timeouts %d, worst S5500 gap %d ms, monitoring "
+                "mismatches %d (health/expect 0x%04X), worst main-loop pass "
+                "%.1f ms, watchdog gap %d ms, ETB status 0x%04X; S5500 "
+                "period %.2f..%.2f ms, >10.5 ms %d, >11 ms %d, >12 ms %d, "
+                ">15 ms %d, <9.5 ms %d"
+                % (tag, prev["uptime_ms"], prev["rpm"], prev["batt_dv"] / 10.0,
+                   prev["asic_run_ok"], prev["asic_csum_err"],
+                   prev["asic_timeouts"], prev["s5500_gap_max_ms"],
+                   prev["umkom_mismatch"], prev["umkom_health_expect"],
+                   prev["main_pass_max_T"] * 0.0008, prev["wdt_gap_max_ms"],
+                   prev["etb_status"], prev["s5500_per_min_T"] * 0.0008,
+                   prev["s5500_per_max_T"] * 0.0008, prev["s5500_n_gt10_5ms"],
+                   prev["s5500_n_gt11ms"], prev["s5500_n_gt12ms"],
+                   prev["s5500_n_gt15ms"], prev["s5500_n_lt9_5ms"]))
+        else:
+            self.s.say("RESET WITNESS (%s): no record of the boot before" % tag)
+        return prev
 
     def _lists(self):
         txt = self.ini_path.read_text(encoding="utf-8", errors="replace")
@@ -989,6 +1171,87 @@ class Ecu:
         raw = self.ini.decode(body, off)
         eng = {n: self.ini.eng(n, v) for n, v in raw.items()}
         return eng, None, ms
+
+    # ---- 2026-10-10 guided session: named page fields in RAM -------------
+    # Through the firmware's own TunerStudio path ('R' read, 'W' write ->
+    # hcts_cfg_write -> the config manager), exactly as a TunerStudio edit.
+    # NEVER a Burn: nothing here sends 'B'.
+    def constants(self):
+        """name -> (kind, signed, width, offset, lo_bit, hi_bit, count)"""
+        if getattr(self, "_consts", None) is None:
+            import re
+            txt = self.ini_path.read_text(encoding="utf-8", errors="replace")
+            body = txt.split("[Constants]", 1)[1].split("\n[", 1)[0]
+            out = {}
+            for line in body.splitlines():
+                m = re.match(r"\s*(\w+)\s*=\s*(scalar|bits|array)\s*,\s*([US])"
+                             r"(\d\d)\s*,\s*(\d+)\s*,(.*)", line)
+                if not m:
+                    continue
+                kind, sgn, w = m.group(2), m.group(3) == "S", int(m.group(4)) // 8
+                off, rest = int(m.group(5)), m.group(6)
+                lo = hi = None
+                cnt = 1
+                if kind == "bits":
+                    bm = re.match(r"\s*\[(\d+):(\d+)\]", rest)
+                    lo, hi = int(bm.group(1)), int(bm.group(2))
+                elif kind == "array":
+                    am = re.match(r"\s*\[\s*(\d+)(?:\s*x\s*(\d+))?\s*\]", rest)
+                    cnt = int(am.group(1)) * int(am.group(2) or 1)
+                out[m.group(1)] = (kind, sgn, w, off, lo, hi, cnt)
+            self._consts = out
+        return self._consts
+
+    def read_field(self, name):
+        kind, sgn, w, off, lo, hi, _n = self.constants()[name]
+        body, err, _ = self.link.request(b"R" + off.to_bytes(2, "big")
+                                         + w.to_bytes(2, "big"), 1.0, 2)
+        if body is None or len(body) != w:
+            return None
+        v = int.from_bytes(body, "big", signed=sgn)
+        if kind == "bits":
+            v = (v >> lo) & ((1 << (hi - lo + 1)) - 1)
+        return v
+
+    def write_field(self, name, value):
+        """-> the value read back (None if the link failed)."""
+        kind, sgn, w, off, lo, hi, _n = self.constants()[name]
+        if kind == "bits":
+            body, err, _ = self.link.request(b"R" + off.to_bytes(2, "big")
+                                             + w.to_bytes(2, "big"), 1.0, 2)
+            if body is None or len(body) != w:
+                return None
+            raw = int.from_bytes(body, "big")
+            mask = ((1 << (hi - lo + 1)) - 1) << lo
+            raw = (raw & ~mask) | ((int(value) << lo) & mask)
+            data = raw.to_bytes(w, "big")
+        else:
+            data = int(value).to_bytes(w, "big", signed=sgn)
+        self.write_bytes(off, data)
+        return self.read_field(name)
+
+    def write_bytes(self, off, data):
+        for i in range(0, len(data), 32):
+            body, err, _ = self.link.request(b"W" + (off + i).to_bytes(2, "big")
+                                             + data[i:i + 32], 1.0, 2)
+            if body is None:
+                return False
+        return True
+
+    def field_at(self, off):
+        """The page field (name or name[i]) that holds byte `off`."""
+        for name, (kind, _s, w, o, _lo, _hi, cnt) in self.constants().items():
+            if o <= off < o + w * cnt:
+                return name if cnt == 1 else "%s[%d]" % (name, (off - o) // w)
+        return "page byte %d" % off
+
+    def scalar(self, name):
+        """One output channel, read on its own (None if absent/unreadable)."""
+        s = self.ini.scalars.get(name)
+        if not s:
+            return None
+        v, _err, _ms = self.window(s[1], VC.SIZES[s[0]])
+        return None if v is None else v.get(name)
 
 
 class Ring:
@@ -1256,10 +1519,11 @@ class Autocal:
                     out["moved"], out["limit"], out["disp"], out["hold_ms"],
                     out["detail"]])
         ok = r in (2, 4, 5, 6)
+        out["ok"] = ok
         why_txt = ""
         if not ok and "NOT A STOP" in out["why"]:
             why_txt = (" - the push moved TPS1 %s counts, limit %s (distance "
-                       "from rest %s): legacy inferred-stop refusal; these values "
+                       "from rest %s): refused as not a stop; these values "
                        "do not establish physical torque or stop contact" % (
                            out["moved"], out["limit"], out["disp"]))
         self.s.verdict("AUTOCAL", "PASS" if ok else "FAIL", "%s: %s%s%s" % (
@@ -1380,7 +1644,7 @@ class Watch:
 
 class Runtime:
     def __init__(self, ecu: Ecu, sess: Session, ring: Ring, stop_evt,
-                 duration=None, profile="max", rates=None):
+                 duration=None, profile="max", rates=None, guided=False):
         self.e, self.s, self.ring = ecu, sess, ring
         self.stop = stop_evt
         self.duration = duration
@@ -1391,6 +1655,20 @@ class Runtime:
         self.g = {n: Group(ecu, sess, n, GROUPS.get(n), r[n])
                   for n in ("fast", "medium", "slow")}
         self.watch = Watch(sess)
+        # 2026-10-10 GUIDED SESSION: one recorder for every phase. Each row
+        # also carries the phase and the operator's step marker, and - when
+        # `keep` is a list - the MERGED latest values of every group are kept
+        # in memory so the phase can judge what it just recorded. `stop_when`
+        # (a callable) ends a recording on a condition or the operator's
+        # ENTER; the session-start snapshot is taken once.
+        self.guided = guided
+        self.phase = ""
+        self.marker = ""
+        self.keep = None
+        self.keep_events = None
+        self.latest = {}
+        self.stop_when = None
+        self.started = False
         self.state = None
         self.boot = None          # rstBootCount, from the snapshot/slow row
         self.ecu_ms = None
@@ -1401,6 +1679,7 @@ class Runtime:
                       "drops": 0, "reconnects": 0, "events": 0, "drop_s": 0.0,
                       "onchange": 0, "snapshots": 0, "reboots": 0}
         self.kwp = None           # Kline.kwp, when the link needed it
+        self.on_reboot = None     # the guided session re-applies RAM tests
 
     # -------------------------------------------------------- snapshots ----
     def snapshot(self, reason):
@@ -1446,6 +1725,10 @@ class Runtime:
                            "(%s) - written to %s" % (reason, sha[:16], name))
         self.snaps.append(entry)
         self.stats["snapshots"] += 1
+        if reason == "reboot":
+            self.e.reset_witness("reboot_%d" % self.stats["reboots"])
+            if self.on_reboot is not None:
+                self.on_reboot()
         self.boot = row.get("rstBootCount", self.boot)
         self.s.say("SNAPSHOT (%s): boot #%s, nvm gen %s, cfg validation %s, "
                    "warnings %s" % (reason, entry["boot_count"],
@@ -1509,7 +1792,7 @@ class Runtime:
         self.s.say("KLINE: DROPOUT - reconnecting")
         link.stage = "runtime reconnect"
         t_kwp = t0 + 5.0
-        while not self.stop.is_set():
+        while not self._stopped():
             body, err, ms = link.exchange(b"S", 0.4)
             if body is None and self.kwp and time.monotonic() >= t_kwp:
                 # an ECU that restarted behind an OBD path that needs the
@@ -1536,34 +1819,58 @@ class Runtime:
             time.sleep(0.2)
         return False
 
+    def _stopped(self):
+        if self.stop.is_set():
+            return True
+        if self.stop_when is not None and self.stop_when():
+            self.stop.set()
+            return True
+        return False
+
+    def _lead(self):
+        lead = [("wall", utc())]
+        if self.guided:
+            lead += [("phase", self.phase), ("marker", self.marker)]
+        return lead
+
+    def _keep(self, row, t, group):
+        self.latest.update(row)
+        if self.keep is not None and group == "fast":
+            k = dict(self.latest)
+            k["_t"], k["_m"] = t, self.marker
+            self.keep.append(k)
+
     def run(self):
         e, s = self.e, self.s
         t_end = time.monotonic() + self.duration if self.duration else None
         t_ring = 0.0
         fails = 0
         fast, med, slow = self.g["fast"], self.g["medium"], self.g["slow"]
-        s.say("RUNTIME: profile %s - fast %s, medium %.2f s, slow %.2f s, "
-              "ring %.2f s" % (self.profile,
-                               "as fast as the link allows"
-                               if not fast.period else "%.2f s" % fast.period,
-                               med.period, slow.period, self.rates["ring"]))
-        s.say("RUNTIME: fast %d channels in %d exchange(s) / %d B; medium %d "
-              "in %d / %d B; slow the whole %d-byte block"
-              % (len(fast.names) - len(fast.missing), len(fast.win),
-                 fast.bytes, len(med.names) - len(med.missing), len(med.win),
-                 med.bytes, e.block))
-        for g in (fast, med):
-            if g.missing:
-                s.say("RUNTIME: %s - %d channel(s) this .ini does not "
-                      "declare, not read: %s" % (g.name, len(g.missing),
-                                                 ", ".join(g.missing[:8])))
-        self.snapshot("session start")
-        s.say("RUNTIME: recording - key-on, crank, run, stop: anything. "
-              "Press ENTER (or Ctrl+C) to finish.")
+        if not self.started:
+            s.say("RUNTIME: profile %s - fast %s, medium %.2f s, slow %.2f s, "
+                  "ring %.2f s" % (self.profile,
+                                   "as fast as the link allows"
+                                   if not fast.period else "%.2f s" % fast.period,
+                                   med.period, slow.period, self.rates["ring"]))
+            s.say("RUNTIME: fast %d channels in %d exchange(s) / %d B; medium "
+                  "%d in %d / %d B; slow the whole %d-byte block"
+                  % (len(fast.names) - len(fast.missing), len(fast.win),
+                     fast.bytes, len(med.names) - len(med.missing),
+                     len(med.win), med.bytes, e.block))
+            for g in (fast, med):
+                if g.missing:
+                    s.say("RUNTIME: %s - %d channel(s) this .ini does not "
+                          "declare, not read: %s" % (g.name, len(g.missing),
+                                                     ", ".join(g.missing[:8])))
+            self.snapshot("session start")
+            self.started = True
+        if not self.guided:
+            s.say("RUNTIME: recording - key-on, crank, run, stop: anything. "
+                  "Press ENTER (or Ctrl+C) to finish.")
         e.link.stage = "runtime"
         t_rate = time.monotonic()
         n_rate = 0
-        while not self.stop.is_set():
+        while not self._stopped():
             now = time.monotonic()
             if t_end and now >= t_end:
                 break
@@ -1580,8 +1887,9 @@ class Runtime:
                     fails = 0
                 continue
             fails = 0
-            t = fast.write(row, lead=[("wall", utc())])
+            t = fast.write(row, lead=self._lead())
             self.stats["fast_rows"] = fast.rows
+            self._keep(row, t, "fast")
             self.note_changes(row, t)
             n_rate += 1
             if "ecuMs" in row and self.ring:
@@ -1595,13 +1903,17 @@ class Runtime:
             if med.due(now):
                 v, _err = med.read()
                 if v:
-                    self.note_changes(v, med.write(v))
+                    tm = med.write(v, lead=self._lead()[1:])
+                    self._keep(v, tm, "medium")
+                    self.note_changes(v, tm)
                     self.stats["medium_rows"] = med.rows
                 now = time.monotonic()
             if slow.due(now):
                 v, _err = slow.read()
                 if v:
-                    self.note_changes(v, slow.write(v))
+                    tl = slow.write(v, lead=self._lead()[1:])
+                    self._keep(v, tl, "slow")
+                    self.note_changes(v, tl)
                     self.stats["slow_rows"] = slow.rows
                     b = v.get("rstBootCount")
                     if b is not None and self.boot is not None and b != self.boot:
@@ -1610,15 +1922,24 @@ class Runtime:
                               "#%s" % (self.boot, b))
                         self.snapshot("reboot")
                     self.boot = b if b is not None else self.boot
+                wl = e.witness_live() if hasattr(e, "witness_live") else None
+                if wl:
+                    s.row("witness", ["t"] + list(WT_FIELDS),
+                          [s.t()] + [wl.get(k) for k in WT_FIELDS])
+                    self.stats["witness_rows"] = \
+                        self.stats.get("witness_rows", 0) + 1
                 now = time.monotonic()
             if self.ring and now - t_ring >= self.rates["ring"]:
                 t_ring = now
                 evs = self.ring.poll()
                 for ev in evs:
                     s.say(ev["text"])
+                    if self.keep_events is not None:
+                        ev["_t"], ev["_m"] = s.t(), self.marker
+                        self.keep_events.append(ev)
                 self.ring.write(evs)
                 self.stats["events"] += len(evs)
-            if now - t_rate >= 10.0:
+            if now - t_rate >= 10.0 and not self.guided:
                 s.say("RUNTIME: %.1f fast rows/s (rtt %.0f ms), %d medium, "
                       "%d slow, %d events" % (
                           n_rate / (now - t_rate), row.get("_rtt_ms", 0),
@@ -1639,6 +1960,1365 @@ class Runtime:
         return self.stats
 
 
+# ======================================== THE GUIDED SESSION (2026-10-10) ===
+# The owner's brief: ONE guided session that walks through testing and
+# logging every system the engine needs to start, run and drive, and says at
+# the end what works and what does not. It REUSES the classes above: Kline
+# (link), Ecu (identity, page, fields), Ring (event ring), Autocal (ETB) and
+# Runtime (the multi-rate recorder - every phase records through it, with the
+# phase and the step marker on every row, into the same CSVs).
+#
+# SAFETY: every step that drives anything prints the safety condition and
+# waits for ENTER; every page field the session writes goes into a ledger
+# with its ORIGINAL value; Ctrl+C or any failure sends '!X' and restores the
+# page to its session-start state (except what the operator chose to keep);
+# NOTHING IS EVER BURNED - at the end every RAM change is listed and the
+# operator chooses keep or revert.
+#
+# dbwEnable, injStrategy, ignStrategy and camPhaseLevel are RPM_ZERO_APPLY
+# fields (hanicore_config_def.py): written to DESIRED, applied only while
+# the engine is STOPPED. So the session stops the engine, writes, waits for
+# cfgDirtyGroups to read 0 (applied), and only then restarts.
+
+GUIDED_PHASES = ("kline", "preflight", "pedal", "dbw", "start", "idle",
+                 "drive", "strategy", "keyoff", "report")
+PHASE_NO = {"preflight": 0, "kline": 1, "pedal": 2, "dbw": 3, "start": 4,
+            "idle": 5, "drive": 6, "strategy": 7, "keyoff": 8, "report": 9}
+PHASE_TITLE = {
+    "kline": "K-LINE CONNECTION", "preflight": "PREFLIGHT (key on, engine off)",
+    "pedal": "PEDAL AND THROTTLE SENSORS", "dbw": "ELECTRONIC THROTTLE, ENGINE OFF",
+    "start": "ENGINE START", "idle": "IDLE (60 s, throttle on limp spring)",
+    "drive": "ELECTRONIC THROTTLE ON, ENGINE RUNNING",
+    "strategy": "INJECTION / CAM STRATEGY COMPARISON (automatic, ~10 min)",
+    "keyoff": "KEY-OFF, RUN-ON, HOT RESTART", "report": "REPORT"}
+SAFETY = ("SAFETY: gear in NEUTRAL (or P), handbrake ON, nobody near the "
+          "engine bay or the throttle body.")
+LAM_WHY_SHORT = {0: "valid", 1: "off", 2: "latched fault",
+                 3: "controller not answering", 4: "calibrating",
+                 5: "waiting for the engine", 6: "supply", 7: "preheat",
+                 8: "heating", 9: "settling", 10: "pump check",
+                 11: "controller diagnosis", 12: "pump saturated",
+                 13: "Ri signal missing", 14: "bench hold",
+                 15: "signal stuck", 16: "HELD (last value)"}
+
+
+def _v(row, *names):
+    for n in names:
+        v = row.get(n)
+        if v is not None:
+            return v
+    return None
+
+
+def _rpm(row):
+    return float(_v(row, "RPMValue", "rpm") or 0)
+
+
+def _running(row):
+    return bool(int(_v(row, "engineFlags") or 0) & 1) or _rpm(row) >= 400
+
+
+def _why1(row):
+    w = _v(row, "lamWhy")
+    return None if w is None else int(w) & 255
+
+
+def _mean(v):
+    return sum(v) / len(v) if v else None
+
+
+def _sd(v):
+    if len(v) < 2:
+        return 0.0
+    m = _mean(v)
+    return (sum((x - m) ** 2 for x in v) / (len(v) - 1)) ** 0.5
+
+
+def image_identity(version, manifest=None):
+    """The ECU's 'V' text names its build (" build XXXXXXXX", the source
+    hash the build writes, 2026-10-11). -> (status, text): PASS when it is
+    the build this kit / checkout carries (bins/hanicore manifest), FAIL on
+    a mismatch or an image that does not say."""
+    import re
+    if manifest is None:
+        try:
+            import me711_image as _PI
+            manifest = _PI.metadata() if _PI.MANIFEST.exists() else {}
+        except Exception:
+            manifest = {}
+    m = re.search(r"build ([0-9A-F]{8})", version or "")
+    ecu = m.group(1) if m else None
+    want = manifest.get("build_id")
+    sha = (manifest.get("sha256") or "?")[:8].upper()
+    if not want:
+        return "WARN", ("ECU says %r; this kit has no build id to compare "
+                        "with" % version)
+    if ecu is None:
+        return "FAIL", ("the ECU does not name its build (%r) - it is NOT the "
+                        "kit's image %s (build %s); flash the kit's image"
+                        % (version, sha, want))
+    if ecu != want:
+        return "FAIL", ("the ECU runs build %s, this kit is for build %s "
+                        "(image %s) - flash the kit's image" % (ecu, want, sha))
+    return "PASS", "build %s = this kit's image %s (%s)" % (ecu, sha, version)
+
+
+def routed(cfg, key):
+    """1-based output channels a page routes (pin != 255), cylinders only."""
+    n = int(cfg.get("cylinders") or 0)
+    pins = cfg.get(key) or []
+    return [i + 1 for i in range(min(n, 8, len(pins)))
+            if pins[i] is not None and int(pins[i]) != 255]
+
+
+def check_injectors(rows, cfg):
+    """EVERY routed injector channel must open while the engine runs - the
+    check the 2026-10-10 semi-sequential bug (channels 2 and 4 dead for the
+    whole run) needed and nothing had."""
+    run = [r for r in rows if _running(r)
+           and not int(_v(r, "fuelCutFlags", "fuelCut") or 0)]
+    chans = routed(cfg, "injPin")
+    if not run:
+        return "FAIL", "the engine was not running - no injector evidence", {}
+    per, dead, missing = {}, [], []
+    for c in chans:
+        vals = [r.get("inj%dDeliveredUs" % c) for r in run]
+        vals = [float(x) for x in vals if x is not None]
+        if not vals:
+            missing.append(c)
+            continue
+        live = sum(1 for x in vals if x > 0) / len(vals)
+        per[c] = {"open_fraction": round(live, 2),
+                  "mean_us": round(_mean(vals))}
+        if live < 0.5:
+            dead.append(c)
+    pins = cfg.get("injPin") or []
+    if dead:
+        return "FAIL", ("injector channel(s) %s NEVER (or rarely) opened "
+                        "while running (cavity %s) - those cylinders get no "
+                        "fuel; this is the semi-sequential bug class"
+                        % (", ".join(map(str, dead)),
+                           ", ".join(str(int(pins[c - 1])) for c in dead))), per
+    if missing or not per:
+        return "WARN", ("per-channel injector telemetry missing for %s"
+                        % (missing or chans)), per
+    means = sorted(p["mean_us"] for p in per.values())
+    med = means[len(means) // 2] or 1
+    odd = [c for c, p in per.items() if p["mean_us"] < 0.7 * med
+           or p["mean_us"] > 1.3 * med]
+    if odd:
+        return "WARN", ("all %d injectors open, but channel(s) %s differ by "
+                        "more than 30 %% from the others (%s)"
+                        % (len(per), odd, {c: p["mean_us"] for c, p in
+                                           per.items()})), per
+    return "PASS", ("all %d routed injectors open (mean pulse %s us)"
+                    % (len(per), med)), per
+
+
+def check_coils(rows, cfg):
+    run = [r for r in rows if _running(r)]
+    seen = 0
+    for r in run:
+        seen |= int(_v(r, "ignOnMask") or 0)
+    chans = routed(cfg, "ignPin")
+    if int(cfg.get("_ignStrategy") or 0) == 0:     # wasted paired: leads only
+        return "PASS", ("coil outputs seen charging: %s (paired coils: only "
+                        "the pair leads fire)" % [b + 1 for b in range(8)
+                                                  if seen >> b & 1]), seen
+    miss = [c for c in chans if not seen >> (c - 1) & 1]
+    if not run:
+        return "FAIL", "the engine was not running", seen
+    if miss:
+        return "WARN", ("coil output(s) %s never SEEN charging in %d samples "
+                        "(sampled, not a proof of a dead coil - check the "
+                        "misfire / rpm stability result)" % (miss, len(run))), seen
+    return "PASS", "every routed coil (%s) seen charging" % chans, seen
+
+
+def check_scheduler(rows):
+    run = [r for r in rows if _running(r)]
+    if len(run) < 2:
+        return "WARN", "too little running data", {}
+    d = {}
+    for n in ("schedulerLate", "schedulerMissed", "schedOverdwell"):
+        a, b = _v(run[0], n), _v(run[-1], n)
+        d[n] = (int(b) - int(a)) & 0xFFFF if a is not None and b is not None else None
+    if d.get("schedOverdwell"):
+        return "FAIL", ("%d coil(s) had to be released by the overdwell "
+                        "watch - a spark event was missing" % d["schedOverdwell"]), d
+    if d.get("schedulerMissed") or d.get("schedulerLate"):
+        return "WARN", ("scheduler: %s late, %s missed events while running"
+                        % (d.get("schedulerLate"), d.get("schedulerMissed"))), d
+    return "PASS", "scheduler: 0 late, 0 missed, 0 overdwell", d
+
+
+def check_rpm(rows):
+    run = [r for r in rows if _running(r)]
+    rpms = [_rpm(r) for r in run]
+    if not rpms:
+        return "FAIL", "the engine did not run", {}
+    first = rows.index(run[0])
+    stalled = any(_rpm(r) < 100 for r in rows[first:])
+    m, sd = _mean(rpms), _sd(rpms)
+    pct = 100.0 * sd / m if m else 0.0
+    info = {"mean": round(m), "sd_pct": round(pct, 1), "stalled": stalled}
+    if stalled:
+        return "FAIL", "the engine STALLED (mean %d rpm before)" % m, info
+    st = "PASS" if pct <= 5 else ("WARN" if pct <= 10 else "FAIL")
+    return st, ("rpm %d, unsteadiness %.1f %% (sd/mean; <= 5 good, > 10 rough)"
+                % (m, pct)), info
+
+
+def check_wideband(rows, cfg):
+    if int(cfg.get("_lambda1Source") or 0) == 0 and not any(
+            _why1(r) not in (None, 1) for r in rows):
+        return "SKIP", "no on-board wideband configured", {}
+    whys = [(r.get("_t"), _why1(r), r.get("cjTmo")) for r in rows]
+    valid_at = [t for t, w, _c in whys if w == 0]
+    held = sum(1 for (_a, w0, _b), (_c, w1, _d) in zip(whys, whys[1:])
+               if w1 == 16 and w0 != 16)
+    drops = []
+    seen = False
+    for (t0, w0, c0), (t1, w1, c1) in zip(whys, whys[1:]):
+        if w0 == 0:
+            seen = True
+        if seen and w0 in (0, 16) and w1 not in (0, 16, None):
+            tmo = (c0 is not None and c1 is not None
+                   and (int(c1) & 255) != (int(c0) & 255))
+            drops.append({"t": t1, "why": LAM_WHY_SHORT.get(w1, w1),
+                          "cj120_timeout": tmo})
+    info = {"valid_rows": len(valid_at), "dropouts": drops, "held": held}
+    if not valid_at:
+        last = whys[-1][1] if whys else None
+        txt = LAM_WHY_SHORT.get(last, last)
+        st = "WARN" if last in (7, 8, 9, 10) else "FAIL"
+        return st, "lambda never became a measurement (now: %s)" % txt, info
+    tail = ("; %d short gap(s) carried by the HOLD (last value shown, not "
+            "used for fuel)" % held) if held else ""
+    if not drops:
+        return "PASS", "lambda valid and STAYED valid%s" % tail, info
+    reasons = ", ".join("%s%s" % (d["why"], " (CJ120 timeout)"
+                                  if d["cj120_timeout"] else "")
+                        for d in drops[:4])
+    st = "WARN" if len(drops) <= 2 else "FAIL"
+    return st, ("lambda DROPPED OUT %d time(s): %s%s"
+                % (len(drops), reasons, tail)), info
+
+
+def check_lambda_target(rows):
+    pts = [(float(r["lambdaValue"]), float(_v(r, "targetLambda", "lambdaTarget")))
+           for r in rows if _running(r) and r.get("lambdaValue")
+           and _v(r, "targetLambda", "lambdaTarget")]
+    if not pts:
+        return "WARN", "no fresh lambda while running - mixture not judged", {}
+    m = _mean([a for a, _b in pts])
+    tg = _mean([b for _a, b in pts])
+    stft = [float(r["stftBank1"]) for r in rows if r.get("stftBank1") is not None]
+    info = {"lambda": round(m, 3), "target": round(tg, 3),
+            "stft_pct": round(_mean(stft), 1) if stft else None}
+    d = m - tg
+    st = "PASS" if abs(d) <= 0.05 else ("WARN" if abs(d) <= 0.15 else "FAIL")
+    word = "LEAN" if d > 0 else "RICH"
+    return st, ("lambda %.3f vs target %.3f (%s by %.3f)%s"
+                % (m, tg, word, abs(d), "" if not stft else
+                   ", trim %+.1f %%" % _mean(stft))), info
+
+
+def check_warmup(rows):
+    c = [float(r["coolant"]) for r in rows if r.get("coolant") is not None]
+    if not c:
+        return "WARN", "no coolant reading", {}
+    if any(abs(x + 40.0) < 0.05 for x in c):
+        return "FAIL", "coolant sensor FAULT (reads -40 C)", {}
+    st = "PASS" if c[-1] >= c[0] - 0.5 or c[-1] >= 80 else "WARN"
+    return st, "coolant %.1f -> %.1f C" % (c[0], c[-1]), {"from": c[0], "to": c[-1]}
+
+
+def analyze_tipin(rows, events, t0):
+    """One fast tip-in: what happened in the 3 s after the pedal went down,
+    and the most likely cause, from the data."""
+    pre = [r for r in rows if t0 - 0.6 <= r["_t"] < t0]
+    win = [r for r in rows if t0 <= r["_t"] <= t0 + 3.0]
+    if not win:
+        return {"status": "WARN", "cause": "no data after the tip-in"}
+    rpm0 = sorted(_rpm(r) for r in pre)[len(pre) // 2] if pre else _rpm(win[0])
+    early = [r for r in win if r["_t"] <= t0 + 1.5]
+    rmin = min(_rpm(r) for r in early)
+    stall = any(_rpm(r) < 100 for r in win)
+    lam = [float(r["lambdaValue"]) for r in win if r.get("lambdaValue")]
+    cuts = {"fuelCutFlags": 0, "limpCut": 0, "dbwFaults": 0, "engineFlags": 0}
+    for r in win:
+        for k in cuts:
+            cuts[k] |= int(_v(r, k) or 0)
+    sk = [int(r["sparkSkips"]) for r in win if r.get("sparkSkips") is not None]
+    skips = (sk[-1] - sk[0]) & 0xFFFF if len(sk) > 1 else 0
+    tg = [(r["_t"], float(r.get("dbwTargetX10") or 0),
+           float(r.get("dbwActualX10") or 0)) for r in win]
+    err = max((abs(a - b) for _t, a, b in tg), default=0.0)
+    lag = None
+    if tg:
+        top = max(a for _t, a, _b in tg)
+        for t, a, b in tg:
+            if top >= 10 and b >= top - 5:
+                lag = round(t - t0, 2)
+                break
+    timing = [float(r["ignitionTiming"]) for r in win
+              if r.get("ignitionTiming") is not None]
+    ae = max((float(r.get("aeFuelUs") or 0) for r in win), default=0)
+    film = max((float(r.get("wallFilmUs") or 0) for r in win), default=0)
+    evs = [e for e in events if e.get("_t") is not None
+           and t0 - 0.5 <= e["_t"] <= t0 + 3.5]
+    etypes = {e["type"] for e in evs}
+    dfco_on_pedal = bool(cuts["engineFlags"] & 32)
+    # THE BRIDGE DROPPED (2026-10-11): DBW leaving RUN without a latched
+    # fault - a pedal/TPS pair judged suspect for one step drops the bridge
+    # and the plate falls to its spring for >= 4 control steps. The AWT's
+    # "cut-out on a fast pedal press" (2026-10-10) was this; the fast rows
+    # and the ring each see it only when they sample it.
+    dst = [int(_v(r, "dbwState") or 0) & 0xFF for r in pre + win]
+    was_run = any(x == 2 for x in dst[:max(1, len(pre))])
+    drops = sum(1 for a, b in zip(dst, dst[1:]) if a == 2 and b in (1, 3))
+    ring_drop = any(e["type"] == "DBW" and ("INIT" in e["text"]
+                                            or "FAULT" in e["text"])
+                    for e in evs)
+    pend = 0
+    for r in win:
+        pend |= int(_v(r, "dbwPendFaults") or 0)
+    cause = None
+    if "SYNC_LOSS" in etypes or any("LOST" in e["text"] for e in evs
+                                     if e["type"] == "SYNC"):
+        cause = "crank sync was LOST (trigger signal)"
+    elif cuts["limpCut"]:
+        cause = "engine PROTECTION fuel cut: %s" % bits(cuts["limpCut"], LIMP)
+        if cuts["dbwFaults"]:
+            cause += " - caused by a throttle fault: %s" % bits(
+                cuts["dbwFaults"], DBW_FAULT)
+    elif cuts["fuelCutFlags"] & ~1 or (cuts["fuelCutFlags"] & 1
+                                       and dfco_on_pedal):
+        cause = "FUEL CUT: %s%s" % (bits(cuts["fuelCutFlags"], FUEL_CUT),
+                                    " while the pedal was pressed"
+                                    if cuts["fuelCutFlags"] & 1 else "")
+    elif cuts["dbwFaults"]:
+        cause = "throttle fault: %s" % bits(cuts["dbwFaults"], DBW_FAULT)
+    elif was_run and (drops or ring_drop or pend):
+        cause = ("the THROTTLE BRIDGE DROPPED (DBW left RUN%s) - the plate "
+                 "fell to its spring; suspect sensor pair: %s"
+                 % (" %d time(s)" % drops if drops else "",
+                    bits(pend, DBW_FAULT) if pend else "not sampled"))
+    elif skips:
+        cause = "SPARK cut (%d sparks skipped)" % skips
+    elif lam and min(lam) < 0.75:
+        cause = ("RICH bog: lambda fell to %.2f - too much transient fuel "
+                 "(acceleration enrichment %d us, wall film %d us)"
+                 % (min(lam), ae, film))
+    elif lam and max(lam) > 1.25:
+        cause = ("LEAN stumble: lambda rose to %.2f - not enough transient "
+                 "fuel (acceleration enrichment %d us)" % (max(lam), ae))
+    elif lag is not None and lag > 0.3:
+        cause = "the throttle followed SLOWLY (%.2f s to reach its target)" % lag
+    elif rpm0 - rmin > 150:
+        cause = ("an rpm drop with no recorded cut - check ignition timing "
+                 "(%s..%s deg) and misfire" % (min(timing) if timing else "?",
+                                               max(timing) if timing else "?"))
+    dip = rpm0 - rmin
+    if stall:
+        st = "FAIL"
+    elif cause and ("CUT" in cause or "LOST" in cause or "fault" in cause
+                    or "DROPPED" in cause):
+        st = "FAIL"
+    elif dip > 200 or cause:
+        st = "WARN"
+    else:
+        st = "PASS"
+    return {"status": st, "rpm_before": round(rpm0), "rpm_min": round(rmin),
+            "dip": round(dip), "stall": stall,
+            "lambda_min": round(min(lam), 3) if lam else None,
+            "lambda_max": round(max(lam), 3) if lam else None,
+            "cuts": {k: bits(v, {"fuelCutFlags": FUEL_CUT, "limpCut": LIMP,
+                                 "dbwFaults": DBW_FAULT,
+                                 "engineFlags": FLAGS}[k])
+                     for k, v in cuts.items() if v},
+            "throttle_err_max": round(err, 1), "throttle_lag_s": lag,
+            "dbw_drops": drops, "dbw_pend": bits(pend, DBW_FAULT) if pend else "",
+            "timing": [min(timing), max(timing)] if timing else None,
+            "ae_us": ae, "wallfilm_us": film,
+            "events": [e["text"] for e in evs][:8],
+            "cause": cause or "none - the engine took it"}
+
+
+class Guided:
+    """The guided all-in-one session. One instance per run()."""
+
+    def __init__(self, a, sess, kl, link, ecu, ring, ask, choose, stdin_q,
+                 resume_state=None):
+        self.a, self.s, self.kl, self.link = a, sess, kl, link
+        self.e, self.ring, self.ask, self.choose = ecu, ring, ask, choose
+        self.q = stdin_q
+        self.scale = float(getattr(a, "time_scale", 1.0) or 1.0)
+        self.cfg = sess.meta.get("engine_config", {})
+        self.rt = Runtime(ecu, sess, ring, threading.Event(), None,
+                          profile=getattr(a, "profile", "max"), guided=True)
+        self.rt.kwp = kl.kwp if kl else None
+        self.rt.on_reboot = self._reapply
+        # 2026-10-11: RECORD WHILE A PROMPT WAITS. The car's crank in phase
+        # 6 (and the ECU reset during it) and the cam-level-0 crank happened
+        # while the tool sat at "press ENTER" and nothing was recorded. With
+        # a real keyboard queue the prompt now runs the ordinary recorder
+        # until a line is typed.
+        self._ask_plain = ask
+        if (stdin_q is not None and hasattr(stdin_q, "empty")
+                and not hasattr(stdin_q, "answer")
+                and not getattr(a, "no_prompt", False)):
+            self.ask = self._ask_recording
+        st = resume_state or {}
+        self.done = list(st.get("done", []))
+        self.results = list(st.get("results", []))
+        self.ledger = dict(st.get("ledger", {}))
+        self.kept = set(st.get("kept", []))
+        self.info = dict(st.get("info", {}))
+        p0 = sess.dir / "page_session_start.bin"
+        if p0.exists():
+            self.page0 = p0.read_bytes()
+        else:
+            self.page0 = ecu.page
+            if self.page0:
+                p0.write_bytes(self.page0)
+
+    # ---------------------------------------------------------- plumbing --
+    def _ask_recording(self, prompt, allow_skip=False):
+        self.s.say(">>> " + prompt)
+        self.record("prompt", 7200.0, until=lambda _r: not self.q.empty(),
+                    enter_stops=False)
+        line = self.q.get()
+        if allow_skip and line.strip().lower().startswith("s"):
+            self.s.say("    skipped")
+            return False
+        return True
+
+    def _reapply(self):
+        """An ECU reset throws away every unburned RAM change (by design:
+        only a Burn re-seals the page). Put this session's test settings
+        back and SAY so - 2026-10-11 the phase 6 dbwEnable vanished in a
+        reset and the drive test ran with the throttle on its spring."""
+        for name, ent in sorted(self.ledger.items()):
+            if ent.get("now") is None or ent.get("now") == ent.get("original"):
+                continue
+            cur = self.e.read_field(name)
+            if cur != ent["now"]:
+                back = self.e.write_field(name, ent["now"])
+                self.s.say("RAM: the reset discarded %s - written again: %s "
+                           "-> %s" % (name, cur, back))
+
+    def save_state(self):
+        (self.s.dir / "guided_state.json").write_text(json.dumps({
+            "done": self.done, "results": self.results, "ledger": self.ledger,
+            "kept": sorted(self.kept), "info": self.info}, indent=1,
+            default=str), encoding="utf-8")
+
+    def verdict(self, system, status, reason, phase=None):
+        self.results.append({"phase": phase or self.cur, "system": system,
+                             "status": status, "reason": reason})
+        self.s.verdict(system, status, reason)
+        self.save_state()
+
+    def banner(self, name):
+        self.cur = name
+        self.s.say("")
+        self.s.say("=" * 64)
+        self.s.say("PHASE %d: %s" % (PHASE_NO[name], PHASE_TITLE[name]))
+        self.s.say("=" * 64)
+
+    def tell(self, *lines):
+        for ln in lines:
+            self.s.say("    " + ln)
+
+    def enter_pressed(self):
+        g = getattr(self.q, "get_nowait", None)
+        if g is None:
+            return False
+        try:
+            g()
+            return True
+        except queue.Empty:
+            return False
+
+    def record(self, marker, seconds, until=None, enter_stops=True):
+        """Record every group + the ring for `seconds` (scaled), until
+        `until(latest)` or the operator's ENTER. -> (rows, events)"""
+        rt = self.rt
+        rt.phase, rt.marker = self.cur, marker
+        rows, evs = [], []
+        rt.keep, rt.keep_events = rows, evs
+        rt.stop = threading.Event()
+        rt.duration = max(0.05, seconds * self.scale)
+        rt.stop_when = (lambda: (until is not None and until(rt.latest))
+                        or (enter_stops and self.enter_pressed()))
+        try:
+            rt.run()
+        finally:
+            rt.keep = rt.keep_events = rt.stop_when = None
+        return rows, evs
+
+    def now(self):
+        """One merged reading of every group (fast + medium + slow)."""
+        row = {}
+        for g in ("slow", "medium", "fast"):
+            v, _err = self.rt.g[g].read()
+            if v:
+                row.update(v)
+        row["_t"] = self.s.t()
+        return row
+
+    def safe_go(self, what):
+        self.s.say("")
+        self.s.say(">>> " + SAFETY)
+        return self.ask("%s - press ENTER to start (s + ENTER skips)" % what,
+                        allow_skip=True)
+
+    # ------------------------------------------------- RAM page changes --
+    def set_field(self, name, value, why):
+        cur = self.e.read_field(name)
+        if cur is None:
+            return False
+        if name not in self.ledger:
+            self.ledger[name] = {"original": cur}
+        back = self.e.write_field(name, value)
+        self.ledger[name].update(now=back, why=why)
+        self.s.row("ram_changes", ["t", "phase", "field", "was", "wrote",
+                                   "read_back", "why"],
+                   [self.s.t(), self.cur, name, cur, value, back, why])
+        self.s.say("RAM: %s %s -> %s (%s) - not burned" % (name, cur, back, why))
+        self.save_state()
+        return back == value
+
+    def burn(self, why):
+        """BURN the RAM page to flash - only with the engine STOPPED (owner,
+        2026-10-11: the logger burns what passed). Verified: the Burn's
+        reply, nvmCommits moving where the image publishes it, and the page
+        read back equal to the RAM page before the Burn."""
+        if _rpm(self.now()) != 0:
+            self.s.say("BURN refused by the tool: the engine is running")
+            return False
+        before = self.e.link.page()
+        c0 = self.e.scalar("nvmCommits")
+        body, err, _ms = self.link.request(b"B", 12.0, 0)
+        t_end = time.monotonic() + max(0.3, 4.0 * self.scale)
+        c1 = c0
+        while time.monotonic() < t_end:
+            c1 = self.e.scalar("nvmCommits")
+            if c0 is None or c1 != c0:
+                break
+            time.sleep(min(0.2, self.scale))
+        after = self.e.link.page()
+        ok = (body is not None and (c0 is None or c1 != c0)
+              and before is not None and after == before)
+        self.s.row("burns", ["t", "phase", "why", "reply", "commits_before",
+                             "commits_after", "page_equal", "ok"],
+                   [self.s.t(), self.cur, why, "OK" if body is not None
+                    else err, c0, c1, int(after == before), int(ok)])
+        self.s.say("BURN (%s): %s" % (why, "OK - in flash" if ok else
+                                      "FAILED (%s)" % (err or "not verified")))
+        self.info.setdefault("burns", []).append({"why": why, "ok": ok})
+        if ok:
+            self.page0 = after       # the burned page is the new baseline
+            (self.s.dir / "page_session_start.bin").write_bytes(after)
+            for d in self.ledger.values():
+                d["original"] = d.get("now", d["original"])
+            self.kept = set()
+            self.save_state()
+        return ok
+
+    def wait_applied(self, seconds=6.0):
+        """RPM_ZERO fields reach the runtime only with the engine stopped:
+        cfgDirtyGroups == 0 means the staged groups were applied."""
+        t_end = time.monotonic() + max(0.3, seconds * self.scale)
+        while time.monotonic() < t_end:
+            d = self.e.scalar("cfgDirtyGroups")
+            if d == 0:
+                return True
+            time.sleep(0.1)
+        return False
+
+    def page_diff(self):
+        """[(offset, old, new)] page bytes that differ from the session start."""
+        cur = self.e.link.page()
+        if not cur or not self.page0:
+            return None, cur
+        return [(i, a, b) for i, (a, b) in enumerate(zip(self.page0, cur))
+                if a != b], cur
+
+    def revert(self, diffs, keep=()):
+        """Write the session-start bytes back, run by run, except `keep`."""
+        runs, cur = [], None
+        for off, old, _new in diffs:
+            if off in keep:
+                continue
+            if cur and off == cur[0] + len(cur[1]):
+                cur[1].append(old)
+            else:
+                cur = [off, bytearray([old])]
+                runs.append(cur)
+        ok = all(self.e.write_bytes(o, bytes(b)) for o, b in runs)
+        for name, d in self.ledger.items():
+            d["now"] = d["original"]
+        self.save_state()
+        return ok, len(runs)
+
+    def abort(self, why):
+        """Ctrl+C or a failure: release everything, put the page back."""
+        self.s.say("")
+        self.s.say("SAFETY STOP (%s): releasing every output ('!X') and "
+                   "restoring the page this session changed" % why)
+        try:
+            self.e.link.command(b"!X")
+        except Exception:
+            pass
+        try:
+            diffs, _cur = self.page_diff()
+            if diffs is None:
+                raise RuntimeError("page not readable")
+            ok, n = self.revert(diffs, keep=self.kept)
+            self.s.say("RESTORED %d changed region(s) to the session-start "
+                       "values%s" % (n, "" if ok else " - SOME WRITES FAILED"))
+            if any(n_ in self.ledger for n_ in ("dbwEnable", "injStrategy",
+                                                  "ignStrategy", "camPhaseLevel")):
+                self.s.say("NOTE: throttle / strategy fields take effect only "
+                           "with the ENGINE STOPPED - stop it now.")
+        except Exception as ex:
+            self.s.say("COULD NOT RESTORE (%s). Fields to put back by hand in "
+                       "TunerStudio: %s" % (ex, {k: v["original"] for k, v in
+                                                 self.ledger.items()}))
+
+    # ------------------------------------------------------- the phases --
+    def ph_kline(self):
+        res = self.s.meta["phases"].get("kline", {})
+        first = res.get(self.kl.first_path, {}) if self.kl else {}
+        ok_path = [p for p in ("OBD", "DIRECT ECU")
+                   if res.get(p, {}).get("stage") == "OK"]
+        q = res.get("quality") or {}
+        soak = q.get("soak") or {}
+        txt = "connected over %s (%s)" % (ok_path[0] if ok_path else "?",
+                                          (res.get(ok_path[0]) or {}).get("how")
+                                          if ok_path else first.get("stage"))
+        if "OBD" in res and res["OBD"].get("stage") != "OK":
+            txt += "; the car's OBD K-line FAILED at stage %s" % res["OBD"].get("stage")
+        if soak:
+            txt += "; link quality %d/100 reads (%s rows/s)" % (
+                soak.get("good", 0), soak.get("rows_per_s"))
+        st = "PASS" if ok_path and soak.get("good", 100) >= 98 else (
+            "WARN" if ok_path else "FAIL")
+        if ok_path and ok_path[0] == "DIRECT ECU" and "OBD" in res:
+            st = "WARN" if st == "PASS" else st
+        self.verdict("K-line", st, txt)
+
+    def ph_preflight(self):
+        self.tell("Key ON, engine OFF. Do not touch the pedal.")
+        self.ask("Press ENTER when the key is ON and the engine is OFF")
+        ident = self.s.meta.get("identity", {})
+        st, txt = image_identity(ident.get("version") or "")
+        if st == "FAIL":
+            self.s.say("!" * 64)
+            self.s.say("!!! WRONG IMAGE: %s" % txt)
+            self.s.say("!" * 64)
+        self.verdict("ECU identity", st, txt)
+        c = self.cfg
+        self.tell("ENGINE CONFIG: %s cyl, firing order %s, injection %s, "
+                  "ignition %s, sync %s, injectors %s cc/min, trigger angle %s"
+                  % (c.get("cylinders"), c.get("firingOrder"),
+                     c.get("injStrategy"), c.get("ignStrategy"),
+                     c.get("syncMode"), c.get("injFlowCcMin"),
+                     c.get("trigAngleX10")))
+        rows, _ev = self.record("preflight", 10.0, enter_stops=False)
+        r = self.now()
+        rows.append(r)
+        vb = float(_v(r, "VBatt", "battDv") or 0)
+        self.verdict("Battery", "PASS" if 11.8 <= vb <= 15.0 else (
+            "WARN" if vb >= 11.0 else "FAIL"), "%.1f V (engine off)" % vb)
+        for name, ch in (("Coolant sensor", "coolant"), ("Intake air sensor",
+                                                         "intake")):
+            v = r.get(ch)
+            if v is None:
+                self.verdict(name, "WARN", "not readable")
+            elif abs(float(v) + 40.0) < 0.05:
+                self.verdict(name, "FAIL", "reads -40 C = SENSOR FAULT "
+                             "(open / short / not wired)")
+            else:
+                self.verdict(name, "PASS" if -30 <= float(v) <= 120 else "WARN",
+                             "%.1f C" % float(v))
+        mapk = r.get("mapKpaX10")
+        w08 = r.get("s5500w08")
+        baro = (int(w08) & 1023) * 1.235352 / 10.0 if w08 is not None else None
+        if mapk is None:
+            self.verdict("Pressure sensor", "WARN", "not readable")
+        elif baro is None or not 70 <= baro <= 110:
+            self.verdict("Pressure sensor", "WARN", "%.1f kPa (onboard "
+                         "barometer not readable for a comparison)" % mapk)
+        else:
+            d = abs(float(mapk) - baro)
+            self.verdict("Pressure sensor", "PASS" if d <= 5 else (
+                "WARN" if d <= 10 else "FAIL"),
+                "%.1f kPa vs onboard barometer %.1f kPa (engine off: should "
+                "agree)" % (mapk, baro))
+        p1, p2 = float(r.get("dbwApp1X10") or 0), float(r.get("dbwApp2X10") or 0)
+        t1, t2 = float(r.get("dbwTps1X10") or 0), float(r.get("dbwTps2X10") or 0)
+        f = int(r.get("dbwFaults") or 0)
+        st = "PASS" if p1 <= 5 and p2 <= 5 and abs(p1 - p2) <= 3 and abs(
+            t1 - t2) <= 5 and not f else "FAIL"
+        self.verdict("Pedal/TPS at rest", st,
+                     "pedal %.1f / %.1f %%, throttle %.1f / %.1f %%, faults %s"
+                     % (p1, p2, t1, t2, bits(f, DBW_FAULT)))
+        codes = [int(r.get("dtcActive%d" % i) or 0) for i in range(1, 5)]
+        codes = ["P%04d" % c for c in codes if c]
+        self.verdict("Trouble codes", "WARN" if codes else "PASS",
+                     ("active: %s" % ", ".join(codes)) if codes else "none active")
+        whys = [_why1(x) for x in rows if _why1(x) is not None]
+        w = whys[-1] if whys else None
+        if int(self.cfg.get("_lambda1Source") or 0) == 0:
+            self.verdict("Wideband warm-up", "SKIP", "no on-board wideband")
+        else:
+            self.verdict("Wideband warm-up",
+                         "FAIL" if w in (2, 3) else (
+                             "WARN" if w in (5, 6, None) else "PASS"),
+                         "now: %s" % LAM_WHY_SHORT.get(w, w))
+        bh = (self.s.meta.get("boot_history") or {}).get("start") or []
+        bad = [b for b in bh[-4:] if b.get("reset_kind") not in
+               ("power-on", "unknown")]
+        self.verdict("Boot history", "WARN" if bad else "PASS",
+                     "%d boots recorded; last ended by %s%s" % (
+                         len(bh), bh[-1].get("reset_kind") if bh else "?",
+                         ("; recent unexpected resets: %s" % [b["reset_kind"]
+                                                             for b in bad])
+                         if bad else ""))
+
+    def ph_pedal(self):
+        self.tell("Key ON, engine OFF. You will move the ACCELERATOR PEDAL.")
+        out = {}
+        steps = (("released", "Foot OFF the pedal", 3.0),
+                 ("full", "Press the pedal FULLY DOWN and hold it", 3.0),
+                 ("sweep", "SLOWLY press the pedal from released to full and "
+                           "back (about 5 s each way)", 12.0),
+                 ("stabs", "Stab the pedal FAST several times", 8.0))
+        allrows = []
+        for mk, txt, sec in steps:
+            if not self.ask("PEDAL: %s - press ENTER, then do it (recording "
+                            "%.0f s)" % (txt, sec), allow_skip=True):
+                continue
+            rows, _ev = self.record("pedal:" + mk, sec, enter_stops=False)
+            out[mk] = rows
+            allrows += rows
+
+        def p(r, k):
+            return float(r.get(k) or 0)
+        probs = []
+        # 2026-10-11: THE ENGINE'S PEDAL CHANNELS (pedalX10 / pedal2X10),
+        # always computed. dbwApp1X10/2X10 are the DBW controller's and read 0
+        # while DBW is off - the car's "full pedal reads only 0 %".
+        P1, P2 = "pedalX10", "pedal2X10"
+        rel = out.get("released") or []
+        if rel and max(max(p(r, P1), p(r, P2)) for r in rel) > 5:
+            probs.append("released pedal reads above 5 %")
+        full = out.get("full") or []
+        if full:
+            top = max(min(p(r, P1), p(r, P2)) for r in full)
+            if top < 80:
+                probs.append("full pedal reads only %.0f %%" % top)
+        if allrows:
+            diff = max(abs(p(r, P1) - p(r, P2)) for r in allrows)
+            if diff > 5:
+                probs.append("the two pedal tracks disagree by up to %.1f %%"
+                             % diff)
+            # A DROPOUT is one track falling while the other does not; a
+            # quick press moves both together (the car's "JUMPED 58 %" was a
+            # sweep faster than the 5 Hz rows).
+            drop = [abs((p(b, P1) - p(a, P1)) - (p(b, P2) - p(a, P2)))
+                    for a, b in zip(allrows, allrows[1:])]
+            if drop and max(drop) > 25:
+                probs.append("one pedal track dropped %.0f %% against the "
+                             "other between two samples" % max(drop))
+            fl = 0
+            for r in allrows:
+                fl |= int(r.get("dbwFaults") or 0) | int(r.get("dbwPendFaults") or 0)
+            if fl & (2 | 8):
+                probs.append("pedal fault: %s" % bits(fl, DBW_FAULT))
+        if not allrows:
+            self.verdict("Pedal", "SKIP", "operator skipped")
+        else:
+            self.verdict("Pedal", "FAIL" if probs else "PASS",
+                         "; ".join(probs) or "both tracks agree, full range, "
+                         "no dropouts, no fault")
+
+    def ph_dbw(self):
+        if not self.safe_go("THROTTLE TEST, ENGINE OFF: the throttle plate "
+                            "WILL MOVE to both stops. Hands clear"):
+            self.verdict("Throttle, engine off", "SKIP", "operator skipped")
+            return
+        ac = Autocal(self.e, self.s, self.ring, lambda *x, **k: True)
+        res = []
+        # 2026-10-11: THE ECU REFUSES EVERY THROTTLE TEST WHILE DBW RUNS
+        # ("DBW ENABLED"). The tool switches it off in RAM for the tests and
+        # back on after them; the gains a tuner set (or characterized in
+        # TunerStudio) are KEPT - the PID autotune runs only with --autotune.
+        was_on = self.e.read_field("dbwEnable") == 1
+        if was_on:
+            self.set_field("dbwEnable", 0, "phase 3 throttle tests need the "
+                           "bridge free")
+            self.wait_applied()
+        tests = [t for t in ETB_TESTS if t[0] != 2
+                 and (t[0] != 3 or getattr(self.a, "autotune", False))]
+        for sub, label, lim in tests:
+            # FULLY AUTOMATIC (owner, 2026-10-11): direction A/B and the TPS
+            # endpoints decide; then the full commissioning ('!C3': AutoCal,
+            # PID autotune, verify) runs - if IT fails, only what it wrote is
+            # put back and the endpoint calibration still stands.
+            pre = self.e.link.page() if sub == 3 else None
+            r = ac.one(sub, label, lim * max(self.scale, 0.05)
+                       if self.scale < 1 else lim)
+            if sub == 3:
+                r["optional"] = True
+                if not r.get("ok") and pre:
+                    now = self.e.link.page() or b""
+                    back = [(i, a, b) for i, (a, b) in enumerate(zip(pre, now))
+                            if a != b]
+                    if back:
+                        self.revert(back)
+                    self.s.say("full commissioning (autotune) did not pass: "
+                               "its %d changed byte(s) put back; the preset "
+                               "PID gains stay" % len(back))
+            res.append(r)
+            time.sleep(min(1.0, self.scale))
+        bad = [r for r in res if not r.get("ok") and not r.get("optional")]
+        self.info["dbw_ok"] = not bad and bool(res)
+        if was_on:
+            self.set_field("dbwEnable", 1, "phase 3 done: DBW back on")
+            self.ledger.pop("dbwEnable", None)   # the page's own value again
+        self.verdict("Throttle, engine off", "PASS" if not bad and res else (
+            "FAIL" if bad else "SKIP"),
+            "; ".join("%s: %s%s" % (r["label"], r.get("result"),
+                                    (" - " + r["why"]) if r.get("why") else "")
+                      for r in res))
+        diffs, _cur = self.page_diff()
+        if diffs:
+            names = sorted({self.e.field_at(o) for o, _a, _b in diffs})
+            self.tell("The throttle tests wrote into the RAM page: %s"
+                      % ", ".join(names[:12]))
+            # decided by the result, not asked: a PASSED calibration is
+            # BURNED (engine stopped - phase 3 runs key ON, engine OFF); a
+            # failed one is put back and nothing is burned
+            if not self.info["dbw_ok"]:
+                okw, n = self.revert(diffs)
+                self.s.say("calibration did not pass: REVERTED %d "
+                           "region(s), nothing burned" % n)
+            else:
+                self.kept |= {o for o, _a, _b in diffs}
+                self.save_state()
+                self.burn("throttle calibration passed (phase 3)")
+
+    def _engine_runs_for(self, seconds):
+        state = {"t": None}
+
+        def cond(latest):
+            if _running(latest):
+                state["t"] = state["t"] or time.monotonic()
+                return time.monotonic() - state["t"] >= seconds * self.scale
+            state["t"] = None
+            return False
+        return cond
+
+    # THE COMPOSITE LOGGER (2026-10-11): rusEFI's high-speed logger, the
+    # one TunerStudio shows. 'l\x01' arms it (the buffer restarts), 'l\x03'
+    # returns the 200 records once the buffer is full - or what there is once
+    # the engine stopped - and 'l\x02' stops it. Each 8-byte record is one
+    # crank or cam edge: injector and coil output masks at that edge, the
+    # crank / cam levels, crank sync and a 0.8 us time. At the crank it
+    # shows the first 200 edges (gap, cam, first sparks); at idle where every
+    # coil and injector fires against the crank and cam - the data a remote
+    # diagnosis of phase, trigger or misfire needs.
+    def tooth_arm(self):
+        body, _err, _ms = self.link.request(b"l\x01", 0.6, 1)
+        return body is not None
+
+    def tooth_read(self, tag, wait=3.0):
+        data = None
+        end = time.monotonic() + max(0.05, wait * self.scale)
+        while time.monotonic() < end:
+            body, _err, _ms = self.link.request(b"l\x03", 1.5, 0)
+            if body:
+                data = body
+                break
+            time.sleep(min(0.1, 0.1 * self.scale))
+        self.link.request(b"l\x02", 0.6, 1)
+        if not data:
+            self.s.say("composite logger %s: no data (buffer not full)" % tag)
+            self.info.setdefault("toothlog", {})[tag] = 0
+            return 0
+        (self.s.dir / ("toothlog_%s.bin" % tag)).write_bytes(data)
+        lines = ["i,t_ms,dt_ms,crank,cam1,cam2,is_cam,sync,inj_mask,ign_mask"]
+        t0 = prev = None
+        for i in range(len(data) // 8):
+            r = data[8 * i:8 * i + 8]
+            t = int.from_bytes(r[4:8], "big") * 0.0008
+            t0 = t if t0 is None else t0
+            fl = r[3]
+            lines.append("%d,%.3f,%.3f,%d,%d,%d,%d,%d,0x%02X,0x%02X" % (
+                i, t - t0, 0.0 if prev is None else t - prev, fl & 1,
+                (fl >> 1) & 1, (fl >> 5) & 1, (fl >> 2) & 1, (fl >> 3) & 1,
+                r[1], r[2]))
+            prev = t
+        (self.s.dir / ("toothlog_%s.csv" % tag)).write_text(
+            "\n".join(lines) + "\n", encoding="utf-8")
+        self.s.say("composite logger %s: %d edges -> toothlog_%s.csv"
+                   % (tag, len(data) // 8, tag))
+        self.info.setdefault("toothlog", {})[tag] = len(data) // 8
+        return len(data) // 8
+
+    def ph_start(self):
+        self.tell("START THE ENGINE NOW: crank until it runs (max 10 s per "
+                  "attempt). Recording starts when you press ENTER.")
+        if not self.safe_go("ENGINE START"):
+            self.verdict("Engine start", "SKIP", "operator skipped")
+            return
+        b0 = self.e.scalar("rstBootCount")
+        armed = self.tooth_arm()
+        rows, evs = self.record("start", 40.0, until=self._engine_runs_for(5.0))
+        if armed:
+            self.tooth_read("crank", 1.0)
+        crank = [r for r in rows if _rpm(r) > 0]
+        if not crank:
+            self.verdict("Engine start", "FAIL", "no crank signal seen at all")
+            return
+        t_c = crank[0]["_t"]
+        sync = next((r["_t"] for r in rows if int(r.get("syncState") or 0) >= 3),
+                    None)
+        full = next((r["_t"] for r in rows if int(r.get("syncState") or 0) >= 4),
+                    None)
+        run = next((r["_t"] for r in rows if _running(r)), None)
+        crpm = [_rpm(r) for r in crank if not _running(r)]
+        vmin = min((float(_v(r, "VBatt", "battDv") or 99) for r in crank),
+                   default=None)
+        loss = [e for e in evs if e["type"] == "SYNC_LOSS"]
+        b1 = self.e.scalar("rstBootCount")
+        info = {"crank_to_sync_s": None if sync is None else round(sync - t_c, 2),
+                "crank_to_cam_s": None if full is None else round(full - t_c, 2),
+                "crank_to_run_s": None if run is None else round(run - t_c, 2),
+                "cranking_rpm": round(_mean(crpm)) if crpm else None,
+                "battery_min_v": vmin, "sync_losses": len(loss)}
+        self.info["start"] = info
+        if b0 is not None and b1 is not None and b1 != b0:
+            self.verdict("Engine start", "FAIL", "the ECU RESET during the "
+                         "crank (battery min %.1f V)" % (vmin or 0))
+            return
+        if run is None:
+            self.verdict("Engine start", "FAIL", "did not start: crank sync %s, "
+                         "cam phase %s, cranking %s rpm, battery min %s V"
+                         % ("yes" if sync else "NO", "yes" if full else "no",
+                            info["cranking_rpm"], vmin))
+            return
+        st = "PASS" if run - t_c <= 5 else "WARN"
+        if vmin is not None and vmin < 8.5:
+            st = "WARN"
+        self.verdict("Engine start", st,
+                     "running %.1f s after the first crank tooth (sync %s s, "
+                     "cam %s s), cranking %s rpm, battery dipped to %.1f V, "
+                     "%d sync loss(es)" % (run - t_c, info["crank_to_sync_s"],
+                                           info["crank_to_cam_s"],
+                                           info["cranking_rpm"], vmin or 0,
+                                           len(loss)))
+
+    def idle_checks(self, rows, label=""):
+        lc = 0
+        df = 0
+        for x in rows:
+            lc |= int(x.get("limpCut") or 0)
+            df |= int(x.get("dbwFaults") or 0)
+        limp = ("%s, throttle faults %s" % (bits(lc, LIMP), bits(df, DBW_FAULT))
+                if lc else "")
+        for name, fn in (("Injectors", lambda: check_injectors(rows, self.cfg)),
+                         ("Ignition", lambda: check_coils(rows, self.cfg)),
+                         ("Scheduler", lambda: check_scheduler(rows)),
+                         ("Idle stability", lambda: check_rpm(rows)),
+                         ("Wideband", lambda: check_wideband(rows, self.cfg)),
+                         ("Mixture", lambda: check_lambda_target(rows)),
+                         ("Warm-up", lambda: check_warmup(rows))):
+            st, txt, info = fn()
+            self.info.setdefault("idle" + label, {})[name] = info
+            if limp and name in ("Idle stability", "Mixture"):
+                txt += (" - NOT A CALIBRATION RESULT: the throttle-fault limp "
+                        "fuel cut was cycling (%s)" % limp)
+            self.verdict(name + label, st, txt)
+
+    def ph_idle(self):
+        self.tell("Let the engine IDLE. Do NOT touch the pedal. 60 s.")
+        if not self.ask("Press ENTER when the engine is idling", allow_skip=True):
+            self.verdict("Idle", "SKIP", "operator skipped")
+            return
+        rows, _evs = self.record("idle", 60.0)
+        self.idle_checks(rows)
+        if self.tooth_arm():
+            self.tooth_read("idle", 3.0)
+
+    def ph_drive(self):
+        if not self.info.get("dbw_ok"):
+            self.verdict("Throttle, driving", "SKIP", "throttle not "
+                         "commissioned OK in this session (phase 3) - the "
+                         "drive test needs it; nothing was switched on")
+            return
+        was = self.e.read_field("dbwEnable")
+        if was != 1:
+            self.tell("The electronic throttle must be switched ON. The ECU "
+                      "applies that only with the ENGINE STOPPED.")
+            if not self.ask("STOP THE ENGINE (key stays ON), then press ENTER",
+                            allow_skip=True):
+                self.verdict("Throttle, driving", "SKIP", "operator skipped")
+                return
+            self.record("wait:stopped", 15.0,
+                        until=lambda r: _rpm(r) == 0, enter_stops=False)
+            self.tell("Switching the electronic throttle ON (RAM). It is "
+                      "BURNED at the end only if this drive test passes.")
+            if not self.set_field("dbwEnable", 1, "phase 6 drive test") or \
+                    not self.wait_applied():
+                self.verdict("Throttle, driving", "FAIL", "dbwEnable could not "
+                             "be applied (cfgDirtyGroups never cleared)")
+                return
+            r = self.now()
+            if int(r.get("dbwState") or 0) & 0xFF == 3:
+                self.verdict("Throttle, driving", "FAIL", "the throttle went "
+                             "to FAULT on enable: %s"
+                             % bits(int(r.get("dbwFaults") or 0), DBW_FAULT))
+                self.abort("throttle fault on enable")
+                return
+            self.ask("START THE ENGINE, let it idle, then press ENTER")
+            self.record("wait:running", 30.0, until=self._engine_runs_for(3.0))
+        r = self.now()
+        if int(r.get("dbwState") or 0) & 0xFF != 2:
+            self.verdict("Throttle, driving", "FAIL", "the electronic throttle "
+                         "is NOT running (state %s, faults %s) - nothing to "
+                         "drive; the pedal does nothing"
+                         % (int(r.get("dbwState") or 0) & 0xFF,
+                            bits(int(r.get("dbwFaults") or 0), DBW_FAULT)))
+            return
+        steps = [("slow_ramp", "SLOWLY raise to ~3000 rpm and back to idle "
+                  "(about 10 s)", 20.0)]
+        steps += [("tipin_%d" % i, "FAST tip-in %d of 5: from idle, press the "
+                   "pedal QUICKLY to about half, hold 1 s, release" % i, 6.0)
+                  for i in range(1, 6)]
+        steps += [("tipout", "Rev to ~3000 rpm, then release the pedal FULLY "
+                   "and let it fall to idle (fuel cut on overrun)", 10.0),
+                  ("blip", "One quick blip to ~3000 rpm", 5.0),
+                  ("hold2500", "Hold ~2500 rpm steady", 12.0)]
+        tips, allrows = [], []
+        for mk, txt, sec in steps:
+            if not self.ask("%s - press ENTER, then do it (%.0f s)"
+                            % (txt, sec), allow_skip=True):
+                continue
+            rows, evs = self.record("drive:" + mk, sec, enter_stops=False)
+            allrows += rows
+            if mk.startswith("tipin"):
+                pd = [float(r.get("dbwApp1X10") or 0) for r in rows]
+                p0 = _mean(pd[:max(1, len(pd) // 6)]) or 0
+                t0 = next((r["_t"] for r in rows
+                           if float(r.get("dbwApp1X10") or 0) >= p0 + 15), None)
+                if t0 is None:
+                    tips.append({"step": mk, "status": "WARN",
+                                 "cause": "no pedal step seen"})
+                    continue
+                a = analyze_tipin(rows, evs, t0)
+                a["step"] = mk
+                tips.append(a)
+                self.s.say("%s: %s - rpm %s -> %s, lambda %s..%s, cause: %s"
+                           % (mk, a["status"], a.get("rpm_before"),
+                              a.get("rpm_min"), a.get("lambda_min"),
+                              a.get("lambda_max"), a["cause"]))
+            if mk == "tipout":
+                dfco = any(int(_v(r, "fuelCutFlags") or 0) & 1 for r in rows)
+                stall = any(_rpm(r) < 100 for r in rows)
+                self.verdict("Overrun fuel cut (DFCO)",
+                             "FAIL" if stall else ("PASS" if dfco else "WARN"),
+                             "stalled after the overrun" if stall else (
+                                 "fuel cut on overrun and fuel back at idle"
+                                 if dfco else "no overrun fuel cut seen "
+                                 "(conditions not met or disabled)"))
+        self.info["tipins"] = tips
+        if tips:
+            worst = ("FAIL" if any(t["status"] == "FAIL" for t in tips) else
+                     "WARN" if any(t["status"] == "WARN" for t in tips)
+                     else "PASS")
+            causes = sorted({t["cause"] for t in tips if t["status"] != "PASS"})
+            self.verdict("Tip-in response", worst,
+                         "%d tip-ins: %s%s" % (
+                             len(tips), ", ".join(t["status"] for t in tips),
+                             (" - most likely: " + "; ".join(causes))
+                             if causes else ""))
+        if allrows:
+            st, txt, _i = check_rpm([r for r in allrows if _running(r)])
+            f = 0
+            for r in allrows:
+                f |= int(r.get("dbwFaults") or 0)
+            self.verdict("Throttle, driving", "FAIL" if f else "PASS",
+                         "throttle faults: %s" % bits(f, DBW_FAULT))
+
+    def _run_strategy(self, label, fields, seconds=30.0):
+        self.ask("STOP THE ENGINE (key ON) for '%s', then press ENTER" % label)
+        self.record("wait:stopped", 15.0, until=lambda r: _rpm(r) == 0,
+                    enter_stops=False)
+        for n, v in fields.items():
+            self.set_field(n, v, "phase 7 %s" % label)
+        applied = self.wait_applied()
+        ref = self.e.scalar("cfgApplyRefused")
+        if not applied:
+            return {"label": label, "started": False,
+                    "why": "not applied (validation refused? cfgApplyRefused %s)"
+                           % ref}
+        seq = label.startswith("sequential")
+        self.ask("START THE ENGINE ('%s'), let it idle, ENTER when it runs or "
+                 "if it will not start%s" % (label, (
+                     " - crank AT MOST 5 s: with the WRONG cam level it "
+                     "fires on the overlap TDC and will not run; that is "
+                     "the answer, not a fault") if seq else ""))
+        wrows, _w = self.record("wait:running", 20.0,
+                                until=self._engine_runs_for(5.0))
+        # did the cam give the cycle at all while it tried? (syncState 4)
+        cyc = any(int(r.get("syncState") or 0) >= 4 for r in wrows)
+        if not _running(self.rt.latest):
+            return {"label": label, "started": False, "why": "did not start",
+                    "cycle_seen": cyc, "seq_pct": 0.0}
+        rows, _e = self.record("strategy:" + label, seconds, enter_stops=False)
+        rst, rtxt, rinfo = check_rpm(rows)
+        ist, itxt, _ii = check_injectors(rows, self.cfg)
+        lam = [float(r["lambdaValue"]) for r in rows if r.get("lambdaValue")]
+        # 2026-10-11: what was REALLY running - a sequential page without
+        # the cycle runs the semi-sequential / wasted fallback and proves
+        # nothing about the cam level
+        sq = [1 if int(r.get("seqActive") or 0) else 0 for r in rows]
+        return {"label": label, "started": True, "rpm_sd_pct": rinfo.get("sd_pct"),
+                "stalled": rinfo.get("stalled"), "injectors": ist,
+                "injectors_text": itxt,
+                "lambda": round(_mean(lam), 3) if lam else None,
+                "cycle_seen": cyc or any(int(r.get("syncState") or 0) >= 4
+                                         for r in rows),
+                "seq_pct": round(100.0 * sum(sq) / len(sq), 1) if sq else 0.0}
+
+    def ph_strategy(self):
+        # runs by itself when the engine started in phase 4 (owner,
+        # 2026-10-11: the tool decides, the operator only acts)
+        st = [r for r in self.results if r["system"] == "Engine start"]
+        if not st or st[-1]["status"] not in ("PASS", "WARN"):
+            self.verdict("Strategy comparison", "SKIP", "the engine did not "
+                         "start cleanly in phase 4")
+            return
+        self.tell("STRATEGY COMPARISON (about 10 min): the tool changes the "
+                  "injection / ignition strategy itself; you only stop and "
+                  "start the engine when asked.")
+        cands = [("batch", {"injStrategy": 0, "ignStrategy": 1}),
+                 ("semi-sequential", {"injStrategy": 1, "ignStrategy": 1})]
+        if int(self.cfg.get("_syncMode") or 0) >= 2:
+            cands += [("sequential, cam level 0", {"injStrategy": 2,
+                                                   "ignStrategy": 2,
+                                                   "camPhaseLevel": 0}),
+                      ("sequential, cam level 1", {"injStrategy": 2,
+                                                   "ignStrategy": 2,
+                                                   "camPhaseLevel": 1})]
+        else:
+            self.tell("This page syncs on the crank only - sequential needs "
+                      "the cam (syncMode): sequential runs skipped.")
+        res = [self._run_strategy(lbl, f) for lbl, f in cands]
+        self.info["strategies"] = res
+        for r in res:
+            self.s.say("STRATEGY %-26s %s" % (r["label"], r if not r.get(
+                "started") else "rpm sd %s %%, injectors %s, lambda %s" % (
+                    r["rpm_sd_pct"], r["injectors"], r["lambda"])))
+        good = [r for r in res if r.get("started") and not r.get("stalled")
+                and r.get("injectors") != "FAIL"]
+        best = min(good, key=lambda r: r["rpm_sd_pct"]) if good else None
+        txt = "; ".join("%s: %s" % (r["label"], ("rpm sd %s %%" % r["rpm_sd_pct"])
+                                    if r.get("started") else r.get("why"))
+                        for r in res)
+        cam = [r for r in res if r["label"].startswith("sequential")]
+        if len(cam) == 2:
+            # A RUN COUNTS FOR THE CAM LEVEL ONLY IF IT WAS TRULY SEQUENTIAL
+            # (seqActive on most rows). Without the cycle both levels run the
+            # same fallback and "both ran" says nothing (2026-10-11).
+            ok = [r for r in cam if r in good and r.get("seq_pct", 0) >= 80]
+            if not any(r.get("cycle_seen") for r in cam):
+                txt += (" - CAM LEVEL: INCONCLUSIVE - the cam never gave the "
+                        "720 deg cycle (syncState never 4): check the cam "
+                        "sensor on 86 and camPhaseStatus before judging")
+            elif len(ok) == 1:
+                txt += " - CAM LEVEL: '%s' is right (the other did not run " \
+                       "properly)" % ok[0]["label"]
+            elif len(ok) == 2:
+                txt += (" - CAM LEVEL: INCONCLUSIVE - both levels ran truly "
+                        "sequential, which the wheel cannot do; log both again")
+            else:
+                txt += (" - CAM LEVEL: INCONCLUSIVE - neither level ran "
+                        "truly sequential (seqActive %s %%)"
+                        % [r.get("seq_pct") for r in cam])
+        self.verdict("Strategy comparison", "PASS" if best else "FAIL",
+                     ("smoothest: %s - %s" % (best["label"], txt)) if best
+                     else "no strategy ran cleanly - %s" % txt)
+        # back to what the page had before this phase
+        self.ask("STOP THE ENGINE once more (the original strategies go back), "
+                 "then press ENTER")
+        self.record("wait:stopped", 15.0, until=lambda r: _rpm(r) == 0,
+                    enter_stops=False)
+        for n in ("injStrategy", "ignStrategy", "camPhaseLevel"):
+            d = self.ledger.get(n)
+            if d and d.get("now") != d["original"]:
+                self.set_field(n, d["original"], "phase 7 restore")
+        self.wait_applied()
+
+    def ph_keyoff(self):
+        self.tell("Engine running or idling. You will turn the KEY OFF, wait, "
+                  "then ON and START again (hot restart).")
+        if not self.ask("Turn the KEY OFF now and press ENTER (s skips)",
+                        allow_skip=True):
+            self.verdict("Key-off / restart", "SKIP", "operator skipped")
+            return
+        rows, _e = self.record("keyoff", 25.0, enter_stops=False)
+        ro = [int(r.get("runOn") or 0) & 0xFF for r in rows]
+        hold = any(x == 1 for x in ro)
+        self.ask("Turn the KEY ON and START the engine, ENTER when it runs")
+        t0 = time.monotonic()
+        rows2, _e2 = self.record("restart", 30.0,
+                                 until=self._engine_runs_for(3.0))
+        crank = [r for r in rows2 if _rpm(r) > 0]
+        run = next((r for r in rows2 if _running(r)), None)
+        drops = self.rt.stats.get("drops", 0)
+        txt = ("run-on %s; link dropped %d time(s) and came back; hot restart "
+               "%s" % ("seen (relay held after key-off)" if hold else
+                       "NOT seen in the recording",
+                       drops, ("running %.1f s after cranking"
+                               % (run["_t"] - crank[0]["_t"]))
+                       if run and crank else "did NOT run"))
+        st = "PASS" if run and hold else ("WARN" if run else "FAIL")
+        self.verdict("Key-off / restart", st, txt)
+        _ = t0
+
+    def ph_report(self):
+        order = ("K-line", "ECU identity", "Battery", "Coolant sensor",
+                 "Intake air sensor", "Pressure sensor", "Pedal/TPS at rest",
+                 "Pedal", "Trouble codes", "Boot history", "Wideband warm-up",
+                 "Throttle, engine off", "Engine start", "Injectors",
+                 "Ignition", "Scheduler", "Idle stability", "Wideband",
+                 "Mixture", "Warm-up", "Throttle, driving", "Tip-in response",
+                 "Overrun fuel cut (DFCO)", "Strategy comparison",
+                 "Key-off / restart")
+        last = {}
+        for r in self.results:
+            last[r["system"]] = r
+        rank = {k: i for i, k in enumerate(order)}
+        rows = sorted(last.values(), key=lambda r: rank.get(r["system"], 99))
+        md = ["# HaniCore guided vehicle test - %s" % self.s.dir.name, "",
+              "| system | result | why |", "|---|---|---|"]
+        for r in rows:
+            md.append("| %s | **%s** | %s |" % (r["system"], r["status"],
+                                                r["reason"].replace("|", "/")))
+        bad = [r for r in rows if r["status"] == "FAIL"]
+        warn = [r for r in rows if r["status"] == "WARN"]
+        md += ["", "## Does NOT work (%d)" % len(bad)] + [
+            "* %s - %s" % (r["system"], r["reason"]) for r in bad]
+        md += ["", "## Needs a look (%d)" % len(warn)] + [
+            "* %s - %s" % (r["system"], r["reason"]) for r in warn]
+        tips = self.info.get("tipins") or []
+        if tips:
+            md += ["", "## Tip-ins", "", "| step | result | rpm | lambda | "
+                   "cuts | cause |", "|---|---|---|---|---|---|"]
+            for t in tips:
+                md.append("| %s | %s | %s -> %s | %s..%s | %s | %s |" % (
+                    t.get("step"), t["status"], t.get("rpm_before"),
+                    t.get("rpm_min"), t.get("lambda_min"), t.get("lambda_max"),
+                    "; ".join("%s: %s" % kv for kv in (t.get("cuts") or {}).items())
+                    or "-", t["cause"]))
+        md += ["", "RAM changes made by this session (never burned): %s"
+               % ({k: v for k, v in self.ledger.items()} or "none")]
+        (self.s.dir / "report.md").write_text("\n".join(md) + "\n",
+                                              encoding="utf-8")
+        self.s.say("")
+        self.s.say("RESULT, system by system:")
+        for r in rows:
+            self.s.say("  %-26s %-5s %s" % (r["system"], r["status"],
+                                            r["reason"][:110]))
+        self.s.say("report: %s" % (self.s.dir / "report.md"))
+
+    def finish_ram(self):
+        """Every RAM change, listed; the passed results burned, the rest put back."""
+        diffs, _cur = self.page_diff()
+        if diffs is None:
+            self.s.say("RAM: the page could not be read back - check it in "
+                       "TunerStudio; nothing was burned")
+            return
+        if not diffs:
+            self.s.say("RAM: no page value differs from the session start")
+            return
+        names = {}
+        for off, a, b in diffs:
+            names.setdefault(self.e.field_at(off), []).append(off)
+        self.s.say("")
+        self.s.say("RAM CHANGES SINCE THE LAST BURN:")
+        for n in sorted(names):
+            d = self.ledger.get(n)
+            self.s.say("  %-28s %s" % (n, ("was %s, now %s (%s)" % (
+                d["original"], d.get("now"), d.get("why"))) if d else
+                "changed by a calibration (%d byte(s))%s" % (
+                    len(names[n]), " - KEPT in phase 3"
+                    if all(o in self.kept for o in names[n]) else "")))
+        # DECIDED, NOT ASKED (owner, 2026-10-11): the strategy / cam-level
+        # experiments go back; the ELECTRONIC THROTTLE stays ON when the
+        # drive test passed (phase 6 PASS, no tip-in FAIL) and is then
+        # BURNED with the engine stopped; anything else goes back too.
+        res = {r["system"]: r["status"] for r in self.results}
+        keep = set(self.kept)
+        dbw_keep = (res.get("Throttle, driving") == "PASS"
+                    and res.get("Tip-in response") != "FAIL")
+        if dbw_keep:
+            _k, _s, w, off, _lo, _hi, _n = self.e.constants()["dbwEnable"]
+            keep |= set(range(off, off + w))
+        ok, n = self.revert(diffs, keep=keep)
+        self.s.say("PUT BACK %d region(s)%s (test-only changes)." % (
+            n, "" if ok else " - SOME WRITES FAILED"))
+        left = [o for o, _a, _b in diffs if o in keep]
+        if not left:
+            self.info["ram_end"] = "reverted"
+            self.s.say("Nothing left to burn: the ECU keeps its burned page.")
+            self.save_state()
+            return
+        self.s.say("TO BURN: %s" % ", ".join(sorted({self.e.field_at(o)
+                                                     for o in left})))
+        self.ask("STOP THE ENGINE (key stays ON) so the result can be burned, "
+                 "then press ENTER", allow_skip=False)
+        self.record("wait:stopped", 15.0, until=lambda r: _rpm(r) == 0,
+                    enter_stops=False)
+        okb = self.burn("drive test passed: electronic throttle ON"
+                        if dbw_keep else "calibration")
+        self.info["ram_end"] = "burned" if okb else "burn FAILED - RAM only"
+        self.save_state()
+
+    def run(self, only=None):
+        phases = [p for p in GUIDED_PHASES if p != "report"
+                  and (only is None or p == only)]
+        try:
+            for p in phases:
+                if p in self.done and only is None:
+                    self.s.say("(phase %s already done - resumed session)" % p)
+                    continue
+                self.banner(p)
+                getattr(self, "ph_" + p)()
+                self.done.append(p)
+                self.save_state()
+            # every RAM change listed, keep or revert - BEFORE the report,
+            # so the report says what the page was left with
+            self.finish_ram()
+            if only is None or only == "report":
+                self.banner("report")
+                self.ph_report()
+        except KeyboardInterrupt:
+            self.abort("Ctrl+C")
+            raise
+        except Exception as ex:
+            self.s.say("FAILURE in phase %s: %r" % (getattr(self, "cur", "?"), ex))
+            self.abort("failure: %s" % ex)
+            raise
+
+
 # ================================================================ main ====
 def default_out() -> Path:
     base = ROOT.parent / "evidence"
@@ -1648,18 +3328,57 @@ def default_out() -> Path:
     return base / "vehicle_tests" / ("%s_vehicle_test" % stamp)
 
 
+def _line(stdin_q, prompt):
+    """One operator answer. A test's scripted operator may see the prompt
+    (answer(prompt)) - it acts like the human who reads it."""
+    if stdin_q is None:
+        return input()
+    if hasattr(stdin_q, "answer"):
+        return stdin_q.answer(prompt)
+    return stdin_q.get()
+
+
 def make_ask(no_prompt: bool, sess: Session, stdin_q):
     def ask(prompt, allow_skip=False):
         sess.say(">>> " + prompt)
         if no_prompt:
             sess.say("    (--no-prompt: continuing)")
             return True
-        line = stdin_q.get() if stdin_q else input()
+        line = _line(stdin_q, prompt)
         if allow_skip and line.strip().lower().startswith("s"):
             sess.say("    skipped")
             return False
         return True
     return ask
+
+
+def make_choose(no_prompt: bool, sess: Session, stdin_q):
+    """A question with a default: -> the answer (lower case) or `default`."""
+    def choose(prompt, default):
+        sess.say(">>> " + prompt)
+        if no_prompt:
+            sess.say("    (--no-prompt: %s)" % default)
+            return default
+        line = _line(stdin_q, prompt).strip().lower()
+        sess.say("    answer: %s" % (line or default))
+        return line or default
+    return choose
+
+
+def stdin_pump():
+    """ONE reader of the keyboard for the whole guided session, so ENTER can
+    both answer a question and end a recording without two threads racing
+    for the same line."""
+    q = queue.Queue()
+
+    def pump():
+        while True:
+            try:
+                q.put(input())
+            except (EOFError, KeyboardInterrupt):
+                return
+    threading.Thread(target=pump, daemon=True).start()
+    return q
 
 
 def make_confirm_physical(no_prompt, sess, stdin_q):
@@ -1687,9 +3406,15 @@ def make_confirm_physical(no_prompt, sess, stdin_q):
 
 
 def run(a, open_port=None, stdin_q=None) -> int:
+    guided = getattr(a, "guided", False)
+    resume = getattr(a, "resume", None)
+    if resume:
+        a.out = resume
     out = Path(a.out) if a.out else default_out()
-    sess = Session(out, quiet=a.quiet)
+    sess = Session(out, quiet=a.quiet, resume=bool(resume))
     profile = getattr(a, "profile", "max")
+    if guided and stdin_q is None and not a.no_prompt:
+        stdin_q = stdin_pump()
     sess.meta.update({"port": a.port, "baud": a.baud,
                       "mode": [m for m in ("kline", "autocal", "runtime")
                                if getattr(a, m)],
@@ -1718,7 +3443,16 @@ def run(a, open_port=None, stdin_q=None) -> int:
         # software path happened to be called, which is how V99 came to label
         # ECU-cavity-43 wiring "OBD".
         kl.confirm_physical()
-        if a.kline:
+        phase = getattr(a, "phase", None)
+        if guided:
+            # phase 1 is the connection itself: OBD (VAG/KWP) first, then the
+            # KKL moved to ECU pin 43; link quality, no key-cycle (phase 8)
+            q = not resume and phase in (None, "kline")
+            sess.say("=== CONNECTING (phase 1, K-LINE) ===")
+            link, res = kl.run(quality=q, keycycle=False)
+            sess.meta["phases"]["kline"] = res
+            sess.save_meta()
+        elif a.kline:
             sess.say("=== PHASE 1: K-LINE QUALIFICATION ===")
             link, res = kl.run()
             sess.meta["phases"]["kline"] = res
@@ -1792,12 +3526,30 @@ def run(a, open_port=None, stdin_q=None) -> int:
                          cfg.get("ignStrategy"), cfg.get("syncMode"),
                          cfg.get("loadSource"), cfg.get("dbwEnable"),
                          cfg.get("lambdaHeatPolicy"), cfg.get("trigAngleX10")))
+        ecu.boot_history("start")
+        ecu.reset_witness("start")
         ring = Ring(ecu, sess)
         evs = ring.poll(first=True)
         ring.write(evs)
         if evs:
             sess.say("EVENTS: %d records already in the ring (incl. before "
                      "this session)" % len(evs))
+        # -------------------------------------- THE GUIDED SESSION (default)
+        if guided:
+            st = None
+            sp = sess.dir / "guided_state.json"
+            if resume and sp.exists():
+                st = json.loads(sp.read_text(encoding="utf-8"))
+                for r in st.get("results", []):
+                    sess.summary.append((r["system"], r["status"], r["reason"]))
+            g = Guided(a, sess, kl, link, ecu, ring,
+                       make_ask(a.no_prompt, sess, stdin_q),
+                       make_choose(a.no_prompt, sess, stdin_q), stdin_q, st)
+            g.run(only=phase)
+            sess.meta["phases"]["guided"] = {"results": g.results,
+                                             "info": g.info,
+                                             "ram_ledger": g.ledger}
+            sess.save_meta()
         # --------------------------------------------------- 2. AUTOCAL
         if a.autocal:
             sess.say("=== PHASE 2: ETB / AUTOCAL DIAGNOSTICS ===")
@@ -1837,25 +3589,58 @@ def run(a, open_port=None, stdin_q=None) -> int:
         rc = 130
     finally:
         try:
+            if link is not None and "ecu" in locals():
+                ecu.boot_history("end")
+                pg = link.page()
+                if pg:
+                    (sess.dir / "page_end.bin").write_bytes(pg)
+        except Exception as ex:
+            sess.say("end-of-session reads failed: %s" % ex)
+        try:
             if link is not None:
                 link.p.close()
         except Exception:
             pass
         sess.close()
-    if a.analyze and (a.runtime or a.autocal):
+    if a.analyze and (a.runtime or a.autocal or guided):
         try:
             import me711_log_analyze as LA
             LA.main([str(out)])
         except Exception as ex:     # the recording is the product
             print("analysis failed: %s" % ex)
     print("\nSESSION FOLDER: %s" % out)
+    z = zip_session(out)
+    if z:
+        print("SESSION ZIP (bring this back): %s" % z)
     return rc
+
+
+def zip_session(folder):
+    """ONE file to bring back (2026-10-11): <folder>.zip beside the folder,
+    every file in it. Written last; a failure only prints - the folder is
+    the record."""
+    import zipfile
+    try:
+        folder = Path(folder)
+        if not folder.is_dir():
+            return None
+        dst = folder.with_suffix(".zip")
+        with zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as z:
+            for f in sorted(folder.rglob("*")):
+                if f.is_file():
+                    z.write(f, Path(folder.name) / f.relative_to(folder))
+        return str(dst)
+    except Exception as ex:
+        print("session zip failed: %s" % ex)
+        return None
 
 
 def parse(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0],
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--port", default="COM3")
+    ap.add_argument("--port", default="auto",
+                    help="the KKL's COM port; 'auto' (default) picks the USB "
+                         "serial adapter")
     ap.add_argument("--baud", type=int, default=115200)
     ap.add_argument("--out")
     ap.add_argument("--ini")
@@ -1873,20 +3658,66 @@ def parse(argv=None):
     ap.add_argument("--direct", action="store_true",
                     help="the KKL is on the ECU's own K-line (not OBD)")
     ap.add_argument("--no-prompt", action="store_true")
+    ap.add_argument("--autotune", action="store_true",
+                    help="phase 3 also runs the PID autotune ('!C3'); by "
+                         "default the page's gains are kept")
     ap.add_argument("--no-analyze", dest="analyze", action="store_false")
     ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--phase", choices=GUIDED_PHASES,
+                    help="run ONE phase of the guided session")
+    ap.add_argument("--resume", metavar="SESSION_FOLDER",
+                    help="continue a guided session in that folder")
+    ap.add_argument("--recorder", action="store_true",
+                    help="the plain flight recorder (the pre-2026-10-10 "
+                         "default): K-line + record until ENTER")
+    ap.add_argument("--time-scale", dest="time_scale", type=float,
+                    default=1.0, help=argparse.SUPPRESS)
     a = ap.parse_args(argv)
     if a.reduced:
         a.profile = "reduced"
     if a.full:
         a.kline = a.autocal = a.runtime = True
-    if not (a.kline or a.autocal or a.runtime):
-        ap.error("choose --kline, --autocal, --runtime or --full")
+    a.guided = False
+    if a.recorder:
+        a.kline = a.runtime = True
+    elif not (a.kline or a.autocal or a.runtime):
+        # THE DEFAULT (owner, 2026-10-10): the GUIDED session - every system
+        # the engine needs, phase by phase, with a PASS / WARN / FAIL report.
+        a.guided = True
     return a
 
 
+def pick_port(want: str) -> str:
+    """'auto': the one USB-serial adapter that is not the bench rig."""
+    if want.lower() != "auto":
+        return want
+    from serial.tools import list_ports
+    ports = list(list_ports.comports())
+    kkl = [p for p in ports if any(k in (p.description or "") + (p.manufacturer or "")
+                                   for k in ("FTDI", "USB Serial Port", "CH340",
+                                             "Prolific", "KKL", "CP210"))]
+    pick = kkl or [p for p in ports if "USB" in (p.description or "")]
+    if not pick:
+        raise SystemExit("no USB serial adapter found (%s) - plug the KKL in "
+                         "or pass --port COMx" % ", ".join(p.device for p in ports))
+    if len(pick) > 1:
+        print("several adapters: %s - using %s (pass --port to choose)"
+              % (", ".join(p.device for p in pick), pick[0].device))
+    print("KKL port: %s (%s)" % (pick[0].device, pick[0].description))
+    return pick[0].device
+
+
 def main(argv=None) -> int:
-    return run(parse(argv))
+    try:
+        import serial  # noqa: F401
+    except ImportError:
+        raise SystemExit("pyserial is not installed for this Python:\n"
+                         "    py -m pip install pyserial\n"
+                         "(the 2026-10-10 car session lost three captures "
+                         "to 'No module named serial')")
+    a = parse(argv)
+    a.port = pick_port(a.port)
+    return run(a)
 
 
 if __name__ == "__main__":

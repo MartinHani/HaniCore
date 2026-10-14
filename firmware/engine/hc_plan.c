@@ -161,9 +161,9 @@ unsigned int hc_plan_dur_to_angle_x10(unsigned long ticks,
 }
 
 
-/* Half the cylinders, at least one. The pairing divisor for wasted spark and
-   semi-sequential injection: cylinder i and cylinder i + n/2 share an output
-   because on an even-firing engine their TDCs are 360 degrees apart. */
+/* Half the cylinders, at least one. The pairing divisor for wasted spark:
+   two cylinders 360 degrees apart share a coil. (Not for injection - every
+   semi-sequential injector has its own output.) */
 static unsigned char half_of(unsigned char cylinders)
 {
     unsigned char h = (unsigned char)(cylinders / 2u);
@@ -249,7 +249,13 @@ unsigned char hc_plan_inj_slot(unsigned char cyl, unsigned char cylinders,
            1 for batch - so this slot is the bank and nothing else maps to it. */
         return HC_PLAN_SLOT_ALL;
     case HC_INJ_SEMI_SEQ:
-        return (unsigned char)((cyl % half_of(cylinders)) + 1u);
+        /* EVERY INJECTOR ITS OWN SLOT, NOT ONE PER PAIR. A slot drives ONE
+           output, so the wasted-paired COIL model (one slot per pair) left the
+           partner's injector undriven: on the AWT car (2026-10-10) cylinders
+           4 and 2 got no fuel at all. Semi-sequential = each cylinder at its
+           own TDC and again 360 later, half the cycle's fuel each pulse
+           (rusEFI IM_BATCH pairs open together - the same pulses). The second
+           firing is hc_plan_inj_repeats()'s. */
     case HC_INJ_SEQUENTIAL:
     default:
         return (unsigned char)(cyl + 1u);
@@ -335,11 +341,12 @@ unsigned char hc_plan_inj_repeats(unsigned char inj_strategy,
         /* Half a charge per revolution, twice a cycle. hc_plan_inj_cyls()
            walks ONE cylinder for batch, so this repeat is the whole of the
            second firing. */
-        return 2u;
     case HC_INJ_SEMI_SEQ:
-        /* Twice a cycle as well - but the second firing is the PAIRED
-           cylinder's own event, exactly as for wasted-paired ignition, so no
-           repeat. */
+        /* Twice a cycle as well, each cylinder on its OWN output: the second
+           firing is this cylinder's repeat 360 later, NOT the paired
+           cylinder's event (that is the coil model, and it drove only half
+           the injectors - hc_plan_inj_slot()). */
+        return 2u;
     case HC_INJ_SEQUENTIAL:
     default:
         return 1u;

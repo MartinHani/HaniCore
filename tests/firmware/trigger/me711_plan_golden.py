@@ -154,8 +154,8 @@ def ref_inj_slot(cyl, n, strategy):
     half = max(n // 2, 1)
     if strategy == INJ_BATCH:
         return 0
-    if strategy == INJ_SEMI:
-        return cyl % half + 1
+    # SEMI-SEQ: every injector its own output (2026-10-10 - the pair
+    # model drove half the injectors on the AWT car).
     return cyl + 1
 
 
@@ -383,9 +383,12 @@ def main() -> int:
               "%d slots" % len(ev))
 
         ev = enumerate_inj(n, INJ_SEMI)
-        check("semi-seq inj, %2d cyl: %d pairs, 2 pulses each"
-              % (n, n // 2),
-              len(ev) == n // 2 and all(len(v) == 2 for v in ev.values()),
+        spaced = all(abs(sorted(v)[1] - sorted(v)[0]) == REV
+                     for v in ev.values())
+        check("semi-seq inj, %2d cyl: %d injectors, 2 pulses each, 360 apart"
+              % (n, n),
+              len(ev) == n and spaced
+              and all(len(v) == 2 for v in ev.values()),
               "%d slots" % len(ev))
 
         ev = enumerate_inj(n, INJ_BATCH)

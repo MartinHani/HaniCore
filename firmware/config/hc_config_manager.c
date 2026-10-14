@@ -907,6 +907,71 @@ unsigned int hc_cfg_mgr_commit_burn(unsigned char stopped)
     return HC_VAL_OK;
 }
 
+/* -------------------------------------- the Burn deferred to engine stop */
+/* In the battery-backed SRAM (near XRAM is at its reserve): a Burn owed
+   when the key went off is still owed - and still started - at the next
+   stopped engine. */
+typedef struct {
+    unsigned char wait;             /* 1 = a flash Burn is owed             */
+    unsigned char seen;             /* the stop has been seen once          */
+    unsigned int  stop_ms;          /* when                                 */
+    unsigned int  magic;            /* BURN_OWED_MAGIC with wait == 1: SRAM */
+} hc_burn_defer_t;                  /* after a battery loss is random       */
+#define BURN_OWED_MAGIC 0xB0D1u
+#if defined(TGT_RAM_BURNDEFER)
+#define BD (*(hc_burn_defer_t huge *)(TGT_EXTRAM_BASE + TGT_RAM_BURNDEFER))
+typedef char hc_burn_defer_fits[(sizeof(hc_burn_defer_t)
+                                 <= TGT_RAM_BURNDEFER_LIMIT) ? 1 : -1];
+#else
+static hc_burn_defer_t bd_ram;
+#define BD bd_ram
+#endif
+#define burn_wait      BD.wait
+#define burn_stop_seen BD.seen
+#define burn_stop_ms   BD.stop_ms
+#define burn_magic     BD.magic
+#define burn_owed()    (burn_wait == 1u && burn_magic == BURN_OWED_MAGIC)
+
+unsigned int hc_cfg_mgr_burn_defer(void)
+{
+    unsigned int faults = hc_cfg_mgr_commit();   /* validate + standby */
+    if (faults == HC_VAL_OK) {
+        burn_wait = 1u;
+        burn_stop_seen = 0u;
+        burn_magic = BURN_OWED_MAGIC;
+    }
+    return faults;
+}
+
+unsigned char hc_cfg_mgr_burn_due(unsigned int now_ms, unsigned char stopped)
+{
+    if (!burn_owed()) {
+        burn_wait = 0u;             /* no ?C_INIT: anything else is "none" */
+        burn_magic = 0u;
+        return 0u;
+    }
+    if (!stopped) {
+        burn_stop_seen = 0u;
+        return 0u;
+    }
+    if (!burn_stop_seen) {
+        burn_stop_seen = 1u;
+        burn_stop_ms = now_ms;
+        return 0u;
+    }
+    if ((unsigned int)(now_ms - burn_stop_ms) < HC_BURN_STOP_MS) {
+        return 0u;
+    }
+    burn_wait = 0u;
+    burn_magic = 0u;
+    return 1u;
+}
+
+unsigned char hc_cfg_mgr_burn_pending(void)
+{
+    return (unsigned char)burn_owed();
+}
+
 unsigned int hc_cfg_mgr_commit(void)
 {
     unsigned int faults;

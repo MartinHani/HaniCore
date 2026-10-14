@@ -36,6 +36,14 @@ hcevlog711.c) closely enough to drive every code path of the tool:
       is written against a second header
   M8  V100 the K-line PHYSICAL mode is confirmed and recorded in EVERY
       session, including a --runtime-only one
+  G1..G4 (2026-10-10) THE GUIDED SESSION against a CarEcu (a FakeEcu with a
+      page, an engine, a pedal, a throttle, a wideband) and a scripted
+      Operator that does what each prompt says: G1 a healthy car - every
+      phase, the strategy comparison names the right cam level, never a Burn,
+      the RAM change reverted at the end; G2 the 2026-10-10 bugs - phase 5
+      FAILS naming the dead injector channels 2 and 4, phase 6 NAMES the
+      protection fuel cut on the tip-in and its throttle-fault cause; G3
+      Ctrl+C mid-drive sends '!X' and restores dbwEnable; G4 --phase / --resume.
 """
 from __future__ import annotations
 
@@ -91,7 +99,7 @@ class FakeEcu:
         self.ecu_rate = 115200 if mode == "ok" else 57600
         self.rx = bytearray()
         self.kwp_stage = 0
-        self.och = bytearray(self.block + VT.EXT_RING + 16 + 90 * 10)
+        self.och = bytearray(self.block + VT.EXT_WITNESS + 128)
         self.page = bytes(4096)
         self.sig = ini.signature
         self.etb = None              # (sub, reads left)
@@ -105,6 +113,23 @@ class FakeEcu:
         self.och[hdr + 8:hdr + 10] = (10).to_bytes(2, "big")
         self.set("RPMValue", 0)
         self.set("ecuMs", self.ms)
+        # 2026-10-12: the reset witness's live half (hcrtmon711.c)
+        w = self.block + VT.EXT_WITNESS
+        live = {"magic": 0x5257, "uptime_ms": 4321, "rpm": 850,
+                "batt_dv": 138, "asic_csum_err": 3, "s5500_gap_max_ms": 11}
+        for k, v in live.items():
+            i = VT.WT_FIELDS.index(k)
+            self.och[w + 2 * i:w + 2 * i + 2] = v.to_bytes(2, "big")
+        # ... and the half copied at boot (the boot BEFORE this one). Until
+        # 2026-10-13 the rig left it empty, so the "no record" branch was the
+        # only one tested and the printed record crashed every car session
+        # (format with 13 fields, 12 values).
+        prev = {"magic": 0x5257, "uptime_ms": 3856, "batt_dv": 120,
+                "asic_run_ok": 13278, "s5500_gap_max_ms": 13,
+                "main_pass_max_T": 11651, "wdt_gap_max_ms": 2}
+        for k, v in prev.items():
+            i = 32 + VT.WT_FIELDS.index(k)
+            self.och[w + 2 * i:w + 2 * i + 2] = v.to_bytes(2, "big")
 
     # ---- the OCH image ----
     def set(self, name, v):
@@ -141,9 +166,17 @@ class FakeEcu:
     def five_baud(self, addr):
         self.baud = 10400
         self.rx.clear()
-        if self.mode in ("kwp", "ok") and self.kwp_fault != "noinit" \
+        if self.mode in ("kwp", "ok") \
+                and self.kwp_fault not in ("noinit", "noslow") \
                 and addr == 0x01:
             self.rx += b"\x55\xEF\x8F"
+            self.kwp_stage = 1
+
+    def wakeup(self):
+        """ISO 14230 fast init: the session opens at StartCommunication."""
+        self.baud = 10400
+        self.rx.clear()
+        if self.mode in ("kwp", "ok") and self.kwp_fault != "noinit":
             self.kwp_stage = 1
 
     def write(self, data: bytes):
@@ -212,6 +245,13 @@ class FakeEcu:
             if p[1:2] == b"C":
                 self.etb = (p[2], 6)
             body = b""
+        elif c == b"l":
+            # the composite logger: 200 records of 8 bytes on a read
+            body = b""
+            if p[1:2] == b"\x03":
+                body = b"".join(bytes([0, 1, 1 << (i % 4), (i & 1) | 8])
+                                + (i * 625).to_bytes(4, "big")
+                                for i in range(200))
         else:
             body = b""
         blob = b"\x00" + body
@@ -251,7 +291,7 @@ class Args:
     def __init__(self, out, **kw):
         self.port = "FAKE"
         self.baud = 115200
-        self.out = str(out)
+        self.out = None if out is None else str(out)
         self.ini = None
         self.duration = None
         self.kline = self.autocal = self.runtime = False
@@ -283,6 +323,410 @@ def read_csv(p):
         return list(csv.DictReader(f))
 
 
+# ============================================ the GUIDED session (2026-10-10)
+class CarEcu(FakeEcu):
+    """A FakeEcu with a CAR behind it: a page (W writes it, R reads it), an
+    engine that cranks / runs / stops when the scripted operator acts, a
+    pedal, a throttle, the wideband, per-channel injector telemetry - and the
+    two faults the 2026-10-10 car showed: `semi_bug` (semi-sequential leaves
+    injector channels 2 and 4 dead) and `tip_cut` (a fast tip-in trips the
+    throttle-fault protection fuel cut)."""
+
+    def __init__(self, semi_bug=False, tip_cut=False, tip_drop=False,
+                 lam_drop=False, no_cam=False):
+        super().__init__("ok")
+        self.no_cam = no_cam
+        self.tip_drop = tip_drop
+        self.lam_drop, self.lam_was_out, self.cj_tmo = lam_drop, False, 0
+        import types
+        self.C = VT.Ecu.constants(types.SimpleNamespace(ini_path=INI,
+                                                        _consts=None))
+        self.page = bytearray(4096)
+        for n, v in (("cylinders", 4), ("injStrategy", 1), ("ignStrategy", 1),
+                     ("syncMode", 2), ("lambda1Source", 1), ("dbwEnable", 0),
+                     ("camPhaseLevel", 0), ("injFlowCcMin", 301)):
+            self.pset(n, v)
+        for i, (a, b) in enumerate(zip([96, 89, 97, 88] + [255] * 8,
+                                       [102, 95, 103, 94] + [255] * 8)):
+            self.page[self.C["injPin"][3] + i] = a
+            self.page[self.C["ignPin"][3] + i] = b
+        self.semi_bug, self.tip_cut = semi_bug, tip_cut
+        self.engine, self.t_state = "off", 0.0
+        self.pedal_fn, self.t_pedal = (lambda t: 0.0), 0.0
+        self.burns, self.cmds = 0, []
+        self.burned = bytes(4096)
+        self.cut_logged = False
+        self.clt = 60.0
+        for n, v in (("VBatt", 138), ("battDv", 138), ("intake", 10250),
+                     ("mapKpaX10", 1012), ("s5500w08", 820),
+                     ("rstBootCount", 5), ("lamWhy", 0x0108),
+                     ("targetLambda", 1000), ("lambdaTarget", 1000)):
+            self.set(n, v)
+
+    def pset(self, name, v):
+        kind, _s, w, off, lo, hi, _n = self.C[name]
+        if kind == "bits":
+            raw = int.from_bytes(self.page[off:off + w], "big")
+            m = ((1 << (hi - lo + 1)) - 1) << lo
+            v = (raw & ~m) | ((v << lo) & m)
+        self.page[off:off + w] = int(v).to_bytes(w, "big")
+
+    def pget(self, name):
+        kind, _s, w, off, lo, hi, _n = self.C[name]
+        v = int.from_bytes(self.page[off:off + w], "big")
+        return (v >> lo) & ((1 << (hi - lo + 1)) - 1) if kind == "bits" else v
+
+    def ts(self, data):
+        if len(data) >= 7:
+            n = (data[0] << 8) | data[1]
+            p = bytes(data[2:2 + n])
+            if p[:1] == b"W":
+                off = int.from_bytes(p[1:3], "big")
+                self.page[off:off + len(p) - 3] = p[3:]
+                return self._ok()
+            if p[:1] == b"B":
+                self.burns += 1
+                self.burned = bytes(self.page)       # what is in flash now
+                self.set("nvmCommits", self.burns)
+                return self._ok()
+            if p[:1] == b"!":
+                self.cmds.append(p)
+                if p[:3] == b"!C\x01":      # the TPS endpoint calibration
+                    self.pset("tps1Min", self.pget("tps1Min") + 3)
+        return super().ts(data)
+
+    def _ok(self):
+        blob = b"\x00"
+        self.rx += len(blob).to_bytes(2, "big") + blob + (
+            binascii.crc32(blob) & 0xFFFFFFFF).to_bytes(4, "big")
+
+    def go(self, state):
+        import time as _t
+        self.engine, self.t_state = state, _t.monotonic()
+
+    def pedal(self, fn):
+        import time as _t
+        self.pedal_fn, self.t_pedal = fn, _t.monotonic()
+
+    def tick(self, status_read=False):
+        import time as _t
+        super().tick(status_read)
+        now = _t.monotonic()
+        seq_bad = (self.pget("injStrategy") == 2 and self.pget("camPhaseLevel") == 1
+                   and not self.no_cam)
+        if self.engine == "crank" and now - self.t_state > 0.05 and not seq_bad:
+            self.engine = "run"
+        run = self.engine == "run"
+        p = max(0.0, min(100.0, self.pedal_fn(now - self.t_pedal)))
+        rpm = {"off": 0, "keyoff": 0, "crank": 200}.get(self.engine, 0)
+        cut = self.tip_cut and run and p >= 30
+        en = self.pget("dbwEnable")
+        # 2026-10-11: a fast press reads as a suspect pedal pair and the
+        # throttle bridge drops (DBW INIT, nothing latched)
+        drop = self.tip_drop and run and en and p >= 30
+        # overrun fuel cut only right after the "release from 3000 rpm"
+        dfco = run and p == 0 and now - self.t_pedal < self.overrun_until
+        if run:
+            rpm = 900 + (self.n_reply % 7) - 3 + int(p * 20)
+            if cut:
+                rpm = 650
+            if drop:
+                rpm = 700
+        self.set("RPMValue", rpm)
+        self.set("rpm", rpm)
+        self.set("engineFlags", (1 if run else (2 if self.engine == "crank"
+                                                else 0)) | (32 if dfco else 0))
+        self.set("syncState", (3 if self.no_cam else 4) if run
+                 else (3 if self.engine == "crank" else 0))
+        # true sequential only with the cycle (no cam: the wasted fallback)
+        self.set("seqActive", 1 if run and not self.no_cam
+                 and self.pget("injStrategy") == 2 else 0)
+        self.set("fuelCutFlags", 8 if cut else (1 if dfco else 0))
+        self.set("limpCut", 2 if cut else 0)
+        self.set("dbwFaults", 64 if cut else 0)
+        if cut and not self.cut_logged:
+            self.event(8, 0, 1600, 8)
+            self.event(16, 0, 1600, 2)
+            self.cut_logged = True
+        if not cut:
+            self.cut_logged = False
+        for n in range(1, 5):
+            dead = self.semi_bug and self.pget("injStrategy") == 1 and n in (2, 4)
+            self.set("inj%dDeliveredUs" % n, 2700 if run and not dead else 0)
+            self.set("inj%dRequestedUs" % n, 2700 if run else 0)
+        self.set("ignOnMask", (1 << (self.n_reply % 4)) if run else 0)
+        lam = 1700 if (run and self.semi_bug) else 1000
+        lam_out = run and self.lam_drop and (self.n_reply // 15) % 4 == 3
+        if lam_out and not self.lam_was_out:
+            self.cj_tmo += 1                 # each dropout starts at a timeout
+        self.lam_was_out = lam_out
+        self.set("cjTmo", self.cj_tmo)
+        self.set("lamWhy", (0x010D if lam_out else 0x0100) if run else 0x0108)
+        self.set("lambdaValue", lam if run else 0)
+        self.set("lambda1X1000", lam if run else 0)
+        self.set("dbwApp1X10", int(p * 10))
+        self.set("dbwApp2X10", int(p * 10))
+        self.set("pedalX10", int(p * 10))
+        self.set("pedal2X10", int(p * 10))
+        tps = (6.0 if drop else p) if en else 5.0
+        for n in ("dbwTps1X10", "dbwTps2X10", "dbwTargetX10", "dbwActualX10"):
+            self.set(n, int(tps * 10))
+        self.set("dbwState", (1 if drop else 2) if en else 0)
+        self.set("dbwPendFaults", 2 if drop else 0)
+        self.set("cfgDirtyGroups", 0)
+        self.set("runOn", 1 if self.engine == "keyoff" else 0)
+        self.clt = min(90.0, self.clt + (0.01 if run else 0.0))
+        self.set("coolant", int(self.clt * 10) + 10000)
+        self.set("ignitionTiming", 100)
+
+    overrun_until = 0.0
+
+
+class Operator:
+    """The person in the car, scripted: reads each prompt and does what it
+    says to the CarEcu, then presses ENTER (or answers a question)."""
+
+    def __init__(self, ecu, strategy="n", interrupt_on=None):
+        self.e, self.strategy, self.interrupt_on = ecu, strategy, interrupt_on
+        self.prompts = []
+
+    def get(self):                      # the K-line cable question
+        return ""
+
+    def answer(self, prompt):
+        e = self.e
+        self.prompts.append(prompt)
+        if self.interrupt_on and self.interrupt_on in prompt:
+            raise KeyboardInterrupt
+        if "Foot OFF" in prompt:
+            e.pedal(lambda t: 0.0)
+        elif "FULLY DOWN" in prompt:
+            e.pedal(lambda t: 100.0)
+        elif "SLOWLY press" in prompt:
+            e.pedal(lambda t: min(100.0, t * 400.0))
+        elif "Stab" in prompt:
+            e.pedal(lambda t: 100.0 if int(t * 50) % 2 else 0.0)
+        elif "PID AUTOTUNE" in prompt:
+            return "n"
+        elif "OPTIONAL strategy" in prompt:
+            return self.strategy
+        elif prompt.startswith("ENGINE START") or "START THE ENGINE" in prompt \
+                or "KEY ON and START" in prompt:
+            e.pedal(lambda t: 0.0)
+            e.go("crank")
+        elif "STOP THE ENGINE" in prompt:
+            e.go("off")
+        elif "KEY OFF" in prompt:
+            e.go("keyoff")
+        elif "FAST tip-in" in prompt:
+            e.pedal(lambda t: 50.0 if 0.03 <= t <= 0.08 else 0.0)
+        elif "SLOWLY raise" in prompt:
+            e.pedal(lambda t: min(40.0, t * 300.0))
+        elif "release the pedal FULLY" in prompt:
+            e.pedal(lambda t: 40.0 if t < 0.04 else 0.0)
+            e.overrun_until = 0.15
+            return ""
+        elif "Hold" in prompt or "blip" in prompt or "tip-in" in prompt:
+            e.overrun_until = 0.0
+        elif "blip" in prompt:
+            e.pedal(lambda t: 40.0 if t < 0.03 else 0.0)
+        elif "Hold ~2500" in prompt:
+            e.pedal(lambda t: 30.0)
+        return ""
+
+
+def guided_checks(tmp):
+    import json
+    print("G1 the GUIDED session, a healthy car (fixed firmware)")
+    car = CarEcu()
+    op = Operator(car, strategy="y")
+    out = tmp / "g1"
+    rc = VT.run(Args(out, guided=True, no_prompt=False, time_scale=0.02,
+                     phase=None, resume=None), open_port=lambda b: car,
+                stdin_q=op)
+    rep = (out / "report.md").read_text(encoding="utf-8")
+    st = json.loads((out / "guided_state.json").read_text())
+    res = {r["system"]: r["status"] for r in st["results"]}
+    check("G1 rc 0, every phase ran and a report.md was written",
+          rc == 0 and all(p in st["done"] for p in VT.GUIDED_PHASES
+                          if p != "report") and "| system | result |" in rep,
+          (rc, st["done"]))
+    check("G1 the systems PASS: start, injectors, idle, wideband, tip-in, "
+          "throttle",
+          all(res.get(k) == "PASS" for k in (
+              "Engine start", "Injectors", "Idle stability", "Wideband",
+              "Tip-in response", "Throttle, engine off", "Pedal")),
+          {k: res.get(k) for k in ("Engine start", "Injectors",
+                                   "Idle stability", "Wideband",
+                                   "Tip-in response", "Pedal",
+                                   "Throttle, engine off")})
+    check("G1 every phase prints a safety condition before driving anything",
+          "SAFETY: gear in NEUTRAL" in (out / "console.log").read_text())
+    check("G1 the strategy comparison names the right cam level (0: level 1 "
+          "never starts on this car)",
+          any(r["system"] == "Strategy comparison" and r["status"] == "PASS"
+              and "cam level 0' is right" in r["reason"] for r in st["results"]),
+          [r["reason"] for r in st["results"]
+           if r["system"] == "Strategy comparison"])
+    # FULLY AUTOMATIC (owner, 2026-10-11): the passed calibration is burned
+    # in phase 3, the passed drive test keeps the throttle ON and is burned
+    # at the end; the strategy / cam-level experiments are put back first.
+    check("G1 two verified Burns (phase 3 calibration, end: throttle ON); "
+          "dbwEnable 1 IN FLASH; strategies back as they were",
+          car.burns == 2 and car.pget("dbwEnable") == 1
+          and car.burned[car.C["dbwEnable"][3]] & 1 == 1
+          and car.pget("injStrategy") == 1 and car.pget("ignStrategy") == 1
+          and car.pget("camPhaseLevel") == 0
+          and all(b["ok"] for b in st["info"].get("burns", [])),
+          (car.burns, car.pget("dbwEnable"), st["info"].get("burns")))
+    check("G1 the console asks only for physical actions - no [y/N] or "
+          "keep/revert question",
+          "[y/N]" not in (out / "console.log").read_text()
+          and "keep or revert" not in (out / "console.log").read_text().lower())
+    check("G1 the composite logger was captured at the crank and at idle",
+          (out / "toothlog_crank.csv").exists()
+          and (out / "toothlog_idle.csv").exists()
+          and len(read_csv(out / "toothlog_idle.csv")) == 200)
+    check("G1 ONE session ZIP beside the folder holds the report",
+          out.with_suffix(".zip").exists() and
+          any(n.endswith("report.md") for n in __import__("zipfile").ZipFile(
+              out.with_suffix(".zip")).namelist()))
+    check("G1 rows carry the phase and the step marker",
+          any(r.get("marker") == "drive:tipin_1" for r in
+              read_csv(out / "fast.csv")))
+
+    print("G2 the 2026-10-10 bugs: semi-sequential dead injectors + a "
+          "tip-in fuel cut")
+    car = CarEcu(semi_bug=True, tip_cut=True)
+    op = Operator(car, strategy="n")
+    out = tmp / "g2"
+    VT.run(Args(out, guided=True, no_prompt=False, time_scale=0.02),
+           open_port=lambda b: car, stdin_q=op)
+    st = json.loads((out / "guided_state.json").read_text())
+    last = {}
+    for r in st["results"]:
+        last[r["system"]] = r
+    inj = last.get("Injectors", {})
+    check("G2 phase 5 FAILS on the dead injector channels and names 2 and 4",
+          inj.get("status") == "FAIL" and "2, 4" in inj.get("reason", "")
+          and "semi-sequential" in inj.get("reason", ""), inj)
+    tip = last.get("Tip-in response", {})
+    check("G2 phase 6 FAILS the tip-in and NAMES the protection fuel cut and "
+          "its throttle-fault cause",
+          tip.get("status") == "FAIL" and "PROTECTION fuel cut" in
+          tip.get("reason", "") and "THROTTLE FAULT" in tip.get("reason", "")
+          and "OFF TARGET TOO LONG" in tip.get("reason", ""), tip)
+    check("G2 a FAILED drive test leaves the throttle OFF and burns only the "
+          "phase-3 calibration", car.pget("dbwEnable") == 0 and car.burns == 1
+          and car.burned[car.C["dbwEnable"][3]] & 1 == 0,
+          (car.pget("dbwEnable"), car.burns))
+    check("G2 the mixture is called LEAN (half the cylinders unfuelled)",
+          last.get("Mixture", {}).get("status") == "FAIL"
+          and "LEAN" in last.get("Mixture", {}).get("reason", ""),
+          last.get("Mixture"))
+    check("G2 report.md lists what does NOT work",
+          "## Does NOT work" in (out / "report.md").read_text()
+          and "Injectors" in (out / "report.md").read_text())
+
+    print("G6 the fast-pedal cut-out: the throttle bridge drops on a "
+          "suspect pedal pair (no latched fault)")
+    car = CarEcu(tip_drop=True)
+    op = Operator(car, strategy="n")
+    out = tmp / "g6"
+    VT.run(Args(out, guided=True, no_prompt=False, time_scale=0.02),
+           open_port=lambda b: car, stdin_q=op)
+    st = json.loads((out / "guided_state.json").read_text())
+    last = {r["system"]: r for r in st["results"]}
+    tip = last.get("Tip-in response", {})
+    check("G6 phase 6 FAILS the tip-in and NAMES the bridge drop and the "
+          "pedal pair", tip.get("status") == "FAIL"
+          and "BRIDGE DROPPED" in tip.get("reason", "")
+          and "pedal pair" in tip.get("reason", ""), tip)
+
+    print("G7 the 2026-10-10 lambda dropouts: a CJ120 timeout withdraws the "
+          "measurement every few seconds")
+    car = CarEcu(lam_drop=True)
+    op = Operator(car, strategy="n")
+    out = tmp / "g7"
+    VT.run(Args(out, guided=True, no_prompt=False, time_scale=0.02),
+           open_port=lambda b: car, stdin_q=op)
+    st = json.loads((out / "guided_state.json").read_text())
+    wb = [r for r in st["results"] if r["system"] == "Wideband"]
+    check("G7 the idle Wideband verdict is not PASS and names the dropouts "
+          "and the CJ120 timeouts",
+          bool(wb) and wb[0]["status"] in ("WARN", "FAIL")
+          and "DROPPED OUT" in wb[0]["reason"]
+          and "CJ120 timeout" in wb[0]["reason"], wb)
+
+    print("G8 the cam never gives the cycle: the cam-level answer is "
+          "INCONCLUSIVE, never a guess")
+    car = CarEcu(no_cam=True)
+    op = Operator(car, strategy="y")
+    out = tmp / "g8"
+    VT.run(Args(out, guided=True, no_prompt=False, time_scale=0.02),
+           open_port=lambda b: car, stdin_q=op)
+    st = json.loads((out / "guided_state.json").read_text())
+    sc = [r for r in st["results"] if r["system"] == "Strategy comparison"]
+    check("G8 strategy comparison says INCONCLUSIVE and names the missing "
+          "cycle, and does not claim a cam level",
+          bool(sc) and "INCONCLUSIVE" in sc[0]["reason"]
+          and "never gave" in sc[0]["reason"]
+          and "is right" not in sc[0]["reason"], sc)
+
+    print("G3 Ctrl+C in the middle of the drive phase")
+    car = CarEcu()
+    op = Operator(car, interrupt_on="FAST tip-in 2")
+    out = tmp / "g3"
+    rc = VT.run(Args(out, guided=True, no_prompt=False, time_scale=0.02),
+                open_port=lambda b: car, stdin_q=op)
+    con = (out / "console.log").read_text()
+    check("G3 Ctrl+C: '!X' sent, dbwEnable RESTORED to its original 0, only "
+          "the phase-3 Burn (before the drive test), data kept",
+          rc == 130 and b"!X" in car.cmds and car.pget("dbwEnable") == 0
+          and car.burns == 1 and "SAFETY STOP" in con
+          and (out / "fast.csv").exists(),
+          (rc, car.cmds[-3:], car.pget("dbwEnable"), car.burns))
+
+    print("G4 --phase and --resume")
+    car = CarEcu()
+    op = Operator(car)
+    out = tmp / "g4"
+    VT.run(Args(out, guided=True, no_prompt=False, time_scale=0.02,
+                phase="preflight"), open_port=lambda b: car, stdin_q=op)
+    st1 = json.loads((out / "guided_state.json").read_text())
+    n1 = len(read_csv(out / "fast.csv"))
+    VT.run(Args(None, guided=True, no_prompt=False, time_scale=0.02,
+                resume=str(out)), open_port=lambda b: car, stdin_q=op)
+    st2 = json.loads((out / "guided_state.json").read_text())
+    check("G4 --phase preflight runs only that phase",
+          st1["done"] == ["preflight"], st1["done"])
+    check("G4 --resume continues the SAME folder: preflight not repeated, "
+          "the rest done, rows appended",
+          st2["done"].count("preflight") == 1 and "idle" in st2["done"]
+          and len(read_csv(out / "fast.csv")) > n1
+          and "Battery" in (out / "report.md").read_text(),
+          st2["done"])
+    print("G5 the ECU names its image; the preflight compares it with the kit")
+    man = {"build_id": "1A2B3C4D", "sha256": "050cc11e" + "0" * 56}
+    base = "HaniCore V102 DEV / Bosch ME7.1.1"
+    ok = VT.image_identity(base + " build 1A2B3C4D", man)
+    bad = VT.image_identity(base + " build 99999999", man)
+    old = VT.image_identity(base, man)
+    check("G5 same build PASS; another build FAIL naming both; an image "
+          "without an id (323FFF9F / 050CC11E) FAIL",
+          ok[0] == "PASS" and bad[0] == "FAIL" and "99999999" in bad[1]
+          and "1A2B3C4D" in bad[1] and old[0] == "FAIL", (ok, bad, old))
+    g1 = json.loads((tmp / "g1" / "guided_state.json").read_text())
+    check("G5 the guided preflight reported the identity of the image under "
+          "test", any(r["system"] == "ECU identity" and r["status"] == "PASS"
+                      for r in g1["results"]),
+          [r for r in g1["results"] if r["system"] == "ECU identity"])
+    check("G4 no flags = the guided session; --recorder = the old recorder",
+          VT.parse(["--port", "COM2"]).guided
+          and not VT.parse(["--port", "COM2", "--recorder"]).guided
+          and VT.parse(["--port", "COM2", "--recorder"]).runtime)
+
+
 def main() -> int:
     tmp = Path(tempfile.mkdtemp(prefix="hc_vt_"))
     try:
@@ -312,9 +756,12 @@ def main() -> int:
         # would succeed and the fallback this case exists to test never runs.
         prompts = []
 
+        # 2026-10-11: two more prompts precede the move - "Ignition ON"
+        # (2nd) and "try OBD again" (3rd, answered "s") - so the cable moves
+        # at the 4th.
         def connect_direct():
             prompts.append(1)
-            if len(prompts) >= 2:
+            if len(prompts) >= 4:
                 ecu.mode = "ok"
         out = tmp / "k2"
         a = Args(out, kline=True, no_prompt=False)
@@ -325,9 +772,11 @@ def main() -> int:
         # recorded "OBD path PASS" over wiring that had never carried OBD
         #.
         rc = VT.run(a, open_port=lambda b: ecu,
-                    stdin_q=Answers(["", "", "s"], on_get=connect_direct))
+                    stdin_q=Answers(["", "", "s", "", "s"], on_get=connect_direct))
         con = (out / "console.log").read_text()
         summ = (out / "summary.txt").read_text()
+        check("K2 asks for the ignition ON before the K-line test",
+              "Ignition ON (engine off)" in con)
         check("K2 asks which connection is physically in place",
               "Where is the KKL plugged in RIGHT NOW?" in con)
         check("K2 says OBD K-LINE CONNECTION FAILED and asks for the KKL",
@@ -344,6 +793,33 @@ def main() -> int:
               ph["mode"] == "DIRECT ECU"
               and any(t["from"] == "OBD" and t["to"] == "DIRECT ECU"
                       for t in ph["transitions"]), ph)
+
+        # K2b ------------------------------------------------------------
+        # THE CAR, 2026-10-11: the first OBD attempt ran with the ignition
+        # OFF (ECU unpowered, only the KKL echoed). The operator switches it
+        # on at the retry prompt: OBD answers, the cable never moved.
+        print("K2b OBD silent with the ignition off, the retry answers")
+        ecu = FakeEcu("dead")
+        prompts2 = []
+
+        def ignition_on():
+            prompts2.append(1)
+            if len(prompts2) >= 3:          # the "try OBD again" Enter
+                ecu.mode = "ok"
+        out = tmp / "k2b"
+        a = Args(out, kline=True, no_prompt=False)
+        rc = VT.run(a, open_port=lambda b: ecu,
+                    stdin_q=Answers(["d", "", "", "s"], on_get=ignition_on))  # K2 left DIRECT remembered: "d" = OBD
+        con = (out / "console.log").read_text()
+        md = _j.loads((out / "metadata.json").read_text())
+        ph = md["phases"]["kline"]["physical"]
+        check("K2b states what failed (no blame) and retries OBD",
+              "did not answer the 5-baud address" in con
+              and "try OBD again" in con and "ignition being OFF" not in con)
+        check("K2b the retry passes on OBD; no cable move, no direct prompt",
+              rc == 0 and ph["mode"] == "OBD"
+              and not any(t["from"] == "OBD" for t in ph["transitions"])
+              and "Connect the KKL directly" not in con, ph)
 
         # K3 -------------------------------------------------------------
         print("K3 the KWP stages")
@@ -366,6 +842,15 @@ def main() -> int:
         summ = (out / "summary.txt").read_text()
         check("K3 KWP entry -> GOFAST 115200 -> PASS", rc == 0
               and "KWP 5-baud -> GOFAST 115200" in summ)
+        # 2026-10-13: a silent 5-baud entry falls back to ISO 14230 fast init
+        ecu = FakeEcu("kwp", kwp_fault="noslow")
+        out = tmp / "k3_fast"
+        rc = VT.run(Args(out, kline=True), open_port=lambda b: ecu,
+                    stdin_q=Answers(["s"]))
+        summ = (out / "summary.txt").read_text()
+        check("K3 5-baud silent -> fast init -> GOFAST 115200 -> PASS",
+              rc == 0 and "KWP fast init -> GOFAST 115200" in summ,
+              [l for l in summ.splitlines() if "KLINE" in l][:1])
 
         # K4 -------------------------------------------------------------
         print("K4 malformed replies, reconnect")
@@ -391,11 +876,11 @@ def main() -> int:
               summ.count("POSITION CAPTURED") >= 2, summ.count("POSITION CAPTURED"))
         check("A1 AutoCal NOT A STOP A explained with the numbers",
               "NOT A STOP A" in summ and "moved TPS1 145 counts, limit 108"
-              in summ and "legacy inferred-stop refusal" in summ
+              in summ and "refused as not a stop" in summ
               and "SPRING EQUILIBRIUM" not in summ)
         ev = read_csv(out / "etb_events.csv")
-        check("A1 etb_events.csv: legacy phase explicitly identified, results retained",
-              any("LEGACY STOP CHECK A" in r["phase"] for r in ev)
+        check("A1 etb_events.csv: stop-check phase explicitly identified, results retained",
+              any("STOP CHECK A" in r["phase"] for r in ev)
               and any(r["event"].startswith("RESULT") for r in ev), len(ev))
 
         # R1 -------------------------------------------------------------
@@ -438,6 +923,11 @@ def main() -> int:
         med, slow = read_csv(out / "medium.csv"), read_csv(out / "slow.csv")
         check("R1 medium and slow rows written", len(med) >= 2
               and len(slow) >= 2, "medium %d, slow %d" % (len(med), len(slow)))
+        wit = read_csv(out / "witness.csv")
+        check("R1 the live reset witness is logged every slow cycle",
+              len(wit) >= 1 and wit[0].get("s5500_gap_max_ms") == "11"
+              and wit[0].get("asic_csum_err") == "3",
+              "%d witness rows %s" % (len(wit), wit[:1]))
         evs = read_csv(out / "events.csv")
         texts = " | ".join(r["text"] for r in evs)
         check("R1 ring events decoded with reasons (limp, DBW fault, sync)",
@@ -445,6 +935,10 @@ def main() -> int:
               and "OFF TARGET TOO LONG" in texts and "CRANK ACQUIRED" in texts,
               len(evs))
         con = (out / "console.log").read_text()
+        check("R1 the previous boot's witness record is PRINTED",
+              "RESET WITNESS (start) - the last state BEFORE this boot: "
+              "uptime 3856 ms" in con and "worst S5500 gap 13 ms" in con,
+              [l for l in con.splitlines() if "WITNESS" in l][:2])
         check("R1 ring overflow REPORTED with a lost count",
               "RING OVERFLOW" in con and "records lost" in con)
         meta = json.loads((out / "metadata.json").read_text())
@@ -667,6 +1161,8 @@ def main() -> int:
         check("M9 --compare runs over two recorder-written sessions",
               LA.compare([str(out), str(out2)], out=str(tmp)) == 0
               and (tmp / "scheduler_compare.md").exists())
+
+        guided_checks(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     print("\n%d checks, %d failed" % (CHECKS, FAILS))

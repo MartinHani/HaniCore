@@ -125,6 +125,16 @@ public final class AutoConnectTests {
             l.close();
         }
 
+        /* ---------- 2.2.0: the 5-baud entry is deaf -> ISO 14230 fast init */
+        for (int baud : new int[] { 57600, 115200 }) {
+            HcklineSimLine l = sim("gate", "1", "noslow", "1");
+            AutoConnect.Result r = run(l, baud, AutoConnect.Mode.AUTO, mem());
+            check(r.ok && r.mode == AutoConnect.Mode.VEHICLE && r.baud == baud && sigOk(r)
+                    && stat(l, "gofast") == 1,
+                    "5-baud ignored, TunerStudio " + baud + ": fast init connects", r);
+            l.close();
+        }
+
         /* ---------- a stock ECU never gets a GOFAST ----------------------- */
         {
             HcklineSimLine l = sim("gate", "1", "stock", "1");
@@ -156,7 +166,9 @@ public final class AutoConnectTests {
             AutoConnect.Result r = run(l, 115200, AutoConnect.Mode.AUTO, mem());
             check(!r.ok && AutoConnect.R_NO_SYNC.equals(r.reason),
                     "no ECU: DIRECT then two 5-baud attempts, NO SYNC", r);
-            check(l.breaks == 4, "... exactly two 5-baud attempts (4 BREAKs)", r);
+            /* 2.2.0: each attempt is a 5-baud byte (2 BREAKs) and, when no
+               sync comes back, one fast-init wake-up (1 BREAK) */
+            check(l.breaks == 6, "... exactly two attempts: 5-baud + fast init (6 BREAKs)", r);
             l.close();
         }
         {

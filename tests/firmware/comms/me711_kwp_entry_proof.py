@@ -280,12 +280,15 @@ def main() -> int:
     check("E  GOFAST 124800 -> F1 03 (sent at 10400)",
           r[3:5] == b"\xF1\x03", r.hex())
     T.run_ms(20)
-    locked = T.rig.mem.r8(HB.sym("hc_link_locked")) if not a.control else 0
-    check("E  ... then the ECU is at 124800 and locked",
-          T.rate() == 124800 and locked == 1,
-          "rate %s locked %s" % (T.rate(), locked))
+    # 2026-10-13 (ME711_OBD_KLINE.md 6.4): the GOFAST rate is ON PROBATION -
+    # unlocked until a CRC-valid request arrives at it (10400 otherwise).
+    check("E  ... then the ECU is at 124800", T.rate() == 124800,
+          "rate %s" % T.rate())
     got = T.ask(OCH8, 124800)
     check("E  ... and TunerStudio at 124800 is answered", bool(got))
+    locked = T.rig.mem.r8(HB.sym("hc_link_locked")) if not a.control else 0
+    check("E  ... and that request locked the rate", locked == 1,
+          "locked %s" % locked)
 
     # F: a wrong address
     T.run_ms(400)
@@ -308,6 +311,10 @@ def main() -> int:
     got = T.ask(OCH8, 57600)
     check("G  ... and TunerStudio at 57600 works again", bool(got))
 
+    # 2026-10-12: OCH words are published in slices, one cycle every 40 ms
+    # (hcdiag711.c hc_diag_publish_step, now 13 slices) - a word may be one
+    # cycle old. Read H after one cycle, not in the same breath as G.
+    T.run_ms(100)
     st, cn = T.och16(844), T.och16(846)
     check("H  kwpState: 1 good init, idle; kwpCounts: 1 failed, 1 wrong addr",
           (st >> 8) == 1 and (st & 15) == 0 and cn == 0x0101,

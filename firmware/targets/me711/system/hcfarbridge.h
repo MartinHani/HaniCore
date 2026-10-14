@@ -45,7 +45,6 @@
 #define hc_hal_ain_ok                 hc_hal_ain_ok_f
 #define hc_hal_ain_bind               hc_hal_ain_bind_f
 #define hc_hal_ain_phys               hc_hal_ain_phys_f
-#define hc_hal_ain_bound              hc_hal_ain_bound_f
 #define hc_hal_dbw_sf_faulted         hc_hal_dbw_sf_faulted_f
 #define hc_hal_dbw_sf_level           hc_hal_dbw_sf_level_f
 /* hc_pin_descriptor.c: FAR itself since V98r2 - called directly, no thunk */
@@ -60,7 +59,6 @@
 #define hc_dbw_duty_x10               hc_dbw_duty_x10_f
 #define hc_dbw_drive                  hc_dbw_drive_f
 #define hc_dbw_shutdown               hc_dbw_shutdown_f
-#define hc_dbw_clear_faults           hc_dbw_clear_faults_f
 #define hc_dbw_gains                  hc_dbw_gains_f
 #define hc_dbw_normalise              hc_dbw_normalise_f
 /* hc_dbw.c (V97: the commissioning verify, the DBW telemetry) */
@@ -93,7 +91,6 @@
 #define cfg_u16                       cfg_u16_f
 #define hc_hal_out                    hc_hal_out_f
 #define hc_hal_out_duty               hc_hal_out_duty_f
-#define hc_hal_dbw_pwm_hz             hc_hal_dbw_pwm_hz_f
 #define hc_hal_dbw_pwm_applied_hz     hc_hal_dbw_pwm_applied_hz_f
 #define hc_hal_out_class_live         hc_hal_out_class_live_f
 #define hc_hal_main_relay_set         hc_hal_main_relay_set_f

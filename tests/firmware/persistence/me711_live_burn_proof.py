@@ -22,6 +22,8 @@ SRC = (ME / "nvm/hcnvm.c").read_text()
 TGT = (ME / "hctarget.h").read_text()
 ASIC = (ME / "asic/hcasic.c").read_text()
 MAIN = (ME / "system/hcmain_me711.c").read_text()
+# 2026-10-14: irq_disable_all() (every xxIC = 0 at boot) moved to hcrtmon711.c
+RTMON = (ME / "system/hcrtmon711.c").read_text()
 TRIG = (ME / "engine/hctrig_me711.c").read_text()
 HCTS = (ROOT / "firmware/comms/hcts.c").read_text()
 MAP = (ME / "build/hani_me711.M66").read_text()
@@ -240,9 +242,9 @@ def main() -> int:
     check("trigger active nodes are exactly crank CC15 and cam CC8/CC9",
           trig_ics == {"CC15IC", "CC8IC", "CC9IC"})
     check("ASC transmit remains polled, never an ordinary enabled vector",
-          "S0TIC  = 0" in MAIN
+          "S0TIC  = 0" in RTMON
           and not any(reg == "S0TIC" and _enabling(rhs)
-                      for reg, rhs in _ic_writes(MAIN)))
+                      for reg, rhs in list(_ic_writes(MAIN)) + list(_ic_writes(RTMON))))
     check("enabled-IC model is exhaustive for the final source",
           active_ics == {"S0RIC", "CC7IC", "CC15IC", "CC8IC", "CC9IC",
                          "T8IC", "SSCRIC", "SSCTIC"})

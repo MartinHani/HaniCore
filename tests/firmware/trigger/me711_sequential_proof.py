@@ -28,8 +28,17 @@ WHAT IS CHECKED (docs/ARCHITECTURE.md):
   S4 end-of-injection timing: the pulse ENDS at (TDC - angle) +/- 3 deg.
   S5 dead time is added per pulse (fallback 2 x, sequential 1 x).
   S6 a fuel cut opens no injector.
-  S7 pairing by firing order: semi-sequential and wasted-paired serve
-     cylinders 360 deg apart (1/4 on cylinder 1's output, 3/2 on 3's).
+  S7 pairing by firing order: wasted-paired COILS serve cylinders 360 deg
+     apart (1/4 on cylinder 1's output, 3/2 on 3's); semi-sequential
+     INJECTION does not pair outputs - every injector fires at its own TDC
+     and 360 later (2026-10-10: the pair model left injectors 2 and 4 dead
+     on the AWT car, and this gate asserted it).
+  S10 (2026-10-10) EVERY ROUTED INJECTOR, EVERY STRATEGY: batch,
+     semi-sequential (with and without a cam), sequential fallback and
+     sequential with cycle sync - each of the four injector channels opens
+     in every whole cycle and carries the cycle's mass (+/-5 %), with the
+     strategy's pulse count. Semi-sequential pulses start at the cylinder's
+     own TDC - angle (or 360 later).
   S8 (V99, the first car session: "sequential ignition does not start the
      engine; wasted does") the ORDER, spelled out: after the cycle is known,
      6 whole cycles of sparks in time order are exactly cylinders 1-3-4-2,
@@ -44,6 +53,9 @@ WHAT IS CHECKED (docs/ARCHITECTURE.md):
 
 --control: the frozen V96 image required full sync for a sequential page
 and cancelled on its loss - it must fail S1..S3.
+--control-semiseq: the 2026-10-10 car image 323FFF9F (frozen in the raw
+evidence store, SEMISEQ_WB_FIX_20261010/control_323FFF9F) drove only the
+pair leads' injectors - it must fail S7 and S10.
 """
 from __future__ import annotations
 
@@ -58,6 +70,19 @@ sys.path.insert(0, str(ROOT / "tools" / "lib"))
 import hcpaths  # noqa: F401,E402  (puts every tools/ and tests/ module on sys.path)
 
 CONTROL_STEM = "HaniCore_ME711_v96_wideband"
+if "--control-semiseq" in sys.argv:
+    ev = Path(os.environ.get("HANICORE_RAW_EVIDENCE",
+                             str(ROOT.parent / "evidence")))
+    bins = ev / "SEMISEQ_WB_FIX_20261010" / "control_323FFF9F"
+    if not (bins / "HaniCore_ME711_v102_dev.bin").exists():
+        raise SystemExit("control image missing: %s" % bins)
+    env = dict(os.environ, HANICORE_ME711_STEM="HaniCore_ME711_v102_dev",
+               HANICORE_ME711_BINS=str(bins), HC_SEQ_ONLY="s7,s10,s11")
+    r = subprocess.run([sys.executable, __file__], env=env)
+    ok = r.returncode != 0
+    print("\nCONTROL (323FFF9F, semi-seq pair model): %s" %
+          ("FAILS as it must" if ok else "PASSED - the gate cannot tell"))
+    raise SystemExit(0 if ok else 1)
 if "--control" in sys.argv:
     env = dict(os.environ, HANICORE_ME711_STEM=CONTROL_STEM)
     r = subprocess.run([sys.executable, __file__], env=env)
@@ -90,9 +115,12 @@ def adiff(a, b, m=720.0):
 
 class SeqRig(V.Rig):
     def __init__(self, sync_mode=2, phase_x=0, inj=2, ign=2, eoi=False,
-                 angle_x10=5400, dead=0, cut=0):
+                 angle_x10=5400, dead=0, cut=0, rpm=None, ti=TI_US):
         super().__init__(PT, sync_mode=sync_mode, cam_level=True,
                          phase_x=phase_x)
+        if rpm:
+            self.p = round(1_250_000 / rpm)     # T1 ticks per tooth
+        self.ti = ti
         h = V.gen_h()
         u = 0x380000 + 12
         x = self.x
@@ -115,7 +143,8 @@ class SeqRig(V.Rig):
     def model(self):
         m = self.x.m
         for n, v in (("eng_adv_x10", ADV_X10), ("eng_dwell_x100", DWELL_X100),
-                     ("eng_ti_base_us", TI_US), ("eng_deadtime_us", self.dead),
+                     ("eng_ti_base_us", self.ti),
+                     ("eng_deadtime_us", self.dead),
                      ("eng_fuelcut", self.cut)):
             m.w16(PT.sym(n) & 0xFFFF, v)
         # V98: the injection angle the scheduler places is the engine-control
@@ -359,7 +388,7 @@ def s6():
 
 
 def s7():
-    print("\n-- S7 pairing by firing order --")
+    print("\n-- S7 pairing by firing order (coils only) --")
     r = SeqRig(sync_mode=1, inj=1, ign=0)       # semi-seq + wasted paired
     r.start(6)
     pl, sp = r.pulses(), r.sparks()
@@ -370,12 +399,60 @@ def s7():
                  for ph, _ in sp[0]) and \
         all(adiff(((ph + ADV_X10 / 10) - TDC_C[2]) % 360, 0) < 3
             for ph, _ in sp[2])
-    check("S7: semi-seq/wasted-paired drive outputs of cyl 1 and 3 only",
-          used_inj == [0, 2] and used_ign == [0, 2],
-          "inj bits %s ign bits %s" % (used_inj, used_ign))
+    check("S7: wasted-paired drives the coils of cyl 1 and 3 only",
+          used_ign == [0, 2], "ign bits %s" % used_ign)
+    check("S7: semi-seq drives EVERY injector (not the pair leads only)",
+          used_inj == [0, 1, 2, 3], "inj bits %s" % used_inj)
     check("S7: pair 1/4 sparks at 78/438, pair 3/2 at 258/618 (-adv)",
           ok_ign and len(sp[0]) >= 3 and len(sp[2]) >= 3,
           "cyl1 out %d sparks, cyl3 out %d" % (len(sp[0]), len(sp[2])))
+
+
+def cycle_mass(pl, cum, cycles=3):
+    """bit -> [(open us, pulses)] in each of the last `cycles` whole 720-deg
+    windows (ending well behind the newest edge, so no pulse is cut)."""
+    end = cum - 90.0
+    out = {}
+    for b in range(4):
+        out[b] = []
+        for k in range(cycles, 0, -1):
+            lo, hi = end - 720.0 * k, end - 720.0 * (k - 1)
+            ws = [w for s, _e, w in pl[b] if lo <= s < hi]
+            out[b].append((sum(ws), len(ws)))
+    return out
+
+
+def s10():
+    print("\n-- S10 every routed injector opens every cycle with the "
+          "cycle's mass, every strategy --")
+    cases = (("batch", 1, 0, 1, 2),
+             ("semi-sequential, crank only", 1, 1, 1, 2),
+             ("semi-sequential, cam present", 2, 1, 1, 2),
+             ("sequential fallback, crank only", 1, 2, 1, 2),
+             ("sequential, cycle sync", 2, 2, 2, 1))
+    for label, sync, inj, ign, npulse in cases:
+        r = SeqRig(sync_mode=sync, inj=inj, ign=ign)
+        r.start(12)
+        pl = r.pulses()
+        cm = cycle_mass(pl, r.cum)
+        dead = [b for b in range(4) if any(n == 0 for _t, n in cm[b])]
+        bad = ["inj%d %s" % (b + 1, [(round(t), n) for t, n in cm[b]])
+               for b in range(4)
+               if any(abs(t - TI_US) > TI_US * 0.05 or n != npulse
+                      for t, n in cm[b])]
+        check("S10 %s: all 4 injectors open every cycle" % label,
+              not dead, "dead channels %s" % [b + 1 for b in dead])
+        check("S10 %s: each = %d us/cycle in %d pulse(s) (+/-5 %%)"
+              % (label, TI_US, npulse), not bad, "; ".join(bad[:4]))
+        if inj == 1:
+            ang = r.angle_x10 / 10.0
+            errs = [adiff((s - (TDC_C[b] - ang)) % 360.0, 0)
+                    for b in range(4) for s, _e, _w in pl[b]]
+            check("S10 %s: each pulse starts at its own TDC - %.0f "
+                  "(or 360 later), +/-3 deg" % (label, ang),
+                  bool(errs) and max(errs) <= 3.0,
+                  "%d pulses, worst %.1f deg" % (len(errs),
+                                                 max(errs) if errs else -1))
 
 
 CAVITY = {0: 102, 1: 95, 2: 103, 3: 94}      # slot bit -> AWT coil cavity
@@ -432,10 +509,37 @@ def s9():
           "deg" % (len(off), min(off) if off else -1))
 
 
+def s11():
+    print("\n-- S11 a long pulse at high rpm: limited by the OUTPUT's own "
+          "interval (360 deg), not half of it --")
+    # 4000 rpm: 360 deg = 15 ms. 24 ms per cycle = two 12 ms pulses per
+    # output: legal (80 % duty). The 323FFF9F..7FA7FF76 code divided the
+    # per-output interval by the repeat count again and clipped every
+    # non-sequential pulse at 180 deg = 7.5 ms (50 % duty).
+    ti, want = 24000, 12000
+    for label, inj in (("batch", 0), ("semi-sequential", 1),
+                       ("sequential fallback (crank only)", 2)):
+        r = SeqRig(sync_mode=1, inj=inj, ign=1, rpm=4000, ti=ti)
+        r.start(16)
+        pl = r.pulses()
+        # a 12 ms pulse spans ~290 deg here: grade a whole cycle that ENDS
+        # 400 deg before the last edge, so every pulse in it has closed
+        tail = [round(w) for b in range(4) for s, _e, w in pl[b]
+                if r.cum - 1120.0 < s <= r.cum - 400.0]
+        check("S11 %s, 4000 rpm: each pulse the full %d us (+/-5 %%), not "
+              "clipped at 180 deg" % (label, want),
+              len(tail) >= 8 and all(abs(w - want) < want * 0.05
+                                     for w in tail),
+              "%d pulses %s" % (len(tail), sorted(set(tail))[:6]))
+
+
 def main() -> int:
     import me711_image as PI
     print("=== sequential fuel + ignition with fallback - %s ===" % PI.STEM)
-    for f in (s1, s2, s3, s4, s5, s6, s7, s8, s9):
+    only = [s for s in os.environ.get("HC_SEQ_ONLY", "").split(",") if s]
+    for f in (s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11):
+        if only and f.__name__ not in only:
+            continue
         try:
             f()
         except SystemExit as e:

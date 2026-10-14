@@ -205,7 +205,10 @@ def main():
             bad.append(slot)
             continue
         t = ((e[1] << 16) | (e[2] | (e[3] << 8))) - 0x800000
-        if not (CODE_LO <= t <= CODE_HI):
+        # 2026-10-12: in_code(), not the code sectors alone - far code
+        # (FCODE) also lives in SA6, and the linker placed ?PR?HCSERIAL711
+        # (hc_s0tb_isr, slot 71) there once FCODE grew. The map decides.
+        if not in_code(t):
             bad.append(slot)
     check("E: all 128 vector slots land inside HaniCore code", not bad,
           "128 slots" if not bad else f"{len(bad)} bad: {bad[:6]}")
@@ -236,10 +239,16 @@ def main():
           else str([(hex(a), hex(s), hex(d)) for a, s, d in out[:4]]))
 
     # ---- G..K : V4 pin behaviour, read out of the emitted bytes ------------
+    # 2026-10-12: NOT the address operand of a 4-byte absolute call/jump
+    # (CALLS/JMPS DA/FA seg addr, CALLA/JMPA CA/EA cc addr). Code moved and
+    # `DA 83 3E E7` (CALLS 0x83:E73E) read as BCLR DP6.3 at its operand.
+    FAR_OPS = (0xDA, 0xFA, 0xCA, 0xEA)
+
     def bitop(q, set_, bo):
         return [x for x in find_all(
             img, bytes([(q << 4) | (0x0F if set_ else 0x0E), bo]),
-            SCAN_LO, CODE_HI) if x % 2 == 0 and in_code(x)]
+            SCAN_LO, CODE_HI) if x % 2 == 0 and in_code(x)
+            and img[x - 2] not in FAR_OPS]
 
     bset_p3_12 = bitop(12, True, 0xE2)
     bset_dp3_12 = bitop(12, True, 0xE3)

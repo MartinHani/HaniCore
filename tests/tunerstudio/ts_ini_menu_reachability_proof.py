@@ -321,8 +321,11 @@ def check(text, verbose=True, user=False):
                            "the forensic project only" % did)
             continue
         chans = REQUIRED_DIAG_CHANNELS.get(did, [])
-        if chans and not any(declares_channel(text, c) for c in chans):
-            continue                 # this file has none of its channels
+        # 2026-10-12: its DEFINING (first) channel, not any of them - the
+        # V102 fuel-model page lists airMgX10 too, which every frozen release
+        # declares, so V89/V91 were held to a page that did not exist yet.
+        if chans and not declares_channel(text, chans[0]):
+            continue                 # this file predates the page
         if did not in m.decl:
             bad.append("MISSING    required diagnostics dialog %s is not "
                        "declared at all" % did)
@@ -483,7 +486,11 @@ def main(argv) -> int:
     # together: the user file without the developer pages, the forensic file
     # with them - and the mutation test runs where the probe lives.
     dev_path = G.OUT_FORENSIC
-    user = not path.name.endswith("_forensic.ini") and dev_path.exists()
+    # 2026-10-12: ONLY the current generator's tuner project. A frozen
+    # release .ini (tests/history pair proofs) predates the 2026-10-10
+    # user/forensic split and is one project with every page in it.
+    user = (not path.name.endswith("_forensic.ini") and dev_path.exists()
+            and path.resolve().parent == dev_path.resolve().parent)
 
     print("=== TunerStudio menu reachability proof ===\n")
     print("  ini   %s%s" % (path.name, " (user project)" if user else ""))

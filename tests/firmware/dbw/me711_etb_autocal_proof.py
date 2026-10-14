@@ -64,6 +64,21 @@ def bias(p):
     return BIAS_V[-1]
 
 
+# 2026-10-11: two relay measurements (they must agree) + the verify
+AT_MAX_MS = 45000
+
+
+def rule(a_x10, tu, amp=200):
+    """rusEFI's relay rule of the published a/Tu with the firmware's ONE fixed
+    derating: KP and KD at half (= the rule of 2a), KI at the rule."""
+    if not (a_x10 and tu):
+        return []
+    a2 = min(0xFFFF, 2 * a_x10)
+    return [min(65535, (178254 * amp // 200) // a2),
+            min(65535, (127323954 // 200 * amp) // (a_x10 * tu)),
+            min(65535, ((8149 * amp // 200) * tu) // a2)]
+
+
 def status(r):
     if LEGACY:
         s = r("hc_dbw_cal_status")
@@ -314,24 +329,20 @@ def main() -> int:
 
         # ---------------------------------------------------- autotune
         b = Bench()
-        res, ph, why = b.run(arg=2, watch=(9, 10))     # cycles, candidate Kp
+        res, ph, why = b.run(arg=2, max_ms=AT_MAX_MS, watch=(9, 10))  # cycles, Kp
         b.och_publish()
         # the page offsets of dbwKp/Ki/Kd, from the generated header
         offs = [T.d(T._cfg, n) for n in ("CAL_DBW_KP", "CAL_DBW_KI",
                                          "CAL_DBW_KD")]
         gains = [b.u16d(o) for o in offs]
         a_x10, tu = b.r("hc_etbcal_value", 6), b.r("hc_etbcal_value", 7)
-        exp = []
-        if a_x10 and tu:
-            amp = 200
-            exp = [min(65535, (178254 * amp // 200) // a_x10),
-                   min(65535, (127323954 // 200 * amp) // (a_x10 * tu)),
-                   min(65535, ((8149 * amp // 200) * tu) // a_x10)]
+        exp = rule(a_x10, tu)
         check("autotune, healthy: PID PASS", res == 4,
               "result %d why %d a %d.%d%% Tu %d ms"
               % (res, why, a_x10 // 10, a_x10 % 10, tu))
-        check("  gains in DESIRED = rusEFI's rule of the published a/Tu",
-              bool(exp) and gains == exp, "page %s expect %s" % (gains, exp))
+        check("  gains in DESIRED = rusEFI's rule of the published a/Tu, "
+              "KP/KD x 0.5", bool(exp) and gains == exp,
+              "page %s expect %s" % (gains, exp))
         clipmask = sum(1 << i for i, e in enumerate(exp) if e == 65535)
         det = b.r("hc_etbcal_value", 8)
         check("  a gain limited by its page field is SAID (detail 0x8000|mask)",
@@ -344,6 +355,43 @@ def main() -> int:
               len(b.seen.get(9, ())) > 5 and len(b.seen.get(10, ())) > 2,
               "cycles %d values, Kp %d values"
               % (len(b.seen.get(9, ())), len(b.seen.get(10, ()))))
+
+        # THE OWNER'S COMPLAINT (2026-10-11): "P 1.x one time, 3.x the
+        # next". The same body must give the same gains: two runs with
+        # different sensor noise agree within 10 %. (Before: a verify retry
+        # halved KP/KD up to three times - /1, /2, /4 or /8 per run.)
+        runs = []
+        for seed in (11, 12):
+            b2 = Bench(noise=2, seed=seed)
+            res2, _ph, why2 = b2.run(arg=2, max_ms=AT_MAX_MS)
+            runs.append((res2, why2, [b2.u16d(o) for o in offs]))
+        g1, g2 = runs[0][2], runs[1][2]
+        agree = all(runs[i][0] == 4 for i in (0, 1)) and all(
+            abs(x - y) * 10 <= max(x, y) for x, y in zip(g1, g2))
+        check("autotune repeatable: two noisy runs PASS, gains within 10 %",
+              agree, "runs %s" % [(r_[0], r_[1], r_[2]) for r_ in runs])
+
+        # A plant that changes between the two measurements (here: the
+        # motor loses half its torque) is NOT a repeatable result: FAIL
+        # 'not repeatable' (31), nothing written, released.
+        b = Bench(noise=2, seed=13)
+        before = [b.u16d(o) for o in offs]
+        st = {"last": 0, "hit": False}
+
+        def weaken(bb, i):
+            if i % 25 or st["hit"]:
+                return
+            c = bb.r("hc_etbcal_value", 9)
+            if c < st["last"]:             # cycles restarted: 2nd measurement
+                bb.k = 0.65    # still oscillates, differently
+                st["hit"] = True
+            st["last"] = c
+        res, ph, why = b.run(arg=2, max_ms=AT_MAX_MS, hook=weaken)
+        check("autotune, plant changes between the two measurements: FAIL "
+              "'not repeatable', nothing written",
+              st["hit"] and res == 3 and why == 31 and b.released()
+              and [b.u16d(o) for o in offs] == before,
+              "switched %s result %d why %d" % (st["hit"], res, why))
 
         b = Bench(strength=0.35)
         res, ph, why = b.run(arg=2)
@@ -407,10 +455,16 @@ def main() -> int:
                   res == 3 and why in (21, 22, 23, 24) and b.released(),
                   "result %d why %d" % (res, why))
 
+        # 2026-10-12: the failure comes as LATE as possible - the plate jams
+        # in VERIFY, after the endpoints and the gains exist in RAM - so a
+        # partial publication would show. (The old trigger, a 5 % relay
+        # amplitude, commissions legitimately since the relay noise band.)
+        def jam_in_verify(bb, _i):
+            if (bb.r("hc_etbcal_status") >> 4) & 15 == 10:
+                bb.stuck = True
         b = Bench()
-        b.r("hc_cal_set_u16", T.d(T._cfg, "CAL_DBW_TUNE_AMP"), 50)
         before = bytes(b.r.desired(i) for i in range(T.PAGE))
-        res, ph, why = b.run(arg=3)
+        res, ph, why = b.run(arg=3, max_ms=AT_MAX_MS, hook=jam_in_verify)
         b.och_publish()
         check("failed combined commissioning publishes no endpoints or gains",
               res == 3 and b.released()

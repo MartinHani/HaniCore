@@ -74,7 +74,7 @@ def test_an_unterminated_label_is_caught(tmp_path):
 
 def test_an_output_channel_in_a_field_is_caught(tmp_path):
     # The V29 line, verbatim. (V89: s5500Base is shown as a readout now.)
-    t = good_text().replace('      readout = s5500BaseGauge',
+    t = dev_text().replace('      readout = s5500BaseGauge',
                             '      field = "window base", s5500Base', 1)
     msgs = [m for _n, m in audit_text(tmp_path, t)]
     assert any("OUTPUT CHANNEL" in m and "s5500Base" in m for m in msgs), msgs
@@ -89,7 +89,7 @@ def test_a_button_with_no_command_is_caught(tmp_path):
 
 
 def test_a_gauge_with_no_definition_is_caught(tmp_path):
-    t = good_text().replace("      readout = s5500IdxGauge",
+    t = dev_text().replace("      readout = s5500IdxGauge",
                             "      readout = s5500IdxGaugeTypo", 1)
     msgs = [m for _n, m in audit_text(tmp_path, t)]
     assert any("not defined in [GaugeConfigurations]" in m for m in msgs), msgs

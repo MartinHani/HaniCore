@@ -224,9 +224,9 @@ def transaction(name, rx, settle_steps, run_steps, nop_yield=False,
     really delivered at tick ~230, so it discarded the entire reply and
     reported "0 bytes out".
     """
-    img = (_image_without_yield() if nop_yield else
-           (img_path if img_path is not None else PI.image()))
     mp = map_path if map_path is not None else PI.MAP
+    src = img_path if img_path is not None else PI.image()
+    img = _image_without_yield(src, mp) if nop_yield else src
     entry = _sym(mp, "hc_asic_start_service")
     tick = _sym(mp, "hc_tick_ms")
     run_tx = _sym(mp, "hc_asic_run_tx")
@@ -290,21 +290,22 @@ def _sym(map_path, name):
     return int(m.group(1), 16)
 
 
-_NOYIELD = None
+_NOYIELD = {}
 
 
-def _image_without_yield():
-    """A scratch copy of the image with the CALL to hcts_target_yield() inside
+def _image_without_yield(src=None, mp=None):
+    """A scratch copy of an image with the CALL to hcts_target_yield() inside
     hcts_tx()'s transmit wait replaced by NOPs - the control condition.
 
     Located by pattern rather than by address so it survives a re-link: the
     yield is a far call (CALLS) to the linked hcts_target_yield.
     """
-    global _NOYIELD
-    if _NOYIELD is not None:
-        return _NOYIELD
-    data = bytearray(PI.image().read_bytes())
-    off = HB.sym("hcts_target_yield") & 0xFFFF
+    src = Path(src) if src is not None else PI.image()
+    mp = mp if mp is not None else PI.MAP
+    if src in _NOYIELD:
+        return _NOYIELD[src]
+    data = bytearray(src.read_bytes())
+    off = _sym(mp, "hcts_target_yield") & 0xFFFF
     # Keil SMALL compiles this as a NEAR call, because hcts.c and
     # hcmain_me711.c both link into segment 0x8E:
     #     CALLA cc_UC, addr  =  CA 00 <lo> <hi>
@@ -324,10 +325,10 @@ def _image_without_yield():
     if n == 0:
         raise SystemExit("control: no CALLS to hcts_target_yield found - "
                          "the hook is not linked, so this proof is vacuous")
-    p = ROOT / f"bins/hanicore/_scratch_{PI.STEM}_noyield.bin"
+    p = ROOT / f"bins/hanicore/_scratch_{src.stem}_{len(_NOYIELD)}_noyield.bin"
     p.write_bytes(bytes(data))
-    print(f"  (control image: {n} CALLS to hcts_target_yield NOP'd)")
-    _NOYIELD = p
+    print(f"  (control image {src.name}: {n} CALLS to hcts_target_yield NOP'd)")
+    _NOYIELD[src] = p
     return p
 
 
@@ -388,7 +389,10 @@ def main() -> int:
     # 'W' is here for the same reason: it is the other command a tuner sends
     # thousands of times, and it too reaches the configuration manager.
     cases = [
-        ("plain signature 'S'", b"S", window(40)),
+        # 2026-10-14: an ENVELOPE 'S'. A plain byte is answered only on a
+        # link a CRC-valid request has locked (shared-bus discipline,
+        # docs/ARCHITECTURE.md.1).
+        ("signature 'S'", envelope(b"S"), window(48)),
         ("envelope version 'V'", envelope(b"V"), window(48)),
         ("output channels, WHOLE block", och_request(0, och_size),
          window(och_size + 7)),
@@ -429,23 +433,43 @@ def main() -> int:
               + (f", cadence {cadence:.2f} ms" if cadence is not None else "")
               + (f", TRAP {trap}" if trap else ""))
 
-    print("\n  --- CONTROL: the same transactions with the hook NOP'd ---")
-    print("      (this is what the firmware would do WITHOUT the fix;")
-    print("       if these do not blow the budget the test proves nothing)")
-    blown = 0
+    # 2026-10-14: THE EXCHANGE NO LONGER DEPENDS ON THE YIELD HOOK. It runs at
+    # its own interrupt level (CC27, requested by the 1 ms tick) - so the
+    # property under test is now that THIS image holds the budget even with
+    # every hook call NOP'd, and the control that proves the measurement can
+    # see starvation is the last image that still needed the hook (12B46583,
+    # the 2026-10-13 car image), run the same way: it must blow the budget.
+    print("\n  --- THIS IMAGE with the yield hook NOP'd (must still hold) ---")
+    held = 0
     for name, rx, run_steps in cases:
         worst, ntx, cadence, trap, winstr = transaction(name, rx, SETTLE,
                                                         run_steps,
-                                                nop_yield=True)
-        over = winstr is not None and hw_ms(winstr) >= BUDGET_MS
-        blown += 1 if over else 0
-        print(f"         {name:<40s} {winstr:7d} instr = "
-              f"{hw_ms(winstr):7.2f} ms hw  "
-              f"{'<-- OVER BUDGET' if over else ''}")
+                                                        nop_yield=True)
+        ok_ = winstr is not None and hw_ms(winstr) < BUDGET_MS
+        held += 1 if ok_ else 0
+        print(f"         {name:<40s} {winstr if winstr is not None else -1:7d} instr  "
+              f"{'' if ok_ else '<-- OVER BUDGET'}")
+    check("the exchange holds without the serial yield (interrupt level)",
+          held == len(cases),
+          f"{held} of {len(cases)} transactions inside {BUDGET_MS:.0f} ms")
 
-    check("the control really does blow the budget", blown > 0,
-          f"{blown} of {len(cases)} transactions exceed {BUDGET_MS:.0f} ms "
-          f"of HARDWARE time without the hook")
+    ctl = ROOT.parent / "evidence/CAR_20261011_REVIEW/image_12B46583/HaniCore_ME711_v102_dev.bin"
+    if ctl.exists():
+        print("\n  --- CONTROL: 12B46583 (exchange in the main loop), hook NOP'd ---")
+        blown = 0
+        for name, rx, run_steps in cases:
+            worst, ntx, cadence, trap, winstr = transaction(
+                name, rx, SETTLE, run_steps, nop_yield=True,
+                img_path=ctl, map_path=ctl.with_suffix(".M66"))
+            over = winstr is not None and hw_ms(winstr) >= BUDGET_MS
+            blown += 1 if over else 0
+            print(f"         {name:<40s} {winstr if winstr is not None else -1:7d} instr  "
+                  f"{'<-- OVER BUDGET' if over else ''}")
+        check("the control (a main-loop exchange without the hook) blows the budget",
+              blown > 0, f"{blown} of {len(cases)} transactions exceed "
+              f"{BUDGET_MS:.0f} ms of HARDWARE time")
+    else:
+        print("  (control image 12B46583 absent - the control is not run)")
 
     worst_live = max(v for v in live.values() if v is not None)
     # THE BURN IS A DIFFERENT CLASS OF TRANSACTION AND IT IS SEPARATED HERE.

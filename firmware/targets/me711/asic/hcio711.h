@@ -49,8 +49,8 @@
    with the OEM period and a 100 % high output; nothing else ever drives
    them (the forced-OFF pair stays). */
 #define HC_IO_TEST_PWM0 8u
-/* CJ120 mode holds, both chips: +0 0x88 cold, +1 RA, +2 LA, +3 PA
-   (0xC8), +4 the calibration 0x9C, +5 the V79..V95 value 0x90 */
+/* CJ120 mode holds, both chips: +0 0xC8 cold (pump off), +1 RA, +2 LA,
+   +3 pump on (0x88, PA = 0), +4 the calibration 0x9C, +5 the V79..V95 value 0x90 */
 #define HC_IO_TEST_CJ0  16u
 #define HC_IO_TEST_CJ_N 6u
 
@@ -130,6 +130,9 @@ unsigned char far hc_io_boothist_byte(unsigned int off);
    state machine's idle window (hcasicstart.c), never while a PEC exchange is
    in flight. mask bit0/bit1 = device 1/2 enabled (lambda source INTERNAL). */
 void far hc_io_cj120_slot(unsigned int ms, unsigned char mask);
+/* 1 when hc_io_cj120_slot() would run a transaction now (2026-10-14: the
+   S5500 exchange gives it priority over its own pre-build steps) */
+unsigned char far hc_io_cj120_due(unsigned int ms, unsigned char mask);
 
 /* Wideband + heater, once per main-loop pass. ua1/ua2 raw AN6/AN4 (CJ120
    UA); ur1/ur2 raw ASIC AN12/AN13 (CJ120 UR, the Ri signal), 0xFFFF when
@@ -152,7 +155,8 @@ void far hc_io_test_service(unsigned int ms);
 
 /* TunerStudio words 734..757, written into the OCH block directly. */
 unsigned char far hc_io_wb_fault(unsigned char bank);   /* V97 */
-unsigned int  far hc_io_lambda(unsigned char bank);     /* x1000, 0 = not valid */
+void          far hc_io_wb_clear(void);                 /* !D re-arms a latched fault */
+unsigned int  far hc_io_lambda(unsigned char bank);     /* x1000, 0 = not fresh */
 unsigned int far hc_io_lambda_protection(unsigned char bank);
 /* the CC195 band code into the ASIC P1 image (0xFF = the idle image) */
 void far hc_io_knock_band(unsigned char code);

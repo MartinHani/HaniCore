@@ -48,7 +48,15 @@ level-condition skips to what the directory tree already defines.
 
 ## Current results
 
-Current image `0B8C1E50…` (2026-10-10; layout `5AB824FA`). It differs from
+Latest image `5248F4C9…` (2026-10-14, build `88EA2D34`): `run_gates.py fast`
+86/86, `tier1` 14/14, the K-line gates (rate hunt, KWP entry, shared bus with
+its control, idle silence) and the runtime stress matrix pass; the K-line +
+engine gate passes at 7000 rpm and keeps the 9600 rpm red listed below. On the
+bench ECU: flashed and read back, link, KWP entry, shared-bus and plugin
+qualification, logger session. The older figures below are kept for the
+gates not re-run since.
+
+Image `0B8C1E50…` (2026-10-10; layout `5AB824FA`). It differs from
 `484F9753…` by three changes only - the onboard barometric sensor as an
 ambient source, the DFCO pressure limit applying only to a manifold sensor,
 and the VAG 1.8T preset stating its sensor location and ambient source; without
@@ -81,9 +89,8 @@ None is silenced. Each is in one of these classes:
 
 | gate | why it is red | class |
 |---|---|---|
-| `me711_kline_mixed_proof` | transient to 9600 rpm with TunerStudio traffic: one capture-ring overflow, the executor quiesces, 3 of 1049 injector openings are not executed, no edge late | known limitation above the AWT's ~6800 rpm |
+| `me711_kline_mixed_proof` | at 9600 rpm with the link saturated the main loop gets ~10 % of the CPU: its longest service stretch is 13.9 ms (limit 12) and the throttle step gap 21.1 ms (limit 20); every event executes, nothing late. At 7000 rpm, steady and transient, 6/6 (`5248F4C9…`) | known limitation above the AWT's ~6800 rpm |
 | `me711_pinwrite_gap_proof`, `me711_preset_gap_proof`, `me711_ts_gap_proof`, `me711_wideband_ssc_bound_proof` | the longest main-loop pass is 9–10.6 ms against a gate limit of 6.5 ms (a fraction of the S5500's 10 ms raster); no supervision reset seen on the bench | known limitation |
-| `me711_link_rate_proof` | the host-baud-rate hunt laps the receive ring in 4 of its rate-change cases | known limitation (rate changes only) |
 | `me711_burn_session_proof` | a request sent *during* a Burn is dropped (no reply) instead of being answered after it; the session-fatal `0x83` frame does not occur | known limitation, needs a real-TunerStudio check |
 | `me711_boot_cost_proof`, `near_ram_hazard_proof` | deliberate tripwires at their limit | tripwire |
 | `me711_burn_two_in_session_proof` | the simulator rig stops delivering received bytes after the Burn's flash window; a direct reproduction with the same rig and the real ECU both answer after a Burn | rig defect |

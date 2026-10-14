@@ -97,6 +97,10 @@ typedef struct {
     unsigned char sw_db[4];         /* per-function debounce, ms    */
     unsigned int sw_raw;            /* raw input levels, switchRaw  */
     unsigned int sw_raw_ms;         /* its refresh clock                    */
+    /* the Bosch intake-manifold filling model (hc_ec_load_lag()) */
+    unsigned int lag_x16;           /* filled load, 0.1 % x 16              */
+    unsigned int lag_ms;            /* its clock                            */
+    unsigned char lag_ok, lag_pad;
 } hc_ec_t;
 
 #define HC_EC (*(hc_ec_t huge *)(TGT_EXTRAM_BASE + TGT_RAM_ENGCTL))
@@ -116,6 +120,7 @@ void          far hc_ec_pre(unsigned int rpm);
    x1000 - eng_service() then fuels to it. */
 unsigned int  far hc_ec_target_lambda(unsigned int rpm, unsigned int fuel_load);
 unsigned int  far hc_ec_ign_load(unsigned int fuel_load);
+unsigned int  far hc_ec_load_lag(unsigned int throttle_x10, unsigned int rpm);
 /* Base table advance (signed 0.1 deg) -> commanded advance: corrections,
    DFCO and soft-limit retard, launch / flat-shift / anti-lag timing,
    clamped -30..+60 deg and rate-limited in the advance direction. */

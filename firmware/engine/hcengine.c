@@ -47,6 +47,15 @@ unsigned int  eng_map_kpa_x10;
 unsigned int  eng_iat_dc;
 unsigned int  eng_baro_kpa_x10;
 unsigned int  eng_tps_x10;
+/* THE THROTTLE THE LOAD USES IS NOT FILTERED (2026-10-11). filt() moves 1/16
+   per main-loop pass - a time constant of 50..150 ms that changes with the
+   pass length (TunerStudio polling). In front of the FR BGSRM filling model
+   (hc_ec_load_lag) it was a SECOND lag: the computed air trailed the air the
+   engine really took on a tip-in (me711_tipin_fill_proof: 12 % at 100 ms
+   where the FR model alone gives 21 %) - lean fuel, early-load advance. The
+   filling model is the one lag, by rpm; the display, idle and DFCO keep the
+   filtered value. runtime_tail() takes the span of the same ADC value with
+   the same calibration (no stored copy: near RAM is at its reserve). */
 unsigned int  eng_tps2_x10;
 unsigned int  eng_pedal_x10;
 unsigned int  eng_pedal2_x10;
@@ -482,7 +491,9 @@ static void runtime_tail(unsigned int rpm)
     unsigned int cyl = cfg_u8(CFG_CYLINDERS);
     unsigned int disp = hc_cal_u16(CFG_U_DISPLACEMENT_CC);
     unsigned int vd = (cyl != 0u) ? (unsigned int)(disp / cyl) : 0u;
-    unsigned int tps_c = eng_tps_x10;
+    unsigned int tps_c = span_pct_x10(hc_hal_ain(HC_AIN_TPS1),
+                                      hc_cal_u16(CAL_TPS1_MIN),
+                                      hc_cal_u16(CAL_TPS1_MAX));
     unsigned int p_x10, t_x10, load, ve_x10, lam, flow;
     unsigned long air;
     int base;
@@ -492,16 +503,22 @@ static void runtime_tail(unsigned int rpm)
     /* ---- the throttle the fuel uses ---------------------------------- */
     if (err & ENG_ERR_TPS1) {
         if (!(err & ENG_ERR_TPS2)) {
+            tps_c = span_pct_x10(hc_hal_ain(HC_AIN_TPS2),
+                                 hc_cal_u16(CAL_TPS2_MIN),
+                                 hc_cal_u16(CAL_TPS2_MAX));
             tps_c = (hc_cal_u8(CFG_U_TPS_CORR) == HC_TRACK_OPPOSITE)
-                  ? (unsigned int)(1000u - (eng_tps2_x10 > 1000u ? 1000u
-                                                                 : eng_tps2_x10))
-                  : eng_tps2_x10;
+                  ? (unsigned int)(1000u - (tps_c > 1000u ? 1000u : tps_c))
+                  : tps_c;
         } else if (hc_cal_u8(CAL_DBW_ENABLE) != 0u) {
             tps_c = hc_cal_u16(CAL_DBW_LIMP_X10);   /* the spring's opening */
         } else {
             tps_c = TPS_INVALID;
         }
     }
+
+    /* THE MANIFOLD FILLS, IT DOES NOT JUMP (FR BGSRM 17.10, hcengctl711.c):
+       the throttle the fuel and the ignition load use is the filled one. */
+    tps_c = hc_ec_load_lag(tps_c, rpm);
 
     /* ---- air ---------------------------------------------------------- */
     hc_load_select(rpm, tps_c);

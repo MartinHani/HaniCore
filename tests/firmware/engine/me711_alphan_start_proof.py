@@ -39,6 +39,13 @@ import hcpaths  # noqa: F401,E402  (puts every tools/ and tests/ module on sys.p
 import me711_config_state_test as T     # noqa: E402
 import me711_preset_apply_proof as A    # noqa: E402  press_apply/service/off
 import me711_image as PI                # noqa: E402
+import re                               # noqa: E402
+
+# T1 ticks per ms, from hctarget.h (hcengctl711.c's T1_PER_MS), never typed.
+T1_PER_MS = int(re.search(
+    r"#define\s+TGT_TICKS_PER_MS_X10\s+(\d+)",
+    (Path(__file__).resolve().parents[3] / "firmware/targets/me711/hctarget.h")
+    .read_text(errors="replace")).group(1)) // 10
 
 off = A.off
 TPS1_CH, TPS2_CH, BATT_CH, MAP_CH = 1, 3, 5, 14   # hctarget.h TGT_ADC_*_CH, AN14
@@ -85,7 +92,13 @@ def run(r, rpm, tps_pct, map_raw, passes=160):   # >= 5 time constants of filt()
     adc(r, TPS2_CH, tps_raw(tps_pct))
     adc(r, MAP_CH, map_raw)
     r.m.w16(T.sym("trg_rpm") & 0xFFFF, rpm)
+    # 2026-10-12: TIME PASSES - 20 ms per engine pass. The load fills the
+    # intake manifold (FR BGSRM, hcengctl711.c hc_ec_load_lag) over the T1
+    # time between passes; with none, the load kept the previous point's
+    # value. 160 passes = 3.2 s, ~10 time constants at 900 rpm (5 left
+    # 0.7 % of a 30 -> 2 % step, which is a third of a 2 % load).
     for _ in range(passes):
+        r.m.w16(0xFE52, (r.m.r16(0xFE52) + 20 * T1_PER_MS) & 0xFFFF)
         r("eng_service", steps=3_000_000)
     return dict(ti=r.g16("eng_ti_base_us"), load=r.g16("eng_load"),
                 air=r.g16("eng_air_mg_x10"), mapk=r.g16("eng_map_kpa_x10"),

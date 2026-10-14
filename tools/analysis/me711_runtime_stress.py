@@ -66,7 +66,8 @@ VECTOR_SEG = S.VECTOR_SEG
 TRAPS = {0x1F: "CC15 crank", 0x18: "CC8 cam", 0x19: "CC9 cam2",
          0x17: "CC7 drain", 0x39: "CC25 deadline", 0x3E: "T8 tick",
          0x2E: "SSC RX", 0x2D: "SSC TX", 0x2F: "SSC err", 0x30: "CC16 knock",
-         0x3A: "CC26 planner", 0x47: "S0TB reply"}
+         0x3A: "CC26 planner", 0x47: "S0TB reply",
+         0x3B: "CC27 S5500"}   # the S5500 exchange level (2026-10-14)
 
 
 def envelope(payload):

@@ -162,7 +162,12 @@ def main():
     # flips from "documents the defect" to "confirms the fix".
     old_way = ("for (i = 0u; i < (unsigned int)TGT_ASIC_WORDS_RUN; i++)"
                in src)
-    new_way = "for (i = 4u; i < (unsigned int)TGT_ASIC_WORDS_RUN; i++)" in src
+    # 2026-10-14: the zero step is build_rt_zero() - a pointer that starts
+    # at word 4, two words a pass (the frame is pre-built between frames).
+    new_way = ("for (i = 4u; i < (unsigned int)TGT_ASIC_WORDS_RUN; i++)" in src
+               or ("(unsigned int *)TGT_ASIC_FRAME + 4" in src
+                   and "for (i = 4u; i < (unsigned int)TGT_ASIC_WORDS_RUN; i += 2u)"
+                   in src))
     umk = "hc_umkom_service(FRAME)" in src
     check("build() clears from word 4, leaving 1..3 to the UMKOM responder",
           new_way and not old_way and umk,

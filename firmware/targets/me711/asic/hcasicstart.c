@@ -71,8 +71,17 @@
 #include "hcumkom.h"
 #include "hcliveforensics.h"
 #include "hcio711.h"
+#include "hcrtmon711.h"    /* the S5500 raster in the reset witness */
+#include "hchal.h"          /* hc_hal_ain_capture */
+#include "hckwp_me711.h"    /* HC_KL.asic_prep (SRAM) */
 
 #define FRAME ((unsigned int volatile far *)((unsigned long)TGT_ASIC_FRAME))
+/* the pre-build steps between runtime frames (HC_KL.asic_prep, 2026-10-14) */
+#define PREP_CAPTURE  0u   /* the accepted reply is not snapshotted yet     */
+#define PREP_ZERO     1u
+#define PREP_FILL     2u
+#define PREP_SUM      3u
+#define PREP_READY    4u   /* the next frame is complete                    */
 
 sbit ASIC_CS_LATCH_S = P6  ^ TGT_ASIC_CS_PORT_BIT;
 sbit ASIC_CS_DIR_S   = DP6 ^ TGT_ASIC_CS_PORT_BIT;
@@ -158,6 +167,7 @@ void hc_asic_start_init(void)
     words_in_flight = 0;
 
     hc_umkom_init();          /* mirrors [BIN] 0x8B2188, once per session     */
+    HC_KL.asic_prep = PREP_ZERO;   /* no runtime frame pre-built             */
 
     /* Idle HIGH, push-pull, output. [BIN] 0x823214-0x82321A does exactly this
        order: latch, then open-drain off, then direction. */
@@ -165,6 +175,10 @@ void hc_asic_start_init(void)
     ODP6 &= (unsigned int)~(1u << TGT_ASIC_CS_PORT_BIT);
     ASIC_CS_DIR_S = 1;
 }
+
+static void build_rt_zero(void);
+static void build_rt_fill(void);
+static unsigned char build_rt_sum(void);
 
 /* Load the buffer for the exchange we are about to run. */
 static unsigned char build(unsigned char runtime)
@@ -243,12 +257,41 @@ static unsigned char build(unsigned char runtime)
      * Words 71..116 keep their zeroed behaviour - the FR level-2 torque
      * monitor is not needed with the engine off, and every startup frame
      * (also mostly zero) is accepted. */
+    build_rt_zero();
+    build_rt_fill();
+    return build_rt_sum();
+}
+
+/* THE RUNTIME BUILD IN TWO STEPS (2026-10-14). The exchange runs at the
+   planner's interrupt level (CC27, ILVL 9) and blocks it while it runs: one
+   ~230 us build-and-start let the crank capture ring overflow at 9600 rpm in
+   the stress simulation. hc_asic_start_service() now pre-builds the next
+   frame between frames - zero the payload, then fill it - one step per
+   request, and the step that starts the transfer only starts it. The reply
+   has been snapshotted at its accept (hc_hal_ain_capture) before either
+   step touches the buffer; words 1..3 (the reply's monitoring question)
+   survive the zero step for the fill step's hc_umkom_service(). */
+typedef char hc_zero_by_two[(((unsigned int)TGT_ASIC_WORDS_RUN - 4u) % 2u) == 0u ? 1 : -1];
+static void build_rt_zero(void)
+{
+    /* no transfer in flight while building: a plain pointer into the system
+       page (DPP3), not 114 volatile FAR writes */
+    unsigned int *z = (unsigned int *)TGT_ASIC_FRAME + 4;
+    unsigned int i;
+    for (i = 4u; i < (unsigned int)TGT_ASIC_WORDS_RUN; i += 2u) {
+        z[0] = 0u;                /* two a pass (2026-10-14) */
+        z[1] = 0u;
+        z += 2;
+    }
+}
+
+static void build_rt_fill(void)
+{
+    unsigned int i;
     {
         unsigned int r1 = FRAME[1], r2 = FRAME[2], r3 = FRAME[3];
 
         FRAME[0] = TGT_ASIC_HEADER;
-        for (i = 4u; i < (unsigned int)TGT_ASIC_WORDS_RUN; i++)
-            FRAME[i] = 0u;
 
         /* WORDS 52..58 ARE THE ASIC'S OUTPUT-PORT IMAGES, not zero.
            [BIN 0x8BE2B6] sends FDDC..FDE8 there; hcio711.c holds the OEM's
@@ -269,19 +312,24 @@ static unsigned char build(unsigned char runtime)
             hc_umkom_service(FRAME);    /* owns words 1..3, in place          */
         }
 
-        FRAME[TGT_ASIC_WORDS_RUN - 1u] =
-            hc_asic_frame_sum((unsigned char)TGT_ASIC_WORDS_RUN);
-
         /* Bench record: words 1..3 as received vs as transmitted. */
         hc_asicdump_echo(r1, r2, r3,
                          FRAME[0], FRAME[1], FRAME[2], FRAME[3]);
         hc_asicdump_txprefix(FRAME[0], FRAME[1], FRAME[2], FRAME[3]);
     }
+}
+
+/* the checksum over every word, as the last step (its own request) */
+static unsigned char build_rt_sum(void)
+{
+    FRAME[TGT_ASIC_WORDS_RUN - 1u] =
+        hc_asic_frame_sum((unsigned char)TGT_ASIC_WORDS_RUN);
     return (unsigned char)TGT_ASIC_WORDS_RUN;
 }
 
 void hc_asic_start_service(unsigned int ms)
 {
+    unsigned char huge *prep = &HC_KL.asic_prep;   /* the pre-build step */
     unsigned char n;
     unsigned int tx1, tx2, tx3;
 
@@ -314,15 +362,39 @@ void hc_asic_start_service(unsigned int ms)
                exchange is complete (we are in TX, not WAIT) and the next is
                at least 3 ms away, so one polled 2-byte CJ120 transaction
                (~40 us) cannot overlap a PEC transfer. */
-            if (hc_asic_state == HC_ASIC_ST_RUNTIME_TX
-                && (unsigned int)(ms - next_attempt)
-                   < (unsigned int)(TGT_ASIC_RUN_PERIOD_MS - 3u))
-                hc_io_cj120_slot(ms, hc_io_cj_mask);
+            if (hc_asic_state == HC_ASIC_ST_RUNTIME_TX) {
+                /* ONE short job per request (2026-10-14): the CJ120
+                   transaction when it is due and inside its window (it
+                   must end >= 3 ms before the next frame), else the next
+                   pre-build step - those may run up to the frame itself */
+                if ((unsigned int)(ms - next_attempt)
+                        < (unsigned int)(TGT_ASIC_RUN_PERIOD_MS - 3u)
+                    && hc_io_cj120_due(ms, hc_io_cj_mask)) {
+                    hc_io_cj120_slot(ms, hc_io_cj_mask);
+                    break;
+                }
+                if (*prep < PREP_READY) {
+                    if (*prep == PREP_CAPTURE)   hc_hal_ain_capture();
+                    else if (*prep == PREP_ZERO) build_rt_zero();
+                    else if (*prep == PREP_FILL) build_rt_fill();
+                    else                         (void)build_rt_sum();
+                    (*prep)++;
+                }
+            }
             break;
         }
         run_now = 0;                       /* consumed - one free start only  */
 
-        n = build((unsigned char)(hc_asic_state == HC_ASIC_ST_RUNTIME_TX));
+        if (hc_asic_state == HC_ASIC_ST_RUNTIME_TX
+            && *prep == PREP_READY) {
+            n = (unsigned char)TGT_ASIC_WORDS_RUN;   /* built in advance */
+        } else {
+            if (*prep == PREP_CAPTURE) {
+                hc_hal_ain_capture();          /* never build over a reply */
+            }
+            n = build((unsigned char)(hc_asic_state == HC_ASIC_ST_RUNTIME_TX));
+        }
+        *prep = PREP_ZERO;       /* a failed frame rebuilds, no snapshot   */
         tx1 = FRAME[1]; tx2 = FRAME[2]; tx3 = FRAME[3];
 
         /* The select is NOT touched here. asic_start_transfer asserts it and
@@ -359,6 +431,7 @@ void hc_asic_start_service(unsigned int ms)
         if (hc_asic_state == HC_ASIC_ST_RUNTIME_TX) {
             hc_lf_asic_launch(ms, (unsigned int)T7, tx1, tx2, tx3,
                               (unsigned int)hc_asic_state, hc_asic_run_tx);
+            hc_rtwit_frame_start((unsigned int)T7);   /* raster telemetry */
         }
         if (hc_asic_state == HC_ASIC_ST_RUNTIME_TX) hc_asic_run_tx++;
         else                                        hc_asic_start_tx++;
@@ -419,8 +492,8 @@ void hc_asic_start_service(unsigned int ms)
                         hc_asic_last_xfer_ms);
                 }
             }
-            if (hc_asic_frame_sum(words_in_flight)
-                == FRAME[words_in_flight - 1u]) {
+            if (hc_asic_last_calc == FRAME[words_in_flight - 1u]) {
+                /* (the sum taken above - not a second 117-word pass) */
                 hc_asic_last_ok_ms = ms;
                 hc_asic_retries = 0;
                 /* Runtime is a START-TO-START raster. phase_mark is the
@@ -445,6 +518,7 @@ void hc_asic_start_service(unsigned int ms)
                        has no evidence for. */
                     hc_asic_run_ok++;
                     hc_asic_run_live = 1u;
+                    *prep = PREP_CAPTURE;  /* snapshot it, then rebuild */
                     if (run_initial < 2u) run_initial++;
                     hc_asic_state = HC_ASIC_ST_RUNTIME_TX;
                 } else if (hc_asic_state == HC_ASIC_ST_WAIT1) {

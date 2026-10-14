@@ -312,7 +312,12 @@ def main():
     check('cached HAL permission cannot bypass live sync withdrawal',not r.log,str(r.log))
     r=Rig();r.prime_real_sync_loss();r.publish(3,1,1000,5000)
     before=r.u16('hc_dl_generation');r.request_real_sync_loss();r.run(9000)
-    check('real CC15 missing-gap loss withdraws pending injector ownership',r.u16('trg_synclost')==1 and r.u16('hc_dl_generation')!=before and not r.log,str(r.c.irq_count))
+    # 2026-10-12: trg_synclost COUNTS a loss only after the crank delivers
+    # another revolution (2026-10-11 overnight: a stall first = the engine
+    # stopping, not a P0335); this rig stops after the loss. What this vector
+    # is about is the WITHDRAWAL: crank position gone, generation moved,
+    # nothing executed.
+    check('real CC15 missing-gap loss withdraws pending injector ownership',r.u8('trg_state')<3 and r.u16('hc_dl_generation')!=before and not r.log,'state %d gen %d->%d irq %s'%(r.u8('trg_state'),before,r.u16('hc_dl_generation'),r.c.irq_count))
     r=Rig();r.publish(3,1,1000,5000);r.run(3000);r.call('hc_deadline_fuel_cut');r.idle();r.run(6000)
     check('fuel cut truncates active pulse and clears its owner',not(r.dirs()[1]&0x70) and r.m.r16((P.sym('hc_dl_owner')&0xffff)+16)==0)
     r=Rig();r.publish(3,1,5000,5000);r.call('hc_deadline_fuel_cut');r.idle();r.run(13000)

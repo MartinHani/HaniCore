@@ -247,8 +247,9 @@ def main() -> int:
         "CFG_U_PIN_APP1": 35, "CFG_U_PIN_APP2": 34,
         "CFG_U_PIN_FUEL_PUMP": 65, "CFG_U_PIN_MAIN_RELAY": 23,
         "CFG_MAIN_RELAY_MODE": 2, "CFG_U_PIN_CRANK": 82,
-        # V97: sequential inj + ign with fallback, cam-1 cycle sync, lambda
-        # 1 = the on-board CJ120 (display/log only)
+        # 2026-10-11 CAR: sequential injection + sequential COP ran with
+        # camPhaseLevel 1 (hanicore_presets.py: wasted/semi fallback until
+        # the cycle is known), cam-1 cycle sync, lambda 1 on-board
         "CFG_U_INJ_STRATEGY": 2, "CFG_U_IGN_STRATEGY": 2,
         "CFG_U_SYNC_MODE": 2, "CFG_U_LAM1_SRC": 1, "CFG_U_LAM2_SRC": 0,
         "CAL_DBW_ENABLE": 0, "CFG_U_ENGINE_PRESET": 3, "CFG_SY_GAP": 2,
@@ -294,9 +295,13 @@ def main() -> int:
           and u16(r, off("CFG_U_CRANK_DWELL_X100")) == 0)
     changed = [n for n, w in GAP_FIELDS
                if [r.desired(off(n) + i) for i in range(w)] != gap_before[n]]
-    check("the named gaps are left alone: injector, dwell, dead time, "
-          "pressure sensor, VE and ignition maps keep the page's values",
-          not changed, "changed: %s" % changed)
+    # 2026-10-10: the stock AWT values are back in the preset (the car
+    # cranked with injector flow 0 without them) - APPLY must SET them.
+    check("the stock AWT engine data is applied: injector flow 301, dwell, "
+          "dead time, pressure sensor, VE and ignition maps",
+          len(changed) == len(GAP_FIELDS)
+          and u16(r, off("CFG_U_INJ_FLOW_CCMIN")) == 301,
+          "changed: %s" % changed)
     check("nothing left dirty - one pass applied every group",
           r.g16("hc_cfg_dirty_groups") == 0,
           "0x%04X" % r.g16("hc_cfg_dirty_groups"))

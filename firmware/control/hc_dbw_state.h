@@ -53,9 +53,24 @@ typedef struct {
     /* The largest interval between two control steps while in
        RUN, ms - the cadence the PID really got (hc_dbw_gap_max()). */
     unsigned int  gap_max;
+    /* THE BOSCH DLR SETTING-RANGE MONITOR (FR DLR 3.60, hcetbcal.c
+       hc_etbcal_dlr_monitor()): dlrpidc = time the controller has been
+       saturated, dveesc = the power-stage restart debounce, both ms;
+       ubok = B_ubdve (battery hysteresis), ska = the reversible request. */
+    unsigned int  dlrpidc;
+    unsigned int  dveesc;
+    unsigned char ubok;
+    unsigned char ska;
+    unsigned char sf_last;           /* the flag as last read with the stage ON */
+    unsigned char sf_pad;
+    /* the real ms since the previous control step, 5..20 (the DLR
+       timers count it; hc_dbw.c dbw_step()) */
+    unsigned int  step_dt;
 } hc_dbw_state_t;
 /* The linked runtime rig observes this counter independently of tick time. */
 typedef char hc_dbw_steps_layout[(offsetof(hc_dbw_state_t,steps)==44u)?1:-1];
+/* the region is TGT_RAM_DBW_LIMIT (0x80) bytes */
+typedef char hc_dbw_size_layout[(sizeof(hc_dbw_state_t)<=0x80u)?1:-1];
 
 #define D  (*(hc_dbw_state_t huge *)(TGT_EXTRAM_BASE + TGT_RAM_DBW))
 typedef char hc_dbw_state_fits[(sizeof(hc_dbw_state_t) <= TGT_RAM_DBW_LIMIT)

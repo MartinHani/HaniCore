@@ -52,6 +52,7 @@ OUT = ROOT / "tunerstudio/hanicore_me711.ini"
 # block was PROVEN to sit on hardware in the V9 run (2026-08-28, tenth
 # hardware). The runtime reply is a different frame and that is the point.
 S5500_SWEEP = (12, 8, 4, 20, 28, 36, 52, 68, 84, 100)
+S5500_STALLS = ((20, 100), (50, 100), (50, 52))   # '!Z' (2026-10-13)
 
 # Seeds for the external-SRAM execution probe. Four is enough to make a
 # coincidence implausible and few enough to fit one dialog.
@@ -371,7 +372,8 @@ CH += [
                              "16 bridge fault pin, 32 throttle moved past the "
                              "band, 64 the TPS tracks stopped agreeing, "
                              "128 the S5500 supervision link stopped "
-                             "mid-run"),
+                             "mid-run, 256 the throttle drive refused (key "
+                             "off or a latched throttle fault)"),
     (380,"hcbPulses","U16","","completed pulses of the current or last run"),
     (382,"hcbRuns","U16","","runs that actually started, ever"),
     (384,"hcbTpsStart","U16","cnt","DBW only: TPS1 raw counts sampled BEFORE "
@@ -628,7 +630,7 @@ CH += [
     (868,"lamVeff","U16","","V96 heater effective voltage, 0.1 V: low byte "
                             "bank 1, high byte bank 2"),
     (870,"lamMode","U16","","V96 CJ120 INIT_REG1 requested: low byte chip 1, "
-                            "high byte chip 2 (0x88 cold, 0xC8 pump on, 0x9C "
+                            "high byte chip 2 (0xC8 cold, 0x88 pump on, 0x9C "
                             "calibration)"),
     (872,"lam1IpUa","S16","uA","V97 bank 1 LSU pump current, the RAW "
                                "measurement (+ lean, - rich): published once "
@@ -858,7 +860,7 @@ CH += [
     (1016,"asicSampleAgeMs","U16","ms","Accepted ASIC transport snapshot age; 65535 unavailable. Does not certify internal peripheral ADC completion."),
     (1018,"tpsSampleAgeMs","U16","ms","Maximum age of the two independent TPS acquisitions; 65535 unavailable."),
     (1020,"lamAcqFlags","U16","","Last lambda step: bits 0/1 bank 1 UA/UR qualified, 2/3 bank 2 UA/UR qualified, 4/5 settling boundary passed, 6/7 chip verified. ASIC provenance remains transport-derived."),
-    (1022,"lamAckModes","U16","","Acknowledged INIT_REG1: bank 1 low byte, bank 2 high byte; 0x88 sensor Ri with pump off, 0xC8 sensor Ri with pump on, 0x9C calibration reference."),
+    (1022,"lamAckModes","U16","","Acknowledged INIT_REG1: bank 1 low byte, bank 2 high byte; 0xC8 sensor Ri with pump off, 0x88 sensor Ri with pump on, 0x9C calibration reference."),
     (1006,"ignCorrX10","S16","deg","V97 CLT + IAT timing correction added to "
                                     "the table advance (advX10 is the result)"),
     (454,"nvmFailWord","U16","","THE PROGRAMMER'S DIARY. The record word index "
@@ -986,7 +988,7 @@ CH += [
     (604,"bfMagicHi","U16","","V49 active forensic record magic word 0: 0x4843"),
     (606,"bfMagicLo","U16","","V49 active forensic record magic word 1: 0x4C46"),
     (608,"bfRecordPresent","U16","","1 when the V49 forensic header/version/length/valid flag agree"),
-    (610,"outputPins","U16","","V75 CPU-port READBACK: 1 fuel pump pin driven active, 2 main relay pin driven active, 4 fuel pump output permitted, 8 main relay requested but refused permission. V77: 16/32/64 live level of the CC15/CC8/CC9 capture pins. V78: 128 KL15_STAT (P6.2). Not proof of the driver stage"),
+    (610,"outputPins","U16","","V75 CPU-port READBACK: 1 fuel pump pin driven active, 2 main relay pin driven active, 4 fuel pump output permitted, 8 main relay requested but refused permission. V77: 16/32/64 live level of the CC15/CC8/CC9 capture pins. V78: 128 KL15_STAT (P6.2). 256 the tacho output on cavity 37 is running (2026-10-11). Not proof of the driver stage"),
     (612,"liveOwner","U16","","V49 owner: 0 none, 1 NVM word window"),
     (614,"liveAdmission","U16","","V49 admission: 1 ready, 2 engine, 3 ASIC, 4 PEC, 5 deadline"),
     (616,"livePauseReason","U16","","V49 pause/reject subreason"),
@@ -1131,7 +1133,7 @@ CH += [
     (754,"asicImgP7P8","U16","","runtime TX word 58 as sent: the ASIC's P7 (low) / P8 (high) image; a CLEAR bit is a stage ON"),
     (756,"cj120Xfers","U16","","CJ120 SSC transactions performed"),
     (758,"boostCmdX10","U16","%","N75 duty COMMANDED to the ASIC LDR stage after permission, 0.1 %"),
-    (760,"cj120Reg1","U16","","INIT_REG1 acknowledged, low byte bank 1, high byte bank 2: 0x88 COLD, 0x9C CAL, 0xC8 PUMP; a requested mode is not a fresh sample"),
+    (760,"cj120Reg1","U16","","INIT_REG1 acknowledged, low byte bank 1, high byte bank 2: 0xC8 COLD, 0x9C CAL, 0x88 PUMP; a requested mode is not a fresh sample"),
     (762,"runOnCount","U16","","key-off events seen since boot"),
 ]
 
@@ -1295,6 +1297,12 @@ for j, pos in enumerate(FRIC_POS):
 for j in range(8):
     CH += [(1636+2*j, f"sweepBiasProposedAxis{j}", "U16", "%", "Proposed bias curve position; RAM only after Save")]
     SCALE[1636+2*j] = 0.1
+# 2026-10-11: EVERY trouble code (the four slots above showed four): bit i =
+# path i of hcdtc711.c defs[] (DTC_PATHS below), hcio711.c.
+CH += [(1652, "dtcStoredMask0", "U16", "", "Trouble codes stored since the last clear, paths 0..15 (bit i = hcdtc711.c defs[i])"),
+       (1654, "dtcStoredMask1", "U16", "", "Trouble codes stored, paths 16..31"),
+       (1656, "dtcActiveMask0", "U16", "", "Trouble codes active now, paths 0..15"),
+       (1658, "dtcActiveMask1", "U16", "", "Trouble codes active now, paths 16..31")]
 
 # (raw + translate) * scale, TunerStudio's order: raw is 10*degC + 10000.
 TRANSLATE = {130: -10000.0, 132: -10000.0, 780: -10000.0}   # V91: 780 cltCtrlDc
@@ -1461,6 +1469,8 @@ DERIVED_CH = [
      "1 when the HAL permits the pump output"),
     ("mainRelayPinOn", "{ (outputPins >> 1) & 1 }", "",
      "1 when the main relay's CPU pin is driven at the active level"),
+    ("tachoOn", "{ (outputPins >> 8) & 1 }", "",
+     "1 when the tacho output (cavity 37) is running: rpm x cylinders / 120 Hz"),
     ("mainRelayInhibited", "{ (outputPins >> 3) & 1 }", "",
      "1 when the relay is requested ON and bound but not permitted"),
     ("crankPinLevel", "{ (outputPins >> 4) & 1 }", "",
@@ -1609,12 +1619,35 @@ DERIVED_CH = [
     ("egoCorrForVeAnalyze", "{ 100 + stftBank1 }", "%",
      "closed-loop correction in force, 100 = none (Tune Analyze)"),
     ("flagRunning", "{ (engineFlags & 1) > 0 }", "", "engine running"),
+    # 2026-10-11 (Speeduino's "Required Fuel", Engine Constants): injector
+    # open time per cylinder at VE 100 %, stoichiometric, 20 C / 101.3 kPa,
+    # from the SAME numbers the fuel model uses (hc_airfuel.c: air density
+    # 1.2041 g/l, petrol 0.745 g/cc). Display only - the firmware computes
+    # fuel from injector flow and air mass, it stores no required fuel.
+    ("requiredFuel", "{ (injFlowCcMin > 0 && cylinders > 0 && "
+     "stoichAfrX100 > 0) ? ((displacementCc / cylinders) * 1.2041 / "
+     "stoichAfrX100) / (injFlowCcMin * 0.745 / 60) : 0 }", "ms",
+     "required fuel: injector time per cylinder at VE 100 %"),
+    # 2026-10-11: the front page's engine-state lights (Speeduino style)
+    ("flagCranking", "{ (engineFlags & 2) > 0 }", "", "engine cranking"),
+    ("flagIdleCtrl", "{ (idleState & 32) > 0 }", "",
+     "idle speed control in closed loop"),
+    ("flagBoostCut", "{ (fuelCut & 4) > 0 }", "", "overboost fuel cut"),
     ("flagAse", "{ (engineFlags & 4) > 0 }", "", "after-start enrichment"),
     ("flagWarmup", "{ (engineFlags & 8) > 0 }", "", "warm-up enrichment"),
     ("flagTransient", "{ (engineFlags & 16) > 0 }", "",
      "acceleration enrichment / wall film transient"),
     ("flagDfco", "{ (engineFlags & 32) > 0 }", "", "deceleration fuel cut"),
     ("flagStft", "{ (engineFlags & 256) > 0 }", "", "closed loop correcting"),
+    # 2026-10-12: the dashboard cannot resolve an `x == n` light (its value
+    # provider "xEQn_OC" failed to subscribe in real TunerStudio - LAMBDA WAIT
+    # and BENCH IDLE crossed out); a named flag works like the others.
+    ("flagLambdaOk", "{ lam1Why == 0 }", "", "lambda bank 1 is a measurement"),
+    ("flagBenchTest", "{ hcbState == 1 }", "", "a bench output test is running"),
+    # 2026-10-12 (real TunerStudio): with no freeze frame the raw coolant
+    # word 0 read -1000.0 C through the temperature translate.
+    ("dtcFfCltShown", "{ dtcFfCode != 0 ? dtcFfClt : 0 }", "C",
+     "freeze frame coolant, 0 without a freeze frame"),
     ("flagFuelCut", "{ (engineFlags & 512) > 0 }", "", "a fuel cut is active"),
     ("flagLaunch", "{ (engineFlags & 1024) > 0 }", "", "launch control active"),
     ("flagFlatShift", "{ (engineFlags & 2048) > 0 }", "", "flat shift active"),
@@ -1685,48 +1718,10 @@ if not CFG_FAULT_CH:
 # here or the generator stops. dtcA1Idx.. map a code to its position in
 # hcDtcList, so a dialog row reads "P0105 - MAP sensor" (bitStringValue).
 # ==========================================================================
-DTC_TEXT = {
-    11: "Camshaft 1 timing (VVT)",
-    21: "Camshaft 2 timing (VVT)",
-    105: "Manifold absolute pressure sensor",
-    110: "Intake air temperature sensor",
-    115: "Coolant temperature sensor",
-    120: "Throttle position sensor 1",
-    130: "O2 sensor bank 1",
-    150: "O2 sensor bank 2",
-    217: "Engine over temperature",
-    220: "Throttle position sensor 2",
-    234: "Overboost",
-    325: "Knock sensor 1",
-    330: "Knock sensor 2",
-    335: "Crankshaft position - sync lost",
-    340: "Camshaft position - phase lost",
-    351: "Ignition coil - over-dwell",
-    560: "System voltage",
-    602: "ECU configuration invalid",
-    606: "ECU internal link",
-    2100: "Throttle motor circuit",
-    2110: "Throttle fault - rpm limited",
-    2119: "Throttle actuator performance",
-    2120: "Pedal sensor 1",
-    2125: "Pedal sensor 2",
-    2135: "Throttle position 1/2 mismatch",
-    2138: "Pedal sensor 1/2 mismatch",
-}
-_DTC_C = (ROOT / "firmware/targets/me711/diagnostics/hcdtc711.c"
-          ).read_text(encoding="utf-8", errors="replace")
-_DTC_DEFS = re.search(r"static const hcdtc_def_t defs\[P_N\] = \{(.*?)\n\};",
-                      _DTC_C, re.S)
-if not _DTC_DEFS:
-    raise SystemExit("hcdtc711.c: defs[P_N] table not found")
-DTC_CODES = [int(m.group(1)) for m in
-             re.finditer(r"^\s*\{\s*(\d+)u,", _DTC_DEFS.group(1), re.M)]
-_undescribed = sorted(set(DTC_CODES) - set(DTC_TEXT))
-if _undescribed or len(DTC_CODES) < 20:
-    raise SystemExit("hcdtc711.c codes without a description in DTC_TEXT: %s"
-                     % _undescribed)
-DTC_ORDER = sorted(DTC_TEXT)        # list index = position + 1; 0 = none
-DTC_UNKNOWN = len(DTC_ORDER) + 1
+# The table, its order and its checks: ts_dtc_me711 (shared with the UI
+# generator, which draws one row per code).
+from ts_dtc_me711 import (DTC_TEXT, DTC_CODES, DTC_ORDER,   # noqa: E402
+                          DTC_PATHS, DTC_UNKNOWN)
 
 
 def dtc_list_line():
@@ -1827,7 +1822,7 @@ LOAD_AXIS_LISTS = [
     ("hcLoadAxisList", ["Fuel load", "Pressure sensor (kPa)",
                         "Throttle position (%)", "Cylinder filling (%)",
                         "Manifold pressure (kPa)", "Charge pressure (kPa)"]),
-    ("hcFuelModelList", ["Legacy compatibility", "Pure Alpha-N (TPS)",
+    ("hcFuelModelList", ["Choose by load model", "Pure Alpha-N (TPS)",
                          "Speed density (manifold pressure)",
                          "Boosted Alpha-N (TPS + charge pressure)"]),
     ("hcDensityList", ["Measured manifold pressure",
@@ -2054,7 +2049,7 @@ HELP_TOPICS = [
         "-40 C, pressure 0 kPa - lights its FAULT lamp and sets its trouble "
         "code. The engine does not run on the displayed value: each function "
         "uses its own fallback (a failed coolant sensor gives no warm-up "
-        "enrichment; under Legacy compatibility a failed pressure sensor "
+        "enrichment; under Choose by load model a failed pressure sensor "
         "fuels from the pressure estimate table - see Fuel > Fuel model help "
         "for the other models). Diagnostics > Why? > Which sensor failed? "
         "says which.",
@@ -2074,8 +2069,9 @@ HELP_TOPICS = [
         "pressure, optionally corrected for ambient. Speed density: manifold "
         "pressure for both. Boosted Alpha-N: throttle for VE; the charge "
         "pressure before the throttle for density, measured or as an ambient "
-        "+ boost blend. Legacy compatibility runs HaniCore's original models "
-        "so existing calibrations behave exactly as before.",
+        "+ boost blend. Choose by load model: Load model picks Speed density, "
+        "Alpha-N + measured pressure or Pure Alpha-N; existing tunes "
+        "behave exactly as before.",
         "Pressure sensor location must match the hardware. VAG 1.8T (AWT): "
         "cavity 101 measures charge pressure before the throttle, not "
         "manifold pressure. A location that does not fit the model is "
@@ -2087,7 +2083,7 @@ HELP_TOPICS = [
         "multiplier. A lost pressure reading closes the boost valve. Speed "
         "density and Boosted Alpha-N have no pressure estimate: without the "
         "reading they deliver no fuel (Setup > Limits and protection adds the "
-        "cut under load). Legacy compatibility fuels from the pressure "
+        "cut under load). Choose by load model fuels from the pressure "
         "estimate table instead.",
         "Changing the model does not rescale the VE table: retune it.",
     ]),
@@ -2407,11 +2403,13 @@ def crosscheck():
     # one exact loop form went stale the moment an index was appended (the
     # supported-range words 63..67): the firmware published 1530..1597 while
     # this said 1588, and the build's own ochBlockSize check caught it.
-    m = re.search(r"for\(j=(\d+)u;j<=(\d+)u;j\+\+\)\s*och16\((\d+)u\+2u\*\(j-\1u\)"
-                  r",hc_etbcal_value\(j\)\);", io_c)
-    if m:
-        lo, hi, base = int(m[1]), int(m[2]), int(m[3])
-        fw |= {base + 2 * (j - lo) for j in range(lo, hi + 1)}
+    # 2026-10-12: EVERY such loop, and the subtraction base need not be the
+    # loop start - the block is split over two publication slices
+    # (j 34..74 and 75..94, both "1530u+2u*(j-34u)").
+    for m in re.finditer(r"for\(j=(\d+)u;j<=(\d+)u;j\+\+\)\s*och16\((\d+)u\+2u\*"
+                         r"\(j-(\d+)u\),hc_etbcal_value\(j\)\);", io_c):
+        lo, hi, base, sub = int(m[1]), int(m[2]), int(m[3]), int(m[4])
+        fw |= {base + 2 * (j - sub) for j in range(lo, hi + 1)}
     for m in re.finditer(r"put32\(\s*(\d+)\s*,", main_c):
         base = int(m.group(1))
         fw |= {base, base + 2}
@@ -2535,7 +2533,17 @@ def public_och_comments(lines):
 # (OUT_FORENSIC), which is the same file with the extended channel block.
 DEV_ONLY = ("hcBench", "hcCtrlS5500Dlg", "hcS5500", "hcDiagRamProbe",
             "hcDiagLiveBurn", "hcDiagBurnReset", "hcDiagDeadline",
-            "hcDiagInjectorPulses", "hcCtrlDlg")
+            "hcDiagInjectorPulses", "hcCtrlDlg",
+            # 2026-10-11: ETB characterization measurement data (owner: a
+            # tuner does nothing with it)
+            "hcEtbCharDetailDlg",
+            # 2026-10-11 (owner: "simplify, not every live data is needed"):
+            # the raw pages and the dead/unused knobs - developer project only
+            "hcDiagTrigger", "hcSparkState", "hcDiagRuntime",
+            "hcDiagThrottle", "hcDiagSensors", "hcDiagNativeIo",
+            "hcDiagPersist", "hcDiagPlatform", "hcDiagLoadPolicy",
+            "hcBenchState", "hcUnusedSettings", "hcUnusedIo",
+            "hcEtbCommissionDlg", "hcDevLiveAll", "hcBenchLiveDev")
 
 
 def user_project(lines, dev_only=DEV_ONLY):
@@ -3069,11 +3077,26 @@ def main() -> int:
                                         (1 if scale != 1 else 0))
         gspec[name] = (GM.humanize(name), units, lo, hi, lo, lo, hi, hi,
                        dig, dig)
+    gspec.setdefault("requiredFuel", ("Required fuel", "ms", 0, 25, 0, 0,
+                                      25, 25, 2, 2))
     for name, expression, units, desc in DERIVED_CH:
         if name in gspec:
             continue
         gspec[name] = (GM.humanize(name), units, 0, 1023, 0, 0, 1023, 1023,
                        0, 0)
+    # 2026-10-12: the freeze-frame readouts in plain words and real ranges
+    # (real TunerStudio showed "Dtc ff clt" with a -1000..5553 range).
+    for name, title, units, lo, hi, dig in (
+            ("dtcFfRpm", "Freeze frame: rpm", "rpm", 0, 8000, 0),
+            ("dtcFfCltShown", "Freeze frame: coolant", "C", -40, 140, 1),
+            ("dtcFfMap", "Freeze frame: pressure", "kPa", 0, 300, 1),
+            ("dtcFfTps", "Freeze frame: throttle", "%", 0, 100, 1),
+            # real TunerStudio, sensor calibration windows: "Clt ctrl" ran
+            # -1000..5553 and "Clt raw asic" named the chip.
+            ("cltCtrlDc", "Coolant used by control", "C", -40, 140, 1),
+            ("cltRawAsic", "Coolant sensor raw", "cnt", 0, 1023, 0),
+            ("iatRawAsic", "Intake air sensor raw", "cnt", 0, 1023, 0)):
+        gspec[name] = (title, units, lo, hi, lo, lo, hi, hi, dig, dig)
     by_cat = {}
     for name in gspec:
         title = gspec[name][0]
@@ -3338,6 +3361,9 @@ def main() -> int:
     cmd("cmdToothLogAbort", "K", 0)
     # V97: CLEAR TROUBLE CODES ('!D', OBD mode 04) - hcdtc711.c
     cmd("cmdDtcClear", "D")
+    # 2026-10-11: TEST THE REV COUNTER ('!N', hcroutes711.c) - engine
+    # stopped, cavity 37 at 3000 rpm for 6 s; the needle is the answer.
+    cmd("cmdTachoTest", "N")
     # '!W' moves the S5500 correlation window. This is the ONE diagnostic that
     # can close the runtime-frame analog mapping WITHOUT another flash: sweep
     # the base, watch s5500Idx, and the window that decodes as sixteen
@@ -3345,6 +3371,14 @@ def main() -> int:
     # 118 words of the runtime frame in 16-word steps.
     for base in S5500_SWEEP:
         cmd("cmdS5500Win%d" % base, "W", base)
+    # 2026-10-13: THE S5500 TOLERANCE EXPERIMENT ('!Z' ms every_ms,
+    # hcrtmon711.c): hold the main loop that long without servicing the
+    # S5500 - engine stopped only, cleared by every boot. Since the exchange
+    # runs at its own interrupt level none of these may reset the ECU; the
+    # witness's S5500 period words show the raster held.
+    for ms_, ev in S5500_STALLS:
+        cmd("cmdS5500Stall%d_%d" % (ms_, ev), "Z", ms_, ev)
+    cmd("cmdS5500StallOff", "Z", 0, 0)
     # THE BENCH OUTPUT COMMANDS. One channel per button, deliberately: there is
     # no "all injectors" command in the firmware and there must never be one.
     # Pressing a button does NOT by itself drive anything - hcbench.c evaluates
@@ -3483,32 +3517,18 @@ def main() -> int:
     # rows in one column (tools/tunerstudio/ts_ini_layout_audit.py). ABORT is repeated at
     # the top of every column that carries a test button, so it is always in
     # view; it is the same unconditional command.
+    # 2026-10-11 (owner: "simplify"): the buttons, ONE warning, the test
+    # value and the bench-state lights that say WHY a test was refused. The
+    # long rules text is the help topic; the raw bench numbers are a
+    # developer window (hcBenchLiveDev, forensic project only).
     w('   dialog = hcOutputTestRules, ""')
     for line in [
-        "#Each test drives ONE output for a short, bounded time.",
-        "",
-        "It runs only when all of these hold:",
-        "   the engine is stopped (no crank signal, rpm 0)",
-        "   the configuration is valid",
-        "   the I/O chip link is running",
-        "",
-        "The pulse is the bench test value, limited by the firmware to",
-        "20 ms for an injector and 4 ms for a coil. Ten pulses, 200 ms",
-        "apart. A crank signal, an invalid configuration or ABORT stops",
-        "it at once.",
-        "",
-        "!On a new installation the first test of each output is a",
-        "!measurement: nothing else connected, a scope or test lamp on",
-        "!the pin, one channel at a time.",
-        "",
-        "A refused test lists every reason (Bench state and refusals).",
-        "",
+        "!Engine stopped. One output at a time, short pulses",
+        "!limited by the firmware. ABORT stops it at once.",
     ]:
         w(label(line))
-    # The parameters live in their own panel, so the same controls appear
-    # identically wherever they are reached from. V84: no arming switch - the
-    # button below IS the deliberate act, with the invariants above.
     w('      panel = hcCtrlBenchValues')
+    w('      panel = hcPanelBenchState')
     w("")
     w('   dialog = hcOutputTestChannels, ""')
     w('      commandButton = "ABORT", cmdTestAbort')
@@ -3522,42 +3542,14 @@ def main() -> int:
     w('   dialog = hcOutputTestAux, ""')
     w('      commandButton = "ABORT", cmdTestAbort')
     w(label(""))
-    for line in [
-        "# Fuel pump relay - cavity 65, low-side: relay coil from",
-        "# switched +12 V to cavity 65. Timed in milliseconds.",
-    ]:
-        w(label(line))
+    w(label("#Fuel pump relay (cavity 65)"))
     w('      commandButton = "Fuel pump relay", cmdTestPump')
-    w(label(""))
-    for line in [
-        "# Main relay - the configured cavity. Only a CPU-driven cavity",
-        "# (65) can be tested; cavity 23 follows the key in hardware, so",
-        "# the test is refused there by design.",
-        "! Cavity 21 is the ignition (KL15) input, never a relay output.",
-        "Three pulses of up to 1 s, then it stops.",
-    ]:
-        w(label(line))
+    w(label("#Main relay (cavity 65 only; 23 follows the key)"))
     w('      commandButton = "Main relay (configured cavity)", cmdTestRelay')
-    w(label(""))
-    # Each explanation now sits directly above ITS buttons (until V89 the
-    # throttle text was followed by the cam buttons).
-    for line in [
-        "# Throttle motor - cavities 117 / 118.",
-        "! Engine stopped, throttle tracks agreeing and no bridge fault,",
-        "! or it refuses. Three nudges of at most 50 ms; it stops on a",
-        "! bridge fault, the plate leaving a fixed band, or the tracks",
-        "! disagreeing.",
-    ]:
-        w(label(line))
+    w(label("#Throttle motor (117 / 118), short nudges"))
     w('      commandButton = "Throttle bridge, direction A", cmdTestDbwA')
     w('      commandButton = "Throttle bridge, direction B", cmdTestDbwB')
-    w(label(""))
-    for line in [
-        "# Cam solenoids - cavities 115 and 120.",
-        "! Three 250 Hz bursts at 50 % duty, each as long as the test",
-        "! value (ms, limited by the firmware).",
-    ]:
-        w(label(line))
+    w(label("#Cam solenoids (115 / 120)"))
     w('      commandButton = "Cam solenoid, cavity 115", cmdTestVvt1')
     w('      commandButton = "Cam solenoid, cavity 120", cmdTestVvt2')
     w("")
@@ -3568,9 +3560,12 @@ def main() -> int:
               "syncState", "cfgValidation"):
         w('      readout = %sGauge' % g)
     w("")
+    w('   dialog = hcBenchLiveDev, "Bench test live values (developer)"')
+    w('      panel = hcOutputTestLive')
+    w("")
     w('   dialog = hcOutputTest, "Bench test - one channel at a time", xAxis')
-    for pid in ("hcOutputTestRules", "hcOutputTestChannels", "hcOutputTestAux",
-                "hcOutputTestLive"):
+    w('      topicHelp = "hcHelpBench"')
+    for pid in ("hcOutputTestRules", "hcOutputTestChannels", "hcOutputTestAux"):
         w('      panel = %s' % pid)
     w("")
     # V89 UI: the explanation beside the controls and the result.
@@ -3596,6 +3591,12 @@ def main() -> int:
     for base in S5500_SWEEP:
         w('      commandButton = "window at word %d", cmdS5500Win%d'
           % (base, base))
+    w(label(""))
+    w(label("Raster test: hold the main loop (engine stopped; a boot ends it)"))
+    for ms_, ev in S5500_STALLS:
+        w('      commandButton = "hold %d ms every %d ms", cmdS5500Stall%d_%d'
+          % (ms_, ev, ms_, ev))
+    w('      commandButton = "stop the hold", cmdS5500StallOff')
     w(label(""))
     w('      panel = hcS5500Live')
     w("")
@@ -3884,7 +3885,17 @@ def main() -> int:
     # [UserDefined] and referenced by `topicHelp = "<id>"` inside a dialog.
     # Corpus: rusefi_proteus_f7.ini:9239-9243. Help goes where a person can
     # make a DANGEROUS or CONFUSING mistake, not on everything.
-    for hid, title, body in HELP_TOPICS:
+    # 2026-10-11: the dialogs' note text moved here (gen_ts_ux_me711
+    # COMPACT_NOTES) - appended to the dialog's own topic, or a new one
+    _topics = [(h, t, list(b)) for h, t, b in HELP_TOPICS]
+    _have = {h: i for i, (h, _t, _b) in enumerate(_topics)}
+    for _hid, (_title, _paras) in UX.NOTE_TOPICS.items():
+        if _hid in _have:
+            _topics[_have[_hid]][2].extend(p for p in _paras
+                                           if p not in _topics[_have[_hid]][2])
+        else:
+            _topics.append((_hid, _title, list(_paras)))
+    for hid, title, body in _topics:
         w('   help = %s, "%s"' % (hid, title))
         for para in body:
             w('      text = "%s"' % para.replace('"', "'"))
@@ -3918,6 +3929,7 @@ def main() -> int:
         ("hcFuelComputer", "Fuel computer"),
         ("hcSparkState", "Ignition state"),
         ("hcDiagRuntime", "Engine runtime"),
+        ("hcDiagLive", "Live tuning values"),
         ("hcDiagThrottle", "Throttle, pedal and relays"),
         ("hcDiagSensors", "Sensors and inputs"),
         ("hcDiagNativeIo", "Wideband, boost valve and key-off"),
@@ -3932,6 +3944,8 @@ def main() -> int:
         ("hcDiagRamProbe", "External RAM execution probe"),
         ("hcDiagLiveBurn", "Burn forensics: live Burn"),
         ("hcDiagBurnReset", "Burn forensics: reset log"),
+        ("hcDevLiveAll", "All live values (developer)"),
+        ("hcBenchLiveDev", "Bench test live values (developer)"),
     ]
 
     def diag_entries():
@@ -3944,7 +3958,8 @@ def main() -> int:
         known = {did for did, _t, _c, _n in DIAG_DIALOGS}
         stale = sorted(named - known - {"hcFuelComputer", "hcSparkState",
                                         "hcBench", "hcS5500",
-                                        "hcCtrlS5500Dlg", "hcDiagDtc"})
+                                        "hcCtrlS5500Dlg", "hcDiagDtc", "hcDevLiveAll", "hcBenchLiveDev",
+                                        "hcDiagLive"})
         if stale:
             raise SystemExit("DIAG_MENU/DEV_MENU name dialogs that "
                              "DIAG_DIALOGS does not declare: %s" % stale)

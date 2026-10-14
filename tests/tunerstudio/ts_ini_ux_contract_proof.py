@@ -14,10 +14,12 @@ TunerStudio use (2026-10-01), held mechanically against the generated .ini.
   2. VE RANGE: the VE table holds at least 255 % (it stopped at 127.5 % - a
      U08 at 0.5 % per count).
   3. TROUBLE CODES: one list - no ACTIVE / STORED panel pair, each row a
-     status + "Pxxxx - description" in ONE full-width indicator
-     (bitStringValue of hcDtcRowList; split columns shrank the code text
-     to unreadable in TunerStudio 3.3.01), and the
-     freeze frame's code as a P-code, not the raw number.
+     status + "Pxxxx - description" in ONE full-width indicator (split
+     columns shrank the code text to unreadable in TunerStudio 3.3.01), and
+     the freeze frame's code as a P-code, not the raw number. 2026-10-11:
+     ONE ROW PER CODE the firmware can set (ts_dtc_me711.DTC_PATHS), shown
+     while its bit of dtcStoredMask is set - four slots hid every code after
+     the fourth (owner: "more than ~5 are not visible").
 Each check has a mutation control: the defect put back into a copy of the
 .ini must be caught.
 """
@@ -95,11 +97,49 @@ def audit(text):
         bad.append("no hcDiagDtc dialog")
     if re.search(r'"ACTIVE"|"STORED', ui):
         bad.append("an ACTIVE / STORED panel pair is back")
-    if re.search(r"indicatorPanel = hcDtcRow\d, [2-9]", ui):
-        bad.append("a DTC row is split into columns (the code text shrinks)")
-    rows = re.findall(r'bitStringValue\(hcDtcRowList, dtcS\d+Row\)', ui)
-    if len(rows) < 4:
-        bad.append("the DTC rows are not code lists (%d found)" % len(rows))
+    sys.path.insert(0, str(ROOT / "tools" / "tunerstudio"))
+    import ts_dtc_me711 as DTC
+    # 2026-10-12 (owner, real TunerStudio: an EMPTY list): every code has an
+    # ALWAYS-VISIBLE row - the code lit while stored, ACTIVE NOW while
+    # present - tested with & and a literal mask (rusEFI's INIs use no >>).
+    for i, code in enumerate(DTC.DTC_PATHS):
+        w, k = ("0", i) if i < 16 else ("1", i - 16)
+        if not re.search(r'indicator = \{\s*\(dtcStoredMask%s & %d\) != 0\s*\},'
+                         r'\s*"P%04d - ' % (w, 1 << k, code), ui):
+            bad.append("no row for stored code P%04d (path %d)" % (code, i))
+            break
+        if not re.search(r"indicator = \{\s*\(dtcActiveMask%s & %d\) != 0"
+                         % (w, 1 << k), ui):
+            bad.append("no ACTIVE cell for code P%04d (path %d)" % (code, i))
+            break
+    # NO dialog panel/field may be SHOWN on a live (ECU-sent) channel:
+    # TunerStudio does not evaluate that, the panel never appears (the
+    # empty DTC list). Command buttons and indicators are evaluated live.
+    raw = names(sec.get("OutputChannels", []), {"scalar", "bits"})
+    derived = {}
+    for s in sec.get("OutputChannels", []):
+        m = re.match(r"^(\w+)\s*=\s*\{(.*)\}", s)
+        if m:
+            derived[m.group(1)] = m.group(2)
+
+    def live(n, seen=()):
+        if n in consts:
+            return False
+        if n in raw:
+            return True
+        if n in derived and n not in seen:
+            return any(live(x, seen + (n,))
+                       for x in re.findall(r"[A-Za-z_]\w*", derived[n]))
+        return False
+    for s in sec.get("UiDialogs", []):
+        if not re.match(r"(panel|field)\s*=", s):
+            continue
+        for cond in re.findall(r"\{([^}]*)\}", s):
+            ln = [n for n in set(re.findall(r"[A-Za-z_]\w*", cond)) if live(n)]
+            if ln:
+                bad.append("a dialog element is shown on live channel(s) %s: %s"
+                           % (sorted(ln), s[:70]))
+                break
     if "bitStringValue(hcDtcList, dtcFfIdx)" not in ui:
         bad.append("the freeze frame's code is not shown as a P-code")
     if "dtcFfCodeGauge" in ui:
@@ -126,8 +166,11 @@ def main() -> int:
          re.sub(r'(veTable\s*=\s*array,\s*)U16(,\s*\d+,\s*\[16x16\],\s*"%",\s*)'
                 r'0\.1,(\s*0,\s*0,\s*)400(\.0)?', r'U08\g<2>1,\g<3>255',
                 text, count=1)),
-        ("DTC row split into two columns",
-         re.sub(r"(indicatorPanel = hcDtcRow1, )1", r"\g<1>2", text)),
+        ("DTC list shown on a live channel again",
+         re.sub(r"(\n\s*panel = hcDtcBoard)", r"\1, {1}, { dtcStoredN > 0 }",
+                text, count=1)),
+        ("DTC list back to four rows",
+         re.sub(r'\n\s*indicator = \{\s*\(dtcStoredMask1[^\n]*', "", text)),
         ("DTC freeze frame as a raw number",
          text.replace("bitStringValue(hcDtcList, dtcFfIdx)", "dtcFfCode")),
     ]

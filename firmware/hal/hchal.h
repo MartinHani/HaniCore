@@ -91,6 +91,7 @@ unsigned char hc_hal_ain_bound(unsigned char sem);
    A no-op on ME7.5. NEVER BLOCKS - it must not, it runs next to a 10 ms
    supervision raster. */
 void          hc_hal_ain_service(void);
+void          hc_hal_ain_capture(void);   /* ME7.1.1: at the S5500 reply accept */
 
 /* ===================== THE CAPTURE ROUTE - a cavity, into real hardware ====
  *

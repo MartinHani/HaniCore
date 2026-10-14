@@ -60,7 +60,10 @@ CRIT_US = 50.0
 # Measured worst case + margin, per handler, exclusive of nested levels (us).
 ISR_US = {"CC15 crank": 40.0, "CC8 cam": 20.0, "CC9 cam2": 20.0,
           "CC26 planner": 1200.0, "CC25 deadline": 160.0, "T8 tick": 120.0, "S0TB reply": 30.0,
-          "SSC RX": 10.0, "SSC TX": 10.0}
+          "SSC RX": 10.0, "SSC TX": 10.0,
+          # 2026-10-14: one step of the S5500 exchange (the frame is built
+          # in steps between frames; profile worst ~110 us)
+          "CC27 S5500": 150.0}
 # One background service stretch (wall time, all preemption included) and
 # the DBW control cadence it allows (nominal 5 ms, supervision 100 ms).
 SVC_MS = 12.0

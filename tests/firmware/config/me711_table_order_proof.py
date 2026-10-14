@@ -44,6 +44,12 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "tools" / "lib"))
 import hcpaths  # noqa: F401,E402  (puts every tools/ and tests/ module on sys.path)
 
+# T1 ticks per ms, from hctarget.h (hcengctl711.c's T1_PER_MS), never typed.
+T1_PER_MS = int(re.search(
+    r"#define\s+TGT_TICKS_PER_MS_X10\s+(\d+)",
+    (Path(__file__).resolve().parents[3] / "firmware/targets/me711/hctarget.h")
+    .read_text(errors="replace")).group(1)) // 10
+
 CONTROL_STEM = "HaniCore_ME711_v96_wideband"
 # the CURRENT generated file. V98r2: this named the V97 one, and passed
 # only while no table offset had moved.
@@ -160,7 +166,13 @@ def main_one(stem):
         for ch, v in ((1, t1), (3, t2), (8, 150), (9, 75), (5, 646), (14, 400)):
             r.m.w16(adc + 2 * ch, v)
         r.m.w16(T.sym("trg_rpm") & 0xFFFF, rpm)
+        # 2026-10-12: TIME PASSES. The load fills the manifold (FR BGSRM,
+        # hcengctl711.c hc_ec_load_lag) by the T1 time between engine
+        # passes; back-to-back calls with no time between them left the
+        # load at its old value and this read a half-filled state. 2 ms per
+        # pass, 0.5 s in all = ~10 time constants at 3000 rpm.
         for _ in range(250):
+            r.m.w16(0xFE52, (r.m.r16(0xFE52) + 2 * T1_PER_MS) & 0xFFFF)
             r("eng_service", steps=5_000_000)
         return (r.g16("eng_tps_x10"), r.g16("eng_air_mg_x10"),
                 r.g16("eng_adv_x10"))

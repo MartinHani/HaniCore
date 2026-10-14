@@ -69,6 +69,22 @@ void HC_COLD hc_cfg_mgr_init(void);
    slot table once, not the 4096 bytes of the page. */
 void HC_COLD hc_cfg_mgr_service(unsigned int rpm);
 
+/* A BURN WITH THE ENGINE TURNING (2026-10-11 car). The flash store can only
+   take a word inside a gap between crank teeth longer than the flash word
+   guard (~727 rpm on a 60-2), so a Burn at idle could never finish: it ran
+   to the 6 s deadline and failed - after the standby page had already been
+   committed (flash and SRAM then disagreed). Now: the page is validated and
+   committed to the battery-backed standby page at once (it survives a key
+   cycle), the request is remembered, and the flash Burn runs when the
+   engine has been stopped for HC_BURN_STOP_MS. _defer returns the
+   validation result (HC_VAL_OK = accepted); _due returns 1 once, when the
+   target should start the flash Burn now; _pending reads the flag. */
+#define HC_BURN_STOP_MS  500u
+unsigned int  HC_COLD hc_cfg_mgr_burn_defer(void);
+unsigned char HC_COLD hc_cfg_mgr_burn_due(unsigned int now_ms,
+                                          unsigned char stopped);
+unsigned char HC_COLD hc_cfg_mgr_burn_pending(void);
+
 /* Move the deferred DESIRED copy along by one bounded chunk. Returns 1 while
    there is still work to do.
 

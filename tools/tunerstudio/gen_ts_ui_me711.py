@@ -104,6 +104,12 @@ ELEMENT_FIELDS = {
                        "Power: max remove", "Cruise: max remove"], None),
     "stftTimeConst": (["Idle: time constant", "Overrun: time constant",
                        "Power: time constant", "Cruise: time constant"], None),
+    # 2026-10-11: the temperature curves per point, so the 'Common sensors'
+    # pickers (settingSelector writes scalars) can fill them
+    "cltSensAx": ("Coolant curve point %d counts", None),
+    "cltSensVal": ("Coolant curve point %d temperature", None),
+    "iatSensAx": ("Air curve point %d counts", None),
+    "iatSensVal": ("Air curve point %d temperature", None),
 }
 
 # V98: SEVERAL TUNERSTUDIO FIELDS OVER ONE PAGE WORD - rusEFI's own idiom
@@ -473,12 +479,20 @@ def table_dialog_lines() -> list[str]:
     These go INSIDE the one [UserDefined] section; a second section header
     would be a second place for dialogs to live."""
     out = []
+    # 2026-10-11 (owner, Speeduino screenshots): NO separate 3D entries.
+    # TunerStudio's table editor carries its own "3D View" box (top right
+    # of the grid), which is how Speeduino shows every map; a second menu
+    # line per map was clutter.
+    try:                # tables a workflow window embeds with its options
+        import gen_ts_ux_me711 as _UX
+        embedded = set(getattr(_UX, "EMBEDDED_TABLES", ()))
+    except ImportError:
+        embedded = set()
     for tid, _z, _x, _xt, _y, _yt, title in TABLES:
+        if tid in embedded:
+            continue
         out.append('   dialog = %sEdit, "%s"' % (tid, title))
         out.append('      panel = %s' % tid)
-        out.append("")
-        out.append('   dialog = %s3D, "%s - 3D view"' % (tid, title))
-        out.append('      panel = %sMap, South' % tid)
         out.append("")
     return out
 
@@ -507,6 +521,24 @@ TABLE_Y_LABEL = {
     "vvtTarget2Tbl": "Cylinder filling (%)",
     "mapEstimateTbl": "Throttle position (%)",
     "injPhaseTbl": "{bitStringValue(hcLoadAxisList, %s)}" % _FUEL,
+}
+
+
+# THE LIVE CURSOR OF EVERY CURVE (owner, 2026-10-11). `xBins = <axis>` with
+# no channel draws a curve TunerStudio cannot trace: 20 of 22 curves had no
+# cursor on the car. rusEFI writes `xBins = cltFuelCorrBins, coolant`. Each
+# channel is in the SAME display units as its axis (scale/translate checked
+# against the generated .ini: C/C, V/V, rpm/rpm, %/%, ADC counts/counts);
+# ts_ini_tracer_proof re-checks that every curve and table names an existing
+# output channel inside the block with the axis's unit.
+CURVE_TRACER = {
+    "cltEnrAx": "coolant", "crankPwAx": "coolant", "idleTargetAx": "coolant",
+    "idleBaseAx": "coolant", "boostCltAx": "coolant",
+    "ignIatAx": "intake", "boostIatAx": "intake",
+    "dwellBattAx": "VBatt",                       # dwell AND dead time
+    "knockKefRpm": "RPMValue", "knockRpmAx": "RPMValue",
+    "cltSensAx": "cltRawAsic", "iatSensAx": "iatRawAsic",   # raw ADC counts
+    "dbwBiasAx": "etbActual",                     # throttle plate, %
 }
 
 
@@ -540,7 +572,10 @@ def table_lines(by_ts) -> list[str]:
         out.append('      yAxis = %s, %s, %d'
                    % (GEN._num(_disp(fy.meta, fy.meta.lo)),
                       GEN._num(_disp(fy.meta, fy.meta.hi)), 9))
-        out.append('      xBins = %s' % x)
+        if x not in CURVE_TRACER:
+            raise SystemExit("curve %s: axis %s has no live channel in "
+                             "CURVE_TRACER - every curve must trace" % (cid, x))
+        out.append('      xBins = %s, %s' % (x, CURVE_TRACER[x]))
         out.append('      yBins = %s' % y)
         out.append("")
     return out

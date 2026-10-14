@@ -124,6 +124,8 @@ def main() -> int:
         r.update(lamWhy=0x0100, lamFault=0, cjTmo=0)   # bank 2 off
     for r in rows[30:60]:
         r["lamWhy"] = 0x0108; r["lambdaStatus"] = 0     # bank 1 heating 3 s
+    for r in rows[62:66]:
+        r["lamWhy"] = 0x0110                            # bank 1 HELD 0.4 s
     for r in rows[70:]:
         r["lamFault"] = 0x0200                          # bank 2 fault 2
     rows[90]["cjTmo"] = 3
@@ -146,6 +148,13 @@ def main() -> int:
               and "RAMP" in e["text"] for e in li), str(li))
     check("wideband: a bank whose source is off is not judged",
           not any(e.get("bank") == 2 for e in li))
+    # 2026-10-10: a HELD value (lamWhy 16) is reported AS HELD - never as a
+    # live reading, and not as a plain invalid stretch either
+    lh = F.get("lambda_held", [])
+    check("wideband: a HELD stretch is reported as held (bank 1, once)",
+          any(e.get("bank") == 1 and e.get("count") == 1 and "HELD"
+              in e["text"] for e in lh)
+          and not any(6.2 <= e["t"] <= 6.5 for e in li), str(lh))
     check("wideband: bank 2 latched fault decoded by name",
           any(e["t"] == 7.0 and e.get("bank") == 2 and "NO SENSOR"
               in e["text"] for e in F.get("lambda_fault", [])),

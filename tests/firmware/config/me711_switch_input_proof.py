@@ -139,6 +139,12 @@ def runtime(stem):
     ASIC_RUNTIME_WAIT = int(_re.search(r"#define\s+HC_ASIC_ST_RUNTIME_WAIT\s+(\d+)",
         (T.ROOT / "firmware/targets/me711/asic/hcasicstart.h").read_text()).group(1))
 
+    try:
+        T.sym("hc_hal_ain_capture")
+        has_capture = True
+    except SystemExit:
+        has_capture = False
+
     def frame(w56, alive=1):
         """V98r2: THE REAL PATH - the runtime exchange (hcasicstart.c)
         leaves the reply in the PEC frame (TGT_ASIC_FRAME 0xE100) and bumps
@@ -158,6 +164,11 @@ def runtime(stem):
             r.m.w16(ok, (r.m.r16(ok) + 1) & 0xFFFF)
         else:
             r.m.w8(live, 0)
+        # 2026-10-13: the exchange runs in the 1 ms tick and the reply is
+        # snapshotted AT THE ACCEPT (hcasicstart.c -> hc_hal_ain_capture);
+        # images before that snapshot in hc_hal_ain_service().
+        if alive and has_capture:
+            r("hc_hal_ain_capture", steps=2_000_000)
         r("hc_hal_ain_service", steps=2_000_000)
 
     def asic(level, alive=1):

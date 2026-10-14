@@ -64,8 +64,11 @@ CRITICAL = [
     # through APPLY, Burn and restart. (The car's own page keeps the -2.0 =
     # old 358.0 it ran on - docs/ARCHITECTURE.md.)
     ("trigDecoder", 2539, 1, 1), ("trigAngleX10", 2540, 2, 0xFCF4),
-    ("injStrategy", 2536, 1, 2), ("ignStrategy", 2537, 1, 2),   # V97 sequential + fallback
+    # 2026-10-11 car: sequential + sequential COP ran with camPhaseLevel 1
+    # (wasted / semi fallback until the cycle is known) - the preset since
+    ("injStrategy", 2536, 1, 2), ("ignStrategy", 2537, 1, 2),
     ("displacementCc", 2510, 2, 1781),
+    ("injFlowCcMin", 2638, 2, 301),     # 2026-10-10: the car cranked with 0 = no fuel
     ("loadSource", 1236, 1, 1), ("fuelPumpMode", 2680, 1, 1),
     ("pinFuelPump", 2591, 1, 65), ("pinCrank", 2548, 1, 82),
     ("pinClt", 2577, 1, 93), ("pinIat", 2578, 1, 26),
@@ -89,13 +92,30 @@ def check(name, ok, detail=""):
 
 def preset_items(ident_name="items_vag_18t_me711"):
     txt = PRESETS_C.read_text(errors="replace")
-    # V98r2: the tables carry HC_PRESET_MEM (huge, HCONST)
-    body = re.split(r"static const hc_preset_item_t (?:HC_PRESET_MEM )?%s\[\] = \{"
-                    % ident_name, txt, maxsplit=1)[1]
-    body = body.split("};", 1)[0]
-    return [(int(o), int(v), int(w), c.strip())
-            for o, v, w, c in re.findall(
-                r"\{\s*(\d+)u,\s*(\d+)u,\s*(\d)u\s*\},\s*/\*([^*]*)\*/", body)]
+    # 2026-10-11: the compiled table is byte runs (runs_<key>[]); every value
+    # is listed just above it as an ITEM comment in the old row format. The
+    # listing is cross-checked against the runs here, so it cannot drift.
+    runs_name = ident_name.replace("items_", "runs_", 1)
+    head, rest = re.split(r"static const unsigned char (?:HC_PRESET_MEM )?%s\[\] = \{"
+                          % runs_name, txt, maxsplit=1)
+    listing = (head[head.rindex("/* VAG 1.8T DBW (AWT) */"):]
+               if ident_name == "items_vag_18t_me711" else head)
+    items = [(int(o), int(v), int(w), c.strip())
+             for o, v, w, c in re.findall(
+                 r"/\* ITEM \{\s*(\d+)u,\s*(\d+)u,\s*(\d)u\s*\}([^*]*)\*/", listing)]
+    body = re.sub(r"/\*.*?\*/", "", rest.split("};", 1)[0])
+    data = [int(x, 0) for x in re.findall(r"(0x[0-9A-F]+|\d+)u", body)]
+    page = {}
+    k = 0
+    while k < len(data):
+        off, n = (data[k] << 8) | data[k + 1], data[k + 2]
+        for i in range(n):
+            page[off + i] = data[k + 3 + i]
+        k += 3 + n
+    for o, v, w, c in items:
+        got = page.get(o) if w == 1 else ((page.get(o, -1) << 8) | page.get(o + 1, -1))
+        assert got == v, "ITEM listing and runs disagree at %d (%s): %r vs %r" % (o, c, got, v)
+    return items
 
 
 def main_one(stem):

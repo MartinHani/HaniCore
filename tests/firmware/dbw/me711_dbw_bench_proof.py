@@ -178,8 +178,13 @@ def run_case(pokes, cmd_name, steps):
             done[0] = True
             # KEY ON (KL15 status on P6.2), as on a bench with the ignition
             # switched on; a poke at offset -1 leaves the key OFF instead.
+            # 2026-10-12: the heartbeat rig holds P6.2 HIGH from boot, so
+            # "leave it off" left it ON and the key-off vector tested a
+            # key-on ECU. Key off now CLEARS it (KL15 falls after boot).
             if not any(off < 0 for off, _s, _v in pokes):
                 rig.mem.sfr[0xFFCC] = rig.mem.sfr.get(0xFFCC, 0) | 0x0004
+            else:
+                rig.mem.sfr[0xFFCC] = rig.mem.sfr.get(0xFFCC, 0) & ~0x0004
             for off, size, val in pokes:
                 if off < 0:
                     continue
@@ -294,7 +299,12 @@ def main() -> int:
     # that happened to make. The FIRST version of this gate poked it as a byte
     # and its SF negative control could not fail - the same shape of rig fault
     # this project has recorded three times.
-    ok_pair = [[corr, 1, SAME], [tol, 2, 1000], [sfm, 2, SF_IGNORE]]
+    # 2026-10-12: AND A DUTY CEILING. Without one hc_dbw_drive() refuses
+    # every pulse (DBW_F_CFG) - the positive control "passed" on writes
+    # that were the motor primitive's RELEASE path, the enable never rose.
+    maxd = BOP.cfg_off("CFG_U_DBW_MAX_DUTY_X10")
+    ok_pair = [[corr, 1, SAME], [tol, 2, 1000], [sfm, 2, SF_IGNORE],
+               [maxd, 2, 800]]
 
     print("\n  --- every extra DBW invariant broken in turn ---")
 
@@ -323,7 +333,7 @@ def main() -> int:
     # ABOUT THE REAL PIN: what SF does on the actual bridge is unmeasured and
     # is one of the things stage A of the bench procedure exists to find out.
     r = sub([[armed, 1, 1], [corr, 1, SAME], [tol, 2, 1000],
-             [sfm, 2, SF_LOW_BAD]], DBW_A)
+             [sfm, 2, SF_LOW_BAD], [maxd, 2, 800]], DBW_A)
     # V83: SF IS JUDGED AFTER THE ENABLE, NOT BEFORE IT. A CJ220 whose DI is
     # inactive reports SF LOW by design (the Bosch CJ220 datasheet rows 5, 9), so the
     # pre-run refusal this vector used to demand refused every run on a
@@ -346,6 +356,13 @@ def main() -> int:
     r = sub([[-1, 0, 0], [armed, 1, 1]] + ok_pair, DBW_A)
     check("key off: the throttle is not permitted, nothing moves",
           not r["writes"] and (r["refuse"] & BOP.refuse_bit("PERMIT")) != 0,
+          "state=%d refuse=0x%04X" % (r["state"], r["refuse"]))
+
+    # NO THROTTLE DUTY CEILING: hc_dbw_drive() would refuse every pulse, and
+    # the run reported DONE having driven nothing (until 2026-10-12).
+    r = sub([[armed, 1, 1]] + ok_pair[:3] + [[maxd, 2, 0]], DBW_A)
+    check("no throttle duty ceiling: refused as CONFIG, nothing moves",
+          not r["writes"] and (r["refuse"] & BOP.refuse_bit("CFG")) != 0,
           "state=%d refuse=0x%04X" % (r["state"], r["refuse"]))
 
     # ------------------------------------------------- the positive control
@@ -389,6 +406,10 @@ def main() -> int:
     check("the fault pin was never made an output",
           (r["dp3"] & (1 << hdr_int("TGT_DBW_SF_PORT_BIT"))) == 0,
           "DP3 = 0x%04X, P3.15 stayed an input" % r["dp3"])
+    check("the run completes: DONE, every nudge delivered, no abort",
+          r["state"] == 2 and r["abort"] == 0 and r["pulses"] >= 1,
+          "hcbState = %d, %d pulse(s), abort 0x%04X"
+          % (r["state"], r["pulses"], r["abort"]))
     check("the run stops on its own after its nudge count",
           r["state"] in (2, 4),
           "hcbState = %d (2 DONE / 4 ABORTED), %d pulse(s), abort 0x%04X"

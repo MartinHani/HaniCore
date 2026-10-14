@@ -268,6 +268,12 @@ def run_all(PT, label):
     r3.rev(skip_at=20)
     r3.rev(skip_at=20)
     r3.rev()          # the second disagreement is judged on the next rev's first tooth
+    # 2026-10-12: a withdrawn position is COUNTED (syncLossCount) only once
+    # the crank has delivered more than a revolution after it - a stall first
+    # is the engine stopping (2026-10-11 overnight, no false P0335 at stop).
+    # The engine here keeps turning: two more revolutions, then it counts.
+    r3.rev()
+    r3.rev()
     check("D two consecutive: a real crank sync loss",
           r3.u16("trg_synclost") >= 1, "syncLossCount %d" % r3.u16("trg_synclost"))
     r3.rev(); r3.rev(); r3.rev()

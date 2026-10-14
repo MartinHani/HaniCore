@@ -599,11 +599,48 @@ def generated_sources_must_be_current() -> None:
     print("  generated sources are current with tools/config_source/")
 
 
+BUILD_ID = None
+
+
+def write_build_id() -> str:
+    """THE IMAGE SAYS WHICH BUILD IT IS (owner, 2026-10-11).
+
+    The ECU's 'V' reply was the same text for every V102 build, so after a
+    flash nothing on the K-line could tell 323FFF9F from 050CC11E - only the
+    flasher's exit code said the write happened. The build id is the first
+    32 bits of a SHA-256 over every compiled input (each search-path .c/.h/
+    .a66 plus the batch and linker files, by relative path and bytes). It is
+    written here, before compiling, to build/hc_build_id.h; hctarget.h
+    includes it and hcts.c appends " build XXXXXXXX" to the version text, a
+    constant in flash (no RAM, no OCH or page change). The manifest records
+    the full text and the id, so the vehicle tool and a post-flash readback
+    compare the ECU's answer with the image that was meant to be there."""
+    global BUILD_ID
+    files = {TARGET_DIR / "build_me711.bat", TARGET_DIR / "linker_me711.lnp"}
+    for pat in ("*.c", "*.h", "*.a66"):
+        files.update(HCP.sources("me711", pat))
+    h = hashlib.sha256()
+    for p in sorted(files, key=lambda q: q.relative_to(ROOT).as_posix()):
+        h.update(p.relative_to(ROOT).as_posix().encode() + b"\0")
+        h.update(p.read_bytes())
+    BUILD_ID = h.hexdigest()[:8].upper()
+    BUILD_DIR.mkdir(exist_ok=True)
+    (BUILD_DIR / "hc_build_id.h").write_text(
+        "/* WRITTEN BY tools/build/build_hanicore_me711.py - do not edit.\n"
+        "   SHA-256 (first 32 bits) over every compiled input. */\n"
+        "#define TGT_BUILD_ID_HEX  \"%s\"\n"
+        "#define TGT_BUILD_SUFFIX  \" build %s\"\n" % (BUILD_ID, BUILD_ID),
+        encoding="ascii")
+    print("  build id %s (source hash) -> the ECU's version text" % BUILD_ID)
+    return BUILD_ID
+
+
 def main() -> int:
     print("=== HaniCore Bosch ME7.1.1 - clean image build ===")
 
     # ---- 0. the generated sources must describe the committed config ----
     generated_sources_must_be_current()
+    write_build_id()
 
     # ---- 1. compile and link -------------------------------------------
     code, out = run(["cmd", "/c", str(TARGET_DIR / "build_me711.bat")],
@@ -1035,7 +1072,9 @@ def main() -> int:
         # they expect from this manifest. So a stale copy here does not just
         # mislabel the build: it teaches the gates to demand the wrong string
         # and fail the correct image. Same class as the .ini drift above.
-        "version_text": _ver,
+        # + " build <id>" since 2026-10-11: what the ECU's 'V' really says
+        "version_text": _ver + (" build %s" % BUILD_ID if BUILD_ID else ""),
+        "build_id": BUILD_ID,
         "signature": re.search(r'#define\s+TGT_SIGNATURE\s+"([^"]*)"',
                                _tgt).group(1),
         "baud": 57600,

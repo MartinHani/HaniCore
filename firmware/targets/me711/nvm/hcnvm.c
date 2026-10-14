@@ -2059,7 +2059,8 @@ static unsigned char live_admit(unsigned int now_ms, unsigned int rpm,
         set_be16(lb, L_HORIZON_US, horizon_us);
     }
 
-    /* No new ASIC transfer is started from an ISR.  An active PEC transfer
+    /* No new ASIC transfer starts once the claim above is held (the 1 ms
+       tick starts them since 2026-10-13).  An active PEC transfer
        may continue stealing its hardware cycles, but neither PEC terminal
        vector may become pending inside the flash-busy interval. */
     /* V51.  THE FLASH BUS AND THE SSC DO NOT SHARE ANYTHING, so the exclusion
@@ -2098,6 +2099,12 @@ static unsigned char live_admit(unsigned int now_ms, unsigned int rpm,
      * that straddled a frame set SSCRE and denied every window after it:
      * V50 programmed all 36 of its words inside 79 ms and was refused 4993
      * times over the next 3.9 s, then died on the deadline. */
+    /* CLAIM FIRST (2026-10-13): the S5500 exchange is started by the 1 ms
+       tick now, so a frame could launch between the in-flight test below
+       and a later claim. Claimed here, asic_start_transfer() refuses any
+       start from this point; a frame that started before it is seen by
+       the test. Every reject below releases the claim. */
+    lb[L_OWNER] = (unsigned char)HCNV_OWNER_NVM;
     sscon = hc_ssc_sscon();
     if (hc_asic_frame_in_flight() != 0u
         || ((sscon & 0x8000u) != 0u && (sscon & 0x1000u) != 0u)) {
@@ -2120,7 +2127,6 @@ static unsigned char live_admit(unsigned int now_ms, unsigned int rpm,
     remaining = (unsigned int)(REC_TOTAL_WORDS - be16(CB, CB_POS));
     set_be16(lb, L_PREDICT_MS,
              (unsigned int)(remaining / 2u)); /* 500 us/word data-sheet max */
-    lb[L_OWNER] = (unsigned char)HCNV_OWNER_NVM;
     lb[L_ADMISSION] = (unsigned char)HCNV_ADMIT_READY;
     lb[L_PAUSE] = 0u;
     set_be16(lb, L_WINDOWS_OK, (unsigned int)(be16(lb, L_WINDOWS_OK) + 1u));
@@ -2133,6 +2139,7 @@ static unsigned char live_admit(unsigned int now_ms, unsigned int rpm,
     return 1u;
 
 reject:
+    lb[L_OWNER] = (unsigned char)HCNV_OWNER_NONE;
     set_be16(lb, L_WINDOWS_NO, (unsigned int)(be16(lb, L_WINDOWS_NO) + 1u));
     return 0u;
 }
@@ -2154,7 +2161,7 @@ static void fl_enter(void)
     unsigned char huge *lb = SRAMB(NVM_LIVE);
     unsigned char ien;
     unsigned int cc7, cc8, cc9, cc15, cc16, cc25, t8, s0r, s0e, ssct, sscr, ssce;
-    unsigned int cc26, s0tb;
+    unsigned int cc26, s0tb, cc27;
     unsigned int pending_before;
     unsigned int pending_after;
     unsigned char pec_in_flight = (unsigned char)(SSCBSY != 0);
@@ -2189,7 +2196,7 @@ static void fl_enter(void)
     IEN = 0;
     cc7 = CC7IC; cc8 = CC8IC; cc9 = CC9IC; cc15 = CC15IC; t8 = T8IC;
     cc16 = CC16IC; cc25 = CC25IC;
-    cc26 = TGT_PLAN_IC; s0tb = S0TBIC;
+    cc26 = TGT_PLAN_IC; s0tb = S0TBIC; cc27 = TGT_ASICX_IC;
     s0r = S0RIC; s0e = S0EIC;
     ssct = SSCTIC; sscr = SSCRIC; ssce = SSCEIC;
     pending_before = (unsigned int)(((cc7 & 0x80u) ? 1u : 0u)
@@ -2205,7 +2212,8 @@ static void fl_enter(void)
                      | ((cc16 & 0x80u) ? 1024u : 0u)
                      | ((cc25 & 0x80u) ? 2048u : 0u)
                      | ((cc26 & 0x80u) ? 4096u : 0u)
-                     | ((s0tb & 0x80u) ? 8192u : 0u));
+                     | ((s0tb & 0x80u) ? 8192u : 0u)
+                     | ((cc27 & 0x80u) ? 16384u : 0u));
     /* clear ONLY xxIE.  xxIR is never written, so a request that becomes
        pending inside the window survives; ILVL/GLVL are never cleared, so they
        never have to be restored.  See the HCNV_IE_* note at the top. */
@@ -2219,15 +2227,18 @@ static void fl_enter(void)
     /* the planner level (CC26, requested by the crank ISR) and
        the reply job (S0TBINT) are flash-backed handlers too. */
     TGT_PLAN_IC &= HCNV_IE_CLR; S0TBIC &= HCNV_IE_CLR;
+    /* the S5500 exchange level (CC27, requested by the tick, 2026-10-13) */
+    TGT_ASICX_IC &= HCNV_IE_CLR;
     /* ASC0 receive/error requests enter the flash-backed first-level vector
        path even where the Bosch boot block owns their final handler. */
     S0RIC &= HCNV_IE_CLR; S0EIC &= HCNV_IE_CLR; SSCEIC &= HCNV_IE_CLR;
     if (!pec_in_flight) { SSCTIC &= HCNV_IE_CLR; SSCRIC &= HCNV_IE_CLR; }
     /* bits 0..4 CC7/8/9/15,T8; 5..7 SSC TX/RX/ERR; 8..9 ASC RX/ERR;
-       10..11 CC16/CC25; 12..13 CC26 planner / S0TB reply job.
+       10..11 CC16/CC25; 12..13 CC26 planner / S0TB reply job; 14 CC27
+       S5500 exchange.
        With PEC in flight only its terminal ordinary vectors remain enabled,
        so TX/RX are intentionally not represented as suppressed. */
-    set_be16(lb, L_MASK, (unsigned int)(0x3F9Fu | (pec_in_flight ? 0u : 0x0060u)));
+    set_be16(lb, L_MASK, (unsigned int)(0x7F9Fu | (pec_in_flight ? 0u : 0x0060u)));
     set_be16(lb, L_PENDING_BEF, pending_before);
 
     /* IEN=1 before the command, through DQ polling, until the RAM writer has
@@ -2286,6 +2297,7 @@ static void fl_enter(void)
     CC16IC |= (cc16 & HCNV_IE_BIT);
     CC25IC |= (cc25 & HCNV_IE_BIT);
     TGT_PLAN_IC |= (cc26 & HCNV_IE_BIT);
+    TGT_ASICX_IC |= (cc27 & HCNV_IE_BIT);
     S0TBIC |= (s0tb & HCNV_IE_BIT);
     T8IC   |= (t8   & HCNV_IE_BIT);
     S0RIC  |= (s0r  & HCNV_IE_BIT);
@@ -2314,7 +2326,8 @@ static void fl_enter(void)
                     | ((CC16IC & 0x80u) ? 1024u : 0u)
                     | ((CC25IC & 0x80u) ? 2048u : 0u)
                     | ((TGT_PLAN_IC & 0x80u) ? 4096u : 0u)
-                    | ((S0TBIC & 0x80u) ? 8192u : 0u));
+                    | ((S0TBIC & 0x80u) ? 8192u : 0u)
+                    | ((TGT_ASICX_IC & 0x80u) ? 16384u : 0u));
     set_be16(lb, L_PENDING_AFT, pending_after);
     set_be16(lb, L_WRITER_ENT, (unsigned int)(be16(lb, L_WRITER_ENT) + 1u));
     if (SRAMB(NVM_CB)[CB_RESULT] == (unsigned char)HCNV_ERR_NONE) {

@@ -57,7 +57,12 @@
 #endif
 
 static const char SIGNATURE[]      = TGT_SIGNATURE;
-static const char VERSIONTXT[]     = TGT_VERSIONTXT;
+/* + the target's build id (" build XXXXXXXX", a flash constant) when it
+   defines one: the 'V' reply names the exact image (2026-10-11). */
+#ifndef TGT_BUILD_SUFFIX
+#define TGT_BUILD_SUFFIX ""
+#endif
+static const char VERSIONTXT[]     = TGT_VERSIONTXT TGT_BUILD_SUFFIX;
 /* rusEFI's TS_PROTOCOL. TunerStudio uses the F reply to pick the ini. */
 static const char TS_PROTOCOL_TXT[] = "001";
 
@@ -214,8 +219,13 @@ unsigned char hcts_rx_pop(unsigned char *b)
         return 0;
     }
 #ifdef TGT_RX_PEC
+    /* A byte after >= 20 ms of line silence starts a new frame. Only a
+       frame left HALF-received is an abandonment worth counting: until
+       2026-10-11 every request after a pause counted, and the car's
+       rxResync (2 -> 13 in a run) measured the host's pauses. */
     if (HC_PECRX_GAP == (unsigned char)(hc_rx_tail | 128u)) {
-        HC_PECRX_GAP = 0u; ts_st = 0u; ts_i = 0u; rx_resync++;
+        HC_PECRX_GAP = 0u;
+        if (ts_st != 0u) { ts_st = 0u; ts_i = 0u; rx_resync++; }
     }
 #endif
     *b = hc_rx_ring[hc_rx_tail];
@@ -1338,12 +1348,6 @@ void hcts_poll(void)
     unsigned char b;
     unsigned int w;
 
-#ifdef TGT_S0BG_ALT
-    if (link_hold != 0u
-        && (unsigned int)(T7 - rx_idle) > (unsigned int)US_TO_TICKS(LINK_QUIET_US)) {
-        link_hold = 0u;     /* the burst is over */
-    }
-#endif
     /* The error flags are sticky, so one look per pass cannot miss one. Clear
        only the three error bits and write the rest of S0CON back unchanged. */
     w = S0CON;
@@ -1443,6 +1447,23 @@ void hcts_poll(void)
         }
     }
 
+#ifdef TGT_S0BG_ALT
+    /* THE BURST IS OVER ONLY AFTER ITS BYTES HAVE BEEN TAKEN (2026-10-14).
+       The quiet test ran at the TOP of this function until now: rx_idle
+       dates from the last byte POPPED, and the tick moves received bytes
+       into the ring between passes - so after a main-loop pass longer than
+       LINK_QUIET_US (2 ms; ~9 ms under engine load) the hold was released
+       with the rest of the SAME request already waiting in the ring, and
+       that rest counted as fresh evidence. One bad request then counted
+       twice (a locked link moved after two, not LINK_BAD_LOCKED), and the
+       tail of a burst that had just switched the rate counted at the new
+       rate (the hunt lapped). me711_link_rate_proof B, red since PEC6. */
+    if (link_hold != 0u
+        && (unsigned int)(T7 - rx_idle) > (unsigned int)US_TO_TICKS(LINK_QUIET_US)) {
+        link_hold = 0u;     /* the burst is over */
+    }
+#endif
+
     /* A HELD REPLY MUST LEAVE THE RING EMPTY, AND THIS IS THE DEFECT THAT
      * COST THE TUNERSTUDIO SESSION.
      *
@@ -1506,14 +1527,32 @@ void hcts_service(void)
     if (deferred_response != 0u) {
         return;
     }
+    /* SHARED-BUS DISCIPLINE (2026-10-13, docs/firmware/design/
+       ME711_OBD_KLINE.md section 6.1). On the car's K-line the cluster and
+       the tester share the wire, and a byte of their traffic decoded at our
+       rate can read as 'S'/'Q'/'C'/'T'/'F' or as a frame with a bad CRC. The
+       OEM never transmits unless properly addressed, so neither do we: a
+       plain command and an error reply are answered only on a LOCKED link -
+       one a CRC-valid request has proven. A CRC-valid request is always
+       answered (it cannot come from noise), so TunerStudio, the plugin and
+       the tools - which all send enveloped requests - connect as before.
+       The rate hunt stays: it never transmits, and both K-line entries
+       (5-baud, fast init) read the pin and force 10400 themselves. */
+#if defined(TGT_KLINE_SHARED_BUS) && defined(TGT_S0BG_ALT)
+#define HCTS_MAY_ANSWER_NOISE() (hc_link_locked != 0u)
+#else
+#define HCTS_MAY_ANSWER_NOISE() 1
+#endif
     if (ts_pending == 2) {
-        handle_plain(ts_plain_cmd);
+        if (HCTS_MAY_ANSWER_NOISE()) {
+            handle_plain(ts_plain_cmd);
+        }
         ts_pending = 0;
         return;
     }
     if (hcts_crc32(rxb, ts_len) != ts_got) {
 #ifdef TGT_S0BG_ALT
-        if (!link_bad_seen())
+        if (!link_bad_seen() && HCTS_MAY_ANSWER_NOISE())
 #endif
         {
             hcts_send_response(TS_BAD_CRC, no_data, 0);

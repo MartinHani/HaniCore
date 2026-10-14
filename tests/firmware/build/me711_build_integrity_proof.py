@@ -190,8 +190,14 @@ def main() -> int:
 
     # ---------- 2. a stale generated output FAILS THE BUILD HARD -----------
     try:
-        PRESETS_GEN.write_bytes(
-            gen_before.replace(b"/* syncMode */", b"/* syncMOD3 */", 1))
+        # 2026-10-12: THE MUTATION MUST APPLY. Since the presets became byte
+        # runs the generated text reads "} syncMode */", the old
+        # b"/* syncMode */" matched nothing, the "stale" file was the current
+        # one and this vector passed nothing to the build (it PROCEEDED).
+        stale = gen_before.replace(b"} syncMode */", b"} syncMOD3 */", 1)
+        check("the stale-source mutation applies", stale != gen_before,
+              "one generated comment changed, nothing else")
+        PRESETS_GEN.write_bytes(stale)
         code, out = build()
         check("a stale generated source FAILS the build", code != 0,
               "build exit %d, %s"

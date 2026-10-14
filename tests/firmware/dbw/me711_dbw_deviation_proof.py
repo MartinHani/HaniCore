@@ -21,8 +21,11 @@ CASES (the AWT page values: 15 %, 200 ms)
   D2  a SLUGGISH bridge (45 % of the commanded torque - the car's AutoCal
       showed a weak drive) travelling steadily toward 65 %: V99 no fault
       and the plate arrives; V98r2 latches DBW_F_DEV (the reproduction).
-  D3  a STUCK plate: the error does not shrink - V99 still latches DBW_F_DEV
-      within dbwDevMs (+ one 10 ms step).
+  D3  a STUCK plate (2026-10-12: the Bosch DLR setting-range monitor,
+      hcetbcal.c, replaced the V99 window on ME7.1.1): the output sits at its
+      limit, DBW_F_DEV latches after DLRPID2T = 5 s and NOT within the old
+      200 ms. The 0.6 s limp request and the restart are
+      me711_dbw_dlr_monitor_proof's.
 NOT PHYSICALLY VERIFIED: the AWT body's real step response is the car's.
 """
 from __future__ import annotations
@@ -70,6 +73,10 @@ def commissioned(strength=1.0):
         b.step()                          # let the hand-off become ACTIVE
     b.r("hc_cal_set_u16", T.d(T._cfg, "CAL_DBW_DEV_X10"), 150)
     b.r("hc_cal_set_u16", T.d(T._cfg, "CAL_DBW_DEV_MS"), 200)
+    # THE ENGINE'S BATTERY VALUE (the main loop writes it on the ECU; this
+    # bench has no main loop): below 6.5 V the DLR monitor is suspended, and
+    # at 0 every case here would pass vacuously.
+    b.r.m.w16(T.sym("eng_batt_dv") & 0xFFFF, b.batt_dv)
     b.k = strength
     return b
 
@@ -109,9 +116,9 @@ def main() -> int:
           % (t, act // 10, act % 10))
 
     b = commissioned(1.0)
-    t, act = step_test(b, 100, 650, 1000, stuck_after=0)
-    check("D3 stuck plate: DBW_F_DEV still latches within 200 + 10 ms",
-          t is not None and t <= 215,
+    t, act = step_test(b, 100, 650, 5400, stuck_after=0)
+    check("D3 stuck plate: DBW_F_DEV latches at the Bosch 5 s, not before 4.9 s",
+          t is not None and 4900 <= t <= 5200,
           "fault at %s ms, actual %d.%d %%" % (t, act // 10, act % 10))
     print("\n%d checks, %d failed" % (CHECKS, FAILS))
     return 1 if FAILS else 0

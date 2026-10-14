@@ -78,18 +78,32 @@ def main() -> int:
     if err2 is not None:
         print(f"  [FAIL] second boot (for F/Q) runs without a trap {err2}")
         ok = False
+    # 2026-10-14 (docs/ARCHITECTURE.md.1): on the car's
+    # shared K-line a plain byte may be someone else's traffic, so a plain
+    # F/Q is answered only once a CRC-valid request has LOCKED the link.
+    h2.txb.clear()
+    f0, _ = h2.send_raw(b"F", steps=400000)
+    unl_ok = f0 == b""
+    print(f"  [{'PASS' if unl_ok else 'FAIL'}] a plain F on an UNLOCKED line is not answered"
+          f"{'':<6}{f0!r}")
+    ok = ok and unl_ok
+    sig, errS = h2.send(b"S")
+    lock_ok = errS is None and b"HaniCore" in sig
+    print(f"  [{'PASS' if lock_ok else 'FAIL'}] a CRC-valid 'S' is answered (locks the link)"
+          f"{'':<5}{sig[:24]!r}")
+    ok = ok and lock_ok
     h2.txb.clear()
     f_reply, errF = h2.send_raw(b"F", steps=400000)
     h2.txb.clear()
     q_reply, errQ = h2.send_raw(b"Q", steps=400000)
 
     f_ok = f_reply == b"001" and errF is None
-    print(f"  [{'PASS' if f_ok else 'FAIL'}] F still answers \"001\""
+    print(f"  [{'PASS' if f_ok else 'FAIL'}] F still answers \"001\" on the locked link"
           f"{'':<28}{f_reply!r}")
     ok = ok and f_ok
 
     q_ok = q_reply.rstrip(b"\x00") != b"" and errQ is None and q_reply.endswith(b"\x00")
-    print(f"  [{'PASS' if q_ok else 'FAIL'}] Q still answers the signature"
+    print(f"  [{'PASS' if q_ok else 'FAIL'}] Q still answers the signature (locked)"
           f"{'':<11}{q_reply!r}")
     ok = ok and q_ok
 
