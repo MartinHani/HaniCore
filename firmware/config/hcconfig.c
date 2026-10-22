@@ -259,7 +259,7 @@ unsigned int hc_cfg_faults(void)
  * late timing and a rich mixture are slow, not expensive.
  *
  * Nothing here is claimed to be a Bosch calibration. The shapes come from
- * docs/ARCHITECTURE.md; the numbers are ordinary engine practice.
+ * the maintainer's design notes; the numbers are ordinary engine practice.
  */
 #ifdef TGT_DEADLINE_EXECUTOR
 void HC_COLD hc_cal_defaults711(void);
@@ -956,6 +956,22 @@ unsigned int hc_rst_get(unsigned int off)
     return rst_u16(off);
 }
 
+/* ENTRY: each word of the last run and the word it is frozen into (2026-10-15:
+   a table instead of fifteen copies and fifteen clears - 0.4 KiB of near
+   code; the same writes in the same order). Row 0, the stage, is not
+   cleared: the caller's stage overwrites it. */
+#define RST_KEEP_N 15u
+static const unsigned int rst_keep[RST_KEEP_N][2] = {
+    {RST_PREV_STAGE, RST_STAGE}, {RST_PREV_MS, RST_MS},
+    {RST_PREV_LOOP, RST_LOOP}, {RST_PREV_FIRSTVEC, RST_FIRSTVEC},
+    {RST_PREV_LASTVEC, RST_LASTVEC}, {RST_PREV_TRAP, RST_TRAP},
+    {RST_PREV_TGT0, RST_TGT0}, {RST_PREV_TGT1, RST_TGT1},
+    {RST_PREV_TGT2, RST_TGT2}, {RST_PREV_WDT_COUNT, RST_WDT_COUNT},
+    {RST_PREV_MARKER, RST_MARKER}, {RST_PREV_TGT3, RST_TGT3},
+    {RST_PREV_TGT4, RST_TGT4}, {RST_PREV_TRAP_MS, RST_TRAP_MS},
+    {RST_PREV_COND, RST_COND},
+};
+
 void hc_rst_stage(unsigned int stage)
 {
     /* No hc_ram_bad guard: the very first stage is recorded BEFORE the SRAM
@@ -966,6 +982,7 @@ void hc_rst_stage(unsigned int stage)
     if (stage == RST_ST_ENTRY) {
         unsigned long magic = ((unsigned long)rst_u16(0) << 16) | rst_u16(2u);
         unsigned int off;
+        unsigned char i;
 
         if (magic != RST_MAGIC_VAL) {
             /* First ever boot on this ECU, or the battery was disconnected. */
@@ -990,38 +1007,16 @@ void hc_rst_stage(unsigned int stage)
             rst_set_u16(RST_LAYOUT, RST_LAYOUT_CUR);
         } else {
             /* Freeze the last run before ENTRY starts overwriting it. */
-            rst_set_u16(RST_PREV_STAGE, rst_u16(RST_STAGE));
-            rst_set_u16(RST_PREV_MS, rst_u16(RST_MS));
-            rst_set_u16(RST_PREV_LOOP, rst_u16(RST_LOOP));
-            rst_set_u16(RST_PREV_FIRSTVEC, rst_u16(RST_FIRSTVEC));
-            rst_set_u16(RST_PREV_LASTVEC, rst_u16(RST_LASTVEC));
-            rst_set_u16(RST_PREV_TRAP, rst_u16(RST_TRAP));
-            rst_set_u16(RST_PREV_TGT0, rst_u16(RST_TGT0));
-            rst_set_u16(RST_PREV_TGT1, rst_u16(RST_TGT1));
-            rst_set_u16(RST_PREV_TGT2, rst_u16(RST_TGT2));
-            rst_set_u16(RST_PREV_WDT_COUNT, rst_u16(RST_WDT_COUNT));
-            rst_set_u16(RST_PREV_MARKER, rst_u16(RST_MARKER));
-            rst_set_u16(RST_PREV_TGT3, rst_u16(RST_TGT3));
-            rst_set_u16(RST_PREV_TGT4, rst_u16(RST_TGT4));
-            rst_set_u16(RST_PREV_TRAP_MS, rst_u16(RST_TRAP_MS));
-            rst_set_u16(RST_PREV_COND, rst_u16(RST_COND));
+            for (i = 0u; i < RST_KEEP_N; i++) {
+                rst_set_u16(rst_keep[i][0], rst_u16(rst_keep[i][1]));
+            }
         }
         rst_set_u16(RST_BOOTS, (unsigned int)(rst_u16(RST_BOOTS) + 1u));
         rst_set_u16(RST_RESET_RAW, 0xFFFFu);
-        rst_set_u16(RST_MS, 0u);
-        rst_set_u16(RST_LOOP, 0u);
-        rst_set_u16(RST_FIRSTVEC, 0u);
-        rst_set_u16(RST_LASTVEC, 0u);
-        rst_set_u16(RST_TRAP, 0u);
-        rst_set_u16(RST_TGT0, 0u);
-        rst_set_u16(RST_TGT1, 0u);
-        rst_set_u16(RST_TGT2, 0u);
-        rst_set_u16(RST_WDT_COUNT, 0u);
-        rst_set_u16(RST_MARKER, 0u);
-        rst_set_u16(RST_TGT3, 0u);
-        rst_set_u16(RST_TGT4, 0u);
-        rst_set_u16(RST_TRAP_MS, 0u);
-        rst_set_u16(RST_COND, 0u);
+        /* this run's words start at zero (all but the stage, set below) */
+        for (i = 1u; i < RST_KEEP_N; i++) {
+            rst_set_u16(rst_keep[i][1], 0u);
+        }
     }
 
     rst_set_u16(RST_STAGE, stage);

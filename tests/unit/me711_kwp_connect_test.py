@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 r"""
 me711_kwp_connect_test.py - tools/vehicle/me711_kwp_connect.py against a FAKE ECU,
-offline (no port, no bench). The fake follows docs/ARCHITECTURE.md:
+offline (no port, no bench). The fake follows the maintainer's design notes:
 it decodes the 5-baud byte from the tool's BREAK timing, echoes every byte the
 tool writes (a KKL does), answers the handshake, StartCommunication,
 IDENTIFY and GOFAST, and a TunerStudio 'V' only at the negotiated rate.

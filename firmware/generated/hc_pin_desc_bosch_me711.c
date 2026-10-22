@@ -17,7 +17,7 @@
 const unsigned int hc_pin_target_id = 0x02F9u;
 const char hc_pin_target_name[] = "BOSCH_ME711";
 
-const hc_pin_desc_t hc_pin_table[HC_PHYSICAL_PIN_COUNT] = {
+const hc_pin_desc_t HC_PIN_MEM hc_pin_table[HC_PHYSICAL_PIN_COUNT] = {
     { 0x8000u, 0x8000u, 0u, 0xFFu }, /*   1 EL_MA */
     { 0x8000u, 0x8000u, 0u, 0xFFu }, /*   2 EL_MA */
     { 0x8000u, 0x8000u, 0u, 0xFFu }, /*   3 U_U_UBR */

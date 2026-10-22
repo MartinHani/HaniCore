@@ -136,7 +136,7 @@ def main() -> int:
     for slot in sorted(set(dead) & set(KNOWN_DEAD)):
         knob = KNOWN_DEAD[slot]
         in_ux = ('F("%s"' % knob) in ux
-        in_ini = bool(re.search(r"^\s*field\s*=.*%s" % re.escape(knob),
+        in_ini = bool(re.search(r"^\s*field\s*=.*\b%s\b" % re.escape(knob),
                                 ini, re.M))
         check("%s is NOT a settable field" % slot,
               not in_ux and not in_ini,

@@ -8,7 +8,7 @@
  * never wait behind it.
  *
  * The sensor model is Bosch Motorsport's, from the MS 4 Sport function sheet
- * (docs/ARCHITECTURE.md). Every analog input carries the same five
+ * (the maintainer's design notes). Every analog input carries the same five
  * things, and the last two are the ones this project did not have:
  *
  *     x_u    the raw voltage, so a wiring fault is visible
@@ -33,7 +33,7 @@
  * named fallback: warm-up 100 %, cranking fuel 20 C, air density 0 C,
  * timing corrections 0, wall film 90 C, DFCO and closed loop inhibited,
  * fuel pressure = the MAP estimate table (hcengctl711.c, hcengine.c
- * runtime_tail, hctrans711.c, hcboost711.c). docs/ARCHITECTURE.md.
+ * runtime_tail, hctrans711.c, hcboost711.c). the maintainer's design notes.
  */
 #ifndef HCENGINE_H
 #define HCENGINE_H

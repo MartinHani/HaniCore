@@ -10,7 +10,7 @@
  * the image in the C167 simulator against a modelled S5500 that implements the
  * semantics this file reproduces - 300+ process cycles, zero MAIN SRST, the
  * FR +3 / -1 counter law, the 40 ms question raster. See
- * docs/ARCHITECTURE.md/5c.
+ * the maintainer's design notes/5c.
  *
  * The mechanism (frame word 1, one byte, both directions):
  *

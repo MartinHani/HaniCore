@@ -152,7 +152,7 @@ def sym(name):
 
 
 # V17 is a frozen archived image, so its addresses are constants (they match
-# tests/history/me711_scheduler_decision_proof.py and the V17 bench card). The
+# the V17 bench card). The
 # current image's addresses come
 # from the live linker map.
 ENTRY_V17, TICK_V17 = 0x8E669E, 0x00FA86

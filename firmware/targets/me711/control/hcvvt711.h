@@ -4,7 +4,7 @@
  * (hccam_bank[b].sync_dev_x10), a target table per cam, and the MAIN CPU's
  * own PWM units POUT0 -> cavity 115 / POUT1 -> cavity 120 (the ME7.1.1 schematic p1:
  * KNWS1_P70 / KNWS2_P71 -> CJ920 low sides with freewheel diodes; the OEM
- * key-on PWM init [BIN 0x8C0D78] 250 Hz). docs/ARCHITECTURE.md.
+ * key-on PWM init [BIN 0x8C0D78] 250 Hz). the maintainer's design notes.
  *
  * State in external SRAM (TGT_RAM_VVT): the far XRAM is full. The trigger
  * (hctrig_me711.c) counts the identified tooth-0 edges into syncs[] - the
@@ -44,5 +44,7 @@ void far hc_vvt_init(void);
 void far hc_vvt_service(unsigned int now_ms);
 /* the latched fault of cam b (hcdtc711.c) */
 unsigned char far hc_vvt_fault(unsigned char b);
+/* '!D' (2026-10-15): both phasers re-armed, as at an engine stop */
+void far hc_vvt_clear_faults(void);
 
 #endif

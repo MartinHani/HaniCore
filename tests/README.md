@@ -22,5 +22,4 @@ py tests\run_gates.py --list -k <text>
 | `fixtures/` | recorded data the tests read |
 
 `catalog.py` adds the fast and Tier 1 sets, tags, time budgets and
-level-condition skips. Results and known red gates:
-[../docs/TESTING.md](../docs/TESTING.md).
+level-condition skips.

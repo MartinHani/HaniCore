@@ -268,6 +268,51 @@ public final class AutoConnectTests {
             for (int i = 0; i < 50; i++) live |= w.beforeWrite(30000 + i * 100);
             check(!live, "watch: a session that answers is never touched");
         }
+        /* ---------- a request lost on the shared line (ReplyWatch) ---------- */
+        {
+            byte[] och = HcProtocol.tsRequest(new byte[]{'O', 0, 0, 0, 88});
+            ReplyWatch w = new ReplyWatch(300, 2);
+            w.wrote(och, 0, och.length, 1000);
+            check(w.due(1299) == null, "reply: not before 300 ms");
+            byte[] again = w.due(1300);
+            check(again != null && java.util.Arrays.equals(again, och),
+                    "reply: no byte in 300 ms -> the same request again");
+            check(w.due(1450) == null, "reply: the next one 300 ms after the last");
+            check(w.due(1600) != null, "reply: a second time");
+            check(w.due(5000) == null && w.due(9000) == null,
+                    "reply: twice at most - then TunerStudio's timeout decides");
+            check(w.resent() == 2, "reply: counted");
+
+            w.wrote(och, 0, och.length, 10000);
+            w.received();
+            check(w.due(20000) == null, "reply: a request that got any byte is never repeated");
+
+            /* written in pieces (TunerStudio's single-byte writes) */
+            w.wrote(och, 0, 3, 30000);
+            check(w.due(31000) == null, "reply: an incomplete request is not armed");
+            w.wrote(och, 3, och.length - 3, 31000);
+            check(w.due(31300) != null, "reply: ... assembled from pieces, armed");
+
+            byte[][] never = {
+                HcProtocol.tsRequest(new byte[]{'B', 0, 0}),        /* Burn: deferred reply */
+                HcProtocol.tsRequest(new byte[]{'!', 'E'}),         /* an action */
+                HcProtocol.tsRequest(new byte[]{'l', 3}),           /* logger read frees the buffer */
+            };
+            boolean any = false;
+            for (byte[] f : never) {
+                w.wrote(f, 0, f.length, 40000);
+                any |= w.due(50000) != null;
+            }
+            check(!any, "reply: never a Burn, a '!' action or a logger read");
+            byte[] wr = HcProtocol.tsRequest(new byte[]{'W', 0, 10, 42});
+            w.wrote(wr, 0, wr.length, 60000);
+            check(w.due(60300) != null, "reply: a value write is (same bytes, same offset)");
+            byte[] junk = {(byte) 0x00, 0x01};
+            w.wrote(junk, 0, 2, 70000);
+            w.wrote(new byte[]{'S', 1, 2, 3, 4, 5, 6}, 0, 7, 70000);     /* longer than its length */
+            check(w.due(71000) == null, "reply: bytes that overrun their own length are not a request");
+        }
+
         /* TunerStudio's session on a GATED line: the ECU power-cycles, the
            session goes silent while TunerStudio polls, the watch fires and the
            engine re-enters on the SAME port; the polls are answered again. */

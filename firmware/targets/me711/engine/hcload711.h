@@ -16,7 +16,7 @@ typedef struct {
 #define HC_LOAD_IAT_FALLBACK 8u
 #define HC_LOAD_TASK_GAP 16u
 void HC_COLD hc_load_init(void);
-void HC_COLD hc_load_select(unsigned int rpm, unsigned int tps);
+void HC_COLD hc_load_select(unsigned int tps);
 void HC_COLD hc_load_protect(unsigned int rpm, unsigned int target_lambda);
 /* Decision core: production calls only with hc_io_lambda_protection().
    Linked tests inject eligibility here; no command exposes this helper. */

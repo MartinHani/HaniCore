@@ -94,7 +94,7 @@ void hc_drysched_test_advance(unsigned int a, unsigned int s, unsigned int d)
  *
  * ponytail: per-kind WORST CASE and per-kind OVER-ONE-TOOTH COUNT, not a
  * histogram. NCODE is a single 64512-byte CGROUP with no room left
- * (linker_me711.lnp, docs/ARCHITECTURE.md) and a six-bucket
+ * (linker_me711.lnp, the maintainer's design notes) and a six-bucket
  * histogram's edge table and inner loop did not fit. These two numbers per
  * kind answer "was a spark late, and how late at worst" with three compares
  * and two increments. The full distribution belongs with the hardware-compare
@@ -108,7 +108,7 @@ void hc_drysched_test_advance(unsigned int a, unsigned int s, unsigned int d)
    nothing more. The accounting needs ~60 bytes of NCODE and the image has
    14 (measured 2026-10-03: a single extra hcts_target_yield() in
    hcmain_me711.c already puts ?PR?HCASICDUMP outside the class). It lands
-   with the code-space step in docs/ARCHITECTURE.md, or with the
+   with the code-space step in the maintainer's design notes, or with the
    hardware-compare executor the project rules name as the next step - after
    which the aggregate counters may well be enough. Adding dead arrays that
    always read 0 would put a counter in the logs that means nothing, which
@@ -813,7 +813,7 @@ static void geometry_refresh(void)
        hot path can use a cursor. */
     /* A PAIR IS TWO CYLINDERS 360 DEGREES APART IN THE FIRING ORDER,
        not cylinder index i and i + n/2 - that pairs 1/3 and 2/4 on a 1-3-4-2
-       engine, whose TDCs are 180 apart (docs/ARCHITECTURE.md). The pair
+       engine, whose TDCs are 180 apart (the maintainer's design notes). The pair
        drives the output of its cylinder EARLIER in the firing order, as
        rusEFI's getIgnitionPinForIndex() does (1/4 on cylinder 1's output,
        3/2 on cylinder 3's). */
@@ -1576,8 +1576,8 @@ void hc_drysched_overdwell_service(unsigned int now)
     /* the limit and its hysteresis come from hcengctl711.c (the pit
        limiter lowers the limit, revLimitHyst sets the drop), and revlimMode
        chooses what is cut - rusEFI cutFuelOnHardLimit / cutSparkOnHardLimit:
-       0 spark, 1 fuel, 2 both; a spark cut skips revlimPattern of every 8
-       sparks (8 = all). */
+       0 spark, 1 fuel, 2 both; a spark cut skips every spark (rusEFI's
+       hard limit; the revlimPattern byte is retired). */
     {
         unsigned int lim = dry_rev_limit;
         unsigned char mode = hc_cal_u8(CAL_REVLIM_MODE);
@@ -1598,17 +1598,18 @@ void hc_drysched_overdwell_service(unsigned int now)
 }
 
 /* ONE DECISION PER SPARK - skip it or not - from a 16-bit LFSR
-   (rusEFI SoftSparkLimiter draws a random number the same way). The rev
-   limiter's spark cut skips revlimPattern of every 8 (8 = every spark). */
+   (rusEFI SoftSparkLimiter draws a random number the same way) for the
+   motorsport cut ratios. THE REV LIMITER'S SPARK CUT SKIPS EVERY SPARK
+   (2026-10-14, rusEFI LimpManager: above the hard limit allowIgnition is
+   false). The "n of every 8" pattern is retired: a partial cut could not
+   hold a limit at full throttle (car: 5970 rpm through a 4000 limit at 2 of
+   8) and the owner found it not understandable. */
 static unsigned char spark_skip(void)
 {
     unsigned char r = dry_skip_ratio;
 
     if (dry_rev_spark_cut) {
-        unsigned char p = hc_cal_u8(CAL_REVLIM_PATTERN);
-        unsigned char q = (unsigned char)((p >= 8u) ? 255u
-                                          : (unsigned char)(p << 5));
-        if (q > r) r = q;
+        return 1u;
     }
     if (r == 0u) {
         return 0u;

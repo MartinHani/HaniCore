@@ -131,6 +131,9 @@ if errorlevel 1 goto :fail
 if errorlevel 1 goto :fail
 "%KEIL_BIN%\C166.EXE" control\hcidle711.c MOD167 MEDIUM DEFINE(HC_FAR_BRIDGE) RENAMECLASS(NDATA0=XNDATA0) OBJECT(build\hcidle711.obj) PRINT(build\hcidle711.lst) INCDIR(%INC%)
 if errorlevel 1 goto :fail
+rem 2026-10-14: fan, A/C, programmable outputs, oil pressure - FAR code
+"%KEIL_BIN%\C166.EXE" control\hcaux711.c MOD167 MEDIUM DEFINE(HC_FAR_BRIDGE) RENAMECLASS(NDATA0=XNDATA0) OBJECT(build\hcaux711.obj) PRINT(build\hcaux711.lst) INCDIR(%INC%)
+if errorlevel 1 goto :fail
 rem V97: ignition timing corrections (coolant, intake air) - FAR code
 "%KEIL_BIN%\C166.EXE" engine\hcigncorr711.c MOD167 MEDIUM DEFINE(HC_FAR_BRIDGE) RENAMECLASS(NDATA0=XNDATA0) OBJECT(build\hcigncorr711.obj) PRINT(build\hcigncorr711.lst) INCDIR(%INC%)
 if errorlevel 1 goto :fail
@@ -234,7 +237,7 @@ rem about it on every single link.
 rem
 rem ACCEPTING WARNINGS HERE WOULD GO ON TO ACCEPT "L5 SECTION LOCATED OUTSIDE
 rem CLASS AREA", which is the one tripwire that tells this project its code
-rem class just overflowed - docs/ARCHITECTURE.md is about the
+rem class just overflowed - the maintainer's design notes is about the
 rem three releases where that number was wrong. So the allowlist is NOT here:
 rem tools/build_hanicore_me711.py re-reads this output and refuses any warning
 rem that is not exactly the L14 naming HCVEC_ME711.

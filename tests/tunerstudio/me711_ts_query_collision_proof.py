@@ -124,9 +124,14 @@ def main() -> int:
     err = h.run(BOOT_STEPS)
     check("boot completes without a trap", err is None, err or "")
 
+    # 2026-10-14 (shared OBD K-line, the maintainer's design notes
+    # section 9): the ECU is SILENT until a link is locked, so a bare 'F' on a
+    # fresh line gets no answer (bench N1 proves it physically); TunerStudio
+    # goes on to its enveloped query, which locks, and 'F' answers from then.
     h.txb.clear()
     tx, err = h.send_raw(b"F", steps=400000)
-    check("real trace: F -> \"001\"", tx == b"001", repr(tx))
+    check("unlocked line: bare F stays silent (shared-bus rule)", tx == b"",
+          repr(tx))
 
     h.txb.clear()
     req = envelope(b"Q")
@@ -140,6 +145,10 @@ def main() -> int:
     check("the reply carries NO trailing NUL (matches ME7.5's own 'S' reply "
           "shape - not a bug)", ok and not parsed[2].endswith(b"\x00"),
           repr(parsed[2]) if parsed else "")
+    h.txb.clear()
+    tx, err = h.send_raw(b"F", steps=400000)
+    check("real trace: F -> \"001\" once the link is locked", tx == b"001",
+          repr(tx))
 
     # ---- Part 2: the .ini itself no longer collides ------------------------
     print("\n--- part 2: the generated .ini's queryCommand ---")
@@ -165,13 +174,18 @@ def main() -> int:
 
     h2.txb.clear()
     tx, _ = h2.send_raw(b"F", steps=400000)
-    check("F -> \"001\"", tx == b"001", repr(tx))
+    check("unlocked line: bare F stays silent", tx == b"", repr(tx))
 
     h2.txb.clear()
     tx, _ = h2.send_raw(envelope(b"S"), steps=400000)
     p = parse_reply(tx)
     ok = p is not None and p[1] == 0 and p[2] == want_sig and p[3]
     check("enveloped 'S' -> TS_OK + exact signature, CRC valid", ok, repr(tx))
+
+    h2.txb.clear()
+    tx, _ = h2.send_raw(b"F", steps=400000)
+    check("F -> \"001\" after the enveloped 'S' locked the link",
+          tx == b"001", repr(tx))
 
     h2.txb.clear()
     tx, _ = h2.send_raw(envelope(b"V"), steps=400000)

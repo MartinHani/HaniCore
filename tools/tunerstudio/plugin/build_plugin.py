@@ -6,7 +6,8 @@
 1. tests/unit/test_plugin_auto.py (the engine against the firmware KWP core, and
    its negative control) must pass;
 2. TsCompatCheck: every TunerStudio internal the plugin reflects on exists in
-   the installed TunerStudioMS.jar;
+   the installed TunerStudioMS.jar; after compiling, EchoTransportTest runs
+   the real echo transport on a modelled lossy K-line (2.2.0 fails it);
 3. javac --release 8 (TunerStudio 3.3.01 runs its bundled Java 8) against
    TunerStudioPluginAPI.jar and lib/jssc.jar;
 4. tools/tunerstudio/plugin/dist/HaniCore_KLine_Transport_<version>.jar:
@@ -87,6 +88,17 @@ def main() -> int:
     subprocess.run([javac, "--release", "8", "-Xlint:-options", "-d",
                     str(out / "classes"), "-cp",
                     sep.join([str(api), str(jssc), str(tsjar)])] + srcs, check=True)
+
+    # 3b. the REAL echo transport on a lossy K-line (a lost request is sent
+    #     again, a corrupted echo dropped, a Burn never repeated)
+    (out / "test").mkdir()
+    cp = sep.join([str(out / "classes"), str(api), str(jssc), str(tsjar)])
+    subprocess.run([javac, "--release", "8", "-Xlint:-options", "-d",
+                    str(out / "test"), "-cp", cp,
+                    str(TST / "EchoTransportTest.java")], check=True)
+    if not a.skip_tests:
+        subprocess.run([java, "-cp", sep.join([cp, str(out / "test")]),
+                        "com.hanicore.tunerstudio.EchoTransportTest"], check=True)
 
     # 4. jar
     DIST.mkdir(exist_ok=True)

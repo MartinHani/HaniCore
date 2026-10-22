@@ -59,6 +59,7 @@ unsigned char HC_COLD hc_cfg_page_known(void);
 unsigned char HC_COLD hc_cfg_identity_known(unsigned int layout_hi, unsigned int layout_lo, unsigned int schema);
 unsigned char HC_COLD hc_cfg_migrate_v101(void);
 void HC_COLD hc_cfg_v102_defaults(void);
+void HC_COLD hc_cfg_aux_defaults(void);      /* 2026-10-14, hcaux711.c */
 
 /* Copy ACTIVE into DESIRED and clear every pending state. Call once, after
    hc_cfg_init() has decided where ACTIVE came from. */

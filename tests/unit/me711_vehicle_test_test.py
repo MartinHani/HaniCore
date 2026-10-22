@@ -87,12 +87,14 @@ class FakeEcu:
     """One fake ECU behind one fake KKL. `mode`: 'ok' (answers), 'dead'
     (echo only), 'kwp' (needs the 5-baud entry first), and KWP faults."""
 
-    def __init__(self, mode="ok", kwp_fault=None, crc_every=0):
+    def __init__(self, mode="ok", kwp_fault=None, crc_every=0,
+                 bad_rates=()):
         ini = VC.Ini(INI)
         self.ini = ini
         self.block = ini.block
         self.mode = mode
         self.kwp_fault = kwp_fault
+        self.bad_rates = bad_rates   # GOFAST rates the "cluster" cannot carry
         self.crc_every = crc_every
         self.n_reply = 0
         self.baud = 115200
@@ -215,6 +217,8 @@ class FakeEcu:
             if self.kwp_fault != "after":
                 self.ecu_rate = {1: 10400, 2: 57600, 3: 124800,
                                  4: 115200}[svc[1]]
+                if self.ecu_rate in self.bad_rates:
+                    self.ecu_rate = 10400   # its probation fallback
             else:
                 self.ecu_rate = 1        # never answers again
             self.kwp_stage = 0
@@ -721,10 +725,13 @@ def guided_checks(tmp):
           "test", any(r["system"] == "ECU identity" and r["status"] == "PASS"
                       for r in g1["results"]),
           [r for r in g1["results"] if r["system"] == "ECU identity"])
-    check("G4 no flags = the guided session; --recorder = the old recorder",
-          VT.parse(["--port", "COM2"]).guided
-          and not VT.parse(["--port", "COM2", "--recorder"]).guided
-          and VT.parse(["--port", "COM2", "--recorder"]).runtime)
+    # 2026-10-14 (owner): no flags = the RECORDER; the guided walkthrough
+    # is --guided (or --phase / --resume)
+    check("G4 no flags = the recorder; --guided = the guided session",
+          not VT.parse(["--port", "COM2"]).guided
+          and VT.parse(["--port", "COM2"]).runtime
+          and VT.parse(["--port", "COM2", "--guided"]).guided
+          and VT.parse(["--port", "COM2", "--phase", "idle"]).guided)
 
 
 def main() -> int:
@@ -841,7 +848,7 @@ def main() -> int:
                     stdin_q=Answers(["s"]))
         summ = (out / "summary.txt").read_text()
         check("K3 KWP entry -> GOFAST 115200 -> PASS", rc == 0
-              and "KWP 5-baud -> GOFAST 115200" in summ)
+              and "KWP 5-baud -> 115200" in summ)
         # 2026-10-13: a silent 5-baud entry falls back to ISO 14230 fast init
         ecu = FakeEcu("kwp", kwp_fault="noslow")
         out = tmp / "k3_fast"
@@ -849,8 +856,48 @@ def main() -> int:
                     stdin_q=Answers(["s"]))
         summ = (out / "summary.txt").read_text()
         check("K3 5-baud silent -> fast init -> GOFAST 115200 -> PASS",
-              rc == 0 and "KWP fast init -> GOFAST 115200" in summ,
+              rc == 0 and "KWP fast init -> 115200" in summ,
               [l for l in summ.splitlines() if "KLINE" in l][:1])
+
+        # K5 (2026-10-15) the OBD sweep: the rate the line carries --------
+        ecu = FakeEcu("kwp", bad_rates=(115200, 124800))
+        out = tmp / "k5a" / "s"   # a fresh tree: the OBD path
+        rc = VT.run(Args(out, kline=True), open_port=lambda b: ecu,
+                    stdin_q=Answers(["s"]))
+        summ = (out / "summary.txt").read_text()
+        rows = read_csv(out / "kline_bytes.csv")
+        check("K5 115200 and 124800 do not hold, 57600 does -> PASS at 57600",
+              rc == 0 and "KWP 5-baud -> 57600" in summ,
+              [l for l in summ.splitlines() if "KLINE" in l][:1])
+        check("K5 every byte on the line recorded (kline_bytes.csv)",
+              any(r["stage"].startswith("5-baud") and r["rx"] == "55ef8f"
+                  for r in rows)
+              and sum(r["stage"].startswith("kwp GOFAST") for r in rows) >= 3,
+              len(rows))
+        ecu = FakeEcu("kwp", bad_rates=(115200, 124800, 57600))
+        out = tmp / "k5b" / "s"
+        rc = VT.run(Args(out, kline=True), open_port=lambda b: ecu,
+                    stdin_q=Answers(["s"]))
+        summ = (out / "summary.txt").read_text()
+        check("K5 no fast rate holds -> the session stays at 10400",
+              rc == 0 and "KWP 5-baud -> 10400" in summ,
+              [l for l in summ.splitlines() if "KLINE" in l][:1])
+        # the ECU's capture: a 5-baud 0x01 as hckwp_me711.c stores it
+        lv = []
+        for bit in [0] + [(1 >> i) & 1 for i in range(8)] + [1]:
+            lv += [bit] * 200
+        lv = lv[3:3 + 1920]                     # index 0 = 3rd low ms
+        cap = bytearray(256)
+        for i, w in enumerate((0x4B43, 2, 1234, len(lv), 0, 1, 0x2211, 0)):
+            cap[2 * i:2 * i + 2] = w.to_bytes(2, "little")
+        for i, v in enumerate(lv):
+            cap[16 + (i >> 3)] |= v << (i & 7)
+        k = VT.decode_klcap(bytes(cap))
+        check("K5 the ECU capture decodes a 5-baud 0x01 with its stop bit",
+              k.get("five_baud") == {"byte": "0x01", "stop_bit_high": True}
+              and k["runs"].startswith("L197 H200 L1400 H"), k)
+        check("K5 an image without the capture reads as absent",
+              VT.decode_klcap(bytes(256)) == {"present": False})
 
         # K4 -------------------------------------------------------------
         print("K4 malformed replies, reconnect")
@@ -987,6 +1034,67 @@ def main() -> int:
                   "coolant", "intake", "knockState", "vvt1State")),
               [k for k in ("lam1RiX10", "lamVeff", "adc02_IPV")
                if k not in med[0]])
+
+        # KO1 (2026-10-15) the automatic key-off check ---------------------
+        print("KO1 key-off: run-on, the pending Burn, the reboot, hot restart")
+        kecu = FakeEcu("ok")
+        kecu.set("RPMValue", 850)
+        kecu.set("engineFlags", 1)
+        kecu.set("nvmState", 2)                   # a Burn is pending
+        kecu.set("nvmGeneration", 8)
+        kecu.set("rstBootCount", 5)
+        kout = tmp / "ko1"
+
+        def keyoff():
+            import time
+            time.sleep(0.6)
+            kecu.set("RPMValue", 0)
+            kecu.set("engineFlags", 0)
+            kecu.set("runOn", 0x0101)             # key off, HOLD
+            kecu.set("runOnMs", 100)
+            time.sleep(0.8)
+            kecu.set("nvmGeneration", 9)          # the Burn commits
+            kecu.set("nvmState", 0)
+            kecu.set("runOn", 0x0102)             # RELEASED
+            time.sleep(0.5)
+            kecu.mode = "dead"                    # power down
+            time.sleep(3.5)
+            kecu.set("runOn", 0)                  # key on: a new boot
+            kecu.set("rstBootCount", 6)
+            bh = kecu.block + VC.BH_EXT_OFF
+            rec = (bytes([0, 6, 0x00, 0x3C, 0x1F, 0x40, 9, 2, 120, 1]))
+            kecu.och[bh:bh + 4] = b"BH" + bytes([1, 1])
+            kecu.och[bh + 8:bh + 18] = rec
+            kecu.mode = "ok"
+            time.sleep(0.8)
+            kecu.set("RPMValue", 200)
+            kecu.set("engineFlags", 2)            # cranking
+            time.sleep(0.7)
+            kecu.set("RPMValue", 900)
+            kecu.set("engineFlags", 1)            # running
+        th = threading.Thread(target=keyoff)
+        th.start()
+        VT.run(Args(kout, runtime=True, duration=10.0),
+                    open_port=lambda b: kecu, stdin_q=Answers([]))
+        th.join()
+        ksumm = (kout / "summary.txt").read_text()
+        kmeta = json.loads((kout / "metadata.json").read_text())
+        ko = (kmeta["phases"]["runtime"].get("keyoffs") or [{}])[0]
+        check("KO1 one key-off verdict, no prompts: PASS",
+              "KEYOFF   PASS" in ksumm, [l for l in ksumm.splitlines()
+                                        if "KEYOFF" in l])
+        check("KO1 run-on HOLD > RELEASED and the ECU-down time measured",
+              ko.get("states", [])[:2] == ["HOLD", "RELEASED"]
+              and ko.get("run_on_s", 0) >= 1.0, ko)
+        check("KO1 the pending Burn FINISHED (gen 8 -> 9)",
+              "pending Burn FINISHED (gen 8 -> 9)" in ko.get("text", ""),
+              ko.get("text"))
+        check("KO1 the reboot and its cause from the boot history",
+              (ko.get("reboot") or {}).get("reset_kind") == "power-on"
+              and ko.get("boot_after") == 6, ko.get("reboot"))
+        check("KO1 the hot restart time (cranking -> running)",
+              0.3 <= ko.get("hot_restart_s", -1) <= 2.0,
+              ko.get("hot_restart_s"))
 
         # M2 -------------------------------------------------------------
         print("M2 V100 --profile reduced")

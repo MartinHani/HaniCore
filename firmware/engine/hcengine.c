@@ -5,7 +5,7 @@
  *
  * Channel assignments are BOARD facts and come from hctarget.h, which took
  * them from the schematic and the connector database - see
- * docs/PLATFORM.md. What a count MEANS is calibration and comes
+ * the maintainer's design notes. What a count MEANS is calibration and comes
  * from the page.
  *
  * SENSORS ARE READ THROUGH THE HAL, NOT THROUGH adc_raw[]. This file used to
@@ -454,7 +454,7 @@ static unsigned char tracks_disagree(unsigned int a, unsigned int b,
 #if defined(TGT_ENGINE_RUNTIME)
 /* ======================== V98: THE ME7.1.1 ENGINE MODEL ====================
  *
- * docs/ARCHITECTURE.md. What changed against the V97 tail below (which
+ * the maintainer's design notes. What changed against the V97 tail below (which
  * stays, unchanged, for ME7.5):
  *
  *  - THREE LOAD STRATEGIES (CAL_LOAD_SOURCE): speed density, alpha-N x
@@ -521,13 +521,15 @@ static void runtime_tail(unsigned int rpm)
     tps_c = hc_ec_load_lag(tps_c, rpm);
 
     /* ---- air ---------------------------------------------------------- */
-    hc_load_select(rpm, tps_c);
+    hc_load_select(tps_c);
     if (HC_LOAD.model != 0u) {
         /* New policies select density pressure and VE axis independently.
            Legacy branch below remains the exact V101 arithmetic contract. */
         p_x10 = HC_LOAD.effective; t_x10 = HC_LOAD.temperature; load = HC_LOAD.axis;
     } else if (src == CAL_LOAD_ALPHAN) {
-        p_x10 = 1013u;                                  /* STD_ATMOSPHERE */
+        /* the ambient hc_load_select() just published - the onboard sensor
+           on ME7.1.1 (2026-10-16: no fixed 1013 hPa) */
+        p_x10 = eng_baro_kpa_x10;
         t_x10 = (hc_cal_u8(CFG_U_ALPHAN_IAT) != 0u && !(err & ENG_ERR_IAT))
               ? hc_af_charge_t_x10(eng_iat_dc) : T_20C_X10;
         load = tps_c;
@@ -573,15 +575,12 @@ static void runtime_tail(unsigned int rpm)
         }
     }
 
-    /* ---- dwell and dead time against battery (unchanged) -------------- */
-    eng_dwell_x100 = hc_cal_curve16(CAL_DWELL_BATT_AX, CAL_DWELL_BATT_VAL,
-                                    8u, (unsigned int)(eng_batt_dv * 10u));
-    if (eng_cranking) {
-        unsigned int cd = hc_cal_u16(CFG_U_CRANK_DWELL_X100);
-        if (cd != 0u) {
-            eng_dwell_x100 = cd;
-        }
-    }
+    /* ---- dwell and dead time against battery ------------------------
+     * ONE store: the cranking dwell and the rpm factor are hcengctl711.c's
+     * (hc_ec_dwell), so the planner never reads a half-corrected value. */
+    eng_dwell_x100 = hc_ec_dwell(hc_cal_curve16(CAL_DWELL_BATT_AX,
+                                                CAL_DWELL_BATT_VAL, 8u,
+                                                (unsigned int)(eng_batt_dv * 10u)));
     eng_deadtime_us = hc_cal_curve16(CAL_DWELL_BATT_AX, CAL_DEADTIME_VAL,
                                      8u, (unsigned int)(eng_batt_dv * 10u));
 
@@ -615,7 +614,11 @@ static void runtime_tail(unsigned int rpm)
     eng_warmup_pct = (err & ENG_ERR_CLT) ? 100u : hc_trans_warmup(eng_clt_dc);
 
     /* ---- fuel ---------------------------------------------------------- */
-    flow = hc_af_flow_x100(hc_cal_u16(CFG_U_INJ_FLOW_CCMIN));
+    /* the rated flow, corrected for the pressure across the injector
+       (hcengctl711.c inj_pressure(); 0/0 = as rated) */
+    flow = hc_af_flow_at_dp_x100(hc_af_flow_x100(hc_cal_u16(CFG_U_INJ_FLOW_CCMIN)),
+                                 HC_EC.inj_dp_x10, HC_EC.inj_ref_x10);
+    HC_EC.inj_flow_x100 = flow;
     if (eng_cranking) {
         /* THE CRANKING FUEL IS A MASS: 0.1 mg per cylinder per cycle by
            coolant (20 C if the sensor has failed, rusEFI getCrankingFuel3),
@@ -1114,7 +1117,7 @@ void eng_calculate(void)
          * receives this cycle) + dead time. That is what makes a switch
          * between batch-like fallback (two per cycle) and true sequential
          * (one) conserve the mass per cylinder - per cylinder, at the event
-         * that switches it (docs/ARCHITECTURE.md). Dead time is still
+         * that switches it (the maintainer's design notes). Dead time is still
          * added per pulse and never divided. ME7.1.1 only: ME7.5's hcinj.c
          * keeps the per-pulse value it always had. */
 #endif

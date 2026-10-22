@@ -17,7 +17,7 @@
 const unsigned int hc_pin_target_id = 0x03C2u;
 const char hc_pin_target_name[] = "ME75_4B0906018DC";
 
-const hc_pin_desc_t hc_pin_table[HC_PHYSICAL_PIN_COUNT] = {
+const hc_pin_desc_t HC_PIN_MEM hc_pin_table[HC_PHYSICAL_PIN_COUNT] = {
     { 0x0000u, 0x0000u, 0u, 0xFFu }, /*   1 not assigned in the source document */
     { 0x0000u, 0x0000u, 0u, 0xFFu }, /*   2 not assigned in the source document */
     { 0x0000u, 0x0000u, 0u, 0xFFu }, /*   3 not assigned in the source document */

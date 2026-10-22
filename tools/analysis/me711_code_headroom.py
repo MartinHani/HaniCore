@@ -5,7 +5,7 @@ NCODE is a single CGROUP and L166 refuses one over 64 KiB, so "free" is
 measured against the CLASS RANGE THE LINKER WAS GIVEN and not against any
 number written in a comment. That distinction is the whole reason this script
 exists: linker_me711.lnp claimed 113664 bytes of NCODE for three releases and
-the real ceiling was always 64512 (docs/ARCHITECTURE.md).
+the real ceiling was always 64512 (the maintainer's design notes).
 
     py tools/analysis/me711_code_headroom.py [map.M66]
 

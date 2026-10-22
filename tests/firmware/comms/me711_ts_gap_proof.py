@@ -20,7 +20,7 @@ against a S5500 supervision raster of 10 ms that is serviced ONLY from the
 main loop, by hc_asic_start_service(). Enabling TunerStudio on this board
 without doing something about that would have reproduced the V15 defect
 exactly - a ~127 ms blocking bench print starved the same state machine and
-the ECU reset at ~140 ms every boot (docs/ARCHITECTURE.md).
+the ECU reset at ~140 ms every boot (the maintainer's design notes).
 
 THE FIX UNDER TEST: hcts.c calls hcts_target_yield() from every bounded wait
 it owns - the transmit wait, both echo waits, the CRC loop and hcts_stall().
@@ -391,7 +391,7 @@ def main() -> int:
     cases = [
         # 2026-10-14: an ENVELOPE 'S'. A plain byte is answered only on a
         # link a CRC-valid request has locked (shared-bus discipline,
-        # docs/ARCHITECTURE.md.1).
+        # the maintainer's design notes.1).
         ("signature 'S'", envelope(b"S"), window(48)),
         ("envelope version 'V'", envelope(b"V"), window(48)),
         ("output channels, WHOLE block", och_request(0, och_size),

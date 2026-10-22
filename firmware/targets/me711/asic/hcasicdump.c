@@ -61,7 +61,7 @@
  * boot, before hc_asic_start_init() zeroes the counters and before anything
  * builds a new frame into FRAME, can simply COPY what is already sitting
  * there. hc_asicdump_salvage() is that copy, called once, early in main(),
- * strictly before hc_asic_start_init(). See docs/ARCHITECTURE.md
+ * strictly before hc_asic_start_init(). See the maintainer's design notes
  * for the full write-order proof.
  */
 #include <reg167.h>
@@ -330,7 +330,7 @@ void hc_asicdump_echo(unsigned int r1, unsigned int r2, unsigned int r3,
 /* ============================================================ THE SALVAGE ==
  *
  * Called ONCE, early in main(), BEFORE hc_power_hold_assert()/
- * hc_asic_start_init() - see docs/ARCHITECTURE.md for the full
+ * hc_asic_start_init() - see the maintainer's design notes for the full
  * proof that nothing between reset and this call has touched FRAME or the
  * counters read here. reset_raw is THIS boot's own T0-captured WDTCON value -
  * i.e. the cause of the reset that just ended the PREVIOUS session, which is

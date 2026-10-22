@@ -2,7 +2,7 @@
  * hctrigger.h - crank/cam decoding and engine position.
  *
  * The layering here is deliberate and is the one thing about this file that
- * matters most (docs/ARCHITECTURE.md):
+ * matters most (the maintainer's design notes):
  *
  *     physical edge      CC15 capture, hardware timestamp
  *          |

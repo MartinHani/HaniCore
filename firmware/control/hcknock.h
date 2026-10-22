@@ -4,7 +4,7 @@
  * Input: one integrated knock-window value per ignition, per cylinder (the
  * CC195's integrator KI, read by the ADC: counts 0..1023). Output: an
  * ignition retard per cylinder. No hardware here: the window, gain, band
- * and sensor select are the driver's (docs/ARCHITECTURE.md).
+ * and sensor select are the driver's (the maintainer's design notes).
  *
  * The strategy is the Bosch ME7 KR one, whose structure and parameter set
  * are read from the Porsche ME7.1.1 sibling A2L + its own binary

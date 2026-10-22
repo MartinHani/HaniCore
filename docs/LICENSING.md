@@ -42,7 +42,8 @@ me7-tools, NefMoto open-source tools, C167BootTool, kw1281test and others.
 | **Concepts from other projects, independently implemented** | control strategies and parameter sets published by rusEFI and Speeduino (X-tau wall film, relay PID autotune, quick-start cam decoding, limp management); the TunerStudio menu structure; a few numeric starting values from rusEFI's source (throttle-body PID gains and bias curve, overrun fuel-cut thresholds, idle-timing defaults), each cited where it is used |
 | **Interfaces and formats** | TunerStudio's `.ini` format and serial protocol, ISO 14230 / KWP2000 entry, the C167 bootstrap-loader protocol, AM29F800 command sequences, Keil startup conventions |
 | **Hardware facts** | register values, pin and connector assignments, the S5500 startup handshake, the boot-ROM header layout and markers, Bosch signal names in the connector tables (`tools/config_source/data/`), and the coolant and intake-air transfer curves of this ECU's input stages, which the 1.8T AWT preset uses. Each is cited to its source (the target's schematic, its OEM firmware, Bosch datasheets, bench measurement). They are needed to operate the hardware; no OEM code is reproduced and the license claims no rights over them |
-| **Not contained** | OEM firmware or boot code, OEM fuel, ignition, injector, coil or knock calibration, A2L/DAMOS files, schematics, datasheets |
+| **OEM calibration values** | the "VAG 1.8T DBW (AWT)" preset takes its injector, dead-time, cranking-dwell, pressure-sensor, VE (from the stock throttle model), ignition-timing and knock values from the stock AWT ECU image (VW `4B0906018DC`), converted to HaniCore's units; each value cites the map it came from (`tools/config_source/hanicore_presets.py`). The image itself is not included |
+| **Not contained** | OEM firmware or boot code, OEM ECU images, A2L/DAMOS files, schematics, datasheets |
 
 ## Third-party software used but not included
 

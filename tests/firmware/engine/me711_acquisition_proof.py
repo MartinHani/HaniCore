@@ -48,6 +48,9 @@ def main():
         now(t); r.m.w8(run_live,1); r.m.w8(state,6)
         r.m.w16(last,t & 65535); r.m.w16(run_ok,n)
         for ch in range(16): r.m.w16(0xE100+2*(4+ch),(ch<<12)|400)
+        # since 2026-10-13 the reply is snapshotted AT ITS ACCEPT (CC27
+        # level, hcasicstart.c) and the service reads only that snapshot
+        r('hc_hal_ain_capture')
         r('hc_hal_ain_service')
     r('hc_hal_s5500_window',4)
     accepted(65000,65535)
@@ -57,6 +60,7 @@ def main():
     assert r('hc_hal_asic_an',12)==400 and r('hc_hal_asic_age')==0
     r.m.w16(0xE100+2*16,0xD190)
     now(65011); r.m.w16(run_ok,1); r.m.w16(last,65011)
+    r('hc_hal_ain_capture')
     r('hc_hal_ain_service')
     assert r('hc_hal_asic_an',12)==65535 and r('hc_hal_asic_an',13)==400
     r.m.w8(state,0)

@@ -37,6 +37,7 @@ typedef struct {
 #define SER (*(hc_ser_t volatile *)0xF2C0u)
 typedef char hc_ser_fits[(sizeof(hc_ser_t) <= 0x80u) ? 1 : -1];
 typedef char hc_ser_gap_offset[(offsetof(hc_ser_t,pad)==23u)?1:-1];
+typedef char hc_ser_st_offset[(offsetof(hc_ser_t,st)==18u)?1:-1];  /* HC_TX_BUSY_NOW */
 
 #define ST_IDLE   0u
 #define ST_LENHI  1u

@@ -1,6 +1,6 @@
 /*
  * hcknock711.c - the ME7.1.1 knock driver. See hcknock711.h for who
- * shares HC_KN711 and docs/ARCHITECTURE.md for the evidence of every pin.
+ * shares HC_KN711 and the maintainer's design notes for the evidence of every pin.
  *
  * FAR (FCODE), MOD167 MEDIUM with DEFINE(HC_FAR_BRIDGE): page reads through
  * hcfarinline.h, the scheduler snapshot through its far thunk. 16-bit
@@ -131,16 +131,16 @@ static unsigned int curve8(unsigned int val_off, unsigned int rpm)
 {
     unsigned char i;
     unsigned int a0 = hc_cal_u16(CFG_U_KNOCK_RPM_AX), a1;
-    if (rpm <= a0) return hc_cal_u16(val_off);
+    if (rpm <= a0) return hc_cal_u16v(val_off);
     for (i = 1u; i < 8u; i++) {
-        a1 = hc_cal_u16((unsigned int)(CFG_U_KNOCK_RPM_AX + 2u * i));
+        a1 = hc_cal_u16v((unsigned int)(CFG_U_KNOCK_RPM_AX + 2u * i));
         if (rpm < a1) {
-            return lerp_u16(a0, a1, hc_cal_u16((unsigned int)(val_off + 2u * (i - 1u))),
-                            hc_cal_u16((unsigned int)(val_off + 2u * i)), rpm);
+            return lerp_u16(a0, a1, hc_cal_u16v((unsigned int)(val_off + 2u * (i - 1u))),
+                            hc_cal_u16v((unsigned int)(val_off + 2u * i)), rpm);
         }
         a0 = a1;
     }
-    return hc_cal_u16((unsigned int)(val_off + 14u));
+    return hc_cal_u16v((unsigned int)(val_off + 14u));
 }
 
 /* ------------------------------------------------------ configuration -- */
@@ -155,7 +155,7 @@ static void cfg_load(void)
     n = KN.geom_n;
     KN.cfg.cyls = (unsigned char)(n ? n : 1u);
     for (i = 0u; i < HCKNOCK_CYL; i++) {
-        KN.cfg.sensor[i] = hc_cal_u8((unsigned int)(CFG_U_KNOCK_SENSOR + i));
+        KN.cfg.sensor[i] = hc_cal_u8v((unsigned int)(CFG_U_KNOCK_SENSOR + i));
     }
     KN.cfg.rpm_min = hc_cal_u16(CFG_U_KNOCK_RPM_MIN);
     KN.cfg.load_min = hc_cal_u8(CFG_U_KNOCK_LOAD_MIN);
@@ -170,8 +170,8 @@ static void cfg_load(void)
     KN.cfg.tp = hc_cal_u8(CFG_U_KNOCK_TP);
     KN.cfg.tp_dyn = hc_cal_u8(CFG_U_KNOCK_TP_DYN);
     for (i = 0u; i < HCKNOCK_KEFN; i++) {
-        KN.cfg.kef_rpm[i] = hc_cal_u16((unsigned int)(CFG_U_KNOCK_KEF_RPM + 2u * i));
-        KN.cfg.kef16[i] = hc_cal_u8((unsigned int)(CFG_U_KNOCK_KEF + i));
+        KN.cfg.kef_rpm[i] = hc_cal_u16v((unsigned int)(CFG_U_KNOCK_KEF_RPM + 2u * i));
+        KN.cfg.kef16[i] = hc_cal_u8v((unsigned int)(CFG_U_KNOCK_KEF + i));
     }
     KN.cfg.kef_dyn16 = hc_cal_u8(CFG_U_KNOCK_KEF_DYN);
     KN.cfg.ref_init = hc_cal_u16(CFG_U_KNOCK_REF_INIT);
@@ -191,7 +191,7 @@ static void cfg_load(void)
     if (!e && KN.cfg.max_q > 100u) e = HCKNOCK_E_RETARD;   /* <= 25.0 deg */
     if (!e && hc_cal_u8(CFG_U_KNOCK_BAND) > 8u) e = 8u;
     for (i = 0u; !e && i < 4u; i++) {
-        if (hc_cal_u8((unsigned int)(CFG_U_KNOCK_GAIN + i)) > 6u) e = 9u;
+        if (hc_cal_u8v((unsigned int)(CFG_U_KNOCK_GAIN + i)) > 6u) e = 9u;
     }
     KN.cfg_err = e;
 
@@ -314,7 +314,7 @@ void far hc_knock_arm(void)
     if ((unsigned long)KN.win_len_x10 * dt >= (unsigned long)tooth * MAX_LEAD_TICKS) {
         return;
     }
-    p3_select(gain_code[hc_cal_u8((unsigned int)(CFG_U_KNOCK_GAIN
+    p3_select(gain_code[hc_cal_u8v((unsigned int)(CFG_U_KNOCK_GAIN
                                                  + (KN.cfg.sensor[best] & 3u))) % 7u],
               sel_code[KN.cfg.sensor[best] & 3u]);
     KN.cyl = best;
@@ -379,11 +379,46 @@ static void sample(void)
     (void)hcknock_ignition(&KN.k, &KN.cfg, cyl, &in);
 }
 
+/* ------------------------------------------------- per-cylinder trim -- */
+#define TRIM_MAX_X10  100     /* +-10.0 deg, the page field's range       */
+
+static int trim_of(unsigned char i)
+{
+    int t = (int)HCFB_PAGE[CFG_U_IGN_TRIM + i] - 128;   /* universal block:
+                                         no near mirror, read it directly */
+    if (t > TRIM_MAX_X10) t = TRIM_MAX_X10;
+    if (t < -TRIM_MAX_X10) t = -TRIM_MAX_X10;
+    return t;
+}
+
+/* 0x7FFF = no trims in force (fixed timing, or no geometry yet) */
+static int trim_max(void)
+{
+    unsigned char i;
+    int m = -0x7FFF, t;
+
+    if (hc_cal_u8(CFG_U_TIMING_MODE) != 0u || KN.geom_n == 0u) {
+        return 0x7FFF;
+    }
+    for (i = 0u; i < KN.geom_n && i < 8u; i++) {
+        t = trim_of(i);
+        if (t > m) m = t;
+    }
+    return m;
+}
+
+int far hc_ign_trim_off_x10(void)
+{
+    int m = trim_max();
+    return (m == 0x7FFF) ? 0 : m;
+}
+
 /* ---------------------------------------------------------- the retard -- */
 static void slot_retard(void)
 {
-    unsigned char r[9], i, s, q, full;
+    unsigned char r[9], e[9], i, s, q, full;
     unsigned int x;
+    int m, d;
 
     for (i = 0u; i < 9u; i++) r[i] = 0u;
     if (KN.mode == KN_MODE_ACTIVE && !KN.cfg_err) {
@@ -411,8 +446,27 @@ static void slot_retard(void)
             }
         }
     }
+    KN.ret_knock = r[0];
+    /* each slot's share of the trim: (largest - its cylinder's), the most
+       any cylinder on it needs; a slot of 0 serves every cylinder */
+    for (i = 0u; i < 9u; i++) e[i] = 0u;
+    m = trim_max();
+    if (m != 0x7FFF) {
+        for (i = 0u; i < KN.geom_n && i < 8u; i++) {
+            d = m - trim_of(i);                     /* 0..200 */
+            s = (unsigned char)(KN.geom_slot[i] & 0x0Fu);
+            if (s > 8u) s = 0u;
+            if ((unsigned char)d > e[s]) e[s] = (unsigned char)d;
+        }
+        if (e[0]) {
+            for (s = 1u; s < 9u; s++) if (e[s] < e[0]) e[s] = e[0];
+        }
+        for (s = 1u; s < 9u; s++) if (e[s] > e[0]) e[0] = e[s];
+    }
     for (i = 0u; i < 9u; i++) {
-        KN.slot_ret[i] = r[i];          /* bytes: no torn read on the tooth */
+        x = (unsigned int)r[i] + (unsigned int)e[i];
+        KN.slot_ret[i] = (unsigned char)(x > 255u ? 255u : x);
+                                        /* bytes: no torn read on the tooth */
     }
 }
 
@@ -422,9 +476,17 @@ unsigned char far hc_knock_faults(void)
                            ? 0u : (KN.k.fault & 0x0Fu));
 }
 
+void far hc_knock_clear_faults(void)
+{
+    unsigned char i;
+    KN.k.fault = 0u;
+    KN.k.fault_hi = 0u;
+    for (i = 0u; i < sizeof(KN.k.bad); i++) KN.k.bad[i] = 0u;
+}
+
 unsigned int far hc_knock_max_x10(void)
 {
-    return (unsigned int)KN.slot_ret[0];
+    return (unsigned int)KN.ret_knock;
 }
 
 /* ----------------------------------------------------------- telemetry -- */
@@ -457,7 +519,7 @@ static void publish(void)
                               | ((unsigned int)(KN.k.fault & 0x0Fu) << 8)
                               | ((unsigned int)(KN.k.fault_hi & 0x0Fu) << 12)));
     o16(1048u, KN.k.knocks);
-    o16(1050u, (unsigned int)KN.slot_ret[0]);
+    o16(1050u, (unsigned int)KN.ret_knock);
     o16(1052u, (unsigned int)(KN.k.stop | ((unsigned int)KN.k.active << 8)
                               | ((unsigned int)KN.pins_owned << 9)));
     for (i = 0u; i < 8u; i++) {

@@ -136,7 +136,7 @@
  *   the other slot being untouched. See the record layout below.
  *
  *   THERE ARE TWO SLOTS. SA7 and SA8, alternating - the reservation
- *   docs/PLATFORM.md made before any of this existed. The slot
+ *   the maintainer's design notes made before any of this existed. The slot
  *   being written is never the slot being used, so at every instant of the
  *   whole operation at least one sector holds a complete, committed,
  *   CRC-checked record. This is the one place where MS4 is deliberately NOT

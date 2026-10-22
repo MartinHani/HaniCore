@@ -5,7 +5,7 @@ ranges, the gauge picker's categories and the default datalog. Imported by
 tools/tunerstudio/gen_ts_ini_me711.py (the generator owns offsets and scales; this file
 owns presentation only, and invents no channel).
 
-WHY (docs/TUNERSTUDIO.md, bug B8): until V98 646 of 718
+WHY (the maintainer's design notes, bug B8): until V98 646 of 718
 gauges were titled with the raw channel name over 0..65535 and sat in ONE
 category, so TunerStudio's right-click gauge picker was a 646-entry list.
 rusEFI groups its 344 gauges in 32 categories with plain titles.

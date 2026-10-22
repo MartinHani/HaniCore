@@ -198,7 +198,8 @@ def largest_frames():
         return best
 
     out = []
-    for a0, a1 in ((0x840400, 0x850000), (0x850000, 0x85C000)):
+    for a0, a1 in ((0x830000, 0x840000), (0x840400, 0x850000),
+                   (0x850000, 0x85C000), (0x860000, 0x870000)):
         b = img[a0 - 0x800000:a1 - 0x800000]
         # WORD-ALIGNED ONLY. Every C167 instruction starts on an even
         # address; scanning odd offsets matches operand bytes, and V79's first

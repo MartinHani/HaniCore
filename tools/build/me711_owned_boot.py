@@ -21,7 +21,7 @@ besides the header and the sums, it needs exactly three marker words
 (MARKERS below). No OEM code or calibration byte is needed.
 
 Which of the two ROMEN cases this board is in is NOT measured (see
-docs/PLATFORM.md). This region is written to work in both:
+the maintainer's design notes). This region is written to work in both:
 
   ROMEN set   - the boot code is the CPU's internal mask ROM. Flash
                 0x0000-0x7FFF is never executed; the mask ROM checks the ROMSYS

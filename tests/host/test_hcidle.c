@@ -37,7 +37,7 @@ static hcidle_cfg_t cfg(void)
     memset(&c, 0, sizeof c);
     c.enabled = 1u;
     c.kp = 3u;             /* 0.03 % per rpm */
-    c.ki = 1u;             /* 0.01 % per rpm per step */
+    c.ki = 10u;            /* 0.01 % per rpm per step (x1000) */
     c.range_x10 = 50u;     /* +-5 % */
     c.band_rpm = 400u;
     c.pedal_x10 = 20u;     /* rusEFI idlePidDeactivationTpsThreshold 2 % */
@@ -147,9 +147,9 @@ static void test_blip_and_coast(void)
     settle(&d, &c, &g);
     g.load = 150.0;
     (void)run(&d, &c, &g, 400u, 0u, 0u, 0);          /* learned the AC load */
-    held = d.integ100;
+    held = d.integ1000;
     (void)run(&d, &c, &g, 100u, 250u, 0u, &mx);      /* 2 s at 25 % pedal */
-    assert(d.integ100 == held && d.state == HCIDLE_S_PEDAL);
+    assert(d.integ1000 == held && d.state == HCIDLE_S_PEDAL);
     mn = run(&d, &c, &g, 400u, 0u, 0u, 0);           /* release: coast down */
     printf("pedal 25 %% for 2 s (%.0f rpm), release: I held through pedal and coast, "
            "lowest %.1f rpm, final %.1f\n", mx, mn, g.rpm);
@@ -167,7 +167,7 @@ static void test_coast_in_gear(void)
     long held;
     double mn;
     settle(&d, &c, &g);
-    held = d.integ100;
+    held = d.integ1000;
     /* 10 s coasting in gear, pedal released: the VEHICLE holds 2000 rpm */
     for (k = 0u; k < 500u; k++) {
         hcidle_in_t in;
@@ -175,7 +175,7 @@ static void test_coast_in_gear(void)
         in = in_of(&g, 0u);
         (void)hcidle_step(&d, &c, &in, DT);
     }
-    assert(d.integ100 == held && d.state == HCIDLE_S_COAST);
+    assert(d.integ1000 == held && d.state == HCIDLE_S_COAST);
     /* clutch in: the engine falls to idle on its own */
     mn = run(&d, &c, &g, 400u, 0u, 0u, 0);
     printf("coast in gear at 2000 rpm for 10 s: I held (above target + band); clutch in -> "
@@ -193,7 +193,7 @@ static void test_limit(void)
     g.load = 1200.0;                                  /* needs +9 %: beyond the 5 % range */
     (void)run(&d, &c, &g, 500u, 0u, 0u, 0);
     assert(d.trim_x10 == 50 && (d.state & HCIDLE_S_LIMIT));
-    assert(d.integ100 <= 50L * 100L);
+    assert(d.integ1000 <= 50L * 1000L);
     g.load = 0.0;                                     /* the load goes away */
     mn = run(&d, &c, &g, 400u, 0u, 0u, &mx);
     printf("beyond authority: trim held at +5.0 %%; load removed -> peak %.1f rpm, final %.1f\n",
@@ -212,11 +212,11 @@ static void test_stop_resets(void)
     settle(&d, &c, &g);
     g.load = 150.0;
     (void)run(&d, &c, &g, 400u, 0u, 0u, 0);
-    assert(d.integ100 != 0L);
+    assert(d.integ1000 != 0L);
     in = in_of(&g, 0u);
     in.rpm = 0u;
     (void)hcidle_step(&d, &c, &in, DT);
-    assert(d.integ100 == 0L && d.trim_x10 == 0 && d.run_ms == 0u);
+    assert(d.integ1000 == 0L && d.trim_x10 == 0 && d.run_ms == 0u);
     printf("engine stop: trim and post-start timer reset\n");
 }
 
@@ -442,6 +442,33 @@ static void test_dashpot(void)
     printf("dashpot: not after a start, only after a release\n");
 }
 
+/* 2026-10-15, car: a positive trim wound to its limit (a stumbling cold
+   engine) must not hold the throttle open once the engine is above target +
+   band with the pedal released - rusEFI applies no closed-loop correction
+   outside idling. The I is kept and unwinds on the way back. */
+static void test_no_air_above_band(void)
+{
+    hcidle_cfg_t c = cfg();
+    hcidle_t d;
+    eng_t g;
+    hcidle_in_t in;
+    unsigned int floor_x10;
+    double mn, mx;
+    settle(&d, &c, &g);
+    d.integ1000 = (long)c.range_x10 * 1000L;           /* wound to +5 % */
+    d.i_x10 = (int)c.range_x10;
+    g.rpm = 4000.0;                                  /* ran away */
+    in = in_of(&g, 0u);
+    floor_x10 = hcidle_step(&d, &c, &in, DT);
+    assert(floor_x10 <= in.base_x10 && d.state == HCIDLE_S_COAST);
+    assert(d.integ1000 > 0L);                         /* kept, not applied */
+    mn = run(&d, &c, &g, 750u, 0u, 0u, &mx);         /* 15 s, pedal released */
+    printf("wound +5 %% trim at 4000 rpm, pedal released: floor = base above the band, "
+           "lowest %.1f rpm, final %.1f\n", mn, g.rpm);
+    assert(g.rpm > 785.0 && g.rpm < 815.0);
+    assert(mn > 700.0);
+}
+
 int main(void)
 {
     test_states();
@@ -450,6 +477,7 @@ int main(void)
     test_blip_and_coast();
     test_coast_in_gear();
     test_limit();
+    test_no_air_above_band();
     test_stop_resets();
     test_fuzz();
     test_timing_basic();

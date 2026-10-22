@@ -26,6 +26,7 @@ unsigned char hc_asic_healthy(void);
 extern unsigned char hc_asic_run_live;
 
 extern unsigned char hc_asic_state;
+extern unsigned int  hc_asic_next_attempt;  /* last runtime start (period anchor) */
 extern unsigned int  hc_asic_start_tx;
 extern unsigned int  hc_asic_start_rx;
 extern unsigned int  hc_asic_start_ok;

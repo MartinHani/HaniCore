@@ -363,7 +363,7 @@ def test_me75_and_me711_pin_21_are_different_claims(me75, me711):
 def test_me75_injector_and_coil_pins_come_from_the_io_map(me75):
     """Cross-check against the document, when the document is here.
 
-    docs/PLATFORM.md was purged from this repository by a
+    the maintainer's design notes was purged from this repository by a
     `git filter-branch` rewrite on 2026-09-02 and is not recoverable from git.
     Until somebody restores it from a backup, the ME7.5 descriptor rows below
     have a source string but no source, so this cross-check SKIPS rather than

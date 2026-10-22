@@ -22,8 +22,12 @@ TARGET = H.ROOT / "firmware" / "targets" / "me711"
 
 CONTROLS = [
     ("integrate_on_coast", "the PI runs above target + band (coast-down)",
-     "    if ((unsigned long)in->rpm >= (unsigned long)in->target_rpm + c->band_rpm) {",
+     "    if (over) {",
      "    if (0) {"),
+    # 2026-10-15 (car): a positive trim opens the throttle above the band
+    ("air_above_band", "a positive trim is applied above target + band",
+     "    held = (over && d->i_x10 > 0) ? 0 : d->i_x10;",
+     "    held = d->i_x10;"),
     ("closed_in_crank", "closed loop while cranking",
      "    if (in->cranking) {",
      "    if (0) {"),
@@ -32,16 +36,16 @@ CONTROLS = [
      "    if (0) {"),
     ("reset_on_pedal", "the learned trim is dropped when the pedal is pressed",
      "        (void)place(d, in, d->i_x10, range, HCIDLE_S_PEDAL);",
-     "        d->integ100 = 0L; d->i_x10 = 0;\n"
+     "        d->integ1000 = 0L; d->i_x10 = 0;\n"
      "        (void)place(d, in, 0, range, HCIDLE_S_PEDAL);"),
     ("no_i_clamp", "the I part is not bounded by the authority",
-     "        if (d->integ100 > lim) d->integ100 = lim;",
-     "        if (d->integ100 > 100000L) d->integ100 = 100000L;"),
+     "        if (d->integ1000 > lim) d->integ1000 = lim;",
+     "        if (d->integ1000 > 1000000L) d->integ1000 = 1000000L;"),
     ("i_on_shrinking_error", "I integrates a transient (error already shrinking)",
      "    if (d->have_last && ((e < 0 && in->rpm < d->last_rpm)",
      "    if (0 && d->have_last && ((e < 0 && in->rpm < d->last_rpm)"),
     ("keep_on_stop", "the trim survives an engine stop",
-     "        d->integ100 = 0L;\n        d->run_ms = 0u;\n        d->p_x10 = 0;\n"
+     "        d->integ1000 = 0L;\n        d->run_ms = 0u;\n        d->p_x10 = 0;\n"
      "        d->i_x10 = 0;\n        return place(d, in, 0, range, HCIDLE_S_STOPPED);",
      "        return place(d, in, d->i_x10, range, HCIDLE_S_STOPPED);"),
     # V97: the dashpot

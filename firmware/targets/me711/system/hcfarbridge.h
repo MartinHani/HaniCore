@@ -2,7 +2,7 @@
  * hcfarbridge.h - how a FAR (FCODE) module reaches the NEAR (NCODE) world.
  *
  * WHY. NCODE is one 64 KiB CGROUP and V80 left it 2 bytes free
- * (docs/ARCHITECTURE.md). The cold setup modules - validation, the
+ * (the maintainer's design notes). The cold setup modules - validation, the
  * config manager, the bench qualifier, analog routing - are compiled
  * MOD167 MEDIUM with DEFINE(HC_FAR_BRIDGE), so they link into FCODE
  * (segment 0x85) instead.
@@ -53,6 +53,7 @@
 /* hc_presets.c (generated, so it stays SMALL) */
 /* hc_dbw.c (V92: the bench refuses while the ETB owns the bridge) */
 #define hc_dbw_state                  hc_dbw_state_f
+#define hc_dbw_clear_faults           hc_dbw_clear_faults_f
 /* hc_dbw.c (V93: hcetbcal.c borrows the bridge) */
 #define hc_dbw_calibration_begin       hc_dbw_calibration_begin_f
 #define hc_dbw_bridge_on              hc_dbw_bridge_on_f

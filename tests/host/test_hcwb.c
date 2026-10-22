@@ -332,6 +332,83 @@ static void test_hold(void)
     printf("  bench mode hold: the requested mode, heater off: OK\n");
 }
 
+static void test_ignition_park(void)
+{
+    /* 2026-10-14: key-on heating with a heater that has no feed until the
+       engine runs (VAG: H+ from the fuel-pump relay). UR stays railed for
+       the whole dew + ramp with the engine STOPPED: that must PARK (heater
+       off, no fault, why = waiting for the engine), not latch 13 -> P0130.
+       The engine starting restarts the warm-up, and a railed UR then IS a
+       fault, exactly as before. */
+    hcwb_t w; model_t m;
+    hcwb_init(&w); model_init(&m);
+    m.heat_policy = HCWB_HEAT_IGNITION;
+    run(&w, &m, 1000u);                       /* the key-on calibration     */
+    m.ur_force = 1000u;                       /* railed: no heater power    */
+    run(&w, &m, 15000u + 61000u);
+    assert(w.state == HCWB_ST_WAIT && w.fcode == HCWB_F_NONE);
+    assert(w.duty_x10 == 0u && w.why == HCWB_WHY_ENGINE);
+    run(&w, &m, 30000u);                      /* stays parked, key on       */
+    assert(w.state == HCWB_ST_WAIT && w.fcode == HCWB_F_NONE);
+    printf("  key-on heating, nothing warmed, engine stopped: parked, "
+           "no fault: OK\n");
+    m.running = 1u;
+    run(&w, &m, 200u);
+    assert(w.state == HCWB_ST_PREHEAT && w.duty_x10 > 0u);
+    run(&w, &m, 15000u + 61000u);
+    assert(w.state == HCWB_ST_FAULT && w.fcode == HCWB_F_OPEN_CELL);
+    printf("  engine started: warm-up restarts; still railed -> fault 13: "
+           "OK\n");
+
+    /* a sensor that warms normally is not affected by the park rule */
+    hcwb_init(&w); model_init(&m);
+    m.heat_policy = HCWB_HEAT_IGNITION;
+    run(&w, &m, 1000u + 15000u + 61000u);
+    assert(w.state == HCWB_ST_READY || w.state == HCWB_ST_CLOSED);
+    printf("  key-on heating with a fed heater reaches closed loop: OK\n");
+}
+
+static void test_start_restarts_paper_warmup(void)
+{
+    /* 2026-10-15: key-on heating, heater unfed until the engine runs, the
+       engine started INSIDE the park time (the usual start). The ramp had
+       climbed on paper; at the start the warm-up must go back to the 2 V
+       preheat, not hand a cold wet sensor 8..12 V. */
+    hcwb_t w; model_t m; unsigned int pre_duty;
+    hcwb_init(&w); model_init(&m);
+    m.heat_policy = HCWB_HEAT_IGNITION;
+    run(&w, &m, 1000u);                       /* the key-on calibration     */
+    m.ur_force = 1000u;                       /* railed: no heater power    */
+    run(&w, &m, 15000u + 12000u);             /* dew, then ~12 s of ramp    */
+    assert(w.state == HCWB_ST_RAMP && w.veff_dv > 100u);
+    m.temp = 20u;                             /* nothing was fed: cold      */
+    m.running = 1u;                           /* start: the feed arrives    */
+    step(&w, &m);
+    assert(w.state == HCWB_ST_PREHEAT && w.veff_dv == 20u);
+    m.ur_force = 0u;
+    pre_duty = w.duty_x10;
+    run(&w, &m, 14000u);                      /* the dew time runs again    */
+    assert(w.state == HCWB_ST_PREHEAT && w.duty_x10 == pre_duty);
+    run(&w, &m, 61000u);
+    assert(w.state == HCWB_ST_READY || w.state == HCWB_ST_CLOSED);
+    printf("  start during a paper ramp: back to the 2 V preheat, then "
+           "closed loop: OK\n");
+
+    /* control: a sensor SEEN heating before the start keeps its warm-up */
+    hcwb_init(&w); model_init(&m);
+    m.heat_policy = HCWB_HEAT_IGNITION;
+    run(&w, &m, 1000u + 15000u);
+    while (w.ur_live == 0u && w.state == HCWB_ST_RAMP) {
+        step(&w, &m);
+    }
+    assert(w.ur_live == 1u);
+    m.running = 1u;
+    step(&w, &m);
+    assert(w.state != HCWB_ST_PREHEAT && w.state != HCWB_ST_WAIT
+           && w.veff_dv > 20u);
+    printf("  start with a fed heater already warming: warm-up kept: OK\n");
+}
+
 int main(void)
 {
     printf("hcwb host tests\n");
@@ -348,6 +425,8 @@ int main(void)
     test_lambda_validity();
     test_ssc_gap();
     test_hold();
+    test_ignition_park();
+    test_start_restarts_paper_warmup();
     printf("PASS: all hcwb host tests\n");
     return 0;
 }

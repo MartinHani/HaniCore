@@ -19,6 +19,7 @@ import json
 import os
 from pathlib import Path
 import runpy
+import shutil
 import sys
 import tempfile
 import traceback
@@ -400,10 +401,15 @@ def cmd_diff_write(args, tool: Path, port: str) -> int:
             print(f"  {p}", file=sys.stderr)
         return EXIT_SETUP
 
+    if args.keep_from is not None and (args.keep_from % 0x10000 or not 0 < args.keep_from < size):
+        print(f"ERROR: --keep-from 0x{args.keep_from:X} is not a 64 KiB sector boundary inside the image", file=sys.stderr)
+        return EXIT_USAGE
+
     fd, current_name = tempfile.mkstemp(prefix="hanicore_me7_current_", suffix=".bin")
     os.close(fd)
     current = Path(current_name)
     patched_tool: Path | None = None
+    merged: Path | None = None
 
     try:
         print(f"DIFF READ port={port} baud={args.baud} bytes={size}")
@@ -413,6 +419,18 @@ def cmd_diff_write(args, tool: Path, port: str) -> int:
             print(f"ERROR: diff pre-read size mismatch: expected {size}, got {got}", file=sys.stderr)
             emit_result(args, "FAIL", operation="diffWrite", code="READ_SIZE_MISMATCH", upstream_state=rc)
             return EXIT_TOOL_FAILED
+        if args.pre_read_dump:
+            shutil.copyfile(current, Path(args.pre_read_dump).expanduser())
+            print(f"pre-read kept: {args.pre_read_dump}  sha256 {sha256_file(current)}")
+        if args.keep_from is not None:
+            # the ECU's own bytes from keep_from on: those sectors compare equal and are never erased
+            data = image.read_bytes()[:args.keep_from] + current.read_bytes()[args.keep_from:]
+            fd, merged_name = tempfile.mkstemp(prefix="hanicore_me7_merged_", suffix=".bin")
+            os.close(fd)
+            merged = Path(merged_name)
+            merged.write_bytes(data)
+            image = merged
+            print(f"KEEP: ECU flash from 0x{args.keep_from:X} kept as read")
 
         changed = changed_block_indices(current, image)
         if not changed:
@@ -457,6 +475,8 @@ def cmd_diff_write(args, tool: Path, port: str) -> int:
                 patched_tool.unlink(missing_ok=True)
             except Exception:
                 pass
+        if merged is not None:
+            merged.unlink(missing_ok=True)
 
 
 def cmd_verify(args, tool: Path, port: str) -> int:
@@ -507,6 +527,9 @@ def build_parser() -> argparse.ArgumentParser:
     sd.add_argument("image", help="full input BIN filename (29F400/29F800)")
     sd.add_argument("--verify", action="store_true", help="perform full readback SHA-256 verification after diffWrite")
     sd.add_argument("--verify-dump", help="keep verification readback in this file (also enables verify)")
+    sd.add_argument("--keep-from", type=parse_int, help="keep the ECU's flash from this file offset on "
+                    "(HaniCore ME7.1.1 calibration store: 0x70000); must be a sector boundary")
+    sd.add_argument("--pre-read-dump", help="keep the pre-write read (rollback) in this file")
 
     sv = sub.add_parser("verify", help="full flash readback and SHA-256 compare against image")
     sv.add_argument("image", help="reference BIN filename")

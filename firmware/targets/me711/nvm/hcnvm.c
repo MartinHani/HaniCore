@@ -1048,7 +1048,8 @@ static void stage_finish(void)
 /* THE CELL ADDRESS, AND WHY IT IS SHAPED LIKE THIS.
  *
  * Cell i is page (i & 7) of store sector (i >> 3), and the store begins at
- * TGT_FLASH_CFG_A = 0x860000. Ten sectors, eighty cells.
+ * TGT_FLASH_CFG_A = 0x870000 (SA10, since 2026-10-15). Nine sectors,
+ * seventy-two cells.
  *
  * IT IS BUILT FROM TWO 16-BIT HALVES ON PURPOSE. The obvious
  *
@@ -2106,7 +2107,13 @@ static unsigned char live_admit(unsigned int now_ms, unsigned int rpm,
        the test. Every reject below releases the claim. */
     lb[L_OWNER] = (unsigned char)HCNV_OWNER_NVM;
     sscon = hc_ssc_sscon();
+    /* ... or a runtime frame is due within a millisecond: the frame goes
+       first (2026-10-14; read from the tick itself, `now_ms` may be a
+       pass old). A word claimed across the due time cost the raster a
+       whole period on 5248F4C9 - me711_burn_raster_proof. */
     if (hc_asic_frame_in_flight() != 0u
+        || (unsigned int)(hc_tick_ms - hc_asic_next_attempt)
+           >= (unsigned int)(TGT_ASIC_RUN_PERIOD_MS - 1u)
         || ((sscon & 0x8000u) != 0u && (sscon & 0x1000u) != 0u)) {
         /* SSCBSY is bit 12 and only in operating mode; in programming mode
            that bit is SSCAREN, which TGT_ASIC_SSCCON_IDLE leaves clear, so the

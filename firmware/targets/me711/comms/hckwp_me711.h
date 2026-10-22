@@ -9,7 +9,7 @@
  * hcts_tx() (so the echo accounting is the same one), and a HaniCore GOFAST
  * (0xB1) hands the line back to the TunerStudio parser at the negotiated
  * rate, LOCKED. A failed or timed-out session returns the line to the rate
- * hunt (hcts.c "THE LINK RATE"). See docs/ARCHITECTURE.md.
+ * hunt (hcts.c "THE LINK RATE"). See the maintainer's design notes.
  *
  * WHY THE PIN AND NOT THE UART FOR THE 5-BAUD BYTE: 5 baud is 200 ms a bit,
  * far below any ASC0 rate, and the OEM decodes it on RXD0/P3.11 with timer
@@ -49,7 +49,7 @@ void far hc_kl_tick(unsigned char hi, unsigned char rxp, unsigned int now);
 
 void far hc_kwp_init(void);
 /* main loop, every pass: the ms tick and the RXD0 pin level (1 = idle high) */
-void far hc_kwp_service(unsigned int ms, unsigned char rxd_high);
+void far hc_kwp_service(unsigned int ms);
 /* hcts_poll(): 1 = this received byte belongs to the KWP side (or is noise
    inside a 5-baud byte) and must not reach the TunerStudio parser */
 unsigned char far hc_kwp_rx_take(unsigned char b);

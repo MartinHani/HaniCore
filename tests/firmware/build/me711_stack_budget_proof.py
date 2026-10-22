@@ -21,7 +21,7 @@ on top of the deepest main-loop chain) and this gate requires
 
 85 % leaves 15 % for what a linear sweep cannot see (a compiler-generated
 frame the sweep misreads). The margin policy is in
-docs/ARCHITECTURE.md.
+the maintainer's design notes.
 
 --control: the same image against the pre-2026-10-06 stacks (256-byte user
 stack, system stack 0xF606..0xF700) must FAIL S1/S2 - the gate can fail.

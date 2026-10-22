@@ -9,7 +9,7 @@
  *   whose output is the CJ910's run-on input. There is no OEM
  *   main-CPU-controlled main relay in that topology at all. hcpower.c owns
  *   it and this file has nothing to do with it.
- *   See docs/PLATFORM.md.
+ *   See the maintainer's design notes.
  *
  *   THIS FILE is HaniCore's own logical MAIN_RELAY function - the external
  *   ECU/main relay a standalone installation needs. The first one is a

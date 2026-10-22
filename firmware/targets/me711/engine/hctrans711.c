@@ -43,17 +43,17 @@ static unsigned char curve8(unsigned int val_off, unsigned int clt)
 
     a0 = hc_cal_u16(CAL_CLT_ENR_AX);
     if (clt <= a0) {
-        return hc_cal_u8(val_off);
+        return hc_cal_u8v(val_off);
     }
     for (i = 1u; i < CAL_AXIS_N; i++) {
-        a1 = hc_cal_u16((unsigned int)(CAL_CLT_ENR_AX + 2u * i));
+        a1 = hc_cal_u16v((unsigned int)(CAL_CLT_ENR_AX + 2u * i));
         if (clt < a1) {
-            return hctrans_lerp8(a0, a1, hc_cal_u8((unsigned int)(val_off + i - 1u)),
-                                 hc_cal_u8((unsigned int)(val_off + i)), clt);
+            return hctrans_lerp8(a0, a1, hc_cal_u8v((unsigned int)(val_off + i - 1u)),
+                                 hc_cal_u8v((unsigned int)(val_off + i)), clt);
         }
         a0 = a1;
     }
-    return hc_cal_u8((unsigned int)(val_off + CAL_AXIS_N - 1u));
+    return hc_cal_u8v((unsigned int)(val_off + CAL_AXIS_N - 1u));
 }
 
 unsigned char far hc_trans_warmup(unsigned int clt_dc)

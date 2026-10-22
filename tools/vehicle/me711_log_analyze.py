@@ -209,7 +209,9 @@ def analyse(log: Log) -> dict:
             add("inj_duty_high", i, "injector duty %.0f %% > 85 %%" % d)
     want, corr = log.col("transWantUs"), log.col("transCorrUs")
     for i, (w, c) in enumerate(zip(want, corr)):
-        if w and c is not None and abs(c) > 0.6 * w and running[i]:
+        # only fuel ADDED by the film model: a large NEGATIVE share is the
+        # film giving fuel back on a pedal release, which is correct
+        if w and c is not None and c > 0.6 * w and running[i]:
             add("transient_large", i, "wall-film share %.0f us is > 60 %% of "
                 "the want (%.0f us) - check X / tau" % (c, w))
 
@@ -1465,11 +1467,19 @@ def analyse_v100(folder: Path, log) -> tuple:
             "main_pass_max_T": max((wv(r, "main_pass_max_T") or 0)
                                    for r in wit)}
         for a, b in zip(wit, wit[1:]):
-            if (wv(b, "uptime_ms") or 0) + 500 < (wv(a, "uptime_ms") or 0) \
-                    and (wv(a, "uptime_ms") or 0) < 65000:
+            ua, ub = wv(a, "uptime_ms") or 0, wv(b, "uptime_ms") or 0
+            # THE UPTIME IS 16 BITS AND WRAPS EVERY 65.5 s (2026-10-14: six
+            # "ECU reset" findings in a session that had none while running).
+            # A reset is a jump AWAY from where the host clock says the
+            # uptime should be now, not merely a smaller number.
+            dt = ((num(b.get("t")) or 0.0) - (num(a.get("t")) or 0.0)) * 1000.0
+            off = (ub - (ua + dt)) % 65536.0
+            if min(off, 65536.0 - off) < 2000.0:
+                continue
+            if ub + 500 < ua or ub < dt - 2000.0:
                 ti = num(a.get("t")) or 0.0
                 F.setdefault("reset_witness", []).append(dict(
-                    t=ti, text="ECU reset after %s ms uptime: last live "
+                    t=ti, text="ECU rebooted (a key cycle or a reset - the BOOT event names the cause) after %s ms uptime (16-bit, modulo 65.5 s): last live "
                     "witness %.1f V, %s rpm, S5500 checksum errors %s, "
                     "timeouts %s, worst S5500 gap %s ms, monitoring "
                     "mismatches %s, worst main-loop pass %s T"

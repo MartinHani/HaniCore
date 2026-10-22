@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 r"""me711_och_snapshot.py - one decoded output-channel block from the live ECU.
 
-    py tools\bench\me711_och_snapshot.py --ini release\...\x.ini --out evidence\...\s.json
+    py tools\bench\me711_och_snapshot.py --ini release\...\x.ini --out <out dir>\...\s.json
 
 Every other physical driver in this tree open-codes its own small subset of the
 channel map (WANT tuples, hand-written offsets).  That was fine while a run

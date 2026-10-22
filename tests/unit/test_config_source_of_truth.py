@@ -385,7 +385,11 @@ def test_the_generated_ini_declares_the_unused_tail_of_the_reservation():
     """Otherwise TunerStudio has a hole in the page and ts_ini_check.py's
     "page fully covered" check has nothing to find there."""
     lines = GEN.universal_ini_lines()
-    assert any("uniReserved" in line for line in lines)
+    base = GEN._raw_define("CFG_UNIVERSAL_BASE")
+    tail = GEN._raw_define("CFG_UNIVERSAL_SIZE") - MODEL.universal_size(base)
+    # 2026-10-15: the injector pressure compensation filled the block to the
+    # byte - a FULL block has no tail, and must not declare one
+    assert any("uniReserved" in line for line in lines) == (tail > 0), tail
 
 
 # ==========================================================================

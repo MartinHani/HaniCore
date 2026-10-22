@@ -6,7 +6,7 @@ image (c167sim), through the controller's own accessors.
     py tests\firmware\dbw\me711_dbw_audit_proof.py            the image me711_image names
     py tests\firmware\dbw\me711_dbw_audit_proof.py --control  V96 frozen: must FAIL
 
-WHAT CHANGED (docs/ARCHITECTURE.md "V97 audit"; each compared with the
+WHAT CHANGED (the maintainer's design notes "V97 audit"; each compared with the
 AWT's own Bosch DLR, an OEM-firmware analysis script (not published)):
 
   A  BATTERY COMPENSATION   duty = (P+I+D+FF) x 13.5 V / battery, factor held

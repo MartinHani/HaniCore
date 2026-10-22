@@ -2,7 +2,7 @@
  * hcknock711.h - the ME7.1.1 knock driver: CC195 window, gain, sensor
  * select and band, integrator sample, cylinder attribution and the retard
  * handed to the scheduler. The strategy is control/hcknock.c; the hardware
- * chain and its evidence: docs/ARCHITECTURE.md.
+ * chain and its evidence: the maintainer's design notes.
  *
  * THE STATE LIVES IN EXTERNAL SRAM (TGT_RAM_KNOCK): the far modules' XRAM is
  * full and near RAM is below its reserve. Three parties share it, each with a
@@ -70,7 +70,10 @@ typedef struct {
     unsigned char mode, pins_owned;
     unsigned int  last_ms;
     unsigned char twin[8];          /* the cylinder 360 deg away, 0xFF none */
-    unsigned char have_ms, pad;
+    unsigned char have_ms;
+    unsigned char ret_knock;        /* the largest KNOCK retard alone, 0.1 deg
+                                       (slot_ret[] also carries the per-
+                                       cylinder ignition trim, 2026-10-14) */
     /* the last tooth stamp seen and the main-loop ms it was first
        seen at - a stopped crank is recognised in ms, not by the 16-bit T1
        age (which wraps at 52 ms and would make a stale tooth look new) */
@@ -78,6 +81,13 @@ typedef struct {
 } hc_kn711_t;
 
 #define HC_KN711 (*(hc_kn711_t huge *)(TGT_EXTRAM_BASE + TGT_RAM_KNOCK))
+
+/* PER-CYLINDER IGNITION TRIM (2026-10-14, rusEFI ignition trims, Speeduino
+   sequential spark trims). The scheduler can only DELAY a slot's event
+   (slot_ret[]), so a signed trim is split in two: every cylinder is advanced
+   by the largest trim (hc_ec_spark adds hc_ign_trim_off_x10()) and each slot
+   is retarded by (largest - its own). Off in fixed-timing mode. */
+int far hc_ign_trim_off_x10(void);
 
 /* far, main loop only (converts AN15) */
 void far hc_knock_init(void);
@@ -88,5 +98,8 @@ void far hc_knock_arm(void);
 unsigned int far hc_knock_max_x10(void);
 /* the latched sensor faults, bit per sensor (0 while knock is Off) */
 unsigned char far hc_knock_faults(void);
+/* '!D' (2026-10-15): forget the latched sensor diagnosis - a sensor that
+   is still bad latches again after its diagnosis count */
+void far hc_knock_clear_faults(void);
 
 #endif

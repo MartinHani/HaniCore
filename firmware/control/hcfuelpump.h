@@ -49,7 +49,7 @@
  * bounded measurement is hcbench.c's fuel-pump mode.
  *
  * The evidence for the pin itself is in hctarget.h under "EKP, the fuel pump"
- * and in docs/ARCHITECTURE.md: P2.12 / CC12IO, CPU pin 61, both ME7.1.1
+ * and in the maintainer's design notes: P2.12 / CC12IO, CPU pin 61, both ME7.1.1
  * columns of Bosch's own port sheet, into a CJ920 low-side driver, out at
  * connector cavity 65.
  */

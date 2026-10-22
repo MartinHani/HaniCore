@@ -20,10 +20,12 @@
 #include "hcidle.h"
 #include "hcidle711.h"
 #include "hcengctl711.h"   /* anti-lag throttle add */
+#include "hcaux711.h"      /* fan, A/C (idle-up), outputs, oil pressure */
 
 #define STEP_MS 20u
 #define PEDAL_DEFAULT_X10  20u   /* rusEFI idlePidDeactivationTpsThreshold 2 % */
 #define START_DEFAULT_MS 1000u
+#define IDLE_TRIM_MAX_X10 100u   /* +-10 % of throttle travel, whatever the page */
 
 /* the timing state lives in external SRAM: the far modules' XRAM is full */
 #define IGNIDLE (*(hcidle_timing_t huge *)(TGT_EXTRAM_BASE + TGT_RAM_IGNIDLE))
@@ -56,6 +58,7 @@ void far hc_idle_init(void)
     hc_idle_target_rpm = 0u;
     acc_ms = 0u;
     have_ms = 0u;
+    hc_aux_init();
 }
 
 void far hc_idle_service(unsigned int now_ms)
@@ -66,6 +69,8 @@ void far hc_idle_service(unsigned int now_ms)
     hcidle_in_t in;
     unsigned int v;
 
+    /* the auxiliary functions first: the A/C idle-up is an input here */
+    hc_aux_service(now_ms);
     acc_ms += elapsed(now_ms);
     if (acc_ms < STEP_MS) return;
     ms = acc_ms;
@@ -75,6 +80,18 @@ void far hc_idle_service(unsigned int now_ms)
     c.kp = hc_cal_u16(CAL_IDLE_KP);
     c.ki = hc_cal_u16(CAL_IDLE_KI);
     c.range_x10 = hc_cal_u16(CAL_IDLE_RANGE_X10);
+    /* THE TRIM NEVER MOVES THE THROTTLE MORE THAN IDLE_TRIM_MAX_X10 of its
+       travel (2026-10-15, car): hc_dbw.c applies the idle position x
+       etbIdleRange %, so the authority is capped in throttle terms. The
+       morning's page (authority 100 %, etbIdleRange 100) let the trim open
+       the throttle fully with the pedal released. */
+    {
+        unsigned int rng = hc_cal_u8(CFG_U_IDLE_ETB_RANGE);
+        unsigned int cap;
+        if (rng == 0u || rng > 100u) rng = 100u;
+        cap = (unsigned int)(IDLE_TRIM_MAX_X10 * 100u / rng);
+        if (c.range_x10 > cap) c.range_x10 = cap;
+    }
     c.band_rpm = hc_cal_u16(CAL_IDLE_RPM_BAND);
     v = hc_cal_u16(CFG_U_IDLE_PEDAL_X10);
     c.pedal_x10 = v ? v : PEDAL_DEFAULT_X10;
@@ -89,7 +106,8 @@ void far hc_idle_service(unsigned int now_ms)
        -40 C is not a control value. */
     clt = (eng_sensor_err & ENG_ERR_CLT) ? ((unsigned int)((0 + (int)CAL_TEMP_BIAS) * 10)) : eng_clt_dc;
     hc_idle_target_rpm = hc_cal_curve16(CAL_IDLE_TARGET_AX, CAL_IDLE_TARGET_VAL, 8u,
-                                        clt);
+                                        clt)
+                       + hc_aux_idle_rpm();        /* A/C requested */
     in.rpm = trg_rpm;
     in.target_rpm = hc_idle_target_rpm;
     in.base_x10 = hc_cal_curve16(CAL_IDLE_BASE_AX, CAL_IDLE_BASE_VAL, 8u, clt);
@@ -102,6 +120,9 @@ void far hc_idle_service(unsigned int now_ms)
         hc_idle_floor_x10 = (unsigned int)(hc_idle_floor_x10
                             + (unsigned int)(hc_cal_u8(CFG_U_ALS_THROTTLE) * 10u));
     }
+    /* the A/C compressor's load (rusEFI acIdleExtraOffset), whether or not
+       closed-loop idle is enabled */
+    hc_idle_floor_x10 = (unsigned int)(hc_idle_floor_x10 + hc_aux_idle_up_x10());
 
     /* idle ignition timing, only while the loop above is CLOSED */
     {

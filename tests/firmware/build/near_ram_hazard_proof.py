@@ -159,7 +159,7 @@ def overlap(a0, a1, b0, b1):
     return not (a1 < b0 or a0 > b1)
 
 
-XRAM_RESERVE = 64     # bytes; docs/ARCHITECTURE.md
+XRAM_RESERVE = 64     # bytes; the maintainer's design notes
 
 
 def near_ram_headroom():

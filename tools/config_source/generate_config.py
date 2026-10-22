@@ -502,6 +502,12 @@ typedef struct {
    not "not a sensor". */
 #define HC_ADC_NONE   0xFFu
 
+/* Where the table lives: huge on ME7.1.1 (HCONST, 2026-10-14 - the
+   near-constant class had no room left; only far code reads it). */
+#ifndef HC_PIN_MEM
+#define HC_PIN_MEM
+#endif
+
 /* V86: an analog input read by the PERIPHERAL ASIC's converter channel n
    (ME7.1.1: coolant cavity 93 = ASIC AN0, intake air cavity 26 = ASIC AN1).
    It is a real, routable resource - the board's HAL reads it out of the
@@ -512,12 +518,12 @@ typedef struct {
 #define HC_ADC_IS_ASIC(c)   (((c) & 0xF0u) == 0xE0u)
 
 /* Provided by exactly one hc_pin_desc_<target>.c. */
-extern const hc_pin_desc_t hc_pin_table[HC_PHYSICAL_PIN_COUNT];
+extern const hc_pin_desc_t HC_PIN_MEM hc_pin_table[HC_PHYSICAL_PIN_COUNT];
 extern const unsigned int  hc_pin_target_id;
 extern const char          hc_pin_target_name[];
 
 /* 0 for pin 0, pin > 121, or HC_PIN_NONE. */
-const hc_pin_desc_t *HC_COLD hc_pin_desc(unsigned char pin);
+const hc_pin_desc_t HC_PIN_MEM *HC_COLD hc_pin_desc(unsigned char pin);
 
 /* 1 only when the pin exists, is ROUTABLE on this board, and its circuit
    provides EVERY bit in `need`.
@@ -567,18 +573,18 @@ PIN_DESC_C_BODY = '''/*
  */
 #include "hc_pin_descriptor.h"
 
-const hc_pin_desc_t *HC_COLD hc_pin_desc(unsigned char pin)
+const hc_pin_desc_t HC_PIN_MEM *HC_COLD hc_pin_desc(unsigned char pin)
 {
     if (pin == 0u || pin > HC_PHYSICAL_PIN_COUNT) {
-        return (const hc_pin_desc_t *)0;
+        return (const hc_pin_desc_t HC_PIN_MEM *)0;
     }
     return &hc_pin_table[pin - 1u];
 }
 
-static unsigned char can(const hc_pin_desc_t *d, unsigned int have,
+static unsigned char can(const hc_pin_desc_t HC_PIN_MEM *d, unsigned int have,
                          unsigned int need)
 {
-    if (d == (const hc_pin_desc_t *)0) {
+    if (d == (const hc_pin_desc_t HC_PIN_MEM *)0) {
         return 0u;
     }
     if (!d->routable) {
@@ -598,8 +604,8 @@ static unsigned char can(const hc_pin_desc_t *d, unsigned int have,
 
 unsigned char HC_COLD hc_pin_is_dedicated(unsigned char pin)
 {
-    const hc_pin_desc_t *d = hc_pin_desc(pin);
-    if (d == (const hc_pin_desc_t *)0) {
+    const hc_pin_desc_t HC_PIN_MEM *d = hc_pin_desc(pin);
+    if (d == (const hc_pin_desc_t HC_PIN_MEM *)0) {
         return 0u;
     }
     return (unsigned char)((d->caps & HC_PINCAP_SPECIAL_LOCKED) ? 1u : 0u);
@@ -607,20 +613,20 @@ unsigned char HC_COLD hc_pin_is_dedicated(unsigned char pin)
 
 unsigned char HC_COLD hc_pin_can(unsigned char pin, unsigned int need)
 {
-    const hc_pin_desc_t *d = hc_pin_desc(pin);
+    const hc_pin_desc_t HC_PIN_MEM *d = hc_pin_desc(pin);
     return can(d, d ? d->caps : 0u, need);
 }
 
 unsigned char HC_COLD hc_pin_can_verified(unsigned char pin, unsigned int need)
 {
-    const hc_pin_desc_t *d = hc_pin_desc(pin);
+    const hc_pin_desc_t HC_PIN_MEM *d = hc_pin_desc(pin);
     return can(d, d ? d->caps_verified : 0u, need);
 }
 
 unsigned char HC_COLD hc_pin_adc_channel(unsigned char pin)
 {
-    const hc_pin_desc_t *d = hc_pin_desc(pin);
-    if (d == (const hc_pin_desc_t *)0) {
+    const hc_pin_desc_t HC_PIN_MEM *d = hc_pin_desc(pin);
+    if (d == (const hc_pin_desc_t HC_PIN_MEM *)0) {
         return HC_ADC_NONE;
     }
     return d->adc_ch;
@@ -651,7 +657,7 @@ def gen_pin_desc(d) -> str:
       % (sum(ord(c) for c in d.target_id) & 0xFFFF))
     a('const char hc_pin_target_name[] = "%s";' % d.target_id)
     a("")
-    a("const hc_pin_desc_t hc_pin_table[HC_PHYSICAL_PIN_COUNT] = {")
+    a("const hc_pin_desc_t HC_PIN_MEM hc_pin_table[HC_PHYSICAL_PIN_COUNT] = {")
     for p in d.pins:
         ver = p.caps_at_least(EvidenceClass.VERIFIED)
         note = p.oem_name or "not assigned in the source document"

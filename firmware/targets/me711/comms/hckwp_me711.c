@@ -9,6 +9,7 @@
 #include "hcts.h"
 #include "hckline.h"
 #include "hckwp_me711.h"
+#include "hcserial711.h"   /* hc_tx_busy: our own echo is no break */
 
 /* The IDENTIFY payload is the TunerStudio signature, so a tool that enters
    through the vehicle K-line learns the page layout (and the .ini it needs)
@@ -21,30 +22,30 @@ static unsigned char kw_on;           /* a KWP session owns the K-line */
 static unsigned long kw_us;           /* microseconds, advanced by addition */
 static unsigned int  kw_last_ms;
 
-/* 5-baud decoder */
-/* ARMING IDLE 20 ms, NOT 300 (2026-10-13, ME711_OBD_KLINE.md 6.3): on the
-   car's shared K-line the cluster's own traffic seldom leaves 300 ms of idle,
-   so the decoder never armed. ISO 9141's W5 (300 ms idle before the address)
-   is the TESTER's obligation; what qualifies a 5-baud byte here is the 180 ms
-   start bit with < 3 high samples, the 8 voted data bits and the stop bit -
-   which no UART byte can imitate. */
+/* THE 5-BAUD DECODER RUNS IN THE 1 MS TICK (2026-10-14 evening, car).
+   It sampled from the MAIN LOOP until then and threw the byte away when one
+   pass exceeded 60 ms; its start bit had to be low on EVERY tick sample and
+   three high main-loop samples aborted it. On the car (the K-line arrives
+   through the instrument cluster) the ECU recognised NOTHING - 0 good and 0
+   failed inits over two 5-baud attempts and a fast init - while the same
+   image decodes the same sequence on the bench, clean or after garbled
+   bursts. Now every millisecond is one sample, a bit is a majority vote over
+   +-60 ms of its 200 ms, and the start bit needs 150 of its first 180 ms
+   low: glitches and slow edges through the cluster cannot kill it, and the
+   main loop's timing cannot either. What no 5-baud byte has - the ECU's OWN
+   transmission (its echo held the line ~90 % low; bench, 2026-10-14) and a
+   byte stream (a byte every millisecond) - is rejected explicitly. ISO
+   9141's W5 (300 ms idle before the address) is the tester's obligation:
+   20 ms of idle arms the decoder. */
 #define FB_IDLE_MS      20u    /* line high this long before a start bit counts */
-#define FB_START_MS     180u   /* the start bit must stay low this long ...     */
-#define FB_ABORT_HIGH   3u     /* ... and 3 high samples in it abort (UART bytes)*/
-#define FB_WIN_MS       40u    /* majority window either side of a bit centre   */
-#define FB_GAP_MS       60u    /* no sample this long inside a byte: unwatched  */
-/* THE START BIT IS QUALIFIED BY THE 1 MS TICK TOO (2026-10-14): the pin must
-   have been low on every tick sample (HC_KL.lowcnt) for this long. With the
-   20 ms arming, the main loop's sparse samples took the ECU's OWN output-
-   channel reply - mostly 0x00 bytes, the line ~90 % low - for a start bit
-   (bench: 10 false inits in a 30 s 57600 soak, TunerStudio requests eaten).
-   No UART byte at any rate holds the line low through 160 consecutive 1 ms
-   samples - every byte's stop bit is high. */
-#define FB_START_TICKS  160u
-static unsigned char fb_st;    /* 0 qualify idle, 1 armed, 2 start bit, 3 bits,
-                                  4 wait for the end of the stop bit           */
-static unsigned int  fb_hi_ms;
-static unsigned int  fb_t0;    /* ms of the falling edge */
+#define FB_START_MS     180u   /* the start bit is judged here ...              */
+#define FB_START_LOW    150u   /* ... and needs this many low samples           */
+#define FB_START_BYTES  24u    /* ... and at most this many received bytes      */
+#define FB_WIN_MS       60u    /* majority window either side of a bit centre   */
+static unsigned char fb_st;    /* 0 qualify idle, 1 armed, 2 start bit, 3 data
+                                  and stop bits, 4 a byte is ready (main loop) */
+static unsigned int  fb_hi_ms; /* consecutive high samples (the tick's)        */
+static unsigned int  fb_t0;    /* ms since the falling edge of the start bit   */
 static unsigned char fb_n, fb_hi, fb_i, fb_byte;
 
 typedef char kl_fits[(sizeof(kl_t) <= TGT_RAM_KLINE_LIMIT) ? 1 : -1];
@@ -61,28 +62,173 @@ typedef char kl_fits[(sizeof(kl_t) <= TGT_RAM_KLINE_LIMIT) ? 1 : -1];
    arrives at it within this time; otherwise the line goes back to 10400 -
    never assume 115200/124800 survive the cluster. */
 #define KL_PROOF_MS     2000u
+/* THE VEHICLE RATE IS PINNED (2026-10-15, car): once proven, the rate a
+   vehicle entry negotiated stays held against the hunt - KL_PV is kept, not
+   cleared - until the tester has sent no CRC-VALID request for KL_IDLE_MS (a
+   host at another rate parses as garbage frames, never as valid ones; the KKL moved
+   to the direct cable) or a new entry starts. On the car's shared line the
+   cluster's traffic is framing errors and bad CRCs at any rate: three bursts
+   moved a locked 115200 to 124800, and a locked 10400 - not a hunt rate -
+   to 115200 for good. Every OBD session died that way every 20..40 s
+   (linkState changes +3..5, failed inits 0).
+   1.5 s, not 5 s (2026-10-20): a live tester sends a CRC-valid request
+   every 100..200 ms (TunerStudio, the logger), and a Burn's deferred reply
+   already blocks every rate move (hcts.c link_bad_seen). A tester that went
+   silent longer - TunerStudio waiting 8 s for a reply lost on the line -
+   comes back through the plugin's remembered path, which after an OBD
+   session is the 5-baud / fast init entry: that works at whatever rate the
+   ECU is on, so holding longer buys nothing, while 5 s stranded a host that
+   reconnected directly at another rate (bench 783AE496: link qualify
+   "GOFAST, host drops" / "never stranded", plugin lock_124800). */
+#define KL_IDLE_MS      1500u
 extern unsigned char hc_link_locked;      /* hcts.c: a CRC-valid frame here */
 
-/* A LOW RUN ENDS AT A HIGH SAMPLE OR AT A RECEIVED BYTE (2026-10-14): one
-   sample a ms cannot see a stop bit, and the ECU's OWN reply - echoed onto
-   RXD0, an output-channel block full of 0x00 bytes - kept the line low on
-   every sample for 20..30 ms: a fast-init wake-up mid-session, the rate
-   forced to 10400 (bench: the 57600 soak went silent). A real break
-   (TiniL, a 5-baud bit) delivers at most one framing-error byte at its
-   start; a byte stream moves DSTP6 every ms. */
+/* THE LOW RUN (fast init) AND THE 5-BAUD DECODER, once a millisecond from
+   hc_tick_isr: `hi` = the RXD0 pin (P3.11), `rxp` = the low byte of DSTP6
+   (a byte the UART received moves it).
+   A low run ENDS AFTER THREE CONSECUTIVE HIGH SAMPLES - one or two glitches
+   through the cluster do not split a 25 ms TiniL - and it is a break only
+   with few bytes in it: a byte stream (the ECU's own 0x00-rich reply,
+   echoed) moves DSTP6 every millisecond. The byte count lives in st's low
+   7 bits (bit 7 is KL_PV): kl_t is full. The ECU's own transmission makes
+   the run, and any 5-baud byte in progress, invalid. */
+/* THE K-LINE CAPTURE (TGT_RAM_KLCAP, 256 bytes, C167 little-endian words):
+     magic 'KC' 0x4B43, state 0 armed / 1 recording / 2 done, tick_ms of the
+     trigger (the 3rd low ms), samples recorded, UART bytes received while
+     recording, triggers since boot, link state at the trigger, spare;
+   then KC_SAMPLES bits, 1 = line high, bit 0 of bits[0] first. */
+typedef struct {
+    unsigned int magic, st, t, n, bytes, trig, link;
+    unsigned int good;              /* 1: a CRC-valid request since the last
+                                       look (hctarget.h HCTS_TARGET_GOOD_FRAME,
+                                       KL_IDLE_MS) - byte offset 14        */
+    unsigned char bits[240];
+} kc_t;
+#define KC          (*(kc_t huge *)(TGT_EXTRAM_BASE + TGT_RAM_KLCAP))
+#define KC_MAGIC    0x4B43u
+#define KC_SAMPLES  1920u
+
+#define KL_BREAK_BYTES  8u
+#define KL_GLITCH_MS    3u     /* consecutive highs that end a low run */
 void far hc_kl_tick(unsigned char hi, unsigned char rxp, unsigned int now)
 {
     kl_t huge *k = &HC_KL;
     unsigned char moved = (unsigned char)(rxp != k->rxp);
+    unsigned char own = (unsigned char)HC_TX_BUSY_NOW();
+    unsigned int c;
     k->rxp = rxp;
-    if (hi || moved) {
+    if (hi) {
+        if (fb_hi_ms != 0xFFFFu) {
+            fb_hi_ms++;
+        }
+    } else {
+        fb_hi_ms = 0u;
+    }
+    if (own) {
+        k->st |= KL_PV_CLR;                 /* this run is our own echo */
+    }
+    if (!hi) {
+        if (k->lowcnt != 0xFFu) {
+            k->lowcnt++;
+        }
+        if (moved && (k->st & KL_PV_CLR) != KL_PV_CLR) {
+            k->st++;
+        }
+    } else if (fb_hi_ms >= KL_GLITCH_MS) {
         if (k->lowcnt != 0u) {
-            k->run = k->lowcnt;
+            k->run = (unsigned char)(((k->st & KL_PV_CLR) > KL_BREAK_BYTES)
+                                     ? 0xFFu : k->lowcnt);
             k->run_t = (unsigned char)now;
             k->lowcnt = 0u;
         }
-    } else if (k->lowcnt != 0xFFu) {
-        k->lowcnt++;
+        k->st &= KL_PV;                     /* a new run: no bytes yet */
+    }
+
+    /* the K-line capture: one bit a millisecond once triggered */
+    if (KC.st == 1u) {
+        c = KC.n;
+        if (c < KC_SAMPLES) {
+            unsigned char m = (unsigned char)(1u << (c & 7u));
+            if (hi) KC.bits[c >> 3] |= m;
+            else    KC.bits[c >> 3] &= (unsigned char)~m;
+            KC.n = c + 1u;
+            KC.bytes += moved;
+        } else {
+            KC.st = 2u;
+        }
+    } else if (KC.st == 0u && k->lowcnt == 3u && !own) {
+        KC.t = now;
+        KC.n = 0u;
+        KC.bytes = 0u;
+        KC.trig++;
+        KC.link = hcts_link_state();
+        KC.st = 1u;
+    }
+
+    /* the 5-baud decoder */
+    if (own && fb_st >= 1u && fb_st <= 3u) {
+        fb_st = 0u;
+        return;
+    }
+    switch (fb_st) {
+    case 0u:
+        if (fb_hi_ms >= FB_IDLE_MS) {
+            fb_st = 1u;
+        }
+        break;
+    case 1u:
+        if (!hi) {
+            fb_st = 2u;
+            fb_t0 = 0u;
+            fb_n = 1u;                      /* this sample is low */
+            fb_hi = 0u;                     /* bytes received in the bit */
+        }
+        break;
+    case 2u:
+        fb_t0++;
+        if (!hi) {
+            fb_n++;
+        }
+        if (moved && fb_hi != 0xFFu) {
+            fb_hi++;
+        }
+        if ((unsigned int)(fb_t0 + 1u - fb_n) > (FB_START_MS - FB_START_LOW)) {
+            fb_st = 0u;                     /* too much high: not a start bit */
+            break;
+        }
+        if (fb_t0 >= FB_START_MS - 1u) {
+            if (fb_hi > FB_START_BYTES) {
+                fb_st = 0u;                 /* a byte stream, not a break */
+                break;
+            }
+            fb_st = 3u;
+            fb_i = 0u; fb_n = 0u; fb_hi = 0u; fb_byte = 0u;
+        }
+        break;
+    case 3u:
+        fb_t0++;
+        c = (unsigned int)(300u + 200u * (unsigned int)fb_i);   /* centre */
+        if (fb_t0 + FB_WIN_MS >= c) {
+            fb_n++;
+            if (hi) {
+                fb_hi++;
+            }
+        }
+        if (fb_t0 >= c + FB_WIN_MS) {
+            hi = (unsigned char)(fb_hi * 2u > fb_n);
+            fb_n = 0u; fb_hi = 0u;
+            if (fb_i < 8u) {
+                if (hi) {
+                    fb_byte |= (unsigned char)(1u << fb_i);
+                }
+                fb_i++;
+            } else {
+                fb_st = (unsigned char)(hi ? 4u : 0u);  /* stop bit */
+            }
+        }
+        break;
+    default:
+        break;                              /* 4: the main loop takes it */
     }
 }
 
@@ -105,6 +251,11 @@ void far hc_kwp_init(void)
     fb_t0 = 0u;
     fb_n = 0u; fb_hi = 0u; fb_i = 0u; fb_byte = 0u;
     KL.st = 0u; KL.lowcnt = 0u; KL.run = 0u; KL.asic_prep = 0u;
+    /* the K-line capture re-arms at every boot (the owner keeps the key ON
+       while moving the KKL from OBD to cavity 43, so it survives that) */
+    KC.magic = KC_MAGIC;
+    KC.st = 0u;
+    KC.trig = 0u;
     KL.run_t = 0u; KL.rxp = 0u; KL.t_pv = 0u;
 }
 
@@ -113,7 +264,10 @@ unsigned char far hc_kwp_active(void)
     /* the rate hunt is held while a 5-baud byte is decoded, a KWP session
        (or a fast-init window) owns the line, and while a GOFAST rate is on
        probation - noise must not move the rate the host was told to use */
-    return (unsigned char)(kw_on || fb_st >= 3u || (KL.st & KL_PV));
+    /* ... and while the line is HELD low (>= 3 ms, a break, not a byte at
+       another rate): a 5-baud start bit or a TiniL must never move the rate */
+    return (unsigned char)(kw_on || fb_st >= 3u || (KL.st & KL_PV)
+                           || KL.lowcnt >= 3u);
 }
 
 unsigned char far hc_kwp_rx_take(unsigned char b)
@@ -124,124 +278,6 @@ unsigned char far hc_kwp_rx_take(unsigned char b)
     }
     /* inside a qualified 5-baud byte the UART sees break garbage */
     return (unsigned char)(fb_st >= 3u);
-}
-
-/* the 5-baud decoder, once per main-loop pass that saw the tick move: `d`
-   milliseconds have passed since the last sample (a pass can be several ms
-   long - timing is ALWAYS absolute ms, never a sample count) */
-static void fb_ms(unsigned int ms, unsigned char hi, unsigned int d)
-{
-    unsigned int e = (unsigned int)(ms - fb_t0);
-    unsigned int c;
-
-    /* A START BIT OR A DATA BIT MUST BE WATCHED, NOT INFERRED FROM THE
-       CLOCK. While the ECU transmits a TunerStudio reply the main loop - and
-       this sampler - does not run; a 950-byte output-channel reply is ~190
-       ms. A request's own low bits could arm state 2, the reply then
-       "qualified" a start bit nobody had seen (e >= 180 ms at the first
-       sample after it), hc_kwp_rx_take() swallowed the host's NEXT request
-       as 5-baud break garbage, and the decoder later counted a foreign
-       5-baud address. Bench, 2026-09-29, V97 dev: 8 of 20 requests after a
-       950-byte read lost, kwpCounts +8; the V96 872-byte reply stayed under
-       180 ms. A pass is 20-30 ms at worst, so a sampling gap beyond
-       FB_GAP_MS means the line was not watched: start over - also before a
-       byte, where an unwatched gap (our own transmission) must not count
-       as the 300 ms of idle that arms the decoder. */
-    if (fb_st <= 3u && d > FB_GAP_MS) {
-        fb_reset();
-        return;
-    }
-
-    switch (fb_st) {
-    case 0u:
-        if (hi) {
-            fb_hi_ms = (unsigned int)(fb_hi_ms + d);
-            if (fb_hi_ms >= FB_IDLE_MS) {
-                fb_st = 1u;
-            }
-        } else {
-            fb_hi_ms = 0u;
-        }
-        break;
-    case 1u:
-        if (!hi) {
-            fb_st = 2u;
-            fb_t0 = ms;
-            fb_hi = 0u;
-        }
-        break;
-    case 2u:
-        /* THE START BIT QUALIFIES BY TIME, NOT BY A SAMPLE LANDING IN A
-           WINDOW: a main-loop pass can be 20-30 ms long, and the first
-           version waited for a sample between 180 and 200 ms - missing it
-           turned the next (high) data bit into the "UART byte" abort. */
-        if (e < FB_START_MS) {
-            if (hi && ++fb_hi >= FB_ABORT_HIGH) {
-                fb_reset();                     /* a UART byte, not 5 baud */
-            }
-            break;
-        }
-        if (HC_KL.lowcnt < FB_START_TICKS) {
-            fb_reset();                 /* a tick saw it high: not a start bit */
-            break;
-        }
-        fb_st = 3u;
-        fb_i = 0u; fb_n = 0u; fb_hi = 0u; fb_byte = 0u;
-        /* this sample already belongs to the data bits */
-        /* fall through */
-    case 3u:
-        for (;;) {                  /* at most 9 passes: each decides a bit */
-            unsigned char lvl;
-
-            c = (unsigned int)(300u + 200u * (unsigned int)fb_i);  /* centre */
-            if (e + FB_WIN_MS < c) {
-                break;                          /* before this bit's window */
-            }
-            if (e <= c + FB_WIN_MS) {
-                fb_n++;                         /* inside it: vote */
-                if (hi) {
-                    fb_hi++;
-                }
-                break;
-            }
-            if (fb_n != 0u) {
-                lvl = (unsigned char)(fb_hi * 2u > fb_n);
-            } else if (e < c + 100u) {
-                lvl = hi;                       /* no vote, still in the bit */
-            } else {
-                fb_reset();                     /* a whole bit unseen: no guess */
-                break;
-            }
-            if (fb_i < 8u) {
-                if (lvl) {
-                    fb_byte |= (unsigned char)(1u << fb_i);
-                }
-                fb_i++;
-                fb_n = 0u; fb_hi = 0u;
-                continue;
-            }
-            if (lvl) {
-                fb_st = 4u;                     /* stop bit good */
-            } else {
-                fb_reset();                     /* framing: not a 5-baud byte */
-            }
-            break;
-        }
-        break;
-    case 4u:
-        if (e >= 2000u) {                       /* the end of the stop bit */
-            hckline_on_slow_init(&kw, fb_byte, kw_us);
-            if (kw.state == HCKLINE_ST_SYNC) {
-                kw_on = 1u;
-                hcts_link_force(0x77u, 1u);     /* 10400 = 1 248 000 / 120 */
-            }
-            fb_reset();
-        }
-        break;
-    default:
-        fb_reset();
-        break;
-    }
 }
 
 /* The fast-init wake-up: a finished low run of 20..30 ms, fresh. Taken once.
@@ -258,17 +294,15 @@ static unsigned char kl_wakeup(unsigned int ms)
                               <= KL_WUP_AGE_MS);
 }
 
-void far hc_kwp_service(unsigned int ms, unsigned char rxd_high)
+void far hc_kwp_service(unsigned int ms)
 {
     unsigned int d = (unsigned int)(ms - kw_last_ms);
-    unsigned int gap;
     unsigned char b, sent, code;
 
     if (d == 0u) {
         return;
     }
     kw_last_ms = ms;
-    gap = d;                      /* the raw sampling gap, for fb_ms() */
     if (d > 50u) {
         d = 50u;                  /* a long stall: time moves, bounded work */
     }
@@ -276,11 +310,20 @@ void far hc_kwp_service(unsigned int ms, unsigned char rxd_high)
         kw_us += 1000uL;
     }
     if (KL.st & KL_PV) {
-        if (hc_link_locked) {
-            KL.st &= KL_PV_CLR;     /* proven: the rate holds */
-        } else if ((unsigned int)(ms - KL.t_pv) >= KL_PROOF_MS) {
-            KL.st &= KL_PV_CLR;
-            hcts_link_force(0x77u, 0u);         /* back to 10400 */
+        if (!hc_link_locked) {
+            if ((unsigned int)(ms - KL.t_pv) >= KL_PROOF_MS) {
+                /* back to 10400 and LOCKED (and pinned) there: the tester
+                   that asked for a rate the line (the cluster) cannot carry
+                   is still talking at 10400 - not one of the hunt's rates */
+                hcts_link_force(0x77u, 1u);
+                KL.t_pv = ms;
+                KC.good = 0u;
+            }
+        } else if (KC.good) {
+            KC.good = 0u;           /* the tester is still there */
+            KL.t_pv = ms;
+        } else if ((unsigned int)(ms - KL.t_pv) >= KL_IDLE_MS) {
+            KL.st &= KL_PV_CLR;     /* gone: evidence may move the rate */
         }
     }
     if (!kw_on) {
@@ -294,7 +337,16 @@ void far hc_kwp_service(unsigned int ms, unsigned char rxd_high)
             fb_reset();
             return;
         }
-        fb_ms(ms, rxd_high, gap);
+        if (fb_st == 4u) {
+            /* a 5-baud byte from the tick's decoder (stop bit just ended) */
+            b = fb_byte;
+            fb_reset();
+            hckline_on_slow_init(&kw, b, kw_us);
+            if (kw.state == HCKLINE_ST_SYNC) {
+                kw_on = 1u;
+                hcts_link_force(0x77u, 1u);     /* 10400 = 1 248 000 / 120 */
+            }
+        }
         return;
     }
     hckline_tick(&kw, kw_us);
@@ -327,6 +379,7 @@ void far hc_kwp_service(unsigned int ms, unsigned char rxd_high)
         KL.t_pv = ms;
     } else if (kw.state == HCKLINE_ST_IDLE) {
         kw_on = 0u;                             /* failed / timed out */
+        KL.st &= KL_PV_CLR;
         hcts_link_hunt();
         fb_reset();
     }

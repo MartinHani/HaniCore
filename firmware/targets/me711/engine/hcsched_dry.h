@@ -75,7 +75,7 @@ extern unsigned int dry_dwell_x100, dry_inj_pulse_us;
 extern unsigned int dry_dwell_start_angle, dry_spark_angle;
 extern unsigned int dry_inj_start_angle, dry_inj_end_angle;
 
-/* TRUE SEQUENTIAL WITH A FALLBACK (docs/ARCHITECTURE.md).
+/* TRUE SEQUENTIAL WITH A FALLBACK (the maintainer's design notes).
  * A sequential strategy plans every cylinder's event AND its twin 360 deg
  * later (slot | HC_SLOT_TWIN). Without cycle sync both fire - wasted COP and
  * two half pulses per cylinder, which is phase-agnostic. With cycle sync

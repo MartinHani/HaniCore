@@ -48,7 +48,7 @@
  * tools/config_source/data/me711_iomap.csv and has been since the map was extracted.
  * Nobody had looked. Corrected 2026-09-02; the evidence chain, including the
  * CJ920 driver and connector cavity 65, is in hctarget.h and
- * docs/ARCHITECTURE.md.
+ * the maintainer's design notes.
  *
  * WHAT IS DELIBERATELY REFUSED, and why refusing is the honest answer:
  *

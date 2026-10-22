@@ -40,7 +40,7 @@ the Java is right and this file is a bug.
 WHY IT MATTERS. TunerStudio's default cluster comes from [FrontPage], which
 this repository now controls - but a .dash is what a user can open, rearrange
 and keep, and it is what the release can hand them so they do not have to
-rebuild eight gauges by hand. `docs/TUNERSTUDIO.md` says how the
+rebuild eight gauges by hand. `the maintainer's design notes` says how the
 release makes it active.
 """
 from __future__ import annotations

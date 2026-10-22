@@ -16,7 +16,7 @@ void far hc_dtc_init(void);
 void far hc_dtc_service(unsigned int now_ms);
 /* THE CHECK-ENGINE LAMP (diagnostics/hccel.c): the key-on lamp test
    (celTestEnable / OnMs / GapMs), then the MIL request; drives cavity 47
-   (ASIC P7.0) when celEnable and pinMil = 47 (docs/ARCHITECTURE.md). */
+   (ASIC P7.0) when celEnable and pinMil = 47 (the maintainer's design notes). */
 void far hc_cel_service(unsigned int now_ms, unsigned char key_on);
 unsigned int far hc_cel_state(void);   /* mode | cmd << 8 | mil << 9 */
 unsigned char far hc_dtc_n(void);

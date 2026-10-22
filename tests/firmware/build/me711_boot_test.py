@@ -191,7 +191,7 @@ class Harness:
                 # S0LB (S0CON bit 14) is the ASC0 INTERNAL loopback the
                 # firmware already relies on in hcts_rx_learn() and, since
                 # V23, in cal_measure(): hardware-documented (see
-                # docs/ARCHITECTURE.md) to tie the transmitter to
+                # the maintainer's design notes) to tie the transmitter to
                 # the receiver INSIDE the chip and keep the byte off the
                 # wire. Model that distinction, or this harness cannot tell
                 # "goes out on K-line" from "stays on-chip" - which is
@@ -259,7 +259,7 @@ def hcts_trace_on(h):
     """hc_trace_on lives in near RAM; find it through the linker map."""
     import re as _re
     mp = PI.MAP
-    m = _re.search(r"^\s*([0-9A-F]{6})H\s+hc_trace_on",
+    m = _re.search(r"^\s*([0-9A-F]{6})H\s+hc_trace_on\b",
                    mp.read_text(errors="replace"), _re.M)
     if not m:
         return 0
@@ -323,7 +323,7 @@ def main() -> int:
     # hc_asic_start_service() - the runtime ASIC exchange's own state
     # machine - and its first call landed at ~T=107-128 ms on every boot,
     # which is where the S5500 reset HaniCore regardless of UMKOM answer
-    # content (docs/ARCHITECTURE.md/§5h). The function is
+    # content (the maintainer's design notes/§5h). The function is
     # deleted, not merely uncalled, so this checks the fix stays in place
     # rather than being silently re-added.
     check("the liveness line stays REMOVED (V17 fix)", b"HCL T=" not in banner,

@@ -28,10 +28,14 @@ void hc_load_init(void) {
     for(i=0;i<sizeof(hc_load_t);i++) p[i]=0u;
     L.last_ms=hc_tick_ms;
 }
-void hc_load_select(unsigned int rpm,unsigned int tps) {
+void hc_load_select(unsigned int tps) {
     unsigned int ref=hc_cal_u16(CFG_U_PRESSURE_REF),dt=(unsigned int)(hc_tick_ms-L.last_ms);
     unsigned int gauge,start,full,delta,raw;
-    unsigned char source=hc_cal_u8(CFG_U_BARO_SOURCE);
+    /* THE AMBIENT IS THE ONBOARD SENSOR (2026-10-16, owner): HOG is part of
+       this ECU and is never removed - no fixed reference, no learning from
+       the boost sensor at standstill. The page's ambientSource is not read.
+       densityReference is only the FAULT value when the onboard sensor has
+       not given one valid sample within ambientMaxAge (HC_LOAD_AMBIENT_FALLBACK). */
     L.last_ms=hc_tick_ms; L.dt_ms=dt; L.flags=0u;
     if(dt>250u) { L.flags|=HC_LOAD_TASK_GAP; L.lean_ms=L.recovery_ms=0u; }
     L.model=hc_cal_u8(CFG_U_FUEL_MODEL); L.role=hc_cal_u8(CFG_U_PRESSURE_ROLE); L.policy=hc_cal_u8(CFG_U_DENSITY_POLICY);
@@ -39,48 +43,42 @@ void hc_load_select(unsigned int rpm,unsigned int tps) {
     L.pressure_ok=(unsigned int)(!(eng_sensor_err&ENG_ERR_MAP) && hc_hal_ain_ok(HC_AIN_MAP)
         && L.pressure_age<=hc_cal_u16(CFG_U_PRESSURE_TIMEOUT) && L.pressure>=100u && L.pressure<=5000u);
     if(ref<500u||ref>1200u) { ref=1013u; if(L.model) L.flags|=HC_LOAD_BAD_MODEL; }
-    /* Fixed reference is usable but explicitly not a measured ambient value.
-       A stopped capture is leased; age consumes once rather than revalidating
-       after a 16-bit millisecond wrap. No averaging boosted running pressure.
-       The onboard sensor (HOG, ASIC AN8 = runtime frame word 12) is read only
+    /* The onboard sensor (HOG, ASIC AN8 = runtime frame word 12) is read only
        from a fresh, channel-tagged window sample. Transfer = this ECU's own
        DSU calibration, read where its DSU code reads it: DSUGRAD 16192 at
        0x81EE12 (x 1/64 hPa/V), DSUOFS 0 at 0x81EE14, so hPa = counts x
        1265/1024. Accepted inside the OEM's own 400..1200 hPa window
        (0x81EE18/0x81EE1A); anything else falls back like a missing sample.
        tests/firmware/engine/me711_ambient_pressure.py derives every number. */
-    if(source==1u && !rpm && L.role && L.pressure_ok && L.pressure>=500u && L.pressure<=1200u && dt<=250u) {
-        L.stopped_ms=add(L.stopped_ms,dt);
-        if(L.stopped_ms>=1000u) {
-            L.ambient=L.pressure; L.ambient_valid=1u; L.ambient_source=1u; L.ambient_age_ms=0uL;
-        }
-    } else L.stopped_ms=0u;
-    if(L.ambient_valid && L.ambient_source==1u) {
+    L.stopped_ms=0u;
+    if(L.ambient_valid && L.ambient_source==2u) {
         if(L.ambient_age_ms<65535000uL) L.ambient_age_ms+=dt;
         if(L.ambient_age_ms>(unsigned long)hc_cal_u16(CFG_U_BARO_MAX_AGE)*1000u)
             L.ambient_valid=0u;
     }
-    if(source==2u) {
+    {
+        /* a missing or implausible sample HOLDS the last good one (aged
+           above, released after ambientMaxAge) - never the fixed value */
         raw=hc_fresh_asic_an(8u);
-        L.ambient_valid=0u;
         if(raw<=1023u) {
             raw=DIV((unsigned long)raw*1265u,1024u);
             if(raw>=400u && raw<=1200u) {
                 L.ambient=raw; L.ambient_source=2u; L.ambient_valid=1u; L.ambient_age_ms=0uL;
             }
         }
+        if(L.ambient_source!=2u) L.ambient_valid=0u;
     }
-    if((source!=1u && source!=2u) || !L.ambient_valid) {
+    if(!L.ambient_valid) {
         L.ambient=ref; L.ambient_source=0u; L.ambient_valid=0u; L.flags|=HC_LOAD_AMBIENT_FALLBACK;
     }
-    L.ambient_age_s=L.ambient_source==1u?DIV(L.ambient_age_ms,1000u):L.ambient_source==2u?0u:65535u;
+    L.ambient_age_s=L.ambient_source!=0u?DIV(L.ambient_age_ms,1000u):65535u;
     eng_baro_kpa_x10=L.ambient;
     L.effective=ref; L.axis=tps; L.temperature=2932u; L.blend_x1000=0u;
     if(hc_cal_u8(CFG_U_IAT_POLICY) && !(eng_sensor_err&ENG_ERR_IAT)) L.temperature=(unsigned int)(eng_iat_dc-10000u+2732u);
     else L.flags|=HC_LOAD_IAT_FALLBACK;
     if(L.model==1u) {
         if(L.policy!=0u) L.flags|=HC_LOAD_BAD_MODEL;
-        if(hc_cal_u8(CFG_U_AMBIENT_CORR) && L.ambient_valid) L.effective=L.ambient;
+        L.effective=L.ambient;      /* the onboard ambient (2026-10-16) */
     } else if(L.model==2u || L.model==3u) {
         if((L.model==2u && (L.role!=1u||L.policy!=1u))
             || (L.model==3u && (L.role!=2u||(L.policy!=1u&&L.policy!=2u)))) L.flags|=HC_LOAD_BAD_MODEL;

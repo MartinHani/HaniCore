@@ -16,7 +16,7 @@ $INCLUDE (REG167.INC)
 ; --------------------------
 ; A reset path runs first and jumps here through the entry pointer at flash
 ; 0x008000 (ROMSYS header), which the build writes. Which reset path depends
-; on SYSCON.ROMEN at reset (docs/PLATFORM.md):
+; on SYSCON.ROMEN at reset (the maintainer's design notes):
 ;
 ;   ROMEN set   - the CPU's internal mask ROM: clock/bus setup, RAM test and
 ;                 clear, ROMSYS header and checksum check, then the entry
@@ -209,7 +209,7 @@ HC_SYSCON_DONE:
 ; NLEN_FR is the ECU's own power hold. Bosch's port map has it on P3.12 / CPU
 ; pin 79 in BOTH ME7.1.1 columns; it is ANDed with the ASIC's NLEN_AS in a
 ; 74AC00 and the result is NL, which is pin 26 of the CJ910 - the device that
-; makes VCC and can pull RESET. See docs/ARCHITECTURE.md.
+; makes VCC and can pull RESET. See the maintainer's design notes.
 ;
 ; THE OEM SEQUENCE, re-read from OEM ME7.1.1 machine code at seg8C:0DDA:
 ;       D1 80             EXTR #1

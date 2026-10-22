@@ -1,16 +1,17 @@
 {
- "jar": "HaniCore_KLine_Transport_2.2.0.jar",
- "version": "2.2.0",
- "sha256": "C4E0FC7BE5E9C4549EF5021C03C716B9A602C5A805CE3D1E5EC237A2D6BC8F0A",
+ "jar": "HaniCore_KLine_Transport_2.3.0.jar",
+ "version": "2.3.0",
+ "sha256": "B8C3827B09743FFEC706D1DC7AAD15DAD227B5E9519AFEB4B21842497BE302A7",
  "javac": "javac 25.0.3",
  "release": 8,
  "sources": {
   "tools/tunerstudio/plugin/src/com/hanicore/tunerstudio/AutoConnect.java": "f939db3bb06a21b46acb6360478c642404675f5d462a890cb64a845bb0264556",
   "tools/tunerstudio/plugin/src/com/hanicore/tunerstudio/AutoConnectCli.java": "77718de4a513e33b5841843eb93a61a5bebf7485502dfc2cb1c4a938a6454e5a",
   "tools/tunerstudio/plugin/src/com/hanicore/tunerstudio/Backoff.java": "1cded4649cef6b5603b9c844ad2ef2a673dcee39259ca9d901a079d9de3ed5cf",
-  "tools/tunerstudio/plugin/src/com/hanicore/tunerstudio/HaniCoreKLinePlugin.java": "b7f3d822457ebf09998e07b35e0c2b2d55a0baf9ff96e07416ef83ef1b2e2283",
+  "tools/tunerstudio/plugin/src/com/hanicore/tunerstudio/HaniCoreKLinePlugin.java": "6a079cbb4fe457a4390209189cf5475a49c4f538d9be4163956c0d3776abfadf",
   "tools/tunerstudio/plugin/src/com/hanicore/tunerstudio/HcProtocol.java": "8896a8877200989f2ac7c8a60be4262e8bda0e28e5370914061da037b8a930b0",
   "tools/tunerstudio/plugin/src/com/hanicore/tunerstudio/Line.java": "485001c105fd660aefc6e98b8d52ec267e05b6cb3a6de37f0c0556c9194281ed",
+  "tools/tunerstudio/plugin/src/com/hanicore/tunerstudio/ReplyWatch.java": "f5e693d89c1bb03168917e258c6c83ce3ebc7a2b8c85d9e43b2bf7193e8b0f7b",
   "tools/tunerstudio/plugin/src/com/hanicore/tunerstudio/RetryPolicy.java": "fa1bde4f5c1fd5567a413ac9901a8f4324ecd043c1da3ebe209bee3dc1dd6200",
   "tools/tunerstudio/plugin/src/com/hanicore/tunerstudio/SerialPortLine.java": "61b8b28df63ca33783534dcaa2015239b97e7d9e9376d3affcbc49ea7956fa55",
   "tools/tunerstudio/plugin/src/com/hanicore/tunerstudio/SilenceWatch.java": "0e4046f2c35af431bc98290591fe87d083ed60545a6a76c432cd395b81816193"

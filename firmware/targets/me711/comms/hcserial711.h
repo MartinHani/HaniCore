@@ -28,6 +28,11 @@ unsigned char far hc_tx_start(unsigned char kind, unsigned char code,
                               unsigned int off, unsigned int n,
                               const unsigned char *src);
 unsigned char far hc_tx_busy(void);
+/* The TX state byte itself (hc_ser_t.st at 0xF2C0 + 18; hcserial711.c checks
+   the offset): the 1 ms tick's K-line code reads it WITHOUT a call - a call
+   from that level spills registers onto the user stack, which has 2 bytes
+   of budget (me711_stack_budget_proof). Non-zero = transmitting. */
+#define HC_TX_BUSY_NOW()  (*(unsigned char volatile *)0xF2D2u != 0u)
 unsigned int far hc_tx_sent(void);      /* bytes loaded, echo accounting     */
 unsigned int far hc_tx_echo_owed(void);
 void far hc_tx_echo_ate(unsigned char all);

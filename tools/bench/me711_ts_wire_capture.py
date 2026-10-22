@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 r"""me711_ts_wire_capture.py - a timestamped K-line transcript of one sequence.
 
-    py tools\bench\me711_ts_wire_capture.py --script burn --out evidence\...\dir
+    py tools\bench\me711_ts_wire_capture.py --script burn --out <out dir>\...\dir
 
 Every byte in and out, with a monotonic timestamp, decoded into frames
 afterwards.  It is deliberately NOT a protocol client: it writes the bytes a

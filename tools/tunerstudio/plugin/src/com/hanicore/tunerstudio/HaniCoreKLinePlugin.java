@@ -27,8 +27,14 @@ import java.util.concurrent.atomic.AtomicLong;
  * before. No helper script, no terminal. Settings (optional, one file):
  * ~/.efiAnalytics/HaniCore/kline.properties - mode=AUTO|DIRECT|VEHICLE|OFF.
  *
+ * 2.3.0: A LOST REQUEST IS SENT AGAIN ({@link ReplyWatch}): no byte from the
+ * ECU 300 ms after a complete request (it answers within ~30 ms) and the
+ * request is repeated, twice at most - a collision on the shared OBD K-line
+ * cost TunerStudio's 8 s blockReadTimeout plus a re-entry. And an echo that
+ * comes back full length but DIFFERENT is our own request corrupted on the
+ * wire: it is dropped, not handed to TunerStudio as if the ECU had sent it.
  * 2.2.0: ISO 14230 FAST INIT after a silent 5-baud attempt (the car's shared
- * K-line, docs/ARCHITECTURE.md); short breaks timed by the
+ * K-line, the maintainer's design notes); short breaks timed by the
  * UART (one 0x00 at a low rate) instead of a sleep.
  * 2.1.0: RECOVERY. TunerStudio's own re-establish (A.f.r()) closes and reopens
  * inside its RS232 class; the proxy now re-enters the ECU between the two.
@@ -44,7 +50,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class HaniCoreKLinePlugin implements ApplicationPlugin {
     private static final String CONNECTION_ID = "HaniCore K-Line";
     private static final String DESCRIPTION = "RS232 / KKL: HaniCore auto-connect (direct or VAG 5-baud) + K-Line echo filtering";
-    private static final String VERSION = "2.2.0";
+    private static final String VERSION = "2.3.0";
 
     private static volatile String lastConnect = "Not attempted yet";
     private static volatile String lastTrace = "";
@@ -55,6 +61,11 @@ public final class HaniCoreKLinePlugin implements ApplicationPlugin {
        silence (and >= 5 writes) the link is re-entered, at most every 20 s. */
     static final long SILENCE_MS = 8000L, RECOVERY_INTERVAL_MS = 20000L;
     static final int SILENCE_WRITES = 5;
+    /* a request with no reply byte for 300 ms is sent again, twice at most */
+    static final long RESEND_MS = 300L;
+    static final int RESENDS = 2;
+    private static final AtomicLong resent = new AtomicLong();
+    private static final AtomicLong echoCollisions = new AtomicLong();
 
     private static volatile String status = "Not initialized";
     private static volatile boolean installed = false;
@@ -435,6 +446,7 @@ public final class HaniCoreKLinePlugin implements ApplicationPlugin {
         private final Object ioLock = new Object();
         final SilenceWatch watch = new SilenceWatch(SILENCE_MS, RECOVERY_INTERVAL_MS,
                 SILENCE_WRITES, System.currentTimeMillis());
+        final ReplyWatch reply = new ReplyWatch(RESEND_MS, RESENDS);
         private final ArrayDeque<Byte> replay = new ArrayDeque<>();
         private InputStream rawIn;
         private OutputStream rawOut;
@@ -452,7 +464,22 @@ public final class HaniCoreKLinePlugin implements ApplicationPlugin {
                 filteredIn = null;
                 filteredOut = null;
                 replay.clear();
+                reply.received();           /* nothing outstanding on a new port */
             }
+        }
+
+        /* Under ioLock, from TunerStudio's own read loop (it polls available()
+           every 5..25 ms while it waits): the request it is waiting for never
+           reached the ECU - send it again. */
+        private void resendIfDue() throws IOException {
+            byte[] r = reply.due(System.currentTimeMillis());
+            if (r == null || rawOut == null || rawIn == null) return;
+            rawOut.write(r);
+            rawOut.flush();
+            clearExactEcho(r);
+            resent.incrementAndGet();
+            System.err.println("[HaniCore K-Line] no reply in " + RESEND_MS
+                    + " ms; request sent again: " + hex(r));
         }
 
         InputStream inputStream() throws Exception {
@@ -532,8 +559,25 @@ public final class HaniCoreKLinePlugin implements ApplicationPlugin {
                 return;
             }
 
-            // Never silently throw away a non-matching or incomplete prefix. Replay it to TS.
+            // A FULL-LENGTH echo that still mostly matches is our own request
+            // corrupted on the wire (a collision on the shared K-line): the
+            // ECU got garbage and stays silent, so these bytes are not its
+            // reply - drop them; ReplyWatch sends the request again. (An
+            // adapter without echo delivers the ECU's reply here instead,
+            // which matches the request in few places: replayed below.)
+            if (got.length == expected.length && sameBytes(got, expected) * 2 >= expected.length) {
+                echoFallbacks.incrementAndGet();
+                echoMismatches.incrementAndGet();
+                echoCollisions.incrementAndGet();
+                System.err.println("[HaniCore K-Line] echo corrupted on the line (collision); dropped. TX="
+                        + hex(expected) + " RX=" + hex(got));
+                return;
+            }
+            // Never silently throw away an incomplete prefix (an adapter
+            // without echo can deliver the ECU's reply here). Replay it to TS,
+            // and never send the request again on top of what may be a reply.
             for (byte b : got) replay.addLast(b);
+            if (got.length > 0) reply.received();
             echoFallbacks.incrementAndGet();
             if (got.length < expected.length) {
                 echoTimeouts.incrementAndGet();
@@ -542,6 +586,12 @@ public final class HaniCoreKLinePlugin implements ApplicationPlugin {
             }
             System.err.println("[HaniCore K-Line] Echo mismatch/timeout; replaying " + got.length
                     + " byte(s) instead of discarding them. TX=" + hex(expected) + " RX-prefix=" + hex(got));
+        }
+
+        private static int sameBytes(byte[] a, byte[] b) {
+            int n = 0;
+            for (int i = 0; i < Math.min(a.length, b.length); i++) if (a[i] == b[i]) n++;
+            return n;
         }
 
         private static String hex(byte[] data) {
@@ -578,6 +628,7 @@ public final class HaniCoreKLinePlugin implements ApplicationPlugin {
                         recoverOnTsPort(rs232, rawIn);
                         watch.recovered(System.currentTimeMillis());
                     }
+                    reply.wrote(b, off, len, System.currentTimeMillis());
                     rawOut.write(b, off, len);
                     rawOut.flush();
                     clearExactEcho(sent);
@@ -599,7 +650,10 @@ public final class HaniCoreKLinePlugin implements ApplicationPlugin {
                     if (!replay.isEmpty()) return replay.removeFirst() & 0xFF;
                     if (rawIn == null) return -1;
                     int v = rawIn.read();
-                    if (v >= 0) watch.received(System.currentTimeMillis());
+                    if (v >= 0) {
+                        watch.received(System.currentTimeMillis());
+                        reply.received();
+                    }
                     return v;
                 }
             }
@@ -618,6 +672,7 @@ public final class HaniCoreKLinePlugin implements ApplicationPlugin {
                     int n = rawIn.read(b, off + count, len - count);
                     if (n < 0) return count == 0 ? -1 : count;
                     if (count + n > 0) watch.received(System.currentTimeMillis());
+                    if (n > 0) reply.received();
                     return count + n;
                 }
             }
@@ -625,7 +680,9 @@ public final class HaniCoreKLinePlugin implements ApplicationPlugin {
             @Override
             public int available() throws IOException {
                 synchronized (ioLock) {
-                    return replay.size() + (rawIn == null ? 0 : rawIn.available());
+                    int n = replay.size() + (rawIn == null ? 0 : rawIn.available());
+                    if (n == 0) resendIfDue();
+                    return n;
                 }
             }
         }
@@ -673,6 +730,8 @@ public final class HaniCoreKLinePlugin implements ApplicationPlugin {
                 "Echo fallbacks: " + echoFallbacks.get() + "\n" +
                 "  - incomplete/timeout: " + echoTimeouts.get() + "\n" +
                 "  - full-prefix mismatch: " + echoMismatches.get() + "\n" +
+                "  - corrupted on the line (dropped): " + echoCollisions.get() + "\n" +
+                "Requests sent again (no reply in " + RESEND_MS + " ms): " + resent.get() + "\n" +
                 "Last echo latency: " + lastEchoLatencyMs + " ms\n" +
                 "Max echo latency: " + maxEchoLatencyMs + " ms\n" +
                 "Connections opened/closed: " + connectionsOpened.get() + "/" + connectionsClosed.get() + "\n\n" +

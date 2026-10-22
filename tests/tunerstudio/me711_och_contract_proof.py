@@ -161,7 +161,7 @@ def ask(image: Path, off: int, cnt: int, steps: int | None = None,
     tx = bytes(b for _t, b in rig.tx)
     # The boot banner precedes the reply and is not enveloped. Find the last
     # well-formed envelope in the stream rather than assuming an offset.
-    best = None
+    best, best_at_end = None, False
     for i in range(len(tx) - 1):
         n = (tx[i] << 8) | tx[i + 1]
         # The response body is status + OCH bytes.  The old 600-byte parser
@@ -171,7 +171,13 @@ def ask(image: Path, off: int, cnt: int, steps: int | None = None,
             body = tx[i + 2:i + 2 + n]
             crc = int.from_bytes(tx[i + 2 + n:i + 6 + n], "big")
             if crc == (binascii.crc32(body) & 0xFFFFFFFF):
-                best = body
+                # THE REPLY IS THE LAST THING SENT: an envelope that ends at
+                # the end of the stream is it. 2026-10-15: the payload at 768
+                # carried 00 01 ff ff 00 00 00 - a valid 1-byte envelope INSIDE
+                # the real one - and "the last well-formed envelope" read 0.
+                if best is None or i + 6 + n == len(tx) or not best_at_end:
+                    best = body
+                    best_at_end = i + 6 + n == len(tx)
     if best is None:
         return None, tx
     # body[0] is the response code; the rest is the payload.

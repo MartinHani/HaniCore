@@ -6,10 +6,10 @@ r"""me711_resource_budget_proof.py - every memory class keeps its growth reserve
 The linker is happy with one byte left; a project that adds features is not.
 This gate reads the class ranges from linker_me711.lnp and the located
 sections from the LINKED map, and requires each class to keep a reserve
-(docs/ARCHITECTURE.md, "Resource margins"):
+(the maintainer's design notes, "Resource margins"):
 
   NCODE   >= 3072 B   near code, one 64 KB CGROUP (also the build's own floor)
-  FCODE   >= 2048 B   far code, SA6 + SA8
+  FCODE   >= 2048 B   far code, SA6 + SA8 + SA9
   NCONST  >= 1024 B   near constants
   HCONST  >= 1024 B   huge constants (the preset tables)
 
@@ -67,7 +67,9 @@ def main() -> int:
     ranges=[(lo,hi,cls) for cls,parts in rs.items() for lo,hi in parts]
     disjoint=all(hi<lo2 or hi2<lo for i,(lo,hi,cls) in enumerate(ranges)
                  for lo2,hi2,cls2 in ranges[i+1:])
-    resident=all(0x830000<=lo<=hi<0x860000 for lo,hi,cls in ranges)
+    import me711_nvm_geometry as G   # the store base, from hctarget.h
+    store=G.Geometry().base
+    resident=all(0x830000<=lo<=hi<store for lo,hi,cls in ranges)
     ok=disjoint and resident
     fails+=not ok
     print("  [%s] code/constant reservations are disjoint and precede the store"%('PASS' if ok else 'FAIL'))

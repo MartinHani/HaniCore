@@ -559,7 +559,7 @@ static unsigned char ssc_byte(unsigned char b)
            the timer second let an interrupt > 64 us landing between the two
            turn a byte that completed in 8 us into a time-out - the AWT car's
            cjTmo, ~9x more often with the engine running
-           (..\evidence\SEMISEQ_WB_FIX_20261010; me711_cj120_preempt_proof).
+           (the maintainer's records; me711_cj120_preempt_proof).
            Sampled first, an expired bound is acted on only after one more
            flag test that follows it: a completed byte is always seen. */
         unsigned int waited = (unsigned int)(T7 - t0);
@@ -759,6 +759,18 @@ void far hc_io_lambda_service(unsigned int ms, unsigned int ua1,
             rage = (unsigned int)(ms - CQ[b].reply_ms);
             if (cj_ok[b] && rage < 0x8000u && rage > CJ_REPLY_FRESH_MS) {
                 cj_ok[b] = 0u; cj_phase[b] = 0u; CQ[b].settled = 0u;
+            }
+            /* THE SETTLE BOUNDARY NEVER AGES PAST 16 s (2026-10-14). Below,
+               `since` is a 16-bit age and a value with bit 15 set means
+               "acknowledged after `ms` was read" - so 32.8 s after the last
+               mode acknowledgement every sample counted as older than the
+               boundary, ri_ok fell and fault 12 (NO_RI) latched one second
+               later: P0130 and the MIL 33 s after every key-on or code clear
+               (car, 7 of 7). The boundary only has to stay older than the
+               newest sample, so it is carried forward, never past it. */
+            rage = (unsigned int)(ms - CQ[b].ack_ms);
+            if (CQ[b].settled && rage >= 0x4000u && rage < 0x8000u) {
+                CQ[b].ack_ms = (unsigned int)(ms - 0x4000u);
             }
             HC_ATOMIC_EXIT(s);
         }

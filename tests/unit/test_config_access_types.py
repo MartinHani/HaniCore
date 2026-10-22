@@ -49,6 +49,10 @@ SCALAR = {
     "hc_cal_u16": ("u16", "s16"),
     "hc_cal_set_u8": ("u8",),
     "hc_cal_set_u16": ("u16", "s16"),
+    # 2026-10-14: the far modules' variable-offset reads (hcfarinline.h) -
+    # the same reads behind one call; held to the same widths
+    "hc_cal_u8v": ("u8",),
+    "hc_cal_u16v": ("u16", "s16"),
 }
 # Accessors that take the FIRST element of an array and walk it themselves.
 # They must be pointed at a field with more than one element, or they are
@@ -56,7 +60,7 @@ SCALAR = {
 ARRAY = {"hc_cal_map", "hc_cal_curve16", "hc_cal_curve8"}
 
 CALL = re.compile(
-    r"\b(hc_cal_(?:set_)?(?:u8|u16|s16|map|curve16|curve8))\s*\(\s*"
+    r"\b(hc_cal_(?:set_)?(?:u8v|u16v|u8|u16|s16|map|curve16|curve8))\s*\(\s*"
     r"((?:CFG|CAL)_[A-Z0-9_]+)\b")
 
 
@@ -148,7 +152,7 @@ def _walked():
     """(file, NAME) where a scalar accessor indexes NAME's elements itself:
     hc_cal_u16(NAME + 2u * i). In such a file NAME's element 0 is read too,
     as hc_cal_u16(NAME), and that is an element read, not a table read."""
-    idx = re.compile(r"\bhc_cal_(?:set_)?(?:u8|u16)\s*\("
+    idx = re.compile(r"\bhc_cal_(?:set_)?(?:u8|u16)v?\s*\("
                      r"(?:\s*\(unsigned int\))?[\s(]*((?:CFG|CAL)_[A-Z0-9_]+)\s*\+")
     return {(f.relative_to(ROOT), m.group(1)) for f in _sources()
             for m in idx.finditer(f.read_text(errors="replace"))}

@@ -1,7 +1,6 @@
 # Target: Bosch ME7.1.1 (`0261207696`)
 
-C167CR-class CPU at 40 MHz, AM29F800BB flash, S5500 peripheral ASIC. The
-hardware is described in [docs/PLATFORM.md](../../../docs/PLATFORM.md).
+C167CR-class CPU at 40 MHz, AM29F800BB flash, S5500 peripheral ASIC.
 
 ```powershell
 py tools\build\build_hanicore_me711.py
@@ -10,7 +9,7 @@ py tools\build\build_hanicore_me711.py
 `build_me711.bat` only compiles and links (Keil, output in `build/`). The
 Python builder is the one to run: it checks the generated sources, generates
 the boot region and checksums, places the vector table and refuses an image
-that fails any check ([docs/BUILDING.md](../../../docs/BUILDING.md)).
+that fails any check.
 
 | path | contents |
 |---|---|

@@ -339,6 +339,8 @@ static const unsigned char HC_PRESET_MEM runs_bosch_me711_board[] = {
 /* ITEM { 2510u,  1781u, 2u } displacementCc */
 /* ITEM { 2638u,   301u, 2u } injFlowCcMin */
 /* ITEM { 2640u,   300u, 2u } injRefPressureKpa */
+/* ITEM { 3833u,     1u, 1u } injPressMode */
+/* ITEM { 3834u,   300u, 2u } fuelRegKpa */
 /* ITEM { 1136u,  1877u, 2u } deadtimeVal[0] */
 /* ITEM { 1138u,  1850u, 2u } deadtimeVal[1] */
 /* ITEM { 1140u,  1085u, 2u } deadtimeVal[2] */
@@ -708,22 +710,23 @@ static const unsigned char HC_PRESET_MEM runs_bosch_me711_board[] = {
 /* ITEM {  730u,  5500u, 2u } ignRpmAx[13] */
 /* ITEM {  732u,  6000u, 2u } ignRpmAx[14] */
 /* ITEM {  734u,  6800u, 2u } ignRpmAx[15] */
-/* ITEM {  736u,     0u, 2u } ignLoadAx[0] */
-/* ITEM {  738u,    10u, 2u } ignLoadAx[1] */
-/* ITEM {  740u,    20u, 2u } ignLoadAx[2] */
-/* ITEM {  742u,    30u, 2u } ignLoadAx[3] */
-/* ITEM {  744u,    40u, 2u } ignLoadAx[4] */
-/* ITEM {  746u,    55u, 2u } ignLoadAx[5] */
-/* ITEM {  748u,    70u, 2u } ignLoadAx[6] */
-/* ITEM {  750u,   100u, 2u } ignLoadAx[7] */
-/* ITEM {  752u,   130u, 2u } ignLoadAx[8] */
-/* ITEM {  754u,   160u, 2u } ignLoadAx[9] */
-/* ITEM {  756u,   200u, 2u } ignLoadAx[10] */
-/* ITEM {  758u,   250u, 2u } ignLoadAx[11] */
-/* ITEM {  760u,   300u, 2u } ignLoadAx[12] */
-/* ITEM {  762u,   400u, 2u } ignLoadAx[13] */
-/* ITEM {  764u,   500u, 2u } ignLoadAx[14] */
-/* ITEM {  766u,  1000u, 2u } ignLoadAx[15] */
+/* ITEM { 3308u,     3u, 1u } ignLoadMode */
+/* ITEM {  736u,   100u, 2u } ignLoadAx[0] */
+/* ITEM {  738u,   150u, 2u } ignLoadAx[1] */
+/* ITEM {  740u,   200u, 2u } ignLoadAx[2] */
+/* ITEM {  742u,   270u, 2u } ignLoadAx[3] */
+/* ITEM {  744u,   350u, 2u } ignLoadAx[4] */
+/* ITEM {  746u,   450u, 2u } ignLoadAx[5] */
+/* ITEM {  748u,   550u, 2u } ignLoadAx[6] */
+/* ITEM {  750u,   650u, 2u } ignLoadAx[7] */
+/* ITEM {  752u,   800u, 2u } ignLoadAx[8] */
+/* ITEM {  754u,   900u, 2u } ignLoadAx[9] */
+/* ITEM {  756u,  1000u, 2u } ignLoadAx[10] */
+/* ITEM {  758u,  1100u, 2u } ignLoadAx[11] */
+/* ITEM {  760u,  1200u, 2u } ignLoadAx[12] */
+/* ITEM {  762u,  1300u, 2u } ignLoadAx[13] */
+/* ITEM {  764u,  1400u, 2u } ignLoadAx[14] */
+/* ITEM {  766u,  1600u, 2u } ignLoadAx[15] */
 /* ITEM { 3310u,   500u, 2u } lambdaRpmAx[0] */
 /* ITEM { 3312u,   950u, 2u } lambdaRpmAx[1] */
 /* ITEM { 3314u,  1400u, 2u } lambdaRpmAx[2] */
@@ -852,15 +855,20 @@ static const unsigned char HC_PRESET_MEM runs_bosch_me711_board[] = {
 /* ITEM { 2420u,    20u, 2u } overrunTpsX10 */
 /* ITEM { 2670u, 11150u, 2u } cltMaxDegX10 */
 /* ITEM { 2426u,     1u, 1u } idleEnable */
-/* ITEM { 2476u,    61u, 2u } idleBaseVal[0] */
-/* ITEM { 2478u,    56u, 2u } idleBaseVal[1] */
-/* ITEM { 2480u,    51u, 2u } idleBaseVal[2] */
-/* ITEM { 2482u,    46u, 2u } idleBaseVal[3] */
-/* ITEM { 2484u,    41u, 2u } idleBaseVal[4] */
-/* ITEM { 2486u,    36u, 2u } idleBaseVal[5] */
-/* ITEM { 2488u,    36u, 2u } idleBaseVal[6] */
-/* ITEM { 2490u,    36u, 2u } idleBaseVal[7] */
-/* ITEM { 2498u,   600u, 2u } idleRpmBand */
+/* ITEM { 2476u,    52u, 2u } idleBaseVal[0] */
+/* ITEM { 2478u,    47u, 2u } idleBaseVal[1] */
+/* ITEM { 2480u,    42u, 2u } idleBaseVal[2] */
+/* ITEM { 2482u,    37u, 2u } idleBaseVal[3] */
+/* ITEM { 2484u,    32u, 2u } idleBaseVal[4] */
+/* ITEM { 2486u,    26u, 2u } idleBaseVal[5] */
+/* ITEM { 2488u,    26u, 2u } idleBaseVal[6] */
+/* ITEM { 2490u,    26u, 2u } idleBaseVal[7] */
+/* ITEM { 2498u,   300u, 2u } idleRpmBand */
+/* ITEM { 2496u,    20u, 2u } idleRangeX10 */
+/* ITEM { 2492u,     3u, 2u } idleKp */
+/* ITEM { 2494u,     2u, 2u } idleKi */
+/* ITEM { 2710u,    20u, 2u } idlePedalX10 */
+/* ITEM { 2712u,  1000u, 2u } idleStartMs */
 /* ITEM { 3838u,    64u, 1u } ignMap[0] */
 /* ITEM { 3839u,    64u, 1u } ignMap[1] */
 /* ITEM { 3840u,    64u, 1u } ignMap[2] */
@@ -893,230 +901,230 @@ static const unsigned char HC_PRESET_MEM runs_bosch_me711_board[] = {
 /* ITEM { 3867u,   107u, 1u } ignMap[29] */
 /* ITEM { 3868u,   114u, 1u } ignMap[30] */
 /* ITEM { 3869u,   120u, 1u } ignMap[31] */
-/* ITEM { 3870u,    60u, 1u } ignMap[32] */
+/* ITEM { 3870u,    64u, 1u } ignMap[32] */
 /* ITEM { 3871u,    64u, 1u } ignMap[33] */
 /* ITEM { 3872u,    64u, 1u } ignMap[34] */
 /* ITEM { 3873u,    64u, 1u } ignMap[35] */
 /* ITEM { 3874u,    66u, 1u } ignMap[36] */
 /* ITEM { 3875u,    72u, 1u } ignMap[37] */
 /* ITEM { 3876u,    80u, 1u } ignMap[38] */
-/* ITEM { 3877u,    95u, 1u } ignMap[39] */
-/* ITEM { 3878u,    97u, 1u } ignMap[40] */
-/* ITEM { 3879u,    97u, 1u } ignMap[41] */
-/* ITEM { 3880u,    96u, 1u } ignMap[42] */
-/* ITEM { 3881u,    96u, 1u } ignMap[43] */
-/* ITEM { 3882u,   100u, 1u } ignMap[44] */
-/* ITEM { 3883u,   107u, 1u } ignMap[45] */
-/* ITEM { 3884u,   114u, 1u } ignMap[46] */
-/* ITEM { 3885u,   120u, 1u } ignMap[47] */
-/* ITEM { 3886u,    51u, 1u } ignMap[48] */
+/* ITEM { 3877u,   115u, 1u } ignMap[39] */
+/* ITEM { 3878u,   123u, 1u } ignMap[40] */
+/* ITEM { 3879u,   124u, 1u } ignMap[41] */
+/* ITEM { 3880u,   126u, 1u } ignMap[42] */
+/* ITEM { 3881u,   119u, 1u } ignMap[43] */
+/* ITEM { 3882u,   117u, 1u } ignMap[44] */
+/* ITEM { 3883u,   116u, 1u } ignMap[45] */
+/* ITEM { 3884u,   119u, 1u } ignMap[46] */
+/* ITEM { 3885u,   122u, 1u } ignMap[47] */
+/* ITEM { 3886u,    61u, 1u } ignMap[48] */
 /* ITEM { 3887u,    64u, 1u } ignMap[49] */
 /* ITEM { 3888u,    64u, 1u } ignMap[50] */
 /* ITEM { 3889u,    64u, 1u } ignMap[51] */
 /* ITEM { 3890u,    66u, 1u } ignMap[52] */
 /* ITEM { 3891u,    72u, 1u } ignMap[53] */
 /* ITEM { 3892u,    80u, 1u } ignMap[54] */
-/* ITEM { 3893u,    95u, 1u } ignMap[55] */
-/* ITEM { 3894u,    97u, 1u } ignMap[56] */
-/* ITEM { 3895u,    97u, 1u } ignMap[57] */
-/* ITEM { 3896u,    96u, 1u } ignMap[58] */
-/* ITEM { 3897u,    96u, 1u } ignMap[59] */
-/* ITEM { 3898u,   100u, 1u } ignMap[60] */
-/* ITEM { 3899u,   107u, 1u } ignMap[61] */
-/* ITEM { 3900u,   114u, 1u } ignMap[62] */
-/* ITEM { 3901u,   120u, 1u } ignMap[63] */
-/* ITEM { 3902u,    45u, 1u } ignMap[64] */
+/* ITEM { 3893u,   112u, 1u } ignMap[55] */
+/* ITEM { 3894u,   119u, 1u } ignMap[56] */
+/* ITEM { 3895u,   121u, 1u } ignMap[57] */
+/* ITEM { 3896u,   122u, 1u } ignMap[58] */
+/* ITEM { 3897u,   118u, 1u } ignMap[59] */
+/* ITEM { 3898u,   115u, 1u } ignMap[60] */
+/* ITEM { 3899u,   114u, 1u } ignMap[61] */
+/* ITEM { 3900u,   117u, 1u } ignMap[62] */
+/* ITEM { 3901u,   121u, 1u } ignMap[63] */
+/* ITEM { 3902u,    54u, 1u } ignMap[64] */
 /* ITEM { 3903u,    64u, 1u } ignMap[65] */
 /* ITEM { 3904u,    64u, 1u } ignMap[66] */
 /* ITEM { 3905u,    64u, 1u } ignMap[67] */
 /* ITEM { 3906u,    66u, 1u } ignMap[68] */
 /* ITEM { 3907u,    72u, 1u } ignMap[69] */
 /* ITEM { 3908u,    80u, 1u } ignMap[70] */
-/* ITEM { 3909u,    95u, 1u } ignMap[71] */
-/* ITEM { 3910u,    97u, 1u } ignMap[72] */
-/* ITEM { 3911u,    97u, 1u } ignMap[73] */
-/* ITEM { 3912u,    96u, 1u } ignMap[74] */
-/* ITEM { 3913u,    96u, 1u } ignMap[75] */
-/* ITEM { 3914u,   100u, 1u } ignMap[76] */
-/* ITEM { 3915u,   107u, 1u } ignMap[77] */
-/* ITEM { 3916u,   114u, 1u } ignMap[78] */
+/* ITEM { 3909u,   107u, 1u } ignMap[71] */
+/* ITEM { 3910u,   114u, 1u } ignMap[72] */
+/* ITEM { 3911u,   115u, 1u } ignMap[73] */
+/* ITEM { 3912u,   117u, 1u } ignMap[74] */
+/* ITEM { 3913u,   115u, 1u } ignMap[75] */
+/* ITEM { 3914u,   111u, 1u } ignMap[76] */
+/* ITEM { 3915u,   111u, 1u } ignMap[77] */
+/* ITEM { 3916u,   115u, 1u } ignMap[78] */
 /* ITEM { 3917u,   120u, 1u } ignMap[79] */
-/* ITEM { 3918u,    40u, 1u } ignMap[80] */
-/* ITEM { 3919u,    64u, 1u } ignMap[81] */
-/* ITEM { 3920u,    64u, 1u } ignMap[82] */
-/* ITEM { 3921u,    66u, 1u } ignMap[83] */
-/* ITEM { 3922u,    70u, 1u } ignMap[84] */
-/* ITEM { 3923u,    76u, 1u } ignMap[85] */
-/* ITEM { 3924u,    82u, 1u } ignMap[86] */
-/* ITEM { 3925u,    98u, 1u } ignMap[87] */
-/* ITEM { 3926u,    97u, 1u } ignMap[88] */
-/* ITEM { 3927u,    97u, 1u } ignMap[89] */
-/* ITEM { 3928u,    96u, 1u } ignMap[90] */
-/* ITEM { 3929u,    96u, 1u } ignMap[91] */
-/* ITEM { 3930u,   100u, 1u } ignMap[92] */
-/* ITEM { 3931u,   107u, 1u } ignMap[93] */
-/* ITEM { 3932u,   114u, 1u } ignMap[94] */
-/* ITEM { 3933u,   120u, 1u } ignMap[95] */
-/* ITEM { 3934u,    40u, 1u } ignMap[96] */
-/* ITEM { 3935u,    60u, 1u } ignMap[97] */
-/* ITEM { 3936u,    68u, 1u } ignMap[98] */
-/* ITEM { 3937u,    72u, 1u } ignMap[99] */
-/* ITEM { 3938u,    78u, 1u } ignMap[100] */
-/* ITEM { 3939u,    86u, 1u } ignMap[101] */
-/* ITEM { 3940u,    92u, 1u } ignMap[102] */
-/* ITEM { 3941u,   116u, 1u } ignMap[103] */
-/* ITEM { 3942u,   107u, 1u } ignMap[104] */
-/* ITEM { 3943u,    97u, 1u } ignMap[105] */
-/* ITEM { 3944u,    96u, 1u } ignMap[106] */
-/* ITEM { 3945u,    96u, 1u } ignMap[107] */
-/* ITEM { 3946u,   100u, 1u } ignMap[108] */
-/* ITEM { 3947u,   107u, 1u } ignMap[109] */
-/* ITEM { 3948u,   114u, 1u } ignMap[110] */
-/* ITEM { 3949u,   120u, 1u } ignMap[111] */
+/* ITEM { 3918u,    49u, 1u } ignMap[80] */
+/* ITEM { 3919u,    70u, 1u } ignMap[81] */
+/* ITEM { 3920u,    79u, 1u } ignMap[82] */
+/* ITEM { 3921u,    85u, 1u } ignMap[83] */
+/* ITEM { 3922u,    87u, 1u } ignMap[84] */
+/* ITEM { 3923u,    92u, 1u } ignMap[85] */
+/* ITEM { 3924u,    94u, 1u } ignMap[86] */
+/* ITEM { 3925u,   102u, 1u } ignMap[87] */
+/* ITEM { 3926u,   108u, 1u } ignMap[88] */
+/* ITEM { 3927u,   109u, 1u } ignMap[89] */
+/* ITEM { 3928u,   111u, 1u } ignMap[90] */
+/* ITEM { 3929u,   109u, 1u } ignMap[91] */
+/* ITEM { 3930u,   106u, 1u } ignMap[92] */
+/* ITEM { 3931u,   106u, 1u } ignMap[93] */
+/* ITEM { 3932u,   110u, 1u } ignMap[94] */
+/* ITEM { 3933u,   115u, 1u } ignMap[95] */
+/* ITEM { 3934u,    44u, 1u } ignMap[96] */
+/* ITEM { 3935u,    62u, 1u } ignMap[97] */
+/* ITEM { 3936u,    71u, 1u } ignMap[98] */
+/* ITEM { 3937u,    77u, 1u } ignMap[99] */
+/* ITEM { 3938u,    80u, 1u } ignMap[100] */
+/* ITEM { 3939u,    84u, 1u } ignMap[101] */
+/* ITEM { 3940u,    88u, 1u } ignMap[102] */
+/* ITEM { 3941u,    97u, 1u } ignMap[103] */
+/* ITEM { 3942u,   102u, 1u } ignMap[104] */
+/* ITEM { 3943u,   104u, 1u } ignMap[105] */
+/* ITEM { 3944u,   106u, 1u } ignMap[106] */
+/* ITEM { 3945u,   104u, 1u } ignMap[107] */
+/* ITEM { 3946u,   102u, 1u } ignMap[108] */
+/* ITEM { 3947u,   102u, 1u } ignMap[109] */
+/* ITEM { 3948u,   106u, 1u } ignMap[110] */
+/* ITEM { 3949u,   110u, 1u } ignMap[111] */
 /* ITEM { 3950u,    40u, 1u } ignMap[112] */
-/* ITEM { 3951u,    51u, 1u } ignMap[113] */
-/* ITEM { 3952u,    61u, 1u } ignMap[114] */
-/* ITEM { 3953u,    75u, 1u } ignMap[115] */
-/* ITEM { 3954u,    83u, 1u } ignMap[116] */
-/* ITEM { 3955u,    92u, 1u } ignMap[117] */
-/* ITEM { 3956u,    98u, 1u } ignMap[118] */
-/* ITEM { 3957u,   110u, 1u } ignMap[119] */
-/* ITEM { 3958u,   120u, 1u } ignMap[120] */
-/* ITEM { 3959u,   124u, 1u } ignMap[121] */
-/* ITEM { 3960u,   122u, 1u } ignMap[122] */
-/* ITEM { 3961u,   105u, 1u } ignMap[123] */
-/* ITEM { 3962u,   101u, 1u } ignMap[124] */
-/* ITEM { 3963u,   107u, 1u } ignMap[125] */
-/* ITEM { 3964u,   114u, 1u } ignMap[126] */
-/* ITEM { 3965u,   120u, 1u } ignMap[127] */
+/* ITEM { 3951u,    53u, 1u } ignMap[113] */
+/* ITEM { 3952u,    60u, 1u } ignMap[114] */
+/* ITEM { 3953u,    69u, 1u } ignMap[115] */
+/* ITEM { 3954u,    73u, 1u } ignMap[116] */
+/* ITEM { 3955u,    77u, 1u } ignMap[117] */
+/* ITEM { 3956u,    81u, 1u } ignMap[118] */
+/* ITEM { 3957u,    92u, 1u } ignMap[119] */
+/* ITEM { 3958u,    97u, 1u } ignMap[120] */
+/* ITEM { 3959u,   100u, 1u } ignMap[121] */
+/* ITEM { 3960u,   102u, 1u } ignMap[122] */
+/* ITEM { 3961u,   100u, 1u } ignMap[123] */
+/* ITEM { 3962u,    99u, 1u } ignMap[124] */
+/* ITEM { 3963u,    99u, 1u } ignMap[125] */
+/* ITEM { 3964u,   103u, 1u } ignMap[126] */
+/* ITEM { 3965u,   106u, 1u } ignMap[127] */
 /* ITEM { 3966u,    40u, 1u } ignMap[128] */
-/* ITEM { 3967u,    49u, 1u } ignMap[129] */
-/* ITEM { 3968u,    56u, 1u } ignMap[130] */
-/* ITEM { 3969u,    68u, 1u } ignMap[131] */
-/* ITEM { 3970u,    76u, 1u } ignMap[132] */
-/* ITEM { 3971u,    84u, 1u } ignMap[133] */
-/* ITEM { 3972u,    90u, 1u } ignMap[134] */
-/* ITEM { 3973u,   103u, 1u } ignMap[135] */
-/* ITEM { 3974u,   113u, 1u } ignMap[136] */
-/* ITEM { 3975u,   118u, 1u } ignMap[137] */
-/* ITEM { 3976u,   122u, 1u } ignMap[138] */
-/* ITEM { 3977u,   118u, 1u } ignMap[139] */
-/* ITEM { 3978u,   117u, 1u } ignMap[140] */
-/* ITEM { 3979u,   116u, 1u } ignMap[141] */
-/* ITEM { 3980u,   116u, 1u } ignMap[142] */
-/* ITEM { 3981u,   120u, 1u } ignMap[143] */
+/* ITEM { 3967u,    45u, 1u } ignMap[129] */
+/* ITEM { 3968u,    49u, 1u } ignMap[130] */
+/* ITEM { 3969u,    57u, 1u } ignMap[131] */
+/* ITEM { 3970u,    61u, 1u } ignMap[132] */
+/* ITEM { 3971u,    66u, 1u } ignMap[133] */
+/* ITEM { 3972u,    69u, 1u } ignMap[134] */
+/* ITEM { 3973u,    83u, 1u } ignMap[135] */
+/* ITEM { 3974u,    88u, 1u } ignMap[136] */
+/* ITEM { 3975u,    92u, 1u } ignMap[137] */
+/* ITEM { 3976u,    94u, 1u } ignMap[138] */
+/* ITEM { 3977u,    94u, 1u } ignMap[139] */
+/* ITEM { 3978u,    91u, 1u } ignMap[140] */
+/* ITEM { 3979u,    93u, 1u } ignMap[141] */
+/* ITEM { 3980u,    99u, 1u } ignMap[142] */
+/* ITEM { 3981u,   102u, 1u } ignMap[143] */
 /* ITEM { 3982u,    40u, 1u } ignMap[144] */
-/* ITEM { 3983u,    47u, 1u } ignMap[145] */
-/* ITEM { 3984u,    53u, 1u } ignMap[146] */
-/* ITEM { 3985u,    64u, 1u } ignMap[147] */
-/* ITEM { 3986u,    71u, 1u } ignMap[148] */
-/* ITEM { 3987u,    78u, 1u } ignMap[149] */
-/* ITEM { 3988u,    83u, 1u } ignMap[150] */
-/* ITEM { 3989u,    98u, 1u } ignMap[151] */
-/* ITEM { 3990u,   106u, 1u } ignMap[152] */
-/* ITEM { 3991u,   111u, 1u } ignMap[153] */
-/* ITEM { 3992u,   116u, 1u } ignMap[154] */
-/* ITEM { 3993u,   116u, 1u } ignMap[155] */
-/* ITEM { 3994u,   113u, 1u } ignMap[156] */
-/* ITEM { 3995u,   114u, 1u } ignMap[157] */
-/* ITEM { 3996u,   118u, 1u } ignMap[158] */
-/* ITEM { 3997u,   122u, 1u } ignMap[159] */
+/* ITEM { 3983u,    41u, 1u } ignMap[145] */
+/* ITEM { 3984u,    44u, 1u } ignMap[146] */
+/* ITEM { 3985u,    49u, 1u } ignMap[147] */
+/* ITEM { 3986u,    55u, 1u } ignMap[148] */
+/* ITEM { 3987u,    59u, 1u } ignMap[149] */
+/* ITEM { 3988u,    62u, 1u } ignMap[150] */
+/* ITEM { 3989u,    74u, 1u } ignMap[151] */
+/* ITEM { 3990u,    82u, 1u } ignMap[152] */
+/* ITEM { 3991u,    88u, 1u } ignMap[153] */
+/* ITEM { 3992u,    88u, 1u } ignMap[154] */
+/* ITEM { 3993u,    88u, 1u } ignMap[155] */
+/* ITEM { 3994u,    86u, 1u } ignMap[156] */
+/* ITEM { 3995u,    90u, 1u } ignMap[157] */
+/* ITEM { 3996u,    96u, 1u } ignMap[158] */
+/* ITEM { 3997u,    98u, 1u } ignMap[159] */
 /* ITEM { 3998u,    40u, 1u } ignMap[160] */
-/* ITEM { 3999u,    46u, 1u } ignMap[161] */
-/* ITEM { 4000u,    51u, 1u } ignMap[162] */
-/* ITEM { 4001u,    60u, 1u } ignMap[163] */
-/* ITEM { 4002u,    66u, 1u } ignMap[164] */
-/* ITEM { 4003u,    72u, 1u } ignMap[165] */
-/* ITEM { 4004u,    76u, 1u } ignMap[166] */
-/* ITEM { 4005u,    93u, 1u } ignMap[167] */
-/* ITEM { 4006u,   100u, 1u } ignMap[168] */
-/* ITEM { 4007u,   104u, 1u } ignMap[169] */
-/* ITEM { 4008u,   108u, 1u } ignMap[170] */
-/* ITEM { 4009u,   109u, 1u } ignMap[171] */
-/* ITEM { 4010u,   108u, 1u } ignMap[172] */
-/* ITEM { 4011u,   110u, 1u } ignMap[173] */
-/* ITEM { 4012u,   116u, 1u } ignMap[174] */
-/* ITEM { 4013u,   121u, 1u } ignMap[175] */
+/* ITEM { 3999u,    40u, 1u } ignMap[161] */
+/* ITEM { 4000u,    42u, 1u } ignMap[162] */
+/* ITEM { 4001u,    46u, 1u } ignMap[163] */
+/* ITEM { 4002u,    50u, 1u } ignMap[164] */
+/* ITEM { 4003u,    54u, 1u } ignMap[165] */
+/* ITEM { 4004u,    57u, 1u } ignMap[166] */
+/* ITEM { 4005u,    68u, 1u } ignMap[167] */
+/* ITEM { 4006u,    76u, 1u } ignMap[168] */
+/* ITEM { 4007u,    81u, 1u } ignMap[169] */
+/* ITEM { 4008u,    79u, 1u } ignMap[170] */
+/* ITEM { 4009u,    81u, 1u } ignMap[171] */
+/* ITEM { 4010u,    82u, 1u } ignMap[172] */
+/* ITEM { 4011u,    85u, 1u } ignMap[173] */
+/* ITEM { 4012u,    90u, 1u } ignMap[174] */
+/* ITEM { 4013u,    93u, 1u } ignMap[175] */
 /* ITEM { 4014u,    40u, 1u } ignMap[176] */
-/* ITEM { 4015u,    46u, 1u } ignMap[177] */
-/* ITEM { 4016u,    50u, 1u } ignMap[178] */
-/* ITEM { 4017u,    58u, 1u } ignMap[179] */
-/* ITEM { 4018u,    64u, 1u } ignMap[180] */
-/* ITEM { 4019u,    69u, 1u } ignMap[181] */
-/* ITEM { 4020u,    72u, 1u } ignMap[182] */
-/* ITEM { 4021u,    88u, 1u } ignMap[183] */
-/* ITEM { 4022u,    93u, 1u } ignMap[184] */
-/* ITEM { 4023u,    99u, 1u } ignMap[185] */
-/* ITEM { 4024u,   102u, 1u } ignMap[186] */
-/* ITEM { 4025u,   102u, 1u } ignMap[187] */
-/* ITEM { 4026u,   101u, 1u } ignMap[188] */
-/* ITEM { 4027u,   103u, 1u } ignMap[189] */
-/* ITEM { 4028u,   109u, 1u } ignMap[190] */
-/* ITEM { 4029u,   116u, 1u } ignMap[191] */
+/* ITEM { 4015u,    40u, 1u } ignMap[177] */
+/* ITEM { 4016u,    40u, 1u } ignMap[178] */
+/* ITEM { 4017u,    40u, 1u } ignMap[179] */
+/* ITEM { 4018u,    43u, 1u } ignMap[180] */
+/* ITEM { 4019u,    45u, 1u } ignMap[181] */
+/* ITEM { 4020u,    48u, 1u } ignMap[182] */
+/* ITEM { 4021u,    61u, 1u } ignMap[183] */
+/* ITEM { 4022u,    66u, 1u } ignMap[184] */
+/* ITEM { 4023u,    70u, 1u } ignMap[185] */
+/* ITEM { 4024u,    69u, 1u } ignMap[186] */
+/* ITEM { 4025u,    71u, 1u } ignMap[187] */
+/* ITEM { 4026u,    72u, 1u } ignMap[188] */
+/* ITEM { 4027u,    76u, 1u } ignMap[189] */
+/* ITEM { 4028u,    81u, 1u } ignMap[190] */
+/* ITEM { 4029u,    83u, 1u } ignMap[191] */
 /* ITEM { 4030u,    40u, 1u } ignMap[192] */
-/* ITEM { 4031u,    44u, 1u } ignMap[193] */
-/* ITEM { 4032u,    48u, 1u } ignMap[194] */
-/* ITEM { 4033u,    55u, 1u } ignMap[195] */
-/* ITEM { 4034u,    59u, 1u } ignMap[196] */
-/* ITEM { 4035u,    63u, 1u } ignMap[197] */
-/* ITEM { 4036u,    66u, 1u } ignMap[198] */
-/* ITEM { 4037u,    77u, 1u } ignMap[199] */
-/* ITEM { 4038u,    82u, 1u } ignMap[200] */
-/* ITEM { 4039u,    89u, 1u } ignMap[201] */
-/* ITEM { 4040u,    91u, 1u } ignMap[202] */
-/* ITEM { 4041u,    92u, 1u } ignMap[203] */
-/* ITEM { 4042u,    91u, 1u } ignMap[204] */
-/* ITEM { 4043u,    94u, 1u } ignMap[205] */
-/* ITEM { 4044u,   101u, 1u } ignMap[206] */
-/* ITEM { 4045u,   106u, 1u } ignMap[207] */
+/* ITEM { 4031u,    40u, 1u } ignMap[193] */
+/* ITEM { 4032u,    40u, 1u } ignMap[194] */
+/* ITEM { 4033u,    40u, 1u } ignMap[195] */
+/* ITEM { 4034u,    40u, 1u } ignMap[196] */
+/* ITEM { 4035u,    42u, 1u } ignMap[197] */
+/* ITEM { 4036u,    44u, 1u } ignMap[198] */
+/* ITEM { 4037u,    56u, 1u } ignMap[199] */
+/* ITEM { 4038u,    60u, 1u } ignMap[200] */
+/* ITEM { 4039u,    64u, 1u } ignMap[201] */
+/* ITEM { 4040u,    64u, 1u } ignMap[202] */
+/* ITEM { 4041u,    66u, 1u } ignMap[203] */
+/* ITEM { 4042u,    68u, 1u } ignMap[204] */
+/* ITEM { 4043u,    72u, 1u } ignMap[205] */
+/* ITEM { 4044u,    76u, 1u } ignMap[206] */
+/* ITEM { 4045u,    78u, 1u } ignMap[207] */
 /* ITEM { 4046u,    40u, 1u } ignMap[208] */
-/* ITEM { 4047u,    42u, 1u } ignMap[209] */
-/* ITEM { 4048u,    45u, 1u } ignMap[210] */
-/* ITEM { 4049u,    49u, 1u } ignMap[211] */
-/* ITEM { 4050u,    53u, 1u } ignMap[212] */
-/* ITEM { 4051u,    56u, 1u } ignMap[213] */
-/* ITEM { 4052u,    58u, 1u } ignMap[214] */
-/* ITEM { 4053u,    61u, 1u } ignMap[215] */
-/* ITEM { 4054u,    60u, 1u } ignMap[216] */
-/* ITEM { 4055u,    65u, 1u } ignMap[217] */
-/* ITEM { 4056u,    65u, 1u } ignMap[218] */
-/* ITEM { 4057u,    66u, 1u } ignMap[219] */
-/* ITEM { 4058u,    69u, 1u } ignMap[220] */
-/* ITEM { 4059u,    76u, 1u } ignMap[221] */
-/* ITEM { 4060u,    82u, 1u } ignMap[222] */
-/* ITEM { 4061u,    89u, 1u } ignMap[223] */
+/* ITEM { 4047u,    40u, 1u } ignMap[209] */
+/* ITEM { 4048u,    40u, 1u } ignMap[210] */
+/* ITEM { 4049u,    40u, 1u } ignMap[211] */
+/* ITEM { 4050u,    40u, 1u } ignMap[212] */
+/* ITEM { 4051u,    40u, 1u } ignMap[213] */
+/* ITEM { 4052u,    40u, 1u } ignMap[214] */
+/* ITEM { 4053u,    51u, 1u } ignMap[215] */
+/* ITEM { 4054u,    54u, 1u } ignMap[216] */
+/* ITEM { 4055u,    59u, 1u } ignMap[217] */
+/* ITEM { 4056u,    60u, 1u } ignMap[218] */
+/* ITEM { 4057u,    62u, 1u } ignMap[219] */
+/* ITEM { 4058u,    65u, 1u } ignMap[220] */
+/* ITEM { 4059u,    68u, 1u } ignMap[221] */
+/* ITEM { 4060u,    72u, 1u } ignMap[222] */
+/* ITEM { 4061u,    74u, 1u } ignMap[223] */
 /* ITEM { 4062u,    40u, 1u } ignMap[224] */
 /* ITEM { 4063u,    40u, 1u } ignMap[225] */
-/* ITEM { 4064u,    43u, 1u } ignMap[226] */
-/* ITEM { 4065u,    47u, 1u } ignMap[227] */
-/* ITEM { 4066u,    46u, 1u } ignMap[228] */
-/* ITEM { 4067u,    47u, 1u } ignMap[229] */
-/* ITEM { 4068u,    48u, 1u } ignMap[230] */
-/* ITEM { 4069u,    51u, 1u } ignMap[231] */
+/* ITEM { 4064u,    40u, 1u } ignMap[226] */
+/* ITEM { 4065u,    40u, 1u } ignMap[227] */
+/* ITEM { 4066u,    40u, 1u } ignMap[228] */
+/* ITEM { 4067u,    40u, 1u } ignMap[229] */
+/* ITEM { 4068u,    40u, 1u } ignMap[230] */
+/* ITEM { 4069u,    45u, 1u } ignMap[231] */
 /* ITEM { 4070u,    48u, 1u } ignMap[232] */
 /* ITEM { 4071u,    54u, 1u } ignMap[233] */
 /* ITEM { 4072u,    57u, 1u } ignMap[234] */
-/* ITEM { 4073u,    58u, 1u } ignMap[235] */
+/* ITEM { 4073u,    59u, 1u } ignMap[235] */
 /* ITEM { 4074u,    60u, 1u } ignMap[236] */
-/* ITEM { 4075u,    66u, 1u } ignMap[237] */
-/* ITEM { 4076u,    73u, 1u } ignMap[238] */
-/* ITEM { 4077u,    78u, 1u } ignMap[239] */
+/* ITEM { 4075u,    64u, 1u } ignMap[237] */
+/* ITEM { 4076u,    68u, 1u } ignMap[238] */
+/* ITEM { 4077u,    71u, 1u } ignMap[239] */
 /* ITEM { 4078u,    40u, 1u } ignMap[240] */
 /* ITEM { 4079u,    40u, 1u } ignMap[241] */
-/* ITEM { 4080u,    43u, 1u } ignMap[242] */
-/* ITEM { 4081u,    47u, 1u } ignMap[243] */
-/* ITEM { 4082u,    46u, 1u } ignMap[244] */
-/* ITEM { 4083u,    47u, 1u } ignMap[245] */
-/* ITEM { 4084u,    48u, 1u } ignMap[246] */
-/* ITEM { 4085u,    51u, 1u } ignMap[247] */
-/* ITEM { 4086u,    48u, 1u } ignMap[248] */
-/* ITEM { 4087u,    54u, 1u } ignMap[249] */
-/* ITEM { 4088u,    57u, 1u } ignMap[250] */
-/* ITEM { 4089u,    58u, 1u } ignMap[251] */
-/* ITEM { 4090u,    60u, 1u } ignMap[252] */
-/* ITEM { 4091u,    66u, 1u } ignMap[253] */
-/* ITEM { 4092u,    73u, 1u } ignMap[254] */
-/* ITEM { 4093u,    78u, 1u } ignMap[255] */
+/* ITEM { 4080u,    40u, 1u } ignMap[242] */
+/* ITEM { 4081u,    40u, 1u } ignMap[243] */
+/* ITEM { 4082u,    40u, 1u } ignMap[244] */
+/* ITEM { 4083u,    40u, 1u } ignMap[245] */
+/* ITEM { 4084u,    40u, 1u } ignMap[246] */
+/* ITEM { 4085u,    40u, 1u } ignMap[247] */
+/* ITEM { 4086u,    42u, 1u } ignMap[248] */
+/* ITEM { 4087u,    48u, 1u } ignMap[249] */
+/* ITEM { 4088u,    51u, 1u } ignMap[250] */
+/* ITEM { 4089u,    52u, 1u } ignMap[251] */
+/* ITEM { 4090u,    54u, 1u } ignMap[252] */
+/* ITEM { 4091u,    58u, 1u } ignMap[253] */
+/* ITEM { 4092u,    62u, 1u } ignMap[254] */
+/* ITEM { 4093u,    64u, 1u } ignMap[255] */
 /* ITEM {  768u,   147u, 1u } afrMap[0] */
 /* ITEM {  769u,   147u, 1u } afrMap[1] */
 /* ITEM {  770u,   147u, 1u } afrMap[2] */
@@ -1406,22 +1414,22 @@ static const unsigned char HC_PRESET_MEM runs_bosch_me711_board[] = {
 /* ITEM { 1070u,   100u, 1u } cltEnrVal[14] */
 /* ITEM { 1071u,   100u, 1u } cltEnrVal[15] */
 /* ITEM { 2732u,     1u, 1u } transEnable */
-/* ITEM { 2736u,    55u, 1u } wwXPct[0] */
-/* ITEM { 2737u,    52u, 1u } wwXPct[1] */
-/* ITEM { 2738u,    48u, 1u } wwXPct[2] */
-/* ITEM { 2739u,    45u, 1u } wwXPct[3] */
-/* ITEM { 2740u,    42u, 1u } wwXPct[4] */
-/* ITEM { 2741u,    40u, 1u } wwXPct[5] */
-/* ITEM { 2742u,    37u, 1u } wwXPct[6] */
-/* ITEM { 2743u,    35u, 1u } wwXPct[7] */
-/* ITEM { 2744u,    33u, 1u } wwXPct[8] */
-/* ITEM { 2745u,    31u, 1u } wwXPct[9] */
-/* ITEM { 2746u,    30u, 1u } wwXPct[10] */
-/* ITEM { 2747u,    30u, 1u } wwXPct[11] */
-/* ITEM { 2748u,    30u, 1u } wwXPct[12] */
-/* ITEM { 2749u,    30u, 1u } wwXPct[13] */
-/* ITEM { 2750u,    30u, 1u } wwXPct[14] */
-/* ITEM { 2751u,    30u, 1u } wwXPct[15] */
+/* ITEM { 2736u,    70u, 1u } wwXPct[0] */
+/* ITEM { 2737u,    70u, 1u } wwXPct[1] */
+/* ITEM { 2738u,    70u, 1u } wwXPct[2] */
+/* ITEM { 2739u,    69u, 1u } wwXPct[3] */
+/* ITEM { 2740u,    68u, 1u } wwXPct[4] */
+/* ITEM { 2741u,    67u, 1u } wwXPct[5] */
+/* ITEM { 2742u,    66u, 1u } wwXPct[6] */
+/* ITEM { 2743u,    65u, 1u } wwXPct[7] */
+/* ITEM { 2744u,    64u, 1u } wwXPct[8] */
+/* ITEM { 2745u,    63u, 1u } wwXPct[9] */
+/* ITEM { 2746u,    62u, 1u } wwXPct[10] */
+/* ITEM { 2747u,    60u, 1u } wwXPct[11] */
+/* ITEM { 2748u,    60u, 1u } wwXPct[12] */
+/* ITEM { 2749u,    60u, 1u } wwXPct[13] */
+/* ITEM { 2750u,    60u, 1u } wwXPct[14] */
+/* ITEM { 2751u,    60u, 1u } wwXPct[15] */
 /* ITEM { 2752u,   100u, 1u } wwTau[0] */
 /* ITEM { 2753u,    85u, 1u } wwTau[1] */
 /* ITEM { 2754u,    70u, 1u } wwTau[2] */
@@ -1492,9 +1500,9 @@ static const unsigned char HC_PRESET_MEM runs_bosch_me711_board[] = {
 /* ITEM { 2852u, 65436u, 2u } idleTimingMinX10 = -100 */
 /* ITEM { 2854u,   100u, 2u } idleTimingMaxX10 */
 /* ITEM { 2856u,  1000u, 2u } idleTimingSoftMs */
-/* ITEM { 2858u,     0u, 2u } idleDashX10 */
+/* ITEM { 2858u,    15u, 2u } idleDashX10 */
 /* ITEM { 2860u,  1000u, 2u } idleDashHoldMs */
-/* ITEM { 2862u,  2000u, 2u } idleDashDecayMs */
+/* ITEM { 2862u,  1500u, 2u } idleDashDecayMs */
 /* ITEM { 2716u,  3000u, 2u } etbLimpRpm */
 /* ITEM { 2592u,    37u, 1u } pinTacho */
 /* ITEM { 2865u,    47u, 1u } pinMil */
@@ -1506,30 +1514,30 @@ static const unsigned char HC_PRESET_MEM runs_bosch_me711_board[] = {
 /* ITEM { 2977u,     0u, 1u } vvtMode[1] */
 /* ITEM { 2594u,   115u, 1u } pinCam1Sol */
 /* ITEM { 2980u,   250u, 2u } vvtFreqHz */
-/* ITEM { 2872u,     1u, 1u } knockMode */
+/* ITEM { 2872u,     2u, 1u } knockMode */
 /* ITEM { 2975u,   100u, 1u } knockDiagN */
-/* ITEM { 2974u,    60u, 1u } knockSafeQ */
-/* ITEM { 2973u,    72u, 1u } knockMaxQ */
-/* ITEM { 2972u,     9u, 1u } knockStepQ */
+/* ITEM { 2974u,    48u, 1u } knockSafeQ */
+/* ITEM { 2973u,    51u, 1u } knockMaxQ */
+/* ITEM { 2972u,    12u, 1u } knockStepQ */
 /* ITEM { 2971u,     0u, 1u } knockStopN */
 /* ITEM { 2970u,    20u, 1u } knockLearn */
 /* ITEM { 2968u,  1000u, 2u } knockRefMax */
 /* ITEM { 2966u,     5u, 2u } knockRefMin */
 /* ITEM { 2964u,  1500u, 2u } knockDiagRpm */
-/* ITEM { 2962u,   800u, 2u } knockReapplyMs */
+/* ITEM { 2962u,  1000u, 2u } knockReapplyMs */
 /* ITEM { 2960u,   204u, 2u } knockRefInit */
 /* ITEM { 2958u, 10390u, 2u } knockCltMin */
 /* ITEM { 2956u,   400u, 2u } knockRpmMin */
-/* ITEM { 2955u,    22u, 1u } knockLoadMin */
+/* ITEM { 2955u,    31u, 1u } knockLoadMin */
 /* ITEM { 2954u,     4u, 1u } knockTpDyn */
 /* ITEM { 2953u,    16u, 1u } knockTp */
 /* ITEM { 2952u,    18u, 1u } knockKefDyn */
-/* ITEM { 2946u,    43u, 1u } knockKef[0] */
-/* ITEM { 2947u,    43u, 1u } knockKef[1] */
-/* ITEM { 2948u,    42u, 1u } knockKef[2] */
+/* ITEM { 2946u,    50u, 1u } knockKef[0] */
+/* ITEM { 2947u,    50u, 1u } knockKef[1] */
+/* ITEM { 2948u,    46u, 1u } knockKef[2] */
 /* ITEM { 2949u,    40u, 1u } knockKef[3] */
-/* ITEM { 2950u,    35u, 1u } knockKef[4] */
-/* ITEM { 2951u,    32u, 1u } knockKef[5] */
+/* ITEM { 2950u,    36u, 1u } knockKef[4] */
+/* ITEM { 2951u,    34u, 1u } knockKef[5] */
 /* ITEM { 2934u,  1000u, 2u } knockKefRpm[0] */
 /* ITEM { 2936u,  2000u, 2u } knockKefRpm[1] */
 /* ITEM { 2938u,  3000u, 2u } knockKefRpm[2] */
@@ -1605,22 +1613,22 @@ static const unsigned char HC_PRESET_MEM runs_bosch_me711_board[] = {
 /* ITEM { 1684u,   900u, 2u } pedalAx[13] */
 /* ITEM { 1686u,   950u, 2u } pedalAx[14] */
 /* ITEM { 1688u,  1000u, 2u } pedalAx[15] */
-/* ITEM { 1370u,     8u, 1u } pedalMap[0] */
-/* ITEM { 1371u,     8u, 1u } pedalMap[1] */
-/* ITEM { 1372u,     8u, 1u } pedalMap[2] */
-/* ITEM { 1373u,     8u, 1u } pedalMap[3] */
-/* ITEM { 1374u,     8u, 1u } pedalMap[4] */
-/* ITEM { 1375u,     8u, 1u } pedalMap[5] */
-/* ITEM { 1376u,     8u, 1u } pedalMap[6] */
-/* ITEM { 1377u,     8u, 1u } pedalMap[7] */
-/* ITEM { 1378u,     8u, 1u } pedalMap[8] */
-/* ITEM { 1379u,     8u, 1u } pedalMap[9] */
-/* ITEM { 1380u,     8u, 1u } pedalMap[10] */
-/* ITEM { 1381u,     8u, 1u } pedalMap[11] */
-/* ITEM { 1382u,     8u, 1u } pedalMap[12] */
-/* ITEM { 1383u,     8u, 1u } pedalMap[13] */
-/* ITEM { 1384u,     8u, 1u } pedalMap[14] */
-/* ITEM { 1385u,     8u, 1u } pedalMap[15] */
+/* ITEM { 1370u,     0u, 1u } pedalMap[0] */
+/* ITEM { 1371u,     0u, 1u } pedalMap[1] */
+/* ITEM { 1372u,     0u, 1u } pedalMap[2] */
+/* ITEM { 1373u,     0u, 1u } pedalMap[3] */
+/* ITEM { 1374u,     0u, 1u } pedalMap[4] */
+/* ITEM { 1375u,     0u, 1u } pedalMap[5] */
+/* ITEM { 1376u,     0u, 1u } pedalMap[6] */
+/* ITEM { 1377u,     0u, 1u } pedalMap[7] */
+/* ITEM { 1378u,     0u, 1u } pedalMap[8] */
+/* ITEM { 1379u,     0u, 1u } pedalMap[9] */
+/* ITEM { 1380u,     0u, 1u } pedalMap[10] */
+/* ITEM { 1381u,     0u, 1u } pedalMap[11] */
+/* ITEM { 1382u,     0u, 1u } pedalMap[12] */
+/* ITEM { 1383u,     0u, 1u } pedalMap[13] */
+/* ITEM { 1384u,     0u, 1u } pedalMap[14] */
+/* ITEM { 1385u,     0u, 1u } pedalMap[15] */
 /* ITEM { 1386u,    12u, 1u } pedalMap[16] */
 /* ITEM { 1387u,    12u, 1u } pedalMap[17] */
 /* ITEM { 1388u,    12u, 1u } pedalMap[18] */
@@ -1861,6 +1869,7 @@ static const unsigned char HC_PRESET_MEM runs_bosch_me711_board[] = {
 /* ITEM { 1623u,   200u, 1u } pedalMap[253] */
 /* ITEM { 1624u,   200u, 1u } pedalMap[254] */
 /* ITEM { 1625u,   200u, 1u } pedalMap[255] */
+/* ITEM { 3548u,   100u, 1u } etbIdleRange */
 /* ITEM { 2694u,     1u, 1u } camPhaseMode */
 /* ITEM { 2695u,     1u, 1u } camPhaseLevel */
 /* ITEM { 2696u,  1260u, 2u } camPhaseAngleX10 */
@@ -1948,6 +1957,8 @@ static const unsigned char HC_PRESET_MEM runs_vag_18t_me711[] = {
         0x06u, 0xF5u,
     0x0Au, 0x4Eu, 4u, /* offset 2638 */
         0x01u, 0x2Du, 0x01u, 0x2Cu,
+    0x0Eu, 0xF9u, 3u, /* offset 3833 */
+        0x01u, 0x01u, 0x2Cu,
     0x04u, 0x70u, 16u, /* offset 1136 */
         0x07u, 0x55u, 0x07u, 0x3Au, 0x04u, 0x3Du, 0x02u, 0xADu, 0x02u, 0x2Du, 0x01u, 0xB5u,
         0x01u, 0x0Bu, 0x01u, 0x0Bu,
@@ -2046,13 +2057,16 @@ static const unsigned char HC_PRESET_MEM runs_vag_18t_me711[] = {
         0x00u, 0x96u, 0x03u, 0x51u, 0x00u, 0x4Bu, 0x01u, 0xA8u,
     0x04u, 0xC4u, 8u, /* offset 1220 */
         0x00u, 0x66u, 0x03u, 0xBAu, 0x03u, 0x97u, 0x00u, 0x47u,
-    0x02u, 0xC0u, 64u, /* offset 704 */
+    0x02u, 0xC0u, 32u, /* offset 704 */
         0x01u, 0xF4u, 0x03u, 0x20u, 0x03u, 0xE8u, 0x04u, 0xE2u, 0x05u, 0xDCu, 0x06u, 0xD6u,
         0x07u, 0xD0u, 0x09u, 0xC4u, 0x0Bu, 0xB8u, 0x0Du, 0xACu, 0x0Fu, 0xA0u, 0x11u, 0x94u,
-        0x13u, 0x88u, 0x15u, 0x7Cu, 0x17u, 0x70u, 0x1Au, 0x90u, 0x00u, 0x00u, 0x00u, 0x0Au,
-        0x00u, 0x14u, 0x00u, 0x1Eu, 0x00u, 0x28u, 0x00u, 0x37u, 0x00u, 0x46u, 0x00u, 0x64u,
-        0x00u, 0x82u, 0x00u, 0xA0u, 0x00u, 0xC8u, 0x00u, 0xFAu, 0x01u, 0x2Cu, 0x01u, 0x90u,
-        0x01u, 0xF4u, 0x03u, 0xE8u,
+        0x13u, 0x88u, 0x15u, 0x7Cu, 0x17u, 0x70u, 0x1Au, 0x90u,
+    0x0Cu, 0xECu, 1u, /* offset 3308 */
+        0x03u,
+    0x02u, 0xE0u, 32u, /* offset 736 */
+        0x00u, 0x64u, 0x00u, 0x96u, 0x00u, 0xC8u, 0x01u, 0x0Eu, 0x01u, 0x5Eu, 0x01u, 0xC2u,
+        0x02u, 0x26u, 0x02u, 0x8Au, 0x03u, 0x20u, 0x03u, 0x84u, 0x03u, 0xE8u, 0x04u, 0x4Cu,
+        0x04u, 0xB0u, 0x05u, 0x14u, 0x05u, 0x78u, 0x06u, 0x40u,
     0x0Cu, 0xEEu, 64u, /* offset 3310 */
         0x01u, 0xF4u, 0x03u, 0xB6u, 0x05u, 0x78u, 0x07u, 0x3Au, 0x08u, 0xFCu, 0x0Au, 0xBEu,
         0x0Cu, 0x80u, 0x0Eu, 0x42u, 0x10u, 0x04u, 0x11u, 0xC6u, 0x13u, 0x88u, 0x15u, 0x4Au,
@@ -2090,35 +2104,41 @@ static const unsigned char HC_PRESET_MEM runs_vag_18t_me711[] = {
     0x09u, 0x7Au, 1u, /* offset 2426 */
         0x01u,
     0x09u, 0xACu, 16u, /* offset 2476 */
-        0x00u, 0x3Du, 0x00u, 0x38u, 0x00u, 0x33u, 0x00u, 0x2Eu, 0x00u, 0x29u, 0x00u, 0x24u,
-        0x00u, 0x24u, 0x00u, 0x24u,
+        0x00u, 0x34u, 0x00u, 0x2Fu, 0x00u, 0x2Au, 0x00u, 0x25u, 0x00u, 0x20u, 0x00u, 0x1Au,
+        0x00u, 0x1Au, 0x00u, 0x1Au,
     0x09u, 0xC2u, 2u, /* offset 2498 */
-        0x02u, 0x58u,
+        0x01u, 0x2Cu,
+    0x09u, 0xC0u, 2u, /* offset 2496 */
+        0x00u, 0x14u,
+    0x09u, 0xBCu, 4u, /* offset 2492 */
+        0x00u, 0x03u, 0x00u, 0x02u,
+    0x0Au, 0x96u, 4u, /* offset 2710 */
+        0x00u, 0x14u, 0x03u, 0xE8u,
     0x0Eu, 0xFEu, 255u, /* offset 3838 */
         0x40u, 0x40u, 0x40u, 0x40u, 0x42u, 0x48u, 0x50u, 0x5Fu, 0x61u, 0x61u, 0x60u, 0x60u,
         0x64u, 0x6Bu, 0x72u, 0x78u, 0x40u, 0x40u, 0x40u, 0x40u, 0x42u, 0x48u, 0x50u, 0x5Fu,
-        0x61u, 0x61u, 0x60u, 0x60u, 0x64u, 0x6Bu, 0x72u, 0x78u, 0x3Cu, 0x40u, 0x40u, 0x40u,
-        0x42u, 0x48u, 0x50u, 0x5Fu, 0x61u, 0x61u, 0x60u, 0x60u, 0x64u, 0x6Bu, 0x72u, 0x78u,
-        0x33u, 0x40u, 0x40u, 0x40u, 0x42u, 0x48u, 0x50u, 0x5Fu, 0x61u, 0x61u, 0x60u, 0x60u,
-        0x64u, 0x6Bu, 0x72u, 0x78u, 0x2Du, 0x40u, 0x40u, 0x40u, 0x42u, 0x48u, 0x50u, 0x5Fu,
-        0x61u, 0x61u, 0x60u, 0x60u, 0x64u, 0x6Bu, 0x72u, 0x78u, 0x28u, 0x40u, 0x40u, 0x42u,
-        0x46u, 0x4Cu, 0x52u, 0x62u, 0x61u, 0x61u, 0x60u, 0x60u, 0x64u, 0x6Bu, 0x72u, 0x78u,
-        0x28u, 0x3Cu, 0x44u, 0x48u, 0x4Eu, 0x56u, 0x5Cu, 0x74u, 0x6Bu, 0x61u, 0x60u, 0x60u,
-        0x64u, 0x6Bu, 0x72u, 0x78u, 0x28u, 0x33u, 0x3Du, 0x4Bu, 0x53u, 0x5Cu, 0x62u, 0x6Eu,
-        0x78u, 0x7Cu, 0x7Au, 0x69u, 0x65u, 0x6Bu, 0x72u, 0x78u, 0x28u, 0x31u, 0x38u, 0x44u,
-        0x4Cu, 0x54u, 0x5Au, 0x67u, 0x71u, 0x76u, 0x7Au, 0x76u, 0x75u, 0x74u, 0x74u, 0x78u,
-        0x28u, 0x2Fu, 0x35u, 0x40u, 0x47u, 0x4Eu, 0x53u, 0x62u, 0x6Au, 0x6Fu, 0x74u, 0x74u,
-        0x71u, 0x72u, 0x76u, 0x7Au, 0x28u, 0x2Eu, 0x33u, 0x3Cu, 0x42u, 0x48u, 0x4Cu, 0x5Du,
-        0x64u, 0x68u, 0x6Cu, 0x6Du, 0x6Cu, 0x6Eu, 0x74u, 0x79u, 0x28u, 0x2Eu, 0x32u, 0x3Au,
-        0x40u, 0x45u, 0x48u, 0x58u, 0x5Du, 0x63u, 0x66u, 0x66u, 0x65u, 0x67u, 0x6Du, 0x74u,
-        0x28u, 0x2Cu, 0x30u, 0x37u, 0x3Bu, 0x3Fu, 0x42u, 0x4Du, 0x52u, 0x59u, 0x5Bu, 0x5Cu,
-        0x5Bu, 0x5Eu, 0x65u, 0x6Au, 0x28u, 0x2Au, 0x2Du, 0x31u, 0x35u, 0x38u, 0x3Au, 0x3Du,
-        0x3Cu, 0x41u, 0x41u, 0x42u, 0x45u, 0x4Cu, 0x52u, 0x59u, 0x28u, 0x28u, 0x2Bu, 0x2Fu,
-        0x2Eu, 0x2Fu, 0x30u, 0x33u, 0x30u, 0x36u, 0x39u, 0x3Au, 0x3Cu, 0x42u, 0x49u, 0x4Eu,
-        0x28u, 0x28u, 0x2Bu, 0x2Fu, 0x2Eu, 0x2Fu, 0x30u, 0x33u, 0x30u, 0x36u, 0x39u, 0x3Au,
-        0x3Cu, 0x42u, 0x49u,
+        0x61u, 0x61u, 0x60u, 0x60u, 0x64u, 0x6Bu, 0x72u, 0x78u, 0x40u, 0x40u, 0x40u, 0x40u,
+        0x42u, 0x48u, 0x50u, 0x73u, 0x7Bu, 0x7Cu, 0x7Eu, 0x77u, 0x75u, 0x74u, 0x77u, 0x7Au,
+        0x3Du, 0x40u, 0x40u, 0x40u, 0x42u, 0x48u, 0x50u, 0x70u, 0x77u, 0x79u, 0x7Au, 0x76u,
+        0x73u, 0x72u, 0x75u, 0x79u, 0x36u, 0x40u, 0x40u, 0x40u, 0x42u, 0x48u, 0x50u, 0x6Bu,
+        0x72u, 0x73u, 0x75u, 0x73u, 0x6Fu, 0x6Fu, 0x73u, 0x78u, 0x31u, 0x46u, 0x4Fu, 0x55u,
+        0x57u, 0x5Cu, 0x5Eu, 0x66u, 0x6Cu, 0x6Du, 0x6Fu, 0x6Du, 0x6Au, 0x6Au, 0x6Eu, 0x73u,
+        0x2Cu, 0x3Eu, 0x47u, 0x4Du, 0x50u, 0x54u, 0x58u, 0x61u, 0x66u, 0x68u, 0x6Au, 0x68u,
+        0x66u, 0x66u, 0x6Au, 0x6Eu, 0x28u, 0x35u, 0x3Cu, 0x45u, 0x49u, 0x4Du, 0x51u, 0x5Cu,
+        0x61u, 0x64u, 0x66u, 0x64u, 0x63u, 0x63u, 0x67u, 0x6Au, 0x28u, 0x2Du, 0x31u, 0x39u,
+        0x3Du, 0x42u, 0x45u, 0x53u, 0x58u, 0x5Cu, 0x5Eu, 0x5Eu, 0x5Bu, 0x5Du, 0x63u, 0x66u,
+        0x28u, 0x29u, 0x2Cu, 0x31u, 0x37u, 0x3Bu, 0x3Eu, 0x4Au, 0x52u, 0x58u, 0x58u, 0x58u,
+        0x56u, 0x5Au, 0x60u, 0x62u, 0x28u, 0x28u, 0x2Au, 0x2Eu, 0x32u, 0x36u, 0x39u, 0x44u,
+        0x4Cu, 0x51u, 0x4Fu, 0x51u, 0x52u, 0x55u, 0x5Au, 0x5Du, 0x28u, 0x28u, 0x28u, 0x28u,
+        0x2Bu, 0x2Du, 0x30u, 0x3Du, 0x42u, 0x46u, 0x45u, 0x47u, 0x48u, 0x4Cu, 0x51u, 0x53u,
+        0x28u, 0x28u, 0x28u, 0x28u, 0x28u, 0x2Au, 0x2Cu, 0x38u, 0x3Cu, 0x40u, 0x40u, 0x42u,
+        0x44u, 0x48u, 0x4Cu, 0x4Eu, 0x28u, 0x28u, 0x28u, 0x28u, 0x28u, 0x28u, 0x28u, 0x33u,
+        0x36u, 0x3Bu, 0x3Cu, 0x3Eu, 0x41u, 0x44u, 0x48u, 0x4Au, 0x28u, 0x28u, 0x28u, 0x28u,
+        0x28u, 0x28u, 0x28u, 0x2Du, 0x30u, 0x36u, 0x39u, 0x3Bu, 0x3Cu, 0x40u, 0x44u, 0x47u,
+        0x28u, 0x28u, 0x28u, 0x28u, 0x28u, 0x28u, 0x28u, 0x28u, 0x2Au, 0x30u, 0x33u, 0x34u,
+        0x36u, 0x3Au, 0x3Eu,
     0x0Fu, 0xFDu, 1u, /* offset 4093 */
-        0x4Eu,
+        0x40u,
     0x03u, 0x00u, 255u, /* offset 768 */
         0x93u, 0x93u, 0x93u, 0x93u, 0x93u, 0x93u, 0x93u, 0x93u, 0x93u, 0x93u, 0x93u, 0x93u,
         0x93u, 0x93u, 0x93u, 0x93u, 0x93u, 0x93u, 0x93u, 0x93u, 0x93u, 0x93u, 0x93u, 0x93u,
@@ -2151,8 +2171,8 @@ static const unsigned char HC_PRESET_MEM runs_vag_18t_me711[] = {
     0x0Au, 0xACu, 1u, /* offset 2732 */
         0x01u,
     0x0Au, 0xB0u, 48u, /* offset 2736 */
-        0x37u, 0x34u, 0x30u, 0x2Du, 0x2Au, 0x28u, 0x25u, 0x23u, 0x21u, 0x1Fu, 0x1Eu, 0x1Eu,
-        0x1Eu, 0x1Eu, 0x1Eu, 0x1Eu, 0x64u, 0x55u, 0x46u, 0x3Cu, 0x32u, 0x28u, 0x20u, 0x1Au,
+        0x46u, 0x46u, 0x46u, 0x45u, 0x44u, 0x43u, 0x42u, 0x41u, 0x40u, 0x3Fu, 0x3Eu, 0x3Cu,
+        0x3Cu, 0x3Cu, 0x3Cu, 0x3Cu, 0x64u, 0x55u, 0x46u, 0x3Cu, 0x32u, 0x28u, 0x20u, 0x1Au,
         0x16u, 0x13u, 0x11u, 0x0Fu, 0x0Fu, 0x0Fu, 0x0Fu, 0x0Fu, 0x3Cu, 0x32u, 0x2Au, 0x23u,
         0x1Cu, 0x16u, 0x12u, 0x0Eu, 0x0Bu, 0x09u, 0x07u, 0x05u, 0x04u, 0x04u, 0x04u, 0x04u,
     0x0Au, 0xAEu, 2u, /* offset 2734 */
@@ -2165,8 +2185,8 @@ static const unsigned char HC_PRESET_MEM runs_vag_18t_me711[] = {
         0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
         0x00u, 0x00u, 0x00u, 0x00u, 0x01u,
     0x0Bu, 0x22u, 14u, /* offset 2850 */
-        0x00u, 0x64u, 0xFFu, 0x9Cu, 0x00u, 0x64u, 0x03u, 0xE8u, 0x00u, 0x00u, 0x03u, 0xE8u,
-        0x07u, 0xD0u,
+        0x00u, 0x64u, 0xFFu, 0x9Cu, 0x00u, 0x64u, 0x03u, 0xE8u, 0x00u, 0x0Fu, 0x03u, 0xE8u,
+        0x05u, 0xDCu,
     0x0Au, 0x9Cu, 2u, /* offset 2716 */
         0x0Bu, 0xB8u,
     0x0Au, 0x20u, 1u, /* offset 2592 */
@@ -2186,15 +2206,15 @@ static const unsigned char HC_PRESET_MEM runs_vag_18t_me711[] = {
     0x0Bu, 0xA4u, 2u, /* offset 2980 */
         0x00u, 0xFAu,
     0x0Bu, 0x38u, 1u, /* offset 2872 */
-        0x01u,
+        0x02u,
     0x0Bu, 0x9Fu, 1u, /* offset 2975 */
         0x64u,
     0x0Bu, 0x9Eu, 1u, /* offset 2974 */
-        0x3Cu,
+        0x30u,
     0x0Bu, 0x9Du, 1u, /* offset 2973 */
-        0x48u,
+        0x33u,
     0x0Bu, 0x9Cu, 1u, /* offset 2972 */
-        0x09u,
+        0x0Cu,
     0x0Bu, 0x9Bu, 1u, /* offset 2971 */
         0x00u,
     0x0Bu, 0x9Au, 1u, /* offset 2970 */
@@ -2206,7 +2226,7 @@ static const unsigned char HC_PRESET_MEM runs_vag_18t_me711[] = {
     0x0Bu, 0x94u, 2u, /* offset 2964 */
         0x05u, 0xDCu,
     0x0Bu, 0x92u, 2u, /* offset 2962 */
-        0x03u, 0x20u,
+        0x03u, 0xE8u,
     0x0Bu, 0x90u, 2u, /* offset 2960 */
         0x00u, 0xCCu,
     0x0Bu, 0x8Eu, 2u, /* offset 2958 */
@@ -2214,7 +2234,7 @@ static const unsigned char HC_PRESET_MEM runs_vag_18t_me711[] = {
     0x0Bu, 0x8Cu, 2u, /* offset 2956 */
         0x01u, 0x90u,
     0x0Bu, 0x8Bu, 1u, /* offset 2955 */
-        0x16u,
+        0x1Fu,
     0x0Bu, 0x8Au, 1u, /* offset 2954 */
         0x04u,
     0x0Bu, 0x89u, 1u, /* offset 2953 */
@@ -2222,7 +2242,7 @@ static const unsigned char HC_PRESET_MEM runs_vag_18t_me711[] = {
     0x0Bu, 0x88u, 1u, /* offset 2952 */
         0x12u,
     0x0Bu, 0x82u, 6u, /* offset 2946 */
-        0x2Bu, 0x2Bu, 0x2Au, 0x28u, 0x23u, 0x20u,
+        0x32u, 0x32u, 0x2Eu, 0x28u, 0x24u, 0x22u,
     0x0Bu, 0x76u, 12u, /* offset 2934 */
         0x03u, 0xE8u, 0x07u, 0xD0u, 0x0Bu, 0xB8u, 0x0Fu, 0xA0u, 0x13u, 0x88u, 0x17u, 0x70u,
     0x0Bu, 0x66u, 16u, /* offset 2918 */
@@ -2248,8 +2268,8 @@ static const unsigned char HC_PRESET_MEM runs_vag_18t_me711[] = {
         0x01u, 0xF4u, 0x02u, 0x58u, 0x02u, 0xBCu, 0x03u, 0x20u, 0x03u, 0x52u, 0x03u, 0x84u,
         0x03u, 0xB6u, 0x03u, 0xE8u,
     0x05u, 0x5Au, 255u, /* offset 1370 */
-        0x08u, 0x08u, 0x08u, 0x08u, 0x08u, 0x08u, 0x08u, 0x08u, 0x08u, 0x08u, 0x08u, 0x08u,
-        0x08u, 0x08u, 0x08u, 0x08u, 0x0Cu, 0x0Cu, 0x0Cu, 0x0Cu, 0x0Cu, 0x0Cu, 0x0Cu, 0x0Cu,
+        0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+        0x00u, 0x00u, 0x00u, 0x00u, 0x0Cu, 0x0Cu, 0x0Cu, 0x0Cu, 0x0Cu, 0x0Cu, 0x0Cu, 0x0Cu,
         0x0Cu, 0x0Cu, 0x0Cu, 0x0Cu, 0x0Cu, 0x0Cu, 0x0Cu, 0x0Cu, 0x10u, 0x10u, 0x10u, 0x10u,
         0x10u, 0x10u, 0x10u, 0x10u, 0x10u, 0x10u, 0x10u, 0x10u, 0x10u, 0x10u, 0x10u, 0x10u,
         0x15u, 0x15u, 0x15u, 0x15u, 0x15u, 0x15u, 0x15u, 0x15u, 0x15u, 0x15u, 0x15u, 0x15u,
@@ -2272,6 +2292,8 @@ static const unsigned char HC_PRESET_MEM runs_vag_18t_me711[] = {
         0xC8u, 0xC8u, 0xC8u,
     0x06u, 0x59u, 1u, /* offset 1625 */
         0xC8u,
+    0x0Du, 0xDCu, 1u, /* offset 3548 */
+        0x64u,
     0x0Au, 0x86u, 5u, /* offset 2694 */
         0x01u, 0x01u, 0x04u, 0xECu, 0x02u,
     0x0Au, 0x90u, 1u, /* offset 2704 */
@@ -2295,7 +2317,7 @@ const hc_preset_t hc_engine_presets[] = {
     { 1u, runs_vag_18t_me75_awt, 51u, 0x03C2u, 0u, 117u }, /* VAG 1.8T AWT (ME7.5 image only) */
     { 2u, runs_bosch_me711, 20u, 0x02F9u, 0u, 56u }, /* Porsche V8 donor - incomplete, refused */
     { 4u, runs_bosch_me711_board, 16u, 0x02F9u, 1u, 49u }, /* Board defaults - routing only, no engine - BOARD DEFAULT */
-    { 3u, runs_vag_18t_me711, 1679u, 0x02F9u, 0u, 2701u }, /* VAG 1.8T DBW (AWT) */
+    { 3u, runs_vag_18t_me711, 1688u, 0x02F9u, 0u, 2737u }, /* VAG 1.8T DBW (AWT) */
 };
 
 const unsigned char hc_engine_preset_count = 5u;

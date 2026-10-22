@@ -78,7 +78,7 @@ def main() -> int:
     if err2 is not None:
         print(f"  [FAIL] second boot (for F/Q) runs without a trap {err2}")
         ok = False
-    # 2026-10-14 (docs/ARCHITECTURE.md.1): on the car's
+    # 2026-10-14 (the maintainer's design notes.1): on the car's
     # shared K-line a plain byte may be someone else's traffic, so a plain
     # F/Q is answered only once a CRC-valid request has LOCKED the link.
     h2.txb.clear()

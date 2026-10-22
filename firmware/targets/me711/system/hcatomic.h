@@ -8,7 +8,7 @@
  * raises the CPU priority to TGT_ILVL_CFG_CRIT (13): above every capture, the
  * planner (9), CC25 (11) and the tick (8); below the SSC/PEC levels 14/15, so
  * the S5500 exchange is never stopped (IEN is NEVER cleared for this - see
- * docs/CONTRIBUTING.md). The two NOPs let the new level take effect before the
+ * the maintainer's design notes). The two NOPs let the new level take effect before the
  * protected access (C167CR UM: the PSW write's pipeline effect).
  *
  * A single word, or a byte, written by one context and read by another needs
@@ -19,7 +19,7 @@
  * The sections are kept to a few instructions: every one of them delays the
  * crank capture ISR, whose CC15 latch holds one tooth. tests/firmware/trigger/
  * me711_runtime_stress_proof.py bounds the longest one measured under load.
- * The ISR <-> task census is in docs/ARCHITECTURE.md. */
+ * The ISR <-> task census is in the maintainer's design notes. */
 #include <intrins.h>
 #include "hctarget.h"
 

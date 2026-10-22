@@ -74,7 +74,7 @@ IC_TRAP = {
     0xFF84: 0x16,   # CC6IC   bench crank generator
     0xF160: 0x30,   # CC16IC  V97 knock window MF (P8.0) - the OEM ME7.1.1's
                     #         own vector slot 0x30 (0x0200C0) JMPS to its
-                    #         knock-window ISR 0x894C1C (docs/ARCHITECTURE.md)
+                    #         knock-window ISR 0x894C1C (the maintainer's design notes)
     0xF18C: 0x37,   # CC23IC  injector EV4, P8.7 - the trap numbers here do
     0xF192: 0x3C,   # CC28IC  injector EV3, P7.4   NOT follow CAPCOM1's
     0xF194: 0x44,   # CC29IC  injector EV2, P7.5   0x10 + n. They come from the
@@ -148,7 +148,7 @@ TIMER_REL = {"T0": 0xFE54, "T1": 0xFE56, "T7": 0xF054, "T8": 0xF056}
 
 # CAPCOM channels a harness can drive an edge on:
 #   channel -> (capture register, interrupt control register, timebase)
-# Pins are from the Bosch schematic, see docs/ARCHITECTURE.md.
+# Pins are from the Bosch schematic, see the maintainer's design notes.
 CC_CHAN = {
     0:  (0xFE80, 0xFF78, "T0"),    # P2.0  coil A, ZUE1I
     1:  (0xFE82, 0xFF7A, "T0"),    # P2.1  coil B, ZUE2I
@@ -848,14 +848,33 @@ class CPU:
         self.m.sfr[0xFE12] = nsp
         return v
 
+    # THE OVERFLOW FLAG (2026-10-14). Until then V was not modelled and every
+    # signed condition read N alone ("approx, V=0"), so a compare whose
+    # subtraction overflows 16 bits took the wrong branch: CMP R6,#8300H
+    # (-32000) with R6 = 3000 is 35000 = 0x88B8, N set AND V set, and the
+    # CPU's cc_SGE (N xor V = 0) is true - the simulator said false
+    # (hcaux711.c's threshold clamp, me711_aux_proof G1). Every flag-setting
+    # instruction goes through setzn/setznb, which CLEAR V (MOV, the logical
+    # ops: V = 0 on the CPU); the 16-bit add/subtract/compare forms then set
+    # it from the operands. Byte arithmetic still leaves V = 0, as before.
+    v = 0
+
     def setzn(self, v):
         self.z = 1 if (v & 0xFFFF) == 0 else 0
         self.n = 1 if (v & 0x8000) else 0
+        self.v = 0
 
     def setznb(self, v):
         """The BYTE form. N comes from bit 7, not bit 15."""
         self.z = 1 if (v & 0xFF) == 0 else 0
         self.n = 1 if (v & 0x80) else 0
+        self.v = 0
+
+    def setv_add(self, x, y, r):
+        self.v = 1 if (~(x ^ y) & (x ^ r) & 0x8000) else 0
+
+    def setv_sub(self, x, y, r):
+        self.v = 1 if ((x ^ y) & (x ^ r) & 0x8000) else 0
 
     def alu16(self, base, x, y):
         """One 16-bit ALU operation with C166 flag semantics.
@@ -881,21 +900,25 @@ class CPU:
             r = x + y
             self.c = 1 if r > 0xFFFF else 0
             self.setzn(r)
+            self.setv_add(x, y, r)
         elif base == 0x10:                     # ADDC
             r = x + y + self.c
             zprev = self.z
             self.c = 1 if r > 0xFFFF else 0
             self.setzn(r)
+            self.setv_add(x, y, r)
             self.z = 1 if (self.z and zprev) else 0
         elif base in (0x20, 0x40):             # SUB, CMP
             r = x - y
             self.c = 1 if (x & 0xFFFF) < (y & 0xFFFF) else 0
             self.setzn(r)
+            self.setv_sub(x, y, r)
         elif base == 0x30:                     # SUBC
             r = x - y - self.c
             zprev = self.z
             self.c = 1 if (x & 0xFFFF) < ((y & 0xFFFF) + self.c) else 0
             self.setzn(r)
+            self.setv_sub(x, y, r)
             self.z = 1 if (self.z and zprev) else 0
         elif base == 0x50:                     # XOR
             r = x ^ y
@@ -914,16 +937,16 @@ class CPU:
                 0x1: self.z == 0,                     # cc_NET
                 0x2: self.z == 1,                     # cc_Z / cc_EQ
                 0x3: self.z == 0,                     # cc_NZ / cc_NE
-                0x4: False,                           # cc_V   (V not tracked)
-                0x5: True,                            # cc_NV
+                0x4: self.v == 1,                     # cc_V
+                0x5: self.v == 0,                     # cc_NV
                 0x6: self.n == 1,                     # cc_N
                 0x7: self.n == 0,                     # cc_NN
                 0x8: self.c == 1,                     # cc_C / cc_ULT
                 0x9: self.c == 0,                     # cc_NC / cc_UGE
-                0xA: (self.z == 0 and self.n == 0),   # cc_SGT (approx, V=0)
-                0xB: (self.z == 1 or self.n == 1),    # cc_SLE
-                0xC: self.n == 1,                     # cc_SLT
-                0xD: self.n == 0,                     # cc_SGE
+                0xA: (self.z == 0 and self.n == self.v),   # cc_SGT
+                0xB: (self.z == 1 or self.n != self.v),    # cc_SLE
+                0xC: self.n != self.v,                # cc_SLT
+                0xD: self.n == self.v,                # cc_SGE
                 0xE: (self.c == 0 and self.z == 0),   # cc_UGT
                 0xF: (self.c == 1 or self.z == 1),    # cc_ULE
                 }.get(cc, True)
@@ -956,7 +979,7 @@ class CPU:
         ignition coils that could be switched on and never off.
         """
         w = self.m.sfr.get(self.PSW_ADDR, 0) & ~0x000F
-        w |= self.n | (self.c << 1) | (self.z << 3)
+        w |= self.n | (self.c << 1) | (self.v << 2) | (self.z << 3)
         self.m.sfr[self.PSW_ADDR] = w
 
     def psw_extract(self):
@@ -964,6 +987,7 @@ class CPU:
         w = self.m.sfr.get(self.PSW_ADDR, 0)
         self.n = w & 1
         self.c = (w >> 1) & 1
+        self.v = (w >> 2) & 1
         self.z = (w >> 3) & 1
 
     def bitaddr(self, bo, bit):
@@ -1297,6 +1321,7 @@ class CPU:
             a = self.reg_addr(rr, esfr); x = self.m.r16(a)
             self.c = 1 if (x & 0xFFFF) < (d & 0xFFFF) else 0
             self.setzn(x - d)
+            self.setv_sub(x, d, x - d)
             step = {0x86: 1, 0x96: 2, 0xA6: -1, 0xB6: -2}[op]
             self.m.w16(a, (x + step) & 0xFFFF); self._endext(); return
         if op in (0x80, 0x90, 0xA0, 0xB0):               # same, Rw,#data4
@@ -1310,6 +1335,7 @@ class CPU:
             x = self.gr(rw)
             self.c = 1 if (x & 0xFFFF) < (src & 0xFFFF) else 0
             self.setzn(x - src)
+            self.setv_sub(x, src, x - src)
             step = {0x80: 1, 0x90: 2, 0xA0: -1, 0xB0: -2}[op]
             self.sr(rw, x + step); self._endext(); return
 

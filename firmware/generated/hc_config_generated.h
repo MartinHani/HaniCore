@@ -30,7 +30,7 @@
    universal_schema(). A literal here meant that adding a field
    left a battery-backed page from the previous firmware looking
    valid, with the new bytes holding whatever SRAM had. */
-#define HC_UNIVERSAL_SCHEMA          0x95CAu
+#define HC_UNIVERSAL_SCHEMA          0xE921u
 #define HC_UNIVERSAL_MAGIC           0x4855u   /* 'HU' */
 
 /* ------------------------------------------------- layout identity -- */
@@ -39,7 +39,7 @@
    what a stored calibration record carries so that a firmware whose page
    layout has moved REFUSES the record instead of reinterpreting it. See
    layout_id() in tools/config_source/generate_config.py. */
-#define HC_CFG_LAYOUT_ID             0x5AB824FAuL
+#define HC_CFG_LAYOUT_ID             0x83D8361EuL
 
 /* -------------------------------------------------------- apply policy -- */
 /* WHEN a validated change may reach the running engine. SAFETY_CRITICAL
@@ -215,9 +215,15 @@ typedef enum {
 #define HC_BARO_STOPPED               1u
 #define HC_BARO_DEDICATED             2u
 
+/* InjPressMode: Injector pressure compensation (rusEFI injectorCompensationMode) */
+#define HC_INJP_NONE                  0u
+#define HC_INJP_REFERENCED            1u
+#define HC_INJP_FIXED_RAIL            2u
+#define HC_INJP_SENSED                3u
+
 /* ------------------------------- universal block field offsets -- */
 /* Inside hcconfig.h's CFG_UNIVERSAL_BASE (2502, 1336 bytes reserved).
-   1248 bytes used.
+   1336 bytes used.
    Every one of these is an OFFSET INTO THE SAME 4096-byte page, so a
    TunerStudio write reaches them through the identical path as any
    calibration byte. */
@@ -467,7 +473,7 @@ typedef enum {
 #define CFG_U_ROTIDLE_TPS              3544u /* u8 Rotational idle: pedal below */
 #define CFG_U_INJ_PHASE_MODE           3545u /* u8 Injection timing */
 #define CFG_U_ROTIDLE_RPM              3546u /* u16 Rotational idle: below rpm */
-#define CFG_U_IDLE_ETB_RANGE           3548u /* u8 Idle throttle blend range */
+#define CFG_U_IDLE_ETB_RANGE           3548u /* u8 Idle throttle range */
 #define CFG_U_V98_PAD                  3549u /* u8 Alignment pad */
 #define CFG_U_INJ_PHASE_RPM_AX         3550u /* u16[8] Injection timing rpm axis */
 #define CFG_U_INJ_PHASE_LOAD_AX        3566u /* u16[8] Injection timing load axis */
@@ -475,17 +481,17 @@ typedef enum {
 #define CFG_U_FUEL_MODEL               3710u /* u8 Fuel model */
 #define CFG_U_PRESSURE_ROLE            3711u /* u8 Pressure sensor location */
 #define CFG_U_DENSITY_POLICY           3712u /* u8 Air density pressure */
-#define CFG_U_BARO_SOURCE              3713u /* u8 Ambient pressure source */
-#define CFG_U_AMBIENT_CORR             3714u /* u8 Correct for ambient pressure */
+#define CFG_U_BARO_SOURCE              3713u /* u8 Ambient pressure source (not used: always the onboard sensor) */
+#define CFG_U_AMBIENT_CORR             3714u /* u8 Correct for ambient pressure (not used: always) */
 #define CFG_U_IAT_POLICY               3715u /* u8 Use intake air temperature */
 #define CFG_U_LEAN_ENABLE              3716u /* u8 Lean protection */
 #define CFG_U_LAMBDA_QUALIFIED         3717u /* u8 Wideband commissioned for protection */
 #define CFG_U_PRESSURE_GUARD           3718u /* u8 Pressure-loss cut, other fuel algorithms */
 #define CFG_U_V102_PAD                 3719u /* u8 Alignment pad */
-#define CFG_U_PRESSURE_REF             3720u /* u16 Reference pressure */
+#define CFG_U_PRESSURE_REF             3720u /* u16 Ambient if the onboard sensor fails */
 #define CFG_U_BLEND_START              3722u /* u16 Boost blend starts at (above ambient) */
 #define CFG_U_BLEND_FULL               3724u /* u16 Boost blend complete at (above ambient) */
-#define CFG_U_BARO_MAX_AGE             3726u /* u16 Engine-stopped reading valid for */
+#define CFG_U_BARO_MAX_AGE             3726u /* u16 Onboard reading held for (sensor fault) */
 #define CFG_U_PRESSURE_TIMEOUT         3728u /* u16 Pressure reading maximum age */
 #define CFG_U_GUARD_RPM                3730u /* u16 Pressure-loss cut above */
 #define CFG_U_GUARD_TPS                3732u /* u16 Pressure-loss cut above TPS */
@@ -497,6 +503,53 @@ typedef enum {
 #define CFG_U_LEAN_RECOVERY            3744u /* u16 Recovery: at target, off load, for */
 #define CFG_U_DBW_PWM_HZ               3746u /* u16 Throttle bridge PWM frequency */
 #define CFG_U_DBW_FRICTION_X10         3748u /* u16 Throttle friction compensation */
+#define CFG_U_DWELL_RPM_AX             3750u /* u16[6] Dwell by rpm: rpm axis */
+#define CFG_U_DWELL_RPM_PCT            3762u /* u16[6] Dwell by rpm */
+#define CFG_U_OILP_LO_MV               3774u /* u16 Oil pressure sensor: voltage at 0 kPa */
+#define CFG_U_OILP_HI_MV               3776u /* u16 Oil pressure sensor: voltage at full scale */
+#define CFG_U_OILP_HI_KPA              3778u /* u16 Oil pressure sensor: full scale */
+#define CFG_U_GP1_THR_A                3780u /* s16 Output 1 condition A: threshold */
+#define CFG_U_GP1_THR_B                3782u /* s16 Output 1 condition B: threshold */
+#define CFG_U_GP2_THR_A                3784u /* s16 Output 2 condition A: threshold */
+#define CFG_U_GP2_THR_B                3786u /* s16 Output 2 condition B: threshold */
+#define CFG_U_FAN_ON_C                 3788u /* u16 Fan on at */
+#define CFG_U_FAN_OFF_C                3790u /* u16 Fan off at */
+#define CFG_U_AC_MAX_CLT               3792u /* u16 A/C off above coolant */
+#define CFG_U_IGN_TRIM                 3794u /* u8[8] Ignition trim, cylinder */
+#define CFG_U_PIN_FAN                  3802u /* u8 Fan relay output */
+#define CFG_U_FAN_WITH_AC              3803u /* u8 Fan on with the A/C compressor */
+#define CFG_U_FAN_STOPPED_OFF          3804u /* u8 Fan off when the engine is stopped */
+#define CFG_U_PIN_AC_REQ               3805u /* u8 A/C request input */
+#define CFG_U_PIN_AC_CLUTCH            3806u /* u8 A/C compressor relay output */
+#define CFG_U_AC_REQ_ACTIVE            3807u /* u8 A/C request is active when */
+#define CFG_U_AC_IDLE_UP_X10           3808u /* u8 A/C idle-up: throttle added */
+#define CFG_U_AC_IDLE_RPM              3809u /* u8 A/C idle-up: target rpm added */
+#define CFG_U_AC_MIN_RPM               3810u /* u8 A/C off below */
+#define CFG_U_AC_MAX_RPM               3811u /* u8 A/C off above */
+#define CFG_U_AC_MAX_TPS               3812u /* u8 A/C off above throttle */
+#define CFG_U_AC_DELAY                 3813u /* u8 A/C compressor delay */
+#define CFG_U_GP1_PIN                  3814u /* u8 Output 1 pin */
+#define CFG_U_GP1_SRC_A                3815u /* u8 Output 1 condition A: source */
+#define CFG_U_GP1_OP_A                 3816u /* u8 Output 1 condition A */
+#define CFG_U_GP1_HYST_A               3817u /* u8 Output 1 condition A: hysteresis */
+#define CFG_U_GP1_SRC_B                3818u /* u8 Output 1 condition B: source */
+#define CFG_U_GP1_OP_B                 3819u /* u8 Output 1 condition B */
+#define CFG_U_GP1_HYST_B               3820u /* u8 Output 1 condition B: hysteresis */
+#define CFG_U_GP1_LOGIC                3821u /* u8 Output 1: conditions */
+#define CFG_U_GP1_DELAY                3822u /* u8 Output 1: on delay */
+#define CFG_U_GP2_PIN                  3823u /* u8 Output 2 pin */
+#define CFG_U_GP2_SRC_A                3824u /* u8 Output 2 condition A: source */
+#define CFG_U_GP2_OP_A                 3825u /* u8 Output 2 condition A */
+#define CFG_U_GP2_HYST_A               3826u /* u8 Output 2 condition A: hysteresis */
+#define CFG_U_GP2_SRC_B                3827u /* u8 Output 2 condition B: source */
+#define CFG_U_GP2_OP_B                 3828u /* u8 Output 2 condition B */
+#define CFG_U_GP2_HYST_B               3829u /* u8 Output 2 condition B: hysteresis */
+#define CFG_U_GP2_LOGIC                3830u /* u8 Output 2: conditions */
+#define CFG_U_GP2_DELAY                3831u /* u8 Output 2: on delay */
+#define CFG_U_OILP_DELAY               3832u /* u8 Low oil pressure for */
+#define CFG_U_INJ_PRESS_MODE           3833u /* u8 Fuel pressure compensation */
+#define CFG_U_FUEL_REG_KPA             3834u /* u16 Fuel regulator pressure */
+#define CFG_U_FUEL_SENS_KPA            3836u /* u16 Fuel pressure sensor at 4.5 V */
 
 /* ------------------------------------------------- the slot table -- */
 /* One entry per configuration field, sorted by offset. The config
@@ -512,7 +565,7 @@ typedef struct {
     unsigned int  pin_needs;   /* HC_PINCAP_* required, 0 if not a pin */
 } hc_cfg_slot_t;
 
-#define HC_CFG_SLOT_COUNT   401u
+#define HC_CFG_SLOT_COUNT   452u
 extern const hc_cfg_slot_t hc_cfg_slots[HC_CFG_SLOT_COUNT];
 
 /* Slot covering `off`, or 0 when the byte belongs to a reserved area.
@@ -537,7 +590,7 @@ extern const unsigned int hc_cfg_rpm_zero_groups;
 typedef char hc_cfg_assert_page_size[(HC_CFG_SIZE == 4096u) ? 1 : -1];
 typedef char hc_cfg_assert_uni_base[(CFG_UNIVERSAL_BASE == 2502u) ? 1 : -1];
 typedef char hc_cfg_assert_uni_size[(CFG_UNIVERSAL_SIZE == 1336u) ? 1 : -1];
-typedef char hc_cfg_assert_uni_fits[(1248u <= CFG_UNIVERSAL_SIZE) ? 1 : -1];
+typedef char hc_cfg_assert_uni_fits[(1336u <= CFG_UNIVERSAL_SIZE) ? 1 : -1];
 typedef char hc_cfg_assert_max_cyl[(HC_MAX_CYL == 8u) ? 1 : -1];
 typedef char hc_cfg_assert_cfg_version[(CFG_VERSION == 0u) ? 1 : -1];
 typedef char hc_cfg_assert_cfg_cylinders[(CFG_CYLINDERS == 2u) ? 1 : -1];
@@ -570,6 +623,10 @@ typedef char hc_cfg_assert_cfg_sim_rpm[(CFG_SIM_RPM == 70u) ? 1 : -1];
 typedef char hc_cfg_assert_cfg_trig_source[(CFG_TRIG_SOURCE == 72u) ? 1 : -1];
 typedef char hc_cfg_assert_cfg_main_relay_mode[(CFG_MAIN_RELAY_MODE == 73u) ? 1 : -1];
 typedef char hc_cfg_assert_cfg_main_relay_grace_ms[(CFG_MAIN_RELAY_GRACE_MS == 74u) ? 1 : -1];
+typedef char hc_cfg_assert_cfg_tacho_scale[(CFG_TACHO_SCALE == 76u) ? 1 : -1];
+typedef char hc_cfg_assert_cfg_pad_77[(CFG_PAD_77 == 77u) ? 1 : -1];
+typedef char hc_cfg_assert_cfg_ign_boost_ax[(CFG_IGN_BOOST_AX == 78u) ? 1 : -1];
+typedef char hc_cfg_assert_cfg_ign_boost_corr[(CFG_IGN_BOOST_CORR == 94u) ? 1 : -1];
 typedef char hc_cfg_assert_cal_fuel_map[(CAL_FUEL_MAP == 128u) ? 1 : -1];
 typedef char hc_cfg_assert_cal_fuel_rpm_ax[(CAL_FUEL_RPM_AX == 640u) ? 1 : -1];
 typedef char hc_cfg_assert_cal_fuel_load_ax[(CAL_FUEL_LOAD_AX == 672u) ? 1 : -1];

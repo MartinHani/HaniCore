@@ -1,7 +1,7 @@
 /*
  * hcknock.c - the knock-control strategy core. See hcknock.h for the
  * strategy and its sources; tests/host/test_hcknock.c for the proof;
- * docs/ARCHITECTURE.md for the hardware it will sit behind.
+ * the maintainer's design notes for the hardware it will sit behind.
  *
  * 16-bit arithmetic only. Every bound that makes a product fit is stated
  * where the product is formed; ikr is clamped to 1023 on entry, so every

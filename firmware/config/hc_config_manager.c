@@ -281,6 +281,11 @@ static void seed_universal_defaults(void)
     hc_cal_set_u8(CFG_U_MAP_PRESET, 0u);
     hc_cal_set_u16(CFG_U_INJ_FLOW_CCMIN, 0u);
     hc_cal_set_u16(CFG_U_INJ_REF_KPA, 0u);
+    /* injector pressure compensation: off, a 3 bar regulator and a 10 bar
+       sensor ready for when it is switched on (2026-10-15) */
+    hc_cal_set_u8(CFG_U_INJ_PRESS_MODE, 0u);
+    hc_cal_set_u16(CFG_U_FUEL_REG_KPA, 300u);
+    hc_cal_set_u16(CFG_U_FUEL_SENS_KPA, 1000u);
     hc_cal_set_u16(CFG_U_CRANK_DWELL_X100, 400u);   /* 4.00 ms, cranking */
     hc_cal_set_u16(CFG_U_DISPLACEMENT_CC, 0u);
     for (i = 0u; i < (HC_MAX_CYL_UNIVERSAL - HC_MAX_CYL); i++) {
@@ -312,9 +317,9 @@ static void seed_universal_defaults(void)
         hc_cal_set_u8(CFG_U_LAM_LOAD_MODE, 0u);
         for (i = 0u; i < CAL_AXIS_N; i++) {         /* lambda axes = ignition's */
             hc_cal_set_u16((unsigned int)(CFG_U_LAM_RPM_AX + 2u * i),
-                           hc_cal_u16((unsigned int)(CAL_IGN_RPM_AX + 2u * i)));
+                           hc_cal_u16v((unsigned int)(CAL_IGN_RPM_AX + 2u * i)));
             hc_cal_set_u16((unsigned int)(CFG_U_LAM_LOAD_AX + 2u * i),
-                           hc_cal_u16((unsigned int)(CAL_IGN_LOAD_AX + 2u * i)));
+                           hc_cal_u16v((unsigned int)(CAL_IGN_LOAD_AX + 2u * i)));
         }
         for (i = 0u; i < 8u; i++) {
             hc_cal_set_u16((unsigned int)(CFG_U_MAPEST_RPM_AX + 2u * i),
@@ -419,6 +424,55 @@ void hc_cfg_v102_defaults(void)
        2000 Hz is the board default's own value; friction 0 = off. */
     hc_cal_set_u16(CFG_U_DBW_PWM_HZ,2000u);
     hc_cal_set_u16(CFG_U_DBW_FRICTION_X10,0u);
+    hc_cfg_aux_defaults();
+}
+
+/* hcfarinline.h's variable-offset reads: the macro, behind one call */
+unsigned char far hc_cal_u8v(unsigned int off)
+{
+    return hc_cal_u8(off);
+}
+
+unsigned int far hc_cal_u16v(unsigned int off)
+{
+    return hc_cal_u16(off);
+}
+
+/* THE AUXILIARY FUNCTIONS' BYTES (2026-10-14, hcaux711.c): nothing routed,
+   nothing enabled, every correction neutral - trim 0 deg (128), dwell
+   factor 100 %. A page from before them is migrated by the host tool on
+   this board default, so these are also what an existing tune gets. */
+#define AUX0 CFG_U_DWELL_RPM_AX
+typedef char hc_aux_default_layout[(CFG_U_DWELL_RPM_PCT == AUX0 + 12u
+    && CFG_U_OILP_LO_MV == AUX0 + 24u && CFG_U_GP1_THR_A == AUX0 + 30u
+    && CFG_U_FAN_ON_C == AUX0 + 38u && CFG_U_AC_MAX_CLT == AUX0 + 42u
+    && CFG_U_IGN_TRIM == AUX0 + 44u
+    && CFG_U_PIN_FAN == AUX0 + 52u && CFG_U_PIN_AC_REQ == AUX0 + 55u
+    && CFG_U_AC_IDLE_UP_X10 == AUX0 + 58u && CFG_U_GP1_PIN == AUX0 + 64u
+    && CFG_U_GP2_PIN == AUX0 + 73u && CFG_U_OILP_DELAY == AUX0 + 82u) ? 1 : -1];
+static const unsigned char aux_defaults[83] = {
+    0x03,0xE8, 0x07,0xD0, 0x0B,0xB8, 0x0F,0xA0, 0x17,0x70, 0x1F,0x40,
+                                  /* dwell rpm axis 1000..8000             */
+    0,100, 0,100, 0,100, 0,100, 0,100, 0,100,  /* dwell factor 100 %       */
+    0x01,0xF4, 0x11,0x94, 0x03,0xE8,  /* oil sensor 500 / 4500 mV, 1000 kPa */
+    0,0, 0,0, 0,0, 0,0,           /* output thresholds                     */
+    0x2A,0xC6, 0x2A,0x94, 0x2B,0x8E,  /* fan on 95 C, off 90 C; A/C 115 C   */
+    128,128,128,128,128,128,128,128,  /* ignition trim 0.0 deg             */
+    255, 0, 0,                    /* fan: no pin, not with A/C, not stopped */
+    255, 255, 0,                  /* A/C request / relay: no pin, +12 V    */
+    20, 10, 50, 120, 80, 5,       /* idle-up 2.0 % / +100 rpm, 500..6000
+                                     rpm, 80 % throttle, 0.5 s              */
+    255, 0,0,0, 0,0,0, 0, 0,      /* output 1: no pin, not used            */
+    255, 0,0,0, 0,0,0, 0, 0,      /* output 2                              */
+    10                            /* low oil pressure for 1.0 s            */
+};
+void hc_cfg_aux_defaults(void)
+{
+    unsigned char i;
+
+    for (i = 0u; i < (unsigned char)sizeof(aux_defaults); i++) {
+        hc_cal_set_u8((unsigned int)(AUX0 + i), aux_defaults[i]);
+    }
 }
 unsigned char hc_cfg_identity_known(unsigned int hi,unsigned int lo,unsigned int schema)
 {

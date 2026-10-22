@@ -332,7 +332,7 @@ def main() -> int:
         if want == TRG_SYNC_FULL:
             # V97: A SEQUENTIAL STRATEGY RUNS ITS FALLBACK ON CRANK ONLY -
             # two half pulses per cylinder and a wasted spark, both right on
-            # either revolution (docs/ARCHITECTURE.md). It no longer
+            # either revolution (the maintainer's design notes). It no longer
             # schedules nothing: that stalled an engine whose cam glitched.
             # What must NOT happen - fuel into the wrong stroke as a whole
             # sequential pulse - is proven per pin by

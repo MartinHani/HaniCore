@@ -10,7 +10,7 @@
  * below is exercised deterministically without a sensor, an engine or a
  * bench. 16-bit arithmetic only (far code on the C167: no long helpers).
  *
- * The design and its evidence: docs/ARCHITECTURE.md.
+ * The design and its evidence: the maintainer's design notes.
  */
 #ifndef HCWB_H
 #define HCWB_H
@@ -168,6 +168,8 @@ typedef struct {
     unsigned int  last_ms, mark, step, chip_mark, cal_mark, supply_mark;
     unsigned int  ur_seen, over_mark, under_mark, ready_ms, ua_sum, ur_sum;
     unsigned char started;
+    unsigned char ran;         /* in->running at the last state-machine step
+                                  (the pad byte before diag_mark)           */
     unsigned int  diag_mark;   /* a DIAG failure has persisted since (was the
                                   unused V100 run_mark: same size, XRAM full) */
     unsigned char ur_live;     /* qualified UR has left its rail this warm-up */
