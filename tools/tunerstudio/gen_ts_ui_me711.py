@@ -88,6 +88,8 @@ ELEMENT_FIELDS = {
     # knockBankCyl1..12)
     "knockGain": ("Sensor %d gain", None),
     "knockSensor": ("Cylinder %d sensor", "cylinders"),
+    # 2026-10-14: per-cylinder ignition trim (rusEFI ignition trims)
+    "ignTrim": ("Cylinder %d", "cylinders"),
     # V97 VVT: per cam (rusEFI vvtMode1/2, auxPid1/2)
     "vvtMode": ("Cam %d control", None),
     "vvtInvert": ("Cam %d direction", None),
@@ -194,7 +196,7 @@ def element_alias_lines(fields) -> list[str]:
 # TunerStudio maps the integer the firmware already stores; nothing is encoded
 # differently.  This is deliberately NOT done by adding `enum=` to the model,
 # because that regenerates hc_config_generated.h and would change firmware
-# source - see docs/TUNERSTUDIO.md, Stage A.
+# source - see the maintainer's design notes, Stage A.
 #
 # EVERY LABEL BELOW IS SOURCED, and the source is named. Where the firmware
 # says a field is a COUNT rather than a mode it stays a scalar: CAL_REVLIM_
@@ -205,7 +207,7 @@ def element_alias_lines(fields) -> list[str]:
 # come from build/generated/hc_hw_descriptor_bosch_me711.csv, which inherits an
 # ME7.1 C4 connector and is wrong for cavities 18..24 - it calls the Porsche
 # main-relay drive "EV8". A friendly wrong label is worse than a raw integer,
-# because a tuner has no reason to distrust it. See docs/ARCHITECTURE.md
+# because a tuner has no reason to distrust it. See the maintainer's design notes
 # section 8.7.
 # ==========================================================================
 OFF_ON = ["Off", "On"]
@@ -426,6 +428,9 @@ CURVES = [
      "CLT timing correction", "Coolant", "deg"),
     ("ignIatCorrCurve", "ignIatAx",   "ignIatCorr",
      "IAT timing correction", "Intake air", "deg"),
+    # 2026-10-16: timing by boost above ambient (Link / Haltech boost trim)
+    ("ignBoostCorrCurve", "ignBoostAx", "ignBoostCorr",
+     "Boost timing correction", "Boost above ambient", "deg"),
     # V97: knock (rusEFI knockThresholdCurve / window start + duration)
     ("knockKefCurve", "knockKefRpm", "knockKef",
      "Knock threshold factor", "RPM", "x reference"),
@@ -440,6 +445,10 @@ CURVES = [
      "Priming pulse fuel", "Coolant", "mg per injector"),
     ("dwellBattCurve", "dwellBattAx", "dwellBattVal",
      "Dwell vs battery", "Battery", "Dwell"),
+    # 2026-10-14: a factor on the battery dwell (rusEFI sparkDwellRpmBins,
+    # Speeduino dwell map)
+    ("dwellRpmCurve", "dwellRpmAx", "dwellRpmPct",
+     "Dwell by rpm", "RPM", "% of battery dwell"),
     # SAME AXIS as the dwell curve - hcconfig.h says so in as many words:
     # "CAL_DEADTIME_VAL  u16[8]  deadtime us, same axis".
     ("deadtimeCurve", "dwellBattAx",  "deadtimeVal",
@@ -537,8 +546,10 @@ CURVE_TRACER = {
     "ignIatAx": "intake", "boostIatAx": "intake",
     "dwellBattAx": "VBatt",                       # dwell AND dead time
     "knockKefRpm": "RPMValue", "knockRpmAx": "RPMValue",
+    "dwellRpmAx": "RPMValue",
     "cltSensAx": "cltRawAsic", "iatSensAx": "iatRawAsic",   # raw ADC counts
     "dbwBiasAx": "etbActual",                     # throttle plate, %
+    "ignBoostAx": "boostAboveAmbient",            # charge/MAP - ambient, kPa
 }
 
 

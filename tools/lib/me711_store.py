@@ -19,8 +19,8 @@ import me711_v101_compat as V102  # noqa: E402
 
 GEN_H = ROOT / "firmware/generated/hc_config_generated.h"
 CFG_H = ROOT / "firmware/config/hcconfig.h"
-STORE = 0x060000                 # TGT_FLASH_CFG_A 0x860000, file offset
-CELLS, CELL, OFF = 80, 0x2000, 2  # TGT_FLASH_CELLS, _PAGE, _CELL_OFF
+STORE = 0x070000                 # TGT_FLASH_CFG_A 0x870000, file offset
+CELLS, CELL, OFF = 72, 0x2000, 2  # TGT_FLASH_CELLS, _PAGE, _CELL_OFF
 PAGE = 4096
 TAB = [0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50A5, 0x60C6, 0x70E7,
        0x8108, 0x9129, 0xA14A, 0xB16B, 0xC18C, 0xD1AD, 0xE1CE, 0xF1EF]

@@ -23,7 +23,7 @@
  *
  * Storage is RAM: the history lives until a clear or a power loss. The OEM
  * keeps it in EEPROM; HaniCore's persistent store is the calibration record
- * and a DTC history there is a later decision (docs/ARCHITECTURE.md).
+ * and a DTC history there is a later decision (the maintainer's design notes).
  */
 #ifndef HCDTC_H
 #define HCDTC_H

@@ -40,6 +40,10 @@ const hc_cfg_slot_t hc_cfg_slots[HC_CFG_SLOT_COUNT] = {
     {   72u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP     , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* trigSource */
     {   73u,    1u, HC_APPLY_LIVE      , HC_GRP_RELAY_SETUP       , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* mainRelayModeCfg */
     {   74u,    2u, HC_APPLY_LIVE      , HC_GRP_RELAY_SETUP       , 0u                                        , 2u, 0x0000u }, /* mainRelayGraceMs */
+    {   76u,    1u, HC_APPLY_LIVE      , HC_GRP_RELAY_SETUP       , 0u                                        , 1u, 0x0000u }, /* tachoScale */
+    {   77u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* pad77 */
+    {   78u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* ignBoostAx */
+    {   94u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* ignBoostCorr */
     {  128u,  512u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* veTable */
     {  640u,   32u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* fuelRpmAx */
     {  672u,   32u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* fuelLoadAx */
@@ -409,6 +413,53 @@ const hc_cfg_slot_t hc_cfg_slots[HC_CFG_SLOT_COUNT] = {
     { 3744u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP      , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* leanGuardRecovery */
     { 3746u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP         , 0u                                        , 2u, 0x0000u }, /* dbwPwmHz */
     { 3748u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP         , 0u                                        , 2u, 0x0000u }, /* dbwFrictionX10 */
+    { 3750u,   12u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* dwellRpmAx */
+    { 3762u,   12u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* dwellRpmPct */
+    { 3774u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 2u, 0x0000u }, /* oilSensLoMv */
+    { 3776u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 2u, 0x0000u }, /* oilSensHiMv */
+    { 3778u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 2u, 0x0000u }, /* oilSensHiKpa */
+    { 3780u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 2u, 0x0000u }, /* gp1ThrA */
+    { 3782u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 2u, 0x0000u }, /* gp1ThrB */
+    { 3784u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 2u, 0x0000u }, /* gp2ThrA */
+    { 3786u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 2u, 0x0000u }, /* gp2ThrB */
+    { 3788u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 2u, 0x0000u }, /* fanOnTemp */
+    { 3790u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 2u, 0x0000u }, /* fanOffTemp */
+    { 3792u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 2u, 0x0000u }, /* acMaxClt */
+    { 3794u,    8u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* ignTrim */
+    { 3802u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING    , HC_FLAG_SAFETY_CRITICAL|HC_FLAG_IS_PIN    , 1u, 0x0020u }, /* pinFan */
+    { 3803u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* fanWithAc */
+    { 3804u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* fanStoppedOff */
+    { 3805u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING    , HC_FLAG_SAFETY_CRITICAL|HC_FLAG_IS_PIN    , 1u, 0x0002u }, /* pinAcRequest */
+    { 3806u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING    , HC_FLAG_SAFETY_CRITICAL|HC_FLAG_IS_PIN    , 1u, 0x0020u }, /* pinAcClutch */
+    { 3807u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* acRequestActive */
+    { 3808u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* acIdleUpX10 */
+    { 3809u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* acIdleRpm */
+    { 3810u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* acMinRpm */
+    { 3811u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* acMaxRpm */
+    { 3812u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* acMaxTps */
+    { 3813u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* acDelay */
+    { 3814u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING    , HC_FLAG_SAFETY_CRITICAL|HC_FLAG_IS_PIN    , 1u, 0x0020u }, /* pinGp1 */
+    { 3815u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* gp1SrcA */
+    { 3816u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* gp1OpA */
+    { 3817u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* gp1HystA */
+    { 3818u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* gp1SrcB */
+    { 3819u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* gp1OpB */
+    { 3820u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* gp1HystB */
+    { 3821u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* gp1Logic */
+    { 3822u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* gp1Delay */
+    { 3823u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING    , HC_FLAG_SAFETY_CRITICAL|HC_FLAG_IS_PIN    , 1u, 0x0020u }, /* pinGp2 */
+    { 3824u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* gp2SrcA */
+    { 3825u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* gp2OpA */
+    { 3826u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* gp2HystA */
+    { 3827u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* gp2SrcB */
+    { 3828u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* gp2OpB */
+    { 3829u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* gp2HystB */
+    { 3830u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* gp2Logic */
+    { 3831u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* gp2Delay */
+    { 3832u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* oilPressDelay */
+    { 3833u,    1u, HC_APPLY_LIVE      , HC_GRP_INJECTOR_ROUTING  , 0u                                        , 1u, 0x0000u }, /* injPressMode */
+    { 3834u,    2u, HC_APPLY_LIVE      , HC_GRP_INJECTOR_ROUTING  , 0u                                        , 2u, 0x0000u }, /* fuelRegKpa */
+    { 3836u,    2u, HC_APPLY_LIVE      , HC_GRP_INJECTOR_ROUTING  , 0u                                        , 2u, 0x0000u }, /* fuelSensorKpa */
     { 3838u,  256u, HC_APPLY_LIVE      , HC_GRP_TABLES            , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* ignMap */
 };
 
@@ -423,7 +474,7 @@ const hc_cfg_slot_t *hc_cfg_slot_at(unsigned int off)
 
     /* Strictly bounded: the table is sorted by offset and the window
        halves every pass, so this cannot run longer than 9 iterations
-       for 401 slots. No recursion, no allocation, safe from a task or
+       for 452 slots. No recursion, no allocation, safe from a task or
        from an interrupt. */
     while (lo < hi) {
         unsigned int mid = lo + ((hi - lo) >> 1);

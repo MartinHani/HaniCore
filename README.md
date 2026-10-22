@@ -3,114 +3,126 @@
 **Open standalone engine-management firmware for the Bosch ME7.1.1 ECU.**
 
 HaniCore replaces the factory software of a Bosch ME7.1.1 (Porsche
-`0261207696`, Infineon C167 at 40 MHz) with a configurable engine controller
-that is tuned in TunerStudio. The ECU hardware is used as it is: eight
-injector and eight ignition outputs, the electronic-throttle H-bridge, two
-on-board CJ120 wideband controllers, knock inputs and the K-line. The image
-is built entirely from this repository — it contains no Bosch code, boot
-region included.
+`0261207696`, C167 at 40 MHz) with a configurable engine controller tuned in
+TunerStudio. It contains no Bosch code, boot region included. 1.0-dev, not
+road-ready. Test car: VW/Audi 1.8T AWT, drive-by-wire.
 
-> **Status: 1.0-dev, active development, not road-ready.** Earlier builds
-> started and ran a VW/Audi 1.8T (AWT) on HaniCore fuel and spark. The
-> current runtime is proven in simulation and boots on the bench; its engine
-> timing has not yet been measured on hardware. Details: [STATUS.md](docs/STATUS.md).
+**Second target in the works: the VAG 1.8T ME7.5 ECU (1 MiB flash).** The
+same firmware will run on both; the ME7.5 traces in the tree (its pin
+descriptor, `hchal_me75` references) belong to that port and are not usable
+yet.
 
-| | |
-|---|---|
-| Target | Bosch ME7.1.1, `0261207696` (Porsche), C167CR-class CPU, 1 MiB AM29F800 flash, S5500 peripheral ASIC |
-| First vehicle | VW/Audi 1.8T 20V turbo, drive-by-wire (engine code AWT), with a connector adaptation |
-| Tuning | TunerStudio MS over the K-line, generated project file, connection plugin included |
-| Toolchain | Keil C166 V7.53 (commercial, not included), Python 3.13, Windows |
-| License | GPL-3.0-or-later |
+## Works on the car
 
-## Highlights
+* crank and cam sync, sequential injection and sequential coil-on-plug
+  (wasted spark until the cam has found the cycle)
+* fuel: alpha-N × charge pressure, VE, warm-up, after-start, wall film,
+  cranking, DFCO
+* ignition tables, dwell, CLT/IAT corrections
+* wideband lambda (on-board CJ120, bank 1) and closed-loop fuel trim
+* electronic throttle: control, idle, AutoCal, friction characterization
+* sensors: coolant, charge pressure, onboard baro, throttle, pedal, battery
+* Burn in the car, main relay and run-on, fuel pump, tacho output
+* TunerStudio over the K-line, direct (cavity 43) or the car's diagnostic port
 
-* **Engine-agnostic by configuration.** Cylinder count, firing order, trigger
-  wheel, cam pattern, sensors, injection and ignition strategy, and the
-  routing of every function to a connector cavity are page settings, checked
-  by a validator before anything is driven.
-* **The whole ECU from source.** Injectors, coils, the throttle bridge, the
-  S5500 ASIC link, the CJ120 wideband controllers and the knock front end are
-  driven by HaniCore code; every board fact is documented with its source.
-* **Tested against the linked image.** About 200 offline gates, most of them
-  running the built firmware in an instruction-level C167 simulator; the
-  critical ones carry a negative control that must fail.
+## Not yet working / not proven
 
-## Features
+* boost control and overboost cut under load
+* knock control (the monitor runs; no calibration yet)
+* throttle PID autotune on a car (works on the bench)
+* wall-film values still need tuning (quick throttle goes rich)
+* VVT, launch, flat shift, anti-lag, check-engine lamp: simulator only
+* outputs 5–8 and the second wideband bank: unused on a 4-cylinder
+* no CAN, no firmware update without opening the ECU
 
-| area | |
-|---|---|
-| Fuel | fuel models: speed density, pure alpha-N, boosted alpha-N (throttle VE + charge-pressure density), and legacy compatibility; onboard barometric sensor; VE and target-lambda tables; injector flow and dead-time model; warm-up, after-start, X-tau wall film; cranking fuel by mass; DFCO; closed-loop trim |
-| Ignition | timing tables with CLT/IAT corrections, dwell vs battery, overdwell protection, closed-loop idle timing, per-cylinder knock retard |
-| Injection and spark | batch, semi-sequential, sequential; wasted or sequential coil-on-plug, with a crank-only fallback until the cam has resolved the cycle |
-| Trigger | missing-tooth crank wheels (VR or Hall), cam level or pattern decoding, named firing orders, tooth and composite loggers |
-| Air | electronic throttle with on-ECU commissioning (endpoint calibration, relay PID autotune, friction characterization), idle control, boost control, two VVT outputs |
-| Protection | rev limiter (fuel / spark / soft), coolant and throttle-fault limp, injector duty cut, overboost cut, pressure-loss and lean protection, flood clear |
-| Diagnostics | trouble codes, per-consumer sensor fallbacks, engine event recorder, read-only vehicle logger with automatic analysis |
-| Calibration | 4 KiB page with transactional writes; Burn to an append-only flash store with validation and fallback; built-in and user presets |
-| Link | TunerStudio at 57600 / 115200 baud, VAG/KWP 5-baud entry, TunerStudio connection plugin |
+## Known bugs
 
-## Validation
+* a TunerStudio request sent while a Burn is being written gets no reply;
+  TunerStudio retries it
+* with the engine running, an ASIC frame checksum error every 40–60 s (no
+  reset, the next frame is good)
+* above 2000 rpm a main-loop pass can take up to 24 ms, which delays throttle
+  steps and TunerStudio replies
+* at 9600 rpm full acceleration (simulation) a few injector openings are
+  skipped; 9600 rpm is far above the AWT's limit
+* the knock test (`me711_knock_proof`) fails: its test rig is out of date
 
-| level | what it covers today |
-|---|---|
-| **Vehicle** (1.8T AWT) | crank sync, batch and wasted-spark operation, alpha-N × pressure load, coolant and pressure sensors, pedal, TunerStudio over the K-line — on earlier builds |
-| **Bench** (real ECU) | owned boot region, flashing, Burn and flash restore, link and KWP entry, throttle control and commissioning on a bench throttle body, CJ120 modes and heater gates, main relay, fuel-pump output |
-| **Simulator** (linked image) | the current runtime: planner, compare-interrupt executor, sequential switch-over, fuel and ignition models, closed loops, timing budgets at 1000–9600 rpm with TunerStudio traffic |
+## Build the firmware
 
-Function by function: [STATUS.md](docs/STATUS.md).
-
-## Getting started
+Keil C166 V7.53 (not included), Python 3.11+, Windows.
 
 ```powershell
-git clone https://github.com/MartinHani/HaniCore.git
-cd HaniCore
 py -m pip install -r requirements.txt
-py tools\build\build_hanicore_me711.py     # firmware image -> bins\hanicore\
-py tools\tunerstudio\gen_ts_ini_me711.py   # matching TunerStudio project file
-py tests\run_gates.py fast                 # offline checks, a few minutes
+py tools\build\build_hanicore_me711.py     # image -> bins\hanicore\
+py tools\tunerstudio\gen_ts_ini_me711.py   # matching TunerStudio .ini -> tunerstudio\
+py tests\run_gates.py fast                 # offline checks
 ```
 
-Flashing, connecting and the first start: [BUILDING.md](docs/BUILDING.md),
-[TUNERSTUDIO.md](docs/TUNERSTUDIO.md), [COMMISSIONING.md](docs/COMMISSIONING.md).
+## Flash
 
-## TunerStudio
+The build writes a full 1 MiB flash image, `bins\hanicore\<image>.bin`. Write
+it with any ME7 boot-mode tool; do not let the tool correct checksums.
 
-The project file and dashboard are generated from the firmware's
-configuration model, so offsets, scales and menus always match the image.
-`tunerstudio/plugin/` holds the K-line connection plugin (source in
-`tools/tunerstudio/plugin/`, rebuildable byte for byte).
+## Wiring
 
-The ECU identifies itself as `rusEFI HaniCore ME711 <layout>`. The prefix
-selects TunerStudio's rusEFI-protocol handling; **HaniCore is not rusEFI
-firmware** and is not affiliated with rusEFI, whose work is the reference for
-many of its control concepts. The prefix stays until a native signature is
-supported.
+The Porsche ECU on a VAG 1.8T (AWT) harness needs four terminal moves in the
+harness connector: KL15 3 → 21, relay-switched feed 121 → 3, main-relay drive
+21 → 23, intake-air temperature 85 → 26. Every cavity: [docs/PINOUT.md](docs/PINOUT.md).
 
-## Documentation
+## First setup
 
-| | |
-|---|---|
-| [STATUS.md](docs/STATUS.md) | proof level of every function, runtime timing, limitations |
-| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | firmware structure, configuration, engine model, runtime |
-| [PLATFORM.md](docs/PLATFORM.md) | the ME7.1.1 hardware, flash layout, boot region, AWT harness adaptation |
-| [PINOUT.md](docs/PINOUT.md) | every connector cavity and what it can do |
-| [BUILDING.md](docs/BUILDING.md) | build pipeline, flashing, restoring a calibration |
-| [TUNERSTUDIO.md](docs/TUNERSTUDIO.md) | project files, connecting, presets |
-| [COMMISSIONING.md](docs/COMMISSIONING.md) | bench setup and first start |
-| [TESTING.md](docs/TESTING.md) | the gates and current results |
-| [CONTRIBUTING.md](docs/CONTRIBUTING.md) | layout, rules, generated files, versioning |
-| [LICENSING.md](docs/LICENSING.md) | license and provenance |
+1. TunerStudio: **Tools → TunerStudio Plugins → Add or Update a Plugin**,
+   pick `tunerstudio/plugin/HaniCore_KLine_Transport_<version>.jar`, restart
+   TunerStudio. Create a project with the generated `.ini`, connection type
+   **HaniCore K-Line**, 115200 baud.
+2. Base calibration:
+   * an engine with a preset (today *VAG 1.8T DBW (AWT)*): **Controller →
+     Base Tunes**, choose it, **APPLY ENGINE PRESET** with the engine stopped,
+     Burn, key off and on;
+   * any other engine: set the engine, trigger, injectors, ignition, sensors
+     and output pins yourself, then Burn.
+3. Electronic throttle (**Advanced → Electronic throttle (ETB)**):
+   * **Electronic Throttle Body → AutoCal ETB** (endpoints and PID);
+   * **Characterization → Run ETB Characterization**, then **Save Measured
+     Bias / Feedforward**;
+   * **Tools → Calibrate pedal sensor**: grab both ends;
+   * Burn.
+4. Check the sensors and the trigger, then start.
+
+The ECU identifies itself as `rusEFI HaniCore ME711 <layout>` so TunerStudio
+uses its rusEFI protocol handling. HaniCore is not rusEFI firmware and is not
+affiliated with rusEFI.
+
+## Resources used
+
+| resource | size | used | free |
+|---|---|---|---|
+| near code (one 64 KiB segment) | 64 512 B | 61 068 B | 3 444 B (3 072 kept as reserve) |
+| far code | 183 984 B | 116 768 B | 67 216 B |
+| constants (near + huge) | 12 608 B | 10 172 B | 2 436 B |
+| internal RAM (near data) | — | — | 192 B |
+| on-chip XRAM | 1 696 B | 1 631 B | 65 B |
+| user / system stack (worst case) | 512 / 634 B | 426 / 534 B | 83 % / 84 % used |
+| external SRAM | 32 KiB | 32 KiB | 0 (every byte assigned) |
+| calibration page | 4 096 B | 4 091 B | 5 B |
+| TunerStudio live data block | 1 664 B | 1 664 B | 0 |
+| flash: calibration store | 576 KiB | 72 records of 8 KiB | — |
+| flash: reserved for a future K-line updater | 64 KiB | — | — |
+
+Code space is not the limit; the calibration page, the live data block and
+RAM are. A good part of them still holds debug and bring-up leftovers (old
+diagnostics, unused calibration fields, developer channels); cleaning that up
+is in progress.
 
 ## Safety
 
 This firmware drives injectors, ignition coils, a fuel pump and an electronic
 throttle. A configuration error or a firmware defect can damage an engine or
-cause a fire or a crash. Use it on test benches and in closed test
-environments, off public roads.
+cause a fire or a crash. Use it on test benches and closed test environments,
+off public roads.
 
 ## License
 
 GPL-3.0-or-later ([LICENSE](LICENSE)), with an additional permission that
-lets the TunerStudio plugin run inside TunerStudio. No warranty. Provenance:
-[LICENSING.md](docs/LICENSING.md).
+lets the TunerStudio plugin run inside TunerStudio. No warranty.
+[docs/LICENSING.md](docs/LICENSING.md).

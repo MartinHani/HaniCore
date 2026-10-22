@@ -19,8 +19,10 @@
  * is disabled. A controller that integrated during coast-down would wind
  * the trim to its lower limit and dip the rpm on return (host test).
  *
- * Units: throttle 0.1 % (0..1000); gains x100 per 20 ms step, trim 0.1 %
- * per rpm of error.
+ * Units: throttle 0.1 % (0..1000); trim 0.1 %. Per 20 ms step: P = kp/100
+ * x 0.1 % per rpm of error (TunerStudio: kp x 0.1 = % per 100 rpm), the I
+ * part integrates ki/1000 x 0.1 % per rpm (ki x 0.5 = %/s per 100 rpm;
+ * 2026-10-15, was ki/100: 10x too coarse to tune).
  */
 #ifndef HCIDLE_H
 #define HCIDLE_H
@@ -69,7 +71,7 @@ typedef struct {
 #define HCIDLE_S_DASH     0x80u    /* dashpot after a release: held trim    */
 
 typedef struct {
-    long          integ100;        /* I, 0.1 % x100                         */
+    long          integ1000;       /* I, 0.1 % x1000                        */
     unsigned int  run_ms;          /* time since cranking ended             */
     unsigned int  pos_x10;         /* the throttle floor                    */
     int           trim_x10;        /* P + I, bounded                        */

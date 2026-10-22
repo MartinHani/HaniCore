@@ -883,7 +883,24 @@ static void crank_edge(unsigned int t)
         if (trg_gaps != 0xFFFFu) trg_gaps++;
         metric_num = prev1; metric_den = (unsigned int)((dt + prev2) >> 1);
         if (trg_state == TRG_COUNTING) {
-            trg_state = TRG_GAP_SEEN;
+            /* FIRST-GAP SYNC (2026-10-15). A confirmed gap - longer than
+               BOTH neighbours by trigGapRatioX10 - after trigMinTeeth good
+               teeth is the reference: rusEFI TriggerDecoderBase ("if this
+               was the first sync point ... we're synchronized"), Speeduino
+               the same. Until now the position waited for a SECOND gap one
+               revolution later (0.46 s of the AWT's 14.10 start). The tooth
+               count is still checked at the next gap: +/-1 re-anchors, more
+               withdraws the position (EARLY_GAP / MISSING_GAP below). The
+               rpm starts from this revolution's teeth (rusEFI's instant rpm
+               while spinning up) until the next gap gives a whole one. */
+            if (good_teeth >= g_min_teeth) {
+                trg_state = TRG_SYNC_CRANK;
+                disagreements = 0;
+                corr_run = 0u;
+                trg_crank_period = (unsigned long)dt * (unsigned long)g_teeth;
+            } else {
+                trg_state = TRG_GAP_SEEN;
+            }
         } else if (expected) {
             disagreements = 0;
             corr_run = 0u;

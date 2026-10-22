@@ -10,7 +10,8 @@ layer, a real page in SRAM, real ADC counts):
 
   1  the HOOK: hc_dbw.c's target at 0 % pedal is the pedal map (0) with the
      floor 0 - and exactly the floor when hc_idle_floor_x10 is raised; a
-     pedal demand above the floor wins (max, not sum)
+     pedal demand rides ON the idle position, rusEFI's compression
+     (2026-10-15: target = idle + map x (100 % - idle), etbIdleRange 100)
   2  idleEnable 0: hc_idle_service() publishes floor 0 (the V96 behaviour)
   3  engine stopped: floor = the base curve at the coolant temperature
   4  running below target, after the post-start delay: closed loop, first
@@ -70,7 +71,7 @@ def idle_page(r, enable):
             r.mem.w8(a + 1, val & 0xFF)
     del base_ax
     r.set16("CAL_IDLE_KP", 20)
-    r.set16("CAL_IDLE_KI", 5)
+    r.set16("CAL_IDLE_KI", 50)       # the I term is x1000 since 2026-10-16: 50 = the old 5
     r.set16("CAL_IDLE_RANGE_X10", 50)
     r.set16("CAL_IDLE_RPM_BAND", 400)
     r.set16("CFG_U_IDLE_PEDAL_X10", 0)                # -> 2.0 %
@@ -105,9 +106,12 @@ def main() -> int:
     ram16(r, "hc_idle_floor_x10", 0)
     t = r.steps(3, start=t)
     no_floor = r.s()["target"]
-    check("... a pedal demand above the floor wins (max, not sum)",
-          with_floor == no_floor and with_floor > 400,
-          f"target {with_floor} with the floor, {no_floor} without")
+    want = 80 + no_floor * (1000 - 80) // 1000
+    check("... a pedal demand rides on the idle position (rusEFI "
+          "compression: idle + map x (100 - idle))",
+          abs(with_floor - want) <= 1 and no_floor > 400,
+          f"target {with_floor} with the floor (want {want}), "
+          f"{no_floor} without")
     r.pedal(0)
     t = r.steps(3, start=t)                            # the DBW sees pedal 0
 

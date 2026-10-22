@@ -74,6 +74,7 @@
 #include "hcrtmon711.h"    /* the S5500 raster in the reset witness */
 #include "hchal.h"          /* hc_hal_ain_capture */
 #include "hckwp_me711.h"    /* HC_KL.asic_prep (SRAM) */
+#include "hcnvm.h"          /* hc_nvm_word_owned */
 
 #define FRAME ((unsigned int volatile far *)((unsigned long)TGT_ASIC_FRAME))
 /* the pre-build steps between runtime frames (HC_KL.asic_prep, 2026-10-14) */
@@ -113,7 +114,7 @@ unsigned int   hc_asic_last_calc;       /* our sum of the last reply          */
 unsigned int   hc_asic_last_recv;       /* its own checksum word              */
 
 static unsigned int  phase_mark;        /* when the current wait started      */
-static unsigned int  next_attempt;
+unsigned int  hc_asic_next_attempt;   /* hcnvm.c live_admit(): frame due */
 /* 1 = the next exchange may start AT ONCE, without waiting out the retry
    period. Set when an exchange SUCCEEDS, and once when the SSC comes up.
 
@@ -162,7 +163,7 @@ void hc_asic_start_init(void)
     hc_asic_pec_tx_end = 0; hc_asic_pec_rx_end = 0;
     hc_asic_busy_refusals = 0; hc_asic_reinits = 0;
     hc_asic_last_calc = 0; hc_asic_last_recv = 0;
-    next_attempt = 0;
+    hc_asic_next_attempt = 0;
     run_now = 0;
     words_in_flight = 0;
 
@@ -218,7 +219,7 @@ static unsigned char build(unsigned char runtime)
      * executed from the image (scratchpad/um_verify.py: 400 ticks, 0
      * output mismatches). It reads words 1..3 (the S5500's reply, still in
      * the in-place buffer) and writes words 1..3 with the response. See
-     * docs/ARCHITECTURE.md.
+     * the maintainer's design notes.
      *
      * V14 HARDWARE (2026-08-30): calling hc_umkom_service() on EVERY runtime
      * frame from the first one quadrupled the pre-reset lifetime (37 ms ->
@@ -346,7 +347,7 @@ void hc_asic_start_service(unsigned int ms)
     case HC_ASIC_ST_SSC_INIT:
         asic_init();                       /* SSCCON/SSCBR/pins, PEC off      */
         asic_frame_clear();                /* ONCE - see asic_frame_clear()   */
-        next_attempt = ms;
+        hc_asic_next_attempt = ms;
         run_now = 1;                       /* the SSC is up - go NOW          */
         hc_asic_state = HC_ASIC_ST_TX1;
         break;
@@ -355,7 +356,7 @@ void hc_asic_start_service(unsigned int ms)
     case HC_ASIC_ST_TX2:
     case HC_ASIC_ST_RUNTIME_TX:
         if (!run_now
-            && (unsigned int)(ms - next_attempt) < (unsigned int)
+            && (unsigned int)(ms - hc_asic_next_attempt) < (unsigned int)
                ((hc_asic_state == HC_ASIC_ST_RUNTIME_TX)
                 ? TGT_ASIC_RUN_PERIOD_MS : TGT_ASIC_START_PERIOD_MS)) {
             /* THE IDLE WINDOW BELONGS TO THE CJ120s. The last runtime
@@ -367,7 +368,7 @@ void hc_asic_start_service(unsigned int ms)
                    transaction when it is due and inside its window (it
                    must end >= 3 ms before the next frame), else the next
                    pre-build step - those may run up to the frame itself */
-                if ((unsigned int)(ms - next_attempt)
+                if ((unsigned int)(ms - hc_asic_next_attempt)
                         < (unsigned int)(TGT_ASIC_RUN_PERIOD_MS - 3u)
                     && hc_io_cj120_due(ms, hc_io_cj_mask)) {
                     hc_io_cj120_slot(ms, hc_io_cj_mask);
@@ -381,6 +382,15 @@ void hc_asic_start_service(unsigned int ms)
                     (*prep)++;
                 }
             }
+            break;
+        }
+        /* A FLASH WORD HOLDS THE WINDOW (live_admit claimed it): the frame
+           is due, so it starts on the NEXT 1 ms request - not a raster
+           later, and not as an "SSC busy" refusal. Until 2026-10-14 the
+           refusal below set the next attempt a whole period on: frame
+           periods of exactly 20 ms during every Burn, then the S5500 reset
+           MAIN (0x1C) and the Burn died with 0x0105 (car + bench). */
+        if (hc_nvm_word_owned()) {
             break;
         }
         run_now = 0;                       /* consumed - one free start only  */
@@ -421,7 +431,7 @@ void hc_asic_start_service(unsigned int ms)
                 asic_abort_transfer();
                 asic_init();               /* SSCEN low, full reconfigure     */
             }
-            next_attempt = ms;
+            hc_asic_next_attempt = ms;
             run_now = 0;
             break;
         }
@@ -457,7 +467,7 @@ void hc_asic_start_service(unsigned int ms)
             }
             asic_abort_transfer();
             hc_asic_state = (unsigned char)(hc_asic_state - 1u);
-            next_attempt = ms;
+            hc_asic_next_attempt = ms;
             run_now = 0;
             break;
         }
@@ -506,7 +516,7 @@ void hc_asic_start_service(unsigned int ms)
                    slip eventually trips the S5500 and resets MAIN. Anchor
                    the next runtime due time to the previous start; startup
                    phase advancement still uses run_now below. */
-                next_attempt = ((hc_asic_state == HC_ASIC_ST_RUNTIME_WAIT)
+                hc_asic_next_attempt = ((hc_asic_state == HC_ASIC_ST_RUNTIME_WAIT)
                                 ? phase_mark : ms);
                 if (hc_asic_state == HC_ASIC_ST_RUNTIME_WAIT) {
                     /* The runtime dialogue REPEATS - it does not advance to a
@@ -543,7 +553,7 @@ void hc_asic_start_service(unsigned int ms)
                     hc_asic_start_csum_err++;
                 hc_asic_retries++;
                 hc_asic_state = (unsigned char)(hc_asic_state - 1u);
-                next_attempt = ms;         /* a RETRY waits out the period    */
+                hc_asic_next_attempt = ms;         /* a RETRY waits out the period    */
             }
             break;
         }
@@ -566,7 +576,7 @@ void hc_asic_start_service(unsigned int ms)
             ASIC_CS_LATCH_S = 1;
             asic_abort_transfer();
             hc_asic_state = (unsigned char)(hc_asic_state - 1u);
-            next_attempt = ms;
+            hc_asic_next_attempt = ms;
             run_now = 0;
         }
         break;

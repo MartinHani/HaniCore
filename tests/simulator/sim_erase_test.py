@@ -32,8 +32,8 @@ import hcpaths  # noqa: F401,E402  (puts every tools/ and tests/ module on sys.p
 import c167sim as S
 
 CHECKS = FAILS = 0
-SEC = 0x060000          # store sector 0, file offset
-CPU_SEC = 0x860000
+SEC = 0x070000          # store sector 0, file offset (SA10 since 2026-10-15)
+CPU_SEC = 0x870000
 
 
 def check(label, ok, detail=""):

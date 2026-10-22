@@ -15,7 +15,7 @@ TunerStudio 'O' requests for the whole 1652-byte block (default 115200 baud)
 with the K-line echo. Profile: crank 250, ramps and 150 ms steady points at
 1000 / 3000 / 5000 / 7000 / 8500 / 9600 rpm, a decel and a tip-in.
 
-THE BUDGETS (docs/ARCHITECTURE.md), each a property a
+THE BUDGETS (the maintainer's design notes), each a property a
 running engine needs:
   * no wild execution (an unimplemented opcode = a corrupted return);
   * MEASURED stacks <= 60 % of each (the static bound, every path, is

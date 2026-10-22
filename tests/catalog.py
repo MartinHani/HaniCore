@@ -117,7 +117,7 @@ EXTRA_TAGS = {
                 "near_ram_hazard_proof", "me711_far_boundary_proof",
                 "me711_irq_priority_proof", "me711_burn_interrupt_guard",
                 "me711_crank_period_atomic_proof", "test_c167sim_irq_nesting",
-                "test_c167sim_bfld"},
+                "test_c167sim_bfld", "test_c167sim_vflag"},
     "vehicle-tools": {"me711_vehicle_test_test", "me711_log_analyze_test", "me711_vehicle_capture_test",
                       "me711_commission_tools_test", "me711_kwp_connect_test"},
 }

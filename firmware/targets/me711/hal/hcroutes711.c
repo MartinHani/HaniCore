@@ -164,6 +164,15 @@ void HC_COLD hc_tacho_service(void)
        (a needle under 600 rpm is the cluster's business). */
     q = (rpm < 573u) ? 65000u
                      : (unsigned int)((unsigned long)37500000uL / (unsigned int)rpm);
+    /* THE CLUSTER'S CALIBRATION (2026-10-16): tachoScale % multiplies the
+       frequency = divides the period; bounded so the quotient fits 16 bits */
+    {
+        unsigned int s = hc_cal_u8(CFG_TACHO_SCALE);
+        if (s != 0u && s != 100u) {
+            q = (s < 100u && q > (unsigned int)(650u * s)) ? 65000u
+              : (unsigned int)(((unsigned long)q * 100u) / s);
+        }
+    }
     if (cyl < 2u) {
         half = (q > 32500u) ? 65000u : (unsigned int)(q << 1);
     } else {

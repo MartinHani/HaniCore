@@ -19,5 +19,5 @@ directory contains an `hctarget.h`, so a portable unit always picks up the
 header of the target being built. Header names are unique across the include
 path; `py tools\lib\hcpaths.py` checks both rules.
 
-Design: [../docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md). Build:
+Design: the maintainer's design notes. Build:
 `py tools\build\build_hanicore_me711.py`.

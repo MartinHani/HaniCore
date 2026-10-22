@@ -1,7 +1,7 @@
 /*
  * hcwb.c - see hcwb.h. SHARED, SFR-FREE, 16-BIT ONLY.
  *
- * Numbers and their sources (docs/ARCHITECTURE.md has the chain):
+ * Numbers and their sources (the maintainer's design notes has the chain):
  *   rusEFI wideband heater_control.cpp (SOFTWARE REFERENCE IMPLEMENTATION):
  *     preheat 2 V, ramp from 7 V at 0.4 V/s to 12 V, closed loop at
  *     target - 30 C, 60 s warm-up timeout, over/under heat +-100 C for 0.5 s,
@@ -526,7 +526,8 @@ static void step(hcwb_t *w, const hcwb_in_t *in)
        IGNITION heating is an installation choice, not proof that the actual
        H+ feed remains powered through cranking, stall and run-on. */
     if (!w->supply_ok
-        || (!in->heat_allow && w->permission == 0u)) {
+        || (!in->heat_allow && w->permission == 0u)
+        || (w->ur_live == 2u && !in->running)) {
         if (w->state != HCWB_ST_WAIT) {
             w->state = HCWB_ST_WAIT;
             w->mark = in->ms;
@@ -534,7 +535,7 @@ static void step(hcwb_t *w, const hcwb_in_t *in)
         heat_off(w);
         w->integ = 0;
         w->ready_ms = 0u;
-        w->ur_live = 0u;
+        w->ur_live = (unsigned char)(w->ur_live & 2u);   /* keep a park */
         w->want = HCWB_MODE_COLD;
         return;
     }
@@ -563,6 +564,19 @@ static void step(hcwb_t *w, const hcwb_in_t *in)
     /* ri >= 1 from here on: the state machine runs only with the calibration
        OK (urc inside UR0+SPAN..UR_MAX) and ri_ok (ur tagged), and then
        hcwb_ri_x10() never returns 0 - so no "ri != 0" test is needed */
+    /* THE ENGINE STARTED ON A WARM-UP THAT NEVER SAW THE SENSOR HEAT
+       (2026-10-15). With the heater fed only while the engine runs (VAG:
+       H+ from the fuel-pump relay) key-on heating ramps on paper: started
+       within the park time, the feed arrived at up to 12 V on a cold sensor
+       in a wet exhaust - what the dew preheat exists to prevent. A UR still
+       on its rail cannot tell "no feed" from "fed, still cold", so either
+       way the warm-up starts over from the preheat; a sensor seen heating
+       (ur_live 1) keeps its warm-up, so key-on heating still works. */
+    if (in->running && !w->ran && w->ur_live == 0u
+        && (w->state == HCWB_ST_PREHEAT || w->state == HCWB_ST_RAMP)) {
+        w->state = HCWB_ST_WAIT;         /* -> PREHEAT below, dew from now */
+    }
+    w->ran = in->running;
     switch (w->state) {
     case HCWB_ST_WAIT:
         w->state = HCWB_ST_PREHEAT;
@@ -611,11 +625,27 @@ static void step(hcwb_t *w, const hcwb_in_t *in)
             w->over_mark = in->ms;
             w->under_mark = in->ms;
         } else if (el(in->ms, w->mark) >= RAMP_TIMEOUT_MS) {
+            /* PARK, DO NOT LATCH (2026-10-14): a whole warm-up with UR on
+               its rail while the engine is STOPPED is no evidence of a
+               sensor fault - the heater feed is often switched with the
+               engine (VAG: the fuel-pump relay), so key-on heating heated
+               nothing and latched 13 -> P0130 -> MIL before every start.
+               Heater off until the engine turns, then the warm-up starts
+               over; a railed UR then (or UR seen moving) is judged as
+               before. */
+            if (w->ur_live == 0u && !in->running) {
+                w->ur_live = 2u;
+                w->state = HCWB_ST_WAIT;
+                w->mark = in->ms;
+                heat_off(w);
+                w->want = HCWB_MODE_COLD;
+                return;
+            }
             /* Distinguish persistently railed UR from observed UR movement
                without reaching temperature. Neither proves actual H+ or
                heating current; physical root cause requires measurement. */
-            fault(w, (unsigned char)(w->ur_live ? HCWB_F_NO_HEAT
-                                                : HCWB_F_OPEN_CELL));
+            fault(w, (unsigned char)((w->ur_live == 1u) ? HCWB_F_NO_HEAT
+                                                        : HCWB_F_OPEN_CELL));
             return;
         }
         break;
@@ -696,7 +726,8 @@ static unsigned char why(const hcwb_t *w, const hcwb_in_t *in)
     case HCWB_ST_WAIT:
         /* WAIT now means the heater is not PERMITTED (policy, supply or
            the engine-running policy), so say which. */
-        return in->heat_allow ? HCWB_WHY_SUPPLY : HCWB_WHY_ENGINE;
+        return (in->heat_allow && w->ur_live != 2u) ? HCWB_WHY_SUPPLY
+                                                    : HCWB_WHY_ENGINE;
     case HCWB_ST_PREHEAT:
         return HCWB_WHY_PREHEAT;
     case HCWB_ST_RAMP:

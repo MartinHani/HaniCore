@@ -20,7 +20,7 @@
  *     BOTH processors to agree". THAT WAS WRONG, and the correction matters
  *     because it changes which direction needs agreement. The two gates are
  *     not in series on one input pair. Read off the PDF's own line segments
- *     (docs/PLATFORM.md lists the coordinates, and the gaps
+ *     (the maintainer's design notes lists the coordinates, and the gaps
  *     between them are what proves the four wires are separate nets):
  *
  *       gate A   pins 1 and 2 TIED TOGETHER, fed by NLEN_FR, which R5602

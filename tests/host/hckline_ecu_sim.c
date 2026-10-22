@@ -13,7 +13,7 @@
  *          different byte, never as a framing error - V94 bench), the host
  *          adapter's echo, and the hcts rate follower (boot 57600 hunting; a
  *          hunting link follows after HUNT_FOLLOW bad requests, a locked one
- *          after LOCK_FOLLOW - docs/TUNERSTUDIO.md; the image's
+ *          after LOCK_FOLLOW - the maintainer's design notes; the image's
  *          follower is proven by me711_link_rate_proof and physically).
  *
  * PROTOCOL (one command per line; every command answers exactly one line)

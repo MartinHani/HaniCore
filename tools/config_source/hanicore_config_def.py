@@ -84,7 +84,7 @@ PIN_NONE = 255
 # ==========================================================================
 # 1. ENUMS
 # ==========================================================================
-# V98: THREE NAMED STRATEGIES (docs/ARCHITECTURE.md). Value 1 keeps
+# V98: THREE NAMED STRATEGIES (the maintainer's design notes). Value 1 keeps
 # the meaning it always had on this page - VE(rpm, TPS) x the density of the
 # MEASURED pressure, Speeduino's alpha-N with multiplyMAP - so no page changes
 # strategy by being migrated; value 2 is rusEFI's pure alpha-N
@@ -176,6 +176,13 @@ ENUM_REVLIM = ConfigEnum("RevLimMode", [
     (2, "REVLIM_BOTH", "Both"),
 ], "Rev limiter cut mechanism")
 
+ENUM_INJ_PRESS = ConfigEnum("InjPressMode", [
+    (0, "INJP_NONE", "None (flow as rated)"),
+    (1, "INJP_REFERENCED", "Manifold-referenced regulator"),
+    (2, "INJP_FIXED_RAIL", "Fixed rail pressure"),
+    (3, "INJP_SENSED", "Sensed rail pressure"),
+], "Injector pressure compensation (rusEFI injectorCompensationMode)")
+
 ENUM_BOOST_MODE = ConfigEnum("BoostMode", [
     (0, "BOOST_OPEN_LOOP", "Open loop duty only"),
     (1, "BOOST_CLOSED_LOOP", "Closed loop on target"),
@@ -203,7 +210,7 @@ ENUM_INJ_STRATEGY = ConfigEnum("InjStrategy", [
                           "known; two halves per cylinder until then"),
 ], "Fuel injection execution strategy")
 
-# V97: knock control (hcknock711.c, docs/ARCHITECTURE.md)
+# V97: knock control (hcknock711.c, the maintainer's design notes)
 ENUM_KNOCK_MODE = ConfigEnum("KnockMode", [
     (0, "KNOCK_OFF", "Off"),
     (1, "KNOCK_MONITOR", "Monitor - measure and detect, no retard"),
@@ -244,6 +251,38 @@ ENUM_OFF_ON = ConfigEnum("OffOn", [
     (0, "HC_OFF", "Off"),
     (1, "HC_ON", "On"),
 ], "Off / on")
+
+# 2026-10-14: the auxiliary functions (hcaux711.c). Speeduino "Programmable
+# outputs" / rusEFI gppwm on-off mode: a source, a comparison, a hysteresis.
+ENUM_GP_SOURCE = ConfigEnum("GpSource", [
+    (0, "GP_SRC_NONE", "Not used"),
+    (1, "GP_SRC_RPM", "Engine speed (rpm)"),
+    (2, "GP_SRC_CLT", "Coolant temperature (C)"),
+    (3, "GP_SRC_IAT", "Intake air temperature (C)"),
+    (4, "GP_SRC_TPS", "Throttle position (%)"),
+    (5, "GP_SRC_PEDAL", "Pedal position (%)"),
+    (6, "GP_SRC_MAP", "Manifold / charge pressure (kPa)"),
+    (7, "GP_SRC_VBAT", "Battery voltage (0.1 V)"),
+    (8, "GP_SRC_LAMBDA", "Measured lambda (x100)"),
+    (9, "GP_SRC_ADV", "Ignition advance (deg)"),
+    (10, "GP_SRC_RUNTIME", "Time since start (s)"),
+    (11, "GP_SRC_OILP", "Oil pressure (kPa)"),
+], "What the condition compares")
+
+ENUM_GP_OP = ConfigEnum("GpOp", [
+    (0, "GP_OP_ABOVE", "On above the threshold"),
+    (1, "GP_OP_BELOW", "On below the threshold"),
+], "Comparison")
+
+ENUM_GP_LOGIC = ConfigEnum("GpLogic", [
+    (0, "GP_AND", "Both conditions (AND)"),
+    (1, "GP_OR", "Either condition (OR)"),
+], "How two conditions combine")
+
+ENUM_SW_ACTIVE = ConfigEnum("SwitchActive", [
+    (0, "SW_ACTIVE_HIGH", "Switched to +12 V"),
+    (1, "SW_ACTIVE_LOW", "Switched to ground"),
+], "Which level means ON")
 
 ENUM_INJ_TIMING = ConfigEnum("InjTimingMode", [
     (0, "INJ_TIMING_START", "Start of injection"),
@@ -362,6 +401,7 @@ ENUM_PRESSURE_ROLE = ConfigEnum("PressureRole", [(0,"PRESSURE_NONE","None fitted
 ENUM_DENSITY_POLICY = ConfigEnum("DensityPolicy", [(0,"DENSITY_FIXED","Reference pressure - Pure Alpha-N"),(1,"DENSITY_ABSOLUTE","Measured pressure - Speed density / Boosted Alpha-N"),(2,"DENSITY_BLEND","Ambient + boost blend - Boosted Alpha-N")], "Air density pressure")
 ENUM_BARO_SOURCE = ConfigEnum("BaroSource", [(0,"BARO_FIXED","Reference pressure (fixed)"),(1,"BARO_STOPPED","Pressure sensor with the engine stopped"),(2,"BARO_DEDICATED","Onboard barometric sensor")], "Ambient pressure source")
 ALL_ENUMS += [ENUM_FUEL_MODEL, ENUM_PRESSURE_ROLE, ENUM_DENSITY_POLICY, ENUM_BARO_SOURCE]
+ALL_ENUMS += [ENUM_INJ_PRESS]
 
 
 # ==========================================================================
@@ -450,7 +490,11 @@ LEGACY: list[Meta] = [
          category="Trigger",
          note="Missing-tooth decoder only."),
     Meta("CFG_TRIG_MIN_TEETH", "trigMinTeeth", "Good teeth before sync", Z,
-         G.TRIGGER_SETUP, lo=0, hi=255, category="Trigger"),
+         G.TRIGGER_SETUP, lo=0, hi=255, category="Trigger",
+         note="Teeth the decoder must have seen before it accepts the FIRST "
+              "gap as the crank reference (minimum 2). Sync is granted on "
+              "that first gap (rusEFI/Speeduino); a gap sooner than this "
+              "waits one revolution for the next one. 6 is a good value."),
     Meta("CFG_TRIG_TIMEOUT_MS", "trigTimeoutMs", "Stall timeout", Z,
          G.TRIGGER_SETUP, units="ms", lo=1, hi=255, safety_critical=True,
          category="Trigger"),
@@ -522,6 +566,24 @@ LEGACY: list[Meta] = [
          lo=0, hi=2, safety_critical=True, enum=ENUM_MAIN_RELAY, category="I/O"),
     Meta("CFG_MAIN_RELAY_GRACE_MS", "mainRelayGraceMs", "Relay feedback grace", L,
          G.RELAY_SETUP, units="ms", lo=0, hi=5000, category="I/O"),
+    Meta("CFG_PAD_77", "pad77", "Alignment pad", L, G.GENERAL, lo=0, hi=255,
+         category="Controller"),
+    Meta("CFG_IGN_BOOST_AX", "ignBoostAx", "Boost timing correction axis", L,
+         G.TABLES, units="kPa", scale=0.1, digits=0, lo=0, hi=3000,
+         category="Ignition",
+         note="Pressure ABOVE the onboard ambient (the charge / manifold "
+              "sensor minus the ambient); rising."),
+    Meta("CFG_IGN_BOOST_CORR", "ignBoostCorr", "Boost timing correction", L,
+         G.TABLES, units="deg", scale=0.1, digits=1, lo=-300, hi=100,
+         category="Ignition",
+         note="Added to the advance at this boost - retard (-) as boost "
+              "rises: a throttle-axis ignition table cannot see boost. 0 "
+              "everywhere = off. A failed pressure sensor = 0."),
+    Meta("CFG_TACHO_SCALE", "tachoScale", "Tachometer output scale", L,
+         G.RELAY_SETUP, units="%", lo=0, hi=200, category="I/O",
+         note="Multiplies the tachometer output frequency (rpm x cylinders / "
+              "120 Hz): a cluster reading 10 % high wants 91. 0 = 100 %. "
+              "The rev-counter test ('!N') is scaled the same way."),
 
     # ---- fuel table ------------------------------------------------------
     Meta("CAL_FUEL_MAP", "veTable", "Volumetric efficiency", L, G.TABLES,
@@ -799,8 +861,13 @@ LEGACY: list[Meta] = [
     # ---- rev limiter -----------------------------------------------------
     Meta("CAL_REVLIM_MODE", "revlimMode", "Rev limit cuts", L, G.ENGINE_SETUP,
          lo=0, hi=2, safety_critical=True, enum=ENUM_REVLIM, category="Safety"),
-    Meta("CAL_REVLIM_PATTERN", "revlimPattern", "Spark cut: sparks of every 8", L,
-         G.ENGINE_SETUP, lo=1, hi=8, safety_critical=True, category="Safety"),
+    Meta("CAL_REVLIM_PATTERN", "revlimPattern", "Retired: no effect", L,
+         G.ENGINE_SETUP, lo=0, hi=255, safety_critical=True, category="Safety",
+         note="RETIRED 2026-10-14. Was the rev limiter's spark-cut pattern "
+              "(n of every 8 sparks); the spark cut now skips every spark "
+              "above the limit (rusEFI hard limit). Kept in the page so "
+              "HC_CFG_LAYOUT_ID and every Burned calibration are unchanged; "
+              "no firmware path reads it. Not shown in TunerStudio."),
 
     # ---- idle ------------------------------------------------------------
     Meta("CAL_IDLE_ENABLE", "idleEnable", "Enable idle control", Z,
@@ -817,10 +884,15 @@ LEGACY: list[Meta] = [
          category="Idle"),
     Meta("CAL_IDLE_BASE_VAL", "idleBaseVal", "Idle base position", L, G.TABLES,
          units="%", scale=0.1, digits=1, lo=0, hi=1000, category="Idle"),
-    Meta("CAL_IDLE_KP", "idleKp", "Idle Kp", L, G.OUTPUT_ROUTING, scale=0.01,
-         digits=2, lo=0, hi=65535, category="Idle"),
-    Meta("CAL_IDLE_KI", "idleKi", "Idle Ki", L, G.OUTPUT_ROUTING, scale=0.01,
-         digits=2, lo=0, hi=65535, category="Idle"),
+    # REAL UNITS (2026-10-15): the old 0.01 scale hid that Kp "2.0" was 20 %
+    # throttle per 100 rpm of error. hcidle.h: P = raw x 0.1 % per 100 rpm,
+    # I = raw x 0.5 %/s per 100 rpm (the I term is x1000 since 2026-10-15).
+    Meta("CAL_IDLE_KP", "idleKp", "Idle Kp", L, G.OUTPUT_ROUTING,
+         units="%/100rpm", scale=0.1, digits=1, lo=0, hi=65535,
+         category="Idle"),
+    Meta("CAL_IDLE_KI", "idleKi", "Idle Ki", L, G.OUTPUT_ROUTING,
+         units="%/s/100rpm", scale=0.5, digits=1, lo=0, hi=65535,
+         category="Idle"),
     Meta("CAL_IDLE_RANGE_X10", "idleRangeX10", "Idle trim authority", L,
          G.OUTPUT_ROUTING, units="%", scale=0.1, digits=1, lo=0, hi=1000,
          category="Idle"),
@@ -962,7 +1034,7 @@ UNIVERSAL: list[NewField] = [
     # These four fields are the rest of what a decoder needs to be generic.
     # The wheel itself (teeth, missing teeth, edge, ratio, minimum teeth)
     # stays where it already is, in hcconfig.h's core block.
-    # V97: THE ONE PHYSICAL CRANK REFERENCE (docs/ARCHITECTURE.md).
+    # V97: THE ONE PHYSICAL CRANK REFERENCE (the maintainer's design notes).
     # Until V97 this slot was trigOffsetX10, an internal rotation (0..719.9)
     # nobody could read physically - the AWT's "358.0" is tooth #1 at 2.0
     # deg BTDC. The slot, its size and every stored value's MEANING mod 360
@@ -1736,7 +1808,7 @@ UNIVERSAL: list[NewField] = [
              Meta("CFG_U_DBW_PAD", "dbwPad", "Alignment pad", L, G.DBW_SETUP,
                   lo=0, hi=255, category="DBW"),
              "u8 alignment pad"),
-    # V97: sequential injection (docs/ARCHITECTURE.md). APPENDED.
+    # V97: sequential injection (the maintainer's design notes). APPENDED.
     NewField("CFG_U_INJ_TIMING_MODE", "u8", 1,
              Meta("CFG_U_INJ_TIMING_MODE", "injTimingMode",
                   "Injection timing refers to", Z, G.INJECTOR_ROUTING,
@@ -1752,7 +1824,7 @@ UNIVERSAL: list[NewField] = [
                   G.INJECTOR_ROUTING, lo=0, hi=255, category="Fuel"),
              "u8 alignment pad"),
     # V97: transient fuel - the X-tau wall film + after-start (shared/
-    # hctrans.c, docs/ARCHITECTURE.md). The curves use the warm-up
+    # hctrans.c, the maintainer's design notes). The curves use the warm-up
     # coolant axis (cltEnrAx). APPENDED.
     NewField("CFG_U_TRANS_ENABLE", "u8", 1,
              Meta("CFG_U_TRANS_ENABLE", "transEnable", "Transient fuel", L,
@@ -1886,7 +1958,7 @@ UNIVERSAL: list[NewField] = [
                   units="s", scale=0.001, digits=1, lo=0, hi=25000,
                   category="Idle"),
              "u16 dashpot decay, ms"),
-    # V97: KNOCK CONTROL (hcknock711.c + firmware/control/hcknock.c, docs/ARCHITECTURE.md).
+    # V97: KNOCK CONTROL (hcknock711.c + firmware/control/hcknock.c, the maintainer's design notes).
     # The mechanism is Bosch ME7 KR (read from a paired Porsche ME7.1.1
     # sibling A2L + binary) with rusEFI's time-based recovery. APPENDED; every
     # value is live. The board default is OFF.
@@ -2210,7 +2282,7 @@ UNIVERSAL: list[NewField] = [
              "s16[64] cam 2 target, 0.1 deg advance, [rpm][load]"),
 
     # ======================================================================
-    # V98: THE ENGINE MODEL BLOCK (docs/ARCHITECTURE.md). APPENDED -
+    # V98: THE ENGINE MODEL BLOCK (the maintainer's design notes). APPENDED -
     # nothing above moves. Runtime: hcengctl711.c (far) unless noted. Every
     # field is 0 = off / neutral on a fresh page unless the config manager
     # seeds it (hc_config_manager.c), and every preset says what it sets.
@@ -2533,11 +2605,14 @@ UNIVERSAL: list[NewField] = [
              "u16 rotational idle maximum rpm"),
     NewField("CFG_U_IDLE_ETB_RANGE", "u8", 1,
              Meta("CFG_U_IDLE_ETB_RANGE", "etbIdleRange",
-                  "Idle throttle blend range", L, G.TABLES, units="%", lo=0,
+                  "Idle throttle range", L, G.TABLES, units="%", lo=0,
                   hi=100, category="Idle",
-                  note="rusEFI etbIdleThrottleRange semantics: the pedal "
-                       "range over which the idle position blends into the "
-                       "pedal map. 0 = the idle position is a floor."),
+                  note="rusEFI etbIdleThrottleRange: the throttle opening the "
+                       "idle position 0..100 % spans; the pedal map is "
+                       "compressed above it. 100 % (and 0, read as 100) = the "
+                       "idle position IS throttle %. Keep the pedal map's "
+                       "released-pedal row at 0 so idle can both add and "
+                       "remove air."),
              "u8 idle-to-pedal blend range, %"),
     NewField("CFG_U_V98_PAD", "u8", 1,
              Meta("CFG_U_V98_PAD", "v98Pad", "Alignment pad", L, G.GENERAL,
@@ -2571,8 +2646,8 @@ for _slot, _ts, _label, _enum, _hi in [
     ("FUEL_MODEL","fuelModel","Fuel model",ENUM_FUEL_MODEL,3),
     ("PRESSURE_ROLE","pressureRole","Pressure sensor location",ENUM_PRESSURE_ROLE,2),
     ("DENSITY_POLICY","densityPolicy","Air density pressure",ENUM_DENSITY_POLICY,2),
-    ("BARO_SOURCE","ambientSource","Ambient pressure source",ENUM_BARO_SOURCE,2),
-    ("AMBIENT_CORR","ambientCorrection","Correct for ambient pressure",None,1),
+    ("BARO_SOURCE","ambientSource","Ambient pressure source (not used: always the onboard sensor)",ENUM_BARO_SOURCE,2),
+    ("AMBIENT_CORR","ambientCorrection","Correct for ambient pressure (not used: always)",None,1),
     ("IAT_POLICY","fuelUseIat","Use intake air temperature",None,1),
     ("LEAN_ENABLE","leanGuardEnable","Lean protection",None,1),
     ("LAMBDA_QUALIFIED","lambdaPhysicalQualified","Wideband commissioned for protection",None,1),
@@ -2581,10 +2656,10 @@ for _slot, _ts, _label, _enum, _hi in [
 ]:
     UNIVERSAL.append(NewField("CFG_U_"+_slot,"u8",1,Meta("CFG_U_"+_slot,_ts,_label,Z,G.ENGINE_SETUP,lo=0,hi=_hi,enum=_enum,category="Load and protection",safety_critical=True),"V102 independent load/protection policy"))
 for _slot, _ts, _label, _units, _lo, _hi, _scale in [
-    ("PRESSURE_REF","densityReference","Reference pressure","kPa",500,1200,0.1),
+    ("PRESSURE_REF","densityReference","Ambient if the onboard sensor fails","kPa",500,1200,0.1),
     ("BLEND_START","chargeBlendStart","Boost blend starts at (above ambient)","kPa",0,3000,0.1),
     ("BLEND_FULL","chargeBlendFull","Boost blend complete at (above ambient)","kPa",1,4000,0.1),
-    ("BARO_MAX_AGE","ambientMaxAge","Engine-stopped reading valid for","s",1,65535,1),
+    ("BARO_MAX_AGE","ambientMaxAge","Onboard reading held for (sensor fault)","s",1,65535,1),
     ("PRESSURE_TIMEOUT","pressureMaxAge","Pressure reading maximum age","ms",10,1000,1),
     ("GUARD_RPM","pressureGuardRpm","Pressure-loss cut above","rpm",0,20000,1),
     ("GUARD_TPS","pressureGuardTps","Pressure-loss cut above TPS","%",0,1000,0.1),
@@ -2643,6 +2718,152 @@ UNIVERSAL.append(NewField("CFG_U_DBW_FRICTION_X10", "u16", 1,
                        "began to overshoot). Re-run the characterization after "
                        "changing it."),
              "u16 Coulomb friction compensation, 0.1 % duty"))
+
+# ==========================================================================
+# 2026-10-14 - THE AUXILIARY FUNCTIONS (hcaux711.c, docs/firmware/design/
+# ME711_AUX.md): cooling fan, A/C, two programmable outputs, the oil pressure
+# sensor and its protection, dwell by rpm, per-cylinder ignition trim.
+# Appended last (see above): the only page change is these bytes before the
+# ignition map. Outputs route to the CPU's spare low sides 115 / 120 only
+# (POUT0 / POUT1 through the CJ920 - the stages the cam solenoids use); the
+# validator refuses anything else and any cavity two functions claim.
+# ==========================================================================
+UNIVERSAL.append(NewField("CFG_U_DWELL_RPM_AX", "u16", 6,
+             Meta("CFG_U_DWELL_RPM_AX", "dwellRpmAx", "Dwell by rpm: rpm axis",
+                  L, G.TABLES, units="rpm", lo=0, hi=20000, category="Ignition"),
+             "u16[6] dwell-by-rpm axis"))
+UNIVERSAL.append(NewField("CFG_U_DWELL_RPM_PCT", "u16", 6,
+             Meta("CFG_U_DWELL_RPM_PCT", "dwellRpmPct", "Dwell by rpm",
+                  L, G.TABLES, units="%", lo=10, hi=200, category="Ignition",
+                  note="Multiplies the dwell from the battery curve. 100 = no "
+                       "change. A cranking dwell, when set, replaces both."),
+             "u16[6] dwell multiplier by rpm, % (u16: hc_cal_curve16 reads it)"))
+for _slot, _ts, _label, _units, _lo, _hi in [
+    ("OILP_LO_MV", "oilSensLoMv", "Oil pressure sensor: voltage at 0 kPa", "mV", 0, 5000),
+    ("OILP_HI_MV", "oilSensHiMv", "Oil pressure sensor: voltage at full scale", "mV", 0, 5000),
+    ("OILP_HI_KPA", "oilSensHiKpa", "Oil pressure sensor: full scale", "kPa", 0, 2000),
+]:
+    UNIVERSAL.append(NewField("CFG_U_" + _slot, "u16", 1, Meta(
+        "CFG_U_" + _slot, _ts, _label, L, G.GENERAL, units=_units, lo=_lo,
+        hi=_hi, category="Sensors"), "u16 oil pressure sensor transfer"))
+for _n in (1, 2):
+    for _c in ("A", "B"):
+        UNIVERSAL.append(NewField("CFG_U_GP%d_THR_%s" % (_n, _c), "s16", 1, Meta(
+            "CFG_U_GP%d_THR_%s" % (_n, _c), "gp%dThr%s" % (_n, _c),
+            "Output %d condition %s: threshold" % (_n, _c), L, G.GENERAL,
+            lo=-32000, hi=32000, category="I/O",
+            note="In the units of the chosen source (see its name)."),
+            "s16 programmable output threshold, source units"))
+# TEMPERATURES ARE STORED 10 * C + 10000, like every other one on the page
+# (test_config_source_of_truth): u16, scale 0.1, translate -1000.
+for _slot, _ts, _label in [
+    ("FAN_ON_C", "fanOnTemp", "Fan on at"),
+    ("FAN_OFF_C", "fanOffTemp", "Fan off at"),
+    ("AC_MAX_CLT", "acMaxClt", "A/C off above coolant"),
+]:
+    UNIVERSAL.append(NewField("CFG_U_" + _slot, "u16", 1, Meta(
+        "CFG_U_" + _slot, _ts, _label, L, G.GENERAL, units="C", scale=0.1,
+        translate=-1000.0, digits=1, lo=9600, hi=11500, category="I/O"),
+        "u16 coolant threshold, 10 * C + 10000"))
+UNIVERSAL.append(NewField("CFG_U_IGN_TRIM", "u8", 8,
+             Meta("CFG_U_IGN_TRIM", "ignTrim", "Ignition trim, cylinder",
+                  L, G.TABLES, units="deg", scale=0.1, translate=-12.8,
+                  digits=1, lo=28, hi=228, category="Ignition",
+                  note="Per-cylinder timing offset added to the table "
+                       "(+ = more advance), by cylinder number. "
+                       "-10.0..+10.0 deg. Not applied in fixed-timing mode."),
+             "u8[8] per-cylinder ignition trim, raw-128 = 0.1 deg"))
+for _slot, _ts, _label, _units, _scale, _tr, _lo, _hi, _enum in [
+    ("PIN_FAN", "pinFan", "Fan relay output", "", 1, 0, 0, 255, None),
+    ("FAN_WITH_AC", "fanWithAc", "Fan on with the A/C compressor", "", 1, 0, 0, 1, "ENUM_OFF_ON"),
+    ("FAN_STOPPED_OFF", "fanStoppedOff", "Fan off when the engine is stopped", "", 1, 0, 0, 1, "ENUM_OFF_ON"),
+    ("PIN_AC_REQ", "pinAcRequest", "A/C request input", "", 1, 0, 0, 255, None),
+    ("PIN_AC_CLUTCH", "pinAcClutch", "A/C compressor relay output", "", 1, 0, 0, 255, None),
+    ("AC_REQ_ACTIVE", "acRequestActive", "A/C request is active when", "", 1, 0, 0, 1, "ENUM_SW_ACTIVE"),
+    ("AC_IDLE_UP_X10", "acIdleUpX10", "A/C idle-up: throttle added", "%", 0.1, 0, 0, 200, None),
+    ("AC_IDLE_RPM", "acIdleRpm", "A/C idle-up: target rpm added", "rpm", 10, 0, 0, 50, None),
+    ("AC_MIN_RPM", "acMinRpm", "A/C off below", "rpm", 10, 0, 0, 255, None),
+    ("AC_MAX_RPM", "acMaxRpm", "A/C off above", "rpm", 50, 0, 0, 255, None),
+    ("AC_MAX_TPS", "acMaxTps", "A/C off above throttle", "%", 1, 0, 0, 100, None),
+    ("AC_DELAY", "acDelay", "A/C compressor delay", "s", 0.1, 0, 0, 100, None),
+]:
+    _pin = _slot.startswith("PIN_")
+    UNIVERSAL.append(NewField("CFG_U_" + _slot, "u8", 1, Meta(
+        "CFG_U_" + _slot, _ts, _label, Z if _pin else L,
+        G.OUTPUT_ROUTING if _pin else G.GENERAL,
+        units=_units, scale=_scale, translate=_tr,
+        digits=1 if _scale == 0.1 else 0, lo=_lo, hi=_hi,
+        enum=globals()[_enum] if _enum else None,
+        safety_critical=_pin, category="I/O", is_pin=_pin,
+        pin_needs=(PinCap.DIN if _slot == "PIN_AC_REQ"
+                   else PinCap.LOW_SIDE if _pin else 0)),
+        "u8 auxiliary function setting"))
+for _n in (1, 2):
+    for _slot, _ts, _label, _units, _lo, _hi, _enum in [
+        ("PIN", "pinGp%d", "Output %d pin", "", 0, 255, None),
+        ("SRC_A", "gp%dSrcA", "Output %d condition A: source", "", 0, 11, "ENUM_GP_SOURCE"),
+        ("OP_A", "gp%dOpA", "Output %d condition A", "", 0, 1, "ENUM_GP_OP"),
+        ("HYST_A", "gp%dHystA", "Output %d condition A: hysteresis", "", 0, 255, None),
+        ("SRC_B", "gp%dSrcB", "Output %d condition B: source", "", 0, 11, "ENUM_GP_SOURCE"),
+        ("OP_B", "gp%dOpB", "Output %d condition B", "", 0, 1, "ENUM_GP_OP"),
+        ("HYST_B", "gp%dHystB", "Output %d condition B: hysteresis", "", 0, 255, None),
+        ("LOGIC", "gp%dLogic", "Output %d: conditions", "", 0, 1, "ENUM_GP_LOGIC"),
+        ("DELAY", "gp%dDelay", "Output %d: on delay", "s", 0, 255, None),
+    ]:
+        _pin = _slot == "PIN"
+        UNIVERSAL.append(NewField("CFG_U_GP%d_%s" % (_n, _slot), "u8", 1, Meta(
+            "CFG_U_GP%d_%s" % (_n, _slot), _ts % _n, _label % _n,
+            Z if _pin else L, G.OUTPUT_ROUTING if _pin else G.GENERAL,
+            units=_units, scale=0.1 if _slot == "DELAY" else 1,
+            digits=1 if _slot == "DELAY" else 0, lo=_lo, hi=_hi,
+            enum=globals()[_enum] if _enum else None, safety_critical=_pin,
+            category="I/O", is_pin=_pin,
+            pin_needs=PinCap.LOW_SIDE if _pin else 0),
+            "u8 programmable output setting"))
+UNIVERSAL.append(NewField("CFG_U_OILP_DELAY", "u8", 1,
+             Meta("CFG_U_OILP_DELAY", "oilPressDelay", "Low oil pressure for",
+                  L, G.GENERAL, units="s", scale=0.1, digits=1, lo=1, hi=100,
+                  safety_critical=True, category="Safety",
+                  note="How long the pressure must stay below the minimum, "
+                       "above the check rpm, before the fuel is cut."),
+             "u8 oil pressure protection delay, 0.1 s"))
+# ---- 2026-10-15: injector pressure compensation (rusEFI
+# injectorCompensationMode / fuelReferencePressure). The flow scales with
+# sqrt(pressure across the injector / its test pressure, injRefPressureKpa).
+UNIVERSAL.append(NewField("CFG_U_INJ_PRESS_MODE", "u8", 1,
+             Meta("CFG_U_INJ_PRESS_MODE", "injPressMode",
+                  "Fuel pressure compensation", L, G.INJECTOR_ROUTING,
+                  lo=0, hi=3, enum=ENUM_INJ_PRESS, category="Fuel",
+                  note="None: the injector flow is used as rated. "
+                       "Manifold-referenced: the regulator holds a constant "
+                       "pressure ACROSS the injector (most stock engines) - "
+                       "one constant factor sqrt(regulator / test pressure). "
+                       "Fixed rail: the regulator holds the rail against "
+                       "the atmosphere - across the injector = rail + "
+                       "ambient - manifold, so the factor follows boost and "
+                       "vacuum (needs a MANIFOLD pressure sensor). Sensed: "
+                       "the same with a rail pressure sensor on the fuel "
+                       "pressure pin; a failed sensor falls back to the "
+                       "fixed rail value and sets P0190."),
+             "u8 injector pressure compensation mode"))
+UNIVERSAL.append(NewField("CFG_U_FUEL_REG_KPA", "u16", 1,
+             Meta("CFG_U_FUEL_REG_KPA", "fuelRegKpa",
+                  "Fuel regulator pressure", L, G.INJECTOR_ROUTING,
+                  units="kPa", lo=0, hi=1500, category="Fuel",
+                  note="The pressure the regulator holds: across the "
+                       "injector (manifold-referenced) or rail above the "
+                       "atmosphere (fixed rail). A VAG 1.8T: 300 kPa "
+                       "(3 bar), manifold-referenced."),
+             "u16 fuel regulator pressure, kPa"))
+UNIVERSAL.append(NewField("CFG_U_FUEL_SENS_KPA", "u16", 1,
+             Meta("CFG_U_FUEL_SENS_KPA", "fuelSensorKpa",
+                  "Fuel pressure sensor at 4.5 V", L, G.INJECTOR_ROUTING,
+                  units="kPa", lo=0, hi=2000, category="Fuel",
+                  note="A ratiometric 0.5..4.5 V rail pressure sensor "
+                       "relative to the atmosphere: 0.5 V = 0 kPa, 4.5 V = "
+                       "this value. Readings outside 0.2..4.8 V are a "
+                       "sensor fault."),
+             "u16 fuel pressure sensor full scale, kPa"))
 
 _SIZE = {"u8": 1, "u16": 2, "s16": 2}
 

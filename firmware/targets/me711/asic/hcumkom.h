@@ -7,7 +7,7 @@
  * byte-identical logic). This module reproduces its MAIN side.
  *
  * Full derivation, cross-witness table and the closed-loop simulation that
- * validated it: docs/ARCHITECTURE.md.
+ * validated it: the maintainer's design notes.
  *
  * WHY THIS IS SAFE TO PORT WITHOUT THE S5500 ROM: the Bosch S5500 and the
  * OEM ME7.1.1 MAIN ship together and work on real hardware, so the S5500 is built

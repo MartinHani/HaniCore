@@ -499,7 +499,7 @@ void hcts_hex4(unsigned int v)
  * handler is three instructions - it sets S0EIR and returns - and it is how
  * the flash bootstrap loader receives. So a HaniCore handler placed in the
  * application table for those traps is unreachable by construction.
- * See docs/ARCHITECTURE.md, "first-level vector ownership".
+ * See the maintainer's design notes, "first-level vector ownership".
  *
  * That is why the CAPCOM fallback below is not a fallback on those targets but
  * the ONLY receive path, and why being wrong here costs nothing.
@@ -1537,9 +1537,18 @@ void hcts_service(void)
        answered (it cannot come from noise), so TunerStudio, the plugin and
        the tools - which all send enveloped requests - connect as before.
        The rate hunt stays: it never transmits, and both K-line entries
-       (5-baud, fast init) read the pin and force 10400 themselves. */
+       (5-baud, fast init) read the pin and force 10400 themselves.
+       AND NEVER WHILE THE TARGET HOLDS THE LINE (2026-10-15, car): a rate a
+       vehicle entry negotiated stays pinned for the whole OBD session, and
+       there a bad CRC is the cluster's traffic or a collision - a TS_BAD_CRC
+       reply (bit 7: it ends a TunerStudio session) would land on the bus
+       on top of it. The tester retries a request that got no answer. */
 #if defined(TGT_KLINE_SHARED_BUS) && defined(TGT_S0BG_ALT)
+#ifdef HCTS_TARGET_LINK_HOLD
+#define HCTS_MAY_ANSWER_NOISE() (hc_link_locked != 0u && !HCTS_TARGET_LINK_HOLD())
+#else
 #define HCTS_MAY_ANSWER_NOISE() (hc_link_locked != 0u)
+#endif
 #else
 #define HCTS_MAY_ANSWER_NOISE() 1
 #endif
@@ -1561,6 +1570,9 @@ void hcts_service(void)
 #ifdef TGT_S0BG_ALT
         hc_link_locked = 1u;        /* a valid frame: this IS the rate */
         link_bad = 0u;
+#endif
+#ifdef HCTS_TARGET_GOOD_FRAME
+        HCTS_TARGET_GOOD_FRAME();
 #endif
         handle(rxb, ts_len);
     }

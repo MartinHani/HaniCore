@@ -9,7 +9,7 @@ to the ECU's page, nothing is Burned.
         [--repeat N] [--out <dir>]
 
 WHAT IT CHECKS, per attempt (the firmware side: hckwp_me711.c,
-firmware/comms/hckline.c; the wire spec: docs/ARCHITECTURE.md):
+firmware/comms/hckline.c; the wire spec: the maintainer's design notes):
   1  5-baud 0x01 by the adapter's BREAK (200 ms a bit, LSB first)
   2  at 10400: 55 EF 8F from the ECU within W1 + 3 bytes
   3  our complement 70 -> the ECU's FE

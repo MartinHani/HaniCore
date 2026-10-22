@@ -17,7 +17,7 @@
  * The MIL request is published (hc_dtc.mil, OCH 914 bit 0) and shown in
  * TunerStudio. It drives NO lamp yet: cavity 47 (MIL_S) is an ASIC output
  * (the W12 ME7.1.1 sheet: CJ920 from LUES2_PX70, fan stage 2 / MIL / SPOEKUE
- * variants) and has not been measured on this board (docs/ARCHITECTURE.md).
+ * variants) and has not been measured on this board (the maintainer's design notes).
  */
 #include "hcfarbridge.h"
 #include "hctarget.h"
@@ -38,6 +38,7 @@ typedef char hc_cel_fits[(sizeof(hccel_t) <= TGT_RAM_CEL_LIMIT) ? 1 : -1];
 #include "hclimp711.h"
 #include "hcknock711.h"
 #include "hcvvt711.h"
+#include "hcengctl711.h"     /* the rail pressure sensor (HC_EC.inj_st) */
 #include "hcdtc.h"
 #include "hcdtc711.h"
 
@@ -48,7 +49,7 @@ enum {
     P_MAP, P_CLT, P_IAT, P_TPS1, P_TPS2, P_TPS_DIFF, P_APP1, P_APP2,
     P_APP_DIFF, P_BATT, P_ETB_MOTOR, P_ETB_DEV, P_CRANK, P_CAM, P_OVERBOOST,
     P_O2_1, P_O2_2, P_COIL, P_ASIC, P_CONFIG, P_HOT, P_ETB_LIMP,
-    P_KNOCK1, P_KNOCK2, P_VVT1, P_VVT2, P_N
+    P_KNOCK1, P_KNOCK2, P_VVT1, P_VVT2, P_FUELP, P_N
 };
 
 static const hcdtc_def_t defs[P_N] = {
@@ -85,6 +86,10 @@ static const hcdtc_def_t defs[P_N] = {
        of the authority, or enabled without a stage - cam 1 / cam 2 */
     {  11u,    0u, 5000u, HCDTC_MIL},   /* cam 1 timing performance     */
     {  21u,    0u, 5000u, HCDTC_MIL},   /* cam 2 timing performance     */
+    /* the fuel rail pressure sensor the injector compensation reads
+       (injPressMode 3, hcengctl711.c inj_pressure()): no valid reading -
+       the compensation falls back to the fixed rail value meanwhile */
+    { 190u, 1000u, 2000u, HCDTC_MIL},   /* fuel rail pressure sensor    */
 };
 
 typedef char hc_dtc_fits[(sizeof(hcdtc_t) <= TGT_RAM_DTC_LIMIT) ? 1 : -1];
@@ -152,9 +157,23 @@ void far hc_dtc_service(unsigned int now_ms)
     acc_ms = 0u;
 
     if (hc_dtc_clear_req) {                    /* '!D' - OBD mode 04 */
+        /* CLEAR RESETS EVERY LATCHED FAULT (2026-10-15, owner): the codes
+           AND the latches behind them, so a fixed fault does not wait for a
+           key cycle - wideband, coil overdwell, knock sensor diagnosis,
+           phasers, the oil protection cut. THE THROTTLE ONLY WITH THE ENGINE
+           STOPPED: a cleared throttle fault re-enables the bridge, and that
+           must not happen under way (the DLR key-on rule, hc_dbw_key()). A
+           fault still present re-confirms after its set time. */
         hc_dtc_clear_req = 0u;
         hcdtc_clear(&hc_dtc);
         hc_io_wb_clear();                      /* a latched wideband re-arms */
+        hc_ign_ovd_latch = 0u;
+        hc_knock_clear_faults();
+        hc_vvt_clear_faults();
+        hc_limp.cut = (unsigned char)(hc_limp.cut & (0xFFu ^ HCLIMP_OIL));
+        if (trg_rpm == 0u && trg_state == TRG_NO_SIGNAL) {
+            hc_dbw_clear_faults();
+        }
     }
     if (!have_last) {                          /* events count from here */
         last_sync = trg_synclost;
@@ -195,6 +214,7 @@ void far hc_dtc_service(unsigned int now_ms)
     SETF(P_KNOCK2, hc_knock_faults() & 0x0Au);
     SETF(P_VVT1, hc_vvt_fault(0u) != VVT_F_NONE);
     SETF(P_VVT2, hc_vvt_fault(1u) != VVT_F_NONE);
+    SETF(P_FUELP, (HC_EC.inj_st & EC_INJ_SENSOR) != 0u);
 #undef SETF
     last_sync = trg_synclost;
     last_cycle = trg_cycle_lost;

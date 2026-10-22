@@ -1,7 +1,7 @@
 /*
  * hccel.h - the check-engine lamp POLICY: what the lamp should show,
  * separate from any output driver. Pure, SFR-free, host-tested
- * (tools/test_hccel_host.py). docs/ARCHITECTURE.md "The lamp".
+ * (tools/test_hccel_host.py). the maintainer's design notes "The lamp".
  *
  * The required lamp behaviour:
  *     0.0 .. 3.0 s after key-on   ON        (the lamp test: ECU alive,

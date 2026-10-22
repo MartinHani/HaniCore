@@ -16,6 +16,7 @@
 #include "hcfarinline.h"
 #include "hcigncorr711.h"
 #include "hcidle711.h"
+#include "hcengine.h"
 
 static int lerp16(unsigned int x0, unsigned int x1, int v0, int v1,
                   unsigned int x)
@@ -42,21 +43,21 @@ static int curve(unsigned int ax, unsigned int val, unsigned char n,
                  unsigned int x)
 {
     unsigned char i;
-    unsigned int a0 = hc_cal_u16(ax), a1;
+    unsigned int a0 = hc_cal_u16v(ax), a1;
 
     if (x <= a0) {
-        return (int)hc_cal_u16(val);
+        return (int)hc_cal_u16v(val);
     }
     for (i = 1u; i < n; i++) {
-        a1 = hc_cal_u16((unsigned int)(ax + 2u * i));
+        a1 = hc_cal_u16v((unsigned int)(ax + 2u * i));
         if (x < a1) {
             return lerp16(a0, a1,
-                          (int)hc_cal_u16((unsigned int)(val + 2u * (i - 1u))),
-                          (int)hc_cal_u16((unsigned int)(val + 2u * i)), x);
+                          (int)hc_cal_u16v((unsigned int)(val + 2u * (i - 1u))),
+                          (int)hc_cal_u16v((unsigned int)(val + 2u * i)), x);
         }
         a0 = a1;
     }
-    return (int)hc_cal_u16((unsigned int)(val + 2u * (n - 1u)));
+    return (int)hc_cal_u16v((unsigned int)(val + 2u * (n - 1u)));
 }
 
 static int bound(int v)
@@ -71,5 +72,12 @@ int far hc_ign_corr_x10(unsigned int clt_dc, unsigned int iat_dc)
     int c = clt_dc ? bound(curve(CAL_CLT_ENR_AX, CFG_U_IGN_CLT_CORR, CAL_AXIS_N, clt_dc)) : 0;
     int a = iat_dc ? bound(curve(CFG_U_IGN_IAT_AX, CFG_U_IGN_IAT_CORR, 8u, iat_dc)) : 0;
     int i = bound(hc_idle_timing_x10());   /* 0 outside closed-loop idle */
-    return (int)(c + a + i);
+    /* BOOST (2026-10-16): pressure above the onboard ambient, a failed or
+       unrouted pressure sensor = 0 (no boost seen, no correction) */
+    unsigned int g = (!(eng_sensor_err & ENG_ERR_MAP)
+                      && hc_cal_u8(CFG_U_PRESSURE_ROLE) != 0u
+                      && eng_map_kpa_x10 > eng_baro_kpa_x10)
+                   ? (unsigned int)(eng_map_kpa_x10 - eng_baro_kpa_x10) : 0u;
+    int b = bound(curve(CFG_IGN_BOOST_AX, CFG_IGN_BOOST_CORR, 8u, g));
+    return (int)(c + a + i + b);
 }

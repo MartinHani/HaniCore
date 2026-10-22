@@ -3,7 +3,7 @@
  * fuel ONE CYLINDER needs PER CYCLE. Target independent, SFR-free, far on
  * ME7.1.1 (HCTRANS_FAR), host-tested (tools/test_hctrans_host.py).
  *
- * WHY ON THE CYCLE'S FUEL (docs/ARCHITECTURE.md). The scheduler
+ * WHY ON THE CYCLE'S FUEL (the maintainer's design notes). The scheduler
  * delivers a cycle's open time in one whole pulse (sequential) or two halves
  * (batch, semi-sequential, the sequential fallback). Correcting the CYCLE's
  * requirement means one model serves every injection mode, and the mode

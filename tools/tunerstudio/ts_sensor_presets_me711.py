@@ -27,7 +27,7 @@ CLT 20 C -> 906 counts (ECU 908 = 20 C), 80 C -> 528 (ECU 533 = 80 C),
 The Bosch / VAG choice is the ECU's OWN curve (exact, not computed).
 Other sensors: a Steinhart-Hart fit through three published (C, ohm) points.
 
-PROVENANCE (docs/CONTRIBUTING.md class F): the sensor numbers are
+PROVENANCE (the maintainer's design notes class F): the sensor numbers are
 physical facts - datasheet transfer functions and published resistance
 points (the same points circulate in Speeduino's and rusEFI's sensor lists,
 which were used to cross-check them). No text is copied from either project.

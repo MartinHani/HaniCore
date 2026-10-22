@@ -171,6 +171,12 @@ unsigned int hc_af_flow_at_dp_x100(unsigned int flow_ref_x100,
            exists to avoid. */
         return flow_ref_x100;
     }
+    if (dp_x10 == dp_ref_x10) {
+        /* factor exactly 1 - a manifold-referenced regulator at the
+           injector's test pressure (the AWT, 2026-10-15): the same result
+           without a long divide and a 16-step root on every engine pass */
+        return flow_ref_x100;
+    }
     /* sqrt(dp/dp_ref) in fixed point: work in 1/65536 of the ratio, take the
        root, and the root of 65536 is 256 - so the scale comes back out by a
        shift rather than another divide. */

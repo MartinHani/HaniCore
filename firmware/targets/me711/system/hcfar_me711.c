@@ -123,6 +123,8 @@ void far hc_hal_out_duty_f(unsigned char sem, unsigned int duty)
 /* What the bridge PWM ended up switching at (hcetbcal.c publishes it).
    2026-10-14: the unused setter thunk, hc_hal_ain_bound_f and
    hc_dbw_clear_faults_f were removed - no far module calls them. */
+/* '!D' (2026-10-15, hcdtc711.c): the throttle faults, engine stopped */
+void far hc_dbw_clear_faults_f(void) { hc_dbw_clear_faults(); }
 unsigned int far hc_hal_dbw_pwm_applied_hz_f(void)
 { return hc_hal_dbw_pwm_applied_hz(); }
 unsigned char far hc_hal_out_class_live_f(unsigned char sem) { return hc_hal_out_class_live(sem); }

@@ -342,7 +342,7 @@ def main():
     # DELIBERATELY and PERMANENTLY, not as a trim: alive_line() is the
     # ~127 ms blocking print that was starving hc_asic_start_service() and
     # causing the ~140 ms SWRST_SM V15's hardware log exposed (see
-    # docs/ARCHITECTURE.md/§5h). The function no longer exists
+    # the maintainer's design notes/§5h). The function no longer exists
     # in this build; the fields it used to carry are documented as a comment
     # at its former location for a future non-blocking replacement, not
     # shipped as bytes in the image. Do not add either string back to `want`.

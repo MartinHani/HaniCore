@@ -85,11 +85,29 @@ def main() -> int:
     # NEGATIVE CONTROL (V100): a core that cannot tell an open Nernst cell
     # from a merely cold one (V99: both reported NO_HEAT) must fail.
     if not mutant_fails(cc, env, "nocell",
-                        "w->ur_live ? HCWB_F_NO_HEAT",
+                        "(w->ur_live == 1u) ? HCWB_F_NO_HEAT",
                         "1u ? HCWB_F_NO_HEAT", WARM):
         print("FAIL: control - conflating an open cell with a cold one passed")
         return 1
     print("PASS: control - conflating an open cell with a cold one fails")
+    # NEGATIVE CONTROL (2026-10-14 car): key-on heating with no heater feed
+    # until the engine runs latched 13 -> P0130 -> MIL before every start.
+    # A core that latches instead of parking must fail test_ignition_park.
+    if not mutant_fails(cc, env, "nopark",
+                        "if (w->ur_live == 0u && !in->running) {",
+                        "if (0) {", TEST):
+        print("FAIL: control - latching a fault on an unpowered heater passed")
+        return 1
+    print("PASS: control - latching a fault on an unpowered heater fails")
+    # NEGATIVE CONTROL (2026-10-15): a start inside the park time handed the
+    # paper ramp's 8..12 V to a cold, wet sensor. A core that keeps the
+    # ramp must fail test_start_restarts_paper_warmup.
+    if not mutant_fails(cc, env, "paperramp",
+                        "if (in->running && !w->ran && w->ur_live == 0u",
+                        "if (0 && w->ur_live == 0u", TEST):
+        print("FAIL: control - keeping a paper ramp at the start passed")
+        return 1
+    print("PASS: control - keeping a paper ramp at the start fails")
     # NEGATIVE CONTROL 1: the V79..V95 behaviour - the pump never enabled
     # (the chip held without PA) - must fail the one-bank tests.
     if not mutant_fails(cc, env, "no_pa", "? HCWB_MODE_PUMP : HCWB_MODE_COLD",

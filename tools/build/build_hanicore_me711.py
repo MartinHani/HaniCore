@@ -79,7 +79,7 @@ import me711_image as _IMG                                     # noqa: E402
 import me711_owned_boot as OWNED                               # noqa: E402
 
 # The boot region (file 0x000000-0x01FFFF) is HaniCore's own
-# (me711_owned_boot.py, docs/PLATFORM.md): no OEM byte; bench
+# (me711_owned_boot.py, the maintainer's design notes): no OEM byte; bench
 # proven 2026-10-08 (cold boots, Burn, restore from flash). --oem-boot
 # rebuilds the earlier configuration with the extracted OEM boot block
 # (me711_boot_contract.py, local only) as a side image `<stem>_oemboot`, for
@@ -108,7 +108,7 @@ VECTAB_PARK_CPU = 0x840000
 # driver spilled it into the store's first sector). SA6 was blank and inside
 # the boot page record; the resident-loader reservation keeps SA5.
 CODE_SEG_LO = 0x030000
-CODE_SEG_HI = 0x05FFFF   # SA6+SA7+SA8 from V97 (SA7+SA8 from V53)
+CODE_SEG_HI = 0x06FFFF   # SA6..SA9 from 2026-10-15 (SA6..SA8 V97, SA7+SA8 V53)
 HEX_BASE = 0x030000          # OH166 RANGE start, as a file offset
 ISR_TABLE = 0x020000         # where the first-level table forwards to
 BADVEC_TRAP = 0x7F           # the trap hc_badvec_isr is generated on
@@ -152,13 +152,14 @@ BADVEC_TRAP = 0x7F           # the trap hc_badvec_isr is generated on
 # code moved from SA17 down to SA7.
 BOOTSUM_R1_LIMIT = 0x00810000   # header+0x30 / table+0x10, unchanged
 BOOTSUM_R2_START = 0x0081FFFE   # header+0x34 / table+0x14, unchanged
-BOOTSUM_R2_LIMIT = 0x0085FFFF   # header+0x14  <- V53 moved this, and only this
+BOOTSUM_R2_LIMIT = 0x0086FFFF   # header+0x14  <- V53 moved this, and only this
+#                                 (0x85FFFF until 2026-10-15: SA9 is code now)
 CAL_SECTOR = None               # retired: the append-only store replaced it
 
-# The append-only calibration store: SA9..SA18, ten 64 KiB sectors, eighty
-# 8 KiB cells. Wholly above BOOTSUM_R2_LIMIT, which is what makes a reclaim
+# The append-only calibration store: SA10..SA18, nine 64 KiB sectors,
+# seventy-two 8 KiB cells (SA9..SA18 until 2026-10-15). Wholly above BOOTSUM_R2_LIMIT, which is what makes a reclaim
 # erase an ordinary NVM event instead of a bootmode recovery.
-NVM_LO = 0x060000
+NVM_LO = 0x070000
 NVM_HI = 0x0FFFFF
 
 # The 4 defensive bytes at 0x038004. The boot block reads a far pointer there
@@ -416,7 +417,7 @@ def first_level_map(contract: bytes) -> dict:
 #
 # hcvec_me711.c is compiled MOD167 MEDIUM so its 117 unclaimed-trap catch-alls
 # link into the FCODE class in segment 0x85 instead of the single 64 KiB NCODE
-# CGROUP (docs/ARCHITECTURE.md). Mixing one MEDIUM module into a
+# CGROUP (the maintainer's design notes). Mixing one MEDIUM module into a
 # SMALL image makes L166 say so on every link, and it is correct to say so.
 #
 # THE POINT OF THE ALLOWLIST IS WHAT IT DOES **NOT** ACCEPT. build_me711.bat
@@ -465,6 +466,8 @@ LINK_WARNING_ALLOWED = re.compile(
     # V97: idle speed control
     r"|hcidle\.obj\s*\(HCIDLE\)"
     r"|hcidle711\.obj\s*\(HCIDLE711\)"
+    # 2026-10-14: fan, A/C, programmable outputs, oil pressure
+    r"|hcaux711\.obj\s*\(HCAUX711\)"
     # V97: trouble codes
     r"|hcdtc\.obj\s*\(HCDTC\)"
     r"|hcdtc711\.obj\s*\(HCDTC711\)"
@@ -498,7 +501,7 @@ LINK_WARNING_ALLOWED = re.compile(
 MEDIUM_MODULES = ("HCVEC_ME711", "HCIO711", "HC_VALIDATION",
                   "HC_CONFIG_MANAGER", "HC_ROUTE", "HCBENCH", "HCETBCAL", "HCDIAG711", "HCLIVEFORENSICS", "HCDBWMOTOR711", "HCFRESH711", "HCDEFAULTS711", "HCPROFILE711", "HCRTMON711", "HCSERIAL711", "HCDEADLINE_PLAN711", "HCROUTES711", "HCLOAD711",
                   "HCKLINE", "HCKWP_ME711", "HCWB", "HCCAM", "HCLDR",
-                  "HCBOOST711", "HCIDLE", "HCIDLE711", "HCDTC",
+                  "HCBOOST711", "HCIDLE", "HCIDLE711", "HCAUX711", "HCDTC",
                   "HCDTC711", "HCLIMP", "HCLIMP711", "HCFUELPUMP",
                   "HCMAINRELAY", "HCTRANS", "HCTRANS711",
                   "HCCEL", "HCIGNCORR711", "HCKNOCK", "HCKNOCK711",

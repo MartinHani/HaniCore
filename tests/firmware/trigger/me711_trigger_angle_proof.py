@@ -8,7 +8,7 @@ in 0.1 deg AFTER cylinder-1 TDC, signed (Speeduino's trigger angle; rusEFI's
 globalTriggerAngleOffset is minus it). The one conversion is
 hc_trig_rotation_x10() in hctrig_me711.c: angle mod 360. So 358.0 there is
 -2.0 here, and the car must spark and inject at the same crank positions.
-docs/ARCHITECTURE.md.
+the maintainer's design notes.
 
 On the LINKED image, in c167sim:
 

@@ -194,6 +194,88 @@ WT_FIELDS = ("magic", "seq", "uptime_ms", "rpm", "batt_dv", "etb_status",
              "s5500_n_gt11ms", "s5500_n_gt12ms", "s5500_n_gt15ms",
              "s5500_n_lt9_5ms", "s5500_prev_start_T", "stall_cfg", "stall_last")
 EV_HDR, EV_REC = 16, 10
+# 2026-10-15: THE K-LINE CAPTURE follows the witness (hckwp_me711.c): 256
+# raw bytes, C167 LITTLE-endian words - magic 'KC' 0x4B43, state (0 armed /
+# 1 recording / 2 done), trigger tick, samples, UART bytes while recording,
+# triggers since boot, link state, spare - then one bit a millisecond from
+# byte 16, 1 = line high, bit 0 of byte 16 first.
+EXT_KLCAP = EXT_WITNESS + 128
+
+
+def decode_klcap(b: bytes) -> dict:
+    """The ECU's capture of the first low run it heard on the K-line."""
+    if len(b) < 16 or int.from_bytes(b[0:2], "little") != 0x4B43:
+        return {"present": False}
+    w = [int.from_bytes(b[i:i + 2], "little") for i in range(0, 16, 2)]
+    n = min(w[3], (len(b) - 16) * 8)
+    lv = [(b[16 + (i >> 3)] >> (i & 7)) & 1 for i in range(n)]
+    runs = []
+    for v in lv:
+        if runs and runs[-1][0] == v:
+            runs[-1][1] += 1
+        else:
+            runs.append([v, 1])
+    out = {"present": True, "state": ("armed, nothing heard", "recording",
+                                      "done")[w[1]] if w[1] < 3 else w[1],
+           "trigger_ms": w[2], "samples": n, "uart_bytes": w[4],
+           "triggers": w[5], "link_state": w[6],
+           "runs": " ".join("%s%d" % ("H" if v else "L", c)
+                            for v, c in runs[:60])}
+    # the sample at index 0 is the THIRD low millisecond: a 5-baud start
+    # bit began ~3 ms earlier; bit i is centred 100 + 200 i ms after it
+    if n >= 1900 and runs and runs[0][0] == 0 and runs[0][1] >= 140:
+        def at(ms):
+            k = ms - 3
+            return lv[k] if 0 <= k < n else None
+        bits = [at(100 + 200 * i) for i in range(1, 10)]
+        if None not in bits:
+            byte = sum(bit << i for i, bit in enumerate(bits[:8]))
+            out["five_baud"] = {"byte": "0x%02X" % byte,
+                                "stop_bit_high": bool(bits[8])}
+    return out
+
+
+def kline_forensics(ecu, sess) -> dict:
+    """What the ECU itself recorded about the K-line since boot: link and
+    KWP counters (OCH 842..849) and the capture. Read after every connect -
+    an OBD attempt that failed is visible here once the KKL is on pin 43
+    (the owner keeps the key on while moving it, so the RAM survives)."""
+    out = {}
+    body, _err, _ = ecu.link.och(842, 8)
+    if body:
+        ls, ks, kc, ld = (int.from_bytes(body[i:i + 2], "big")
+                          for i in (0, 2, 4, 6))
+        out["counters"] = {
+            "rate": ("57600", "115200", "124800", "10400")[ls & 3],
+            "locked": bool(ls & 0x10), "rate_changes": ls >> 8,
+            "kwp_phase": ks & 15, "five_baud_stage": (ks >> 4) & 7,
+            "good_inits": ks >> 8, "failed_inits": kc >> 8,
+            "foreign_addresses": kc & 255, "rate_evidence_events": ld & 255,
+            "sessions_ended_by_bad_frames": ld >> 8}
+    body, _err, _ = ecu.link.och(ecu.block + EXT_KLCAP, 256)
+    if body:
+        (sess.dir / "kline_capture.bin").write_bytes(bytes(body))
+        out["capture"] = decode_klcap(bytes(body))
+    sess.meta["ecu_kline"] = out
+    sess.save_meta()
+    c, k = out.get("counters"), out.get("capture", {})
+    if c:
+        sess.say("ECU K-LINE: %s%s, %d rate changes | KWP good inits %d, "
+                 "failed %d, foreign addresses %d | rate-evidence events %d"
+                 % (c["rate"], " locked" if c["locked"] else "",
+                    c["rate_changes"], c["good_inits"], c["failed_inits"],
+                    c["foreign_addresses"], c["rate_evidence_events"]))
+    if k.get("present"):
+        sess.say("ECU K-LINE CAPTURE: %s, %d ms, %d UART bytes, %d triggers"
+                 "%s" % (k["state"], k["samples"], k["uart_bytes"],
+                         k["triggers"],
+                         (" | 5-baud byte %s (stop bit %s)"
+                          % (k["five_baud"]["byte"],
+                             "ok" if k["five_baud"]["stop_bit_high"]
+                             else "LOW")) if "five_baud" in k else ""))
+        if k["samples"]:
+            sess.say("  line (ms): " + k["runs"][:200])
+    return out
 
 # ======================================================= V100: the groups ==
 # Declared by CHANNEL NAME; `windows()` derives the byte windows from the
@@ -254,7 +336,8 @@ GROUPS = {
         inj3RequestedUs inj3DeliveredUs inj4RequestedUs inj4DeliveredUs
         inj5RequestedUs inj5DeliveredUs inj6RequestedUs inj6DeliveredUs
         inj7RequestedUs inj7DeliveredUs inj8RequestedUs inj8DeliveredUs
-        runOn dtcActive1 dtcActive2 dtcActive3 dtcActive4 rstBootCount
+        runOn runOnMs nvmState nvmGeneration nvmCommits
+        dtcActive1 dtcActive2 dtcActive3 dtcActive4 rstBootCount
         cfgDirtyGroups cfgApplyRefused
         idleFloorX10 idleTrimX10 idleTargetRpm idleState idleTarget
         boostState boostCmdX10 boostReqX10 boostTargetX10 boostDuty boostCuts
@@ -564,6 +647,9 @@ class Link:
                     int(ok), err or "", round(ms, 2), nbytes, attempt])
 
     def exchange(self, payload: bytes, timeout=0.5, attempt=1):
+        # every timeout here was sized for 57600+; at 10400 (the vehicle
+        # K-line's fallback) the same bytes take 5.5 times longer
+        timeout *= max(1.0, 57600.0 / float(self.p.baud or 57600))
         req = envelope(payload)
         self.p.reset_input()
         t0 = time.perf_counter()
@@ -740,79 +826,192 @@ class Kline:
             time.sleep(0.05)
         return None, None
 
-    def kwp(self, link, rate):
-        """The VAG/KWP2000 vehicle entry. -> (stage reached, failure text)"""
+    # THE OBD SWEEP (2026-10-15, owner: "try everything possible with OBD").
+    # Every entry the ECU implements, slowest-to-arm first, three rounds; once
+    # an entry reaches IDENTIFY, every fast rate in turn - each with a fresh
+    # init, each proven by data reads - and 10400 if none holds. Every byte
+    # on the line goes to kline_bytes.csv.
+    ENTRIES = (("5-baud", "5baud", 0.3), ("5-baud (2 s idle)", "5baud", 2.0),
+               ("fast init", "fast", 0.3))
+    FAST_RATES = (115200, 124800, 57600)
+
+    def raw(self, link, stage, tx, rx):
+        self.s.row("kline_bytes", ["t", "path", "stage", "baud", "tx", "rx"],
+                   [self.s.t(), link.path, stage, link.p.baud,
+                    (tx or b"").hex(), (rx or b"").hex()])
+
+    def enter(self, link, kind="5baud", idle=0.3):
+        """The vehicle entry up to IDENTIFY. -> (stage, why, r); stage
+        "IDENTIFIED" when the ECU named itself."""
         p = link.p
-        r = {"rate": rate}
-        link.stage = "kwp 5-baud init"
-        p.five_baud(0x01)
-        sync = p.read(3, 0.8)
-        r["sync"] = sync.hex()
-        r["entry"] = "5-baud"
-        if not sync:
-            # ISO 14230 FAST INIT (2026-10-13, ME711_OBD_KLINE.md 6.2): the
-            # tester asserts the wake-up, so it does not need the quiet line
-            # the 5-baud byte needs - the robust entry on the car's shared bus
-            r["entry"] = "fast init"
-            p.wakeup()
-        elif sync != b"\x55\xEF\x8F":
-            return "BAD KEYBYTES", "sync/keybytes %s (want 55ef8f)" % sync.hex(), r
-        else:
+        r = {"entry": "5-baud" if kind == "5baud" else "fast init",
+             "idle_s": idle}
+        time.sleep(idle)                       # W5: the bus idle before
+        if kind == "5baud":
+            link.stage = "kwp 5-baud init"
+            p.five_baud(0x01)
+            sync = p.read(3, 0.8)
+            self.raw(link, "5-baud 0x01 -> sync", b"\x01", sync)
+            r["sync"] = sync.hex()
+            if not sync:
+                return "NO INIT RESPONSE", "no sync byte after the 5-baud " \
+                                           "address 0x01", r
+            if sync != b"\x55\xEF\x8F":
+                return "BAD KEYBYTES", "sync/keybytes %s (want 55ef8f)" \
+                    % sync.hex(), r
             link.stage = "kwp keybyte complement"
             p.write(b"\x70")
             echo = p.read(1, 0.3)
             fe = p.read(1, 0.3)
+            self.raw(link, "keybyte complement", b"\x70", echo + fe)
             r["complement"] = fe.hex()
             if fe != b"\xFE":
-                return "NO COMPLEMENT", "ECU complement %r (want fe), echo %r" % (
-                    fe.hex(), echo.hex()), r
-
-        def kwp_req(data, stage, timeout=0.5):
-            link.stage = stage
-            f = bytes([0x80 | len(data), 0x01, 0xF1]) + data
-            f += bytes([sum(f) & 0xFF])
-            t0 = time.perf_counter()
-            p.write(f)
-            e = p.read(len(f), 0.3)
-            h = p.read(1, timeout)
-            if not h:
-                link.log(stage, False, "timeout (echo %s)" % ("ok" if e == f
-                                                               else e.hex()),
-                         (time.perf_counter() - t0) * 1e3, len(e))
-                return None
-            n = h[0] & 0x3F
-            rest = p.read(2 + n + 1, 0.3)
-            fr = h + rest
-            ok = len(fr) == 3 + n + 1 and (sum(fr[:-1]) & 0xFF) == fr[-1]
-            link.log(stage, ok, None if ok else "bad frame %s" % fr.hex(),
-                     (time.perf_counter() - t0) * 1e3, len(fr))
-            return fr[3:3 + n] if ok else b""
-
-        d = kwp_req(b"\x81", "kwp StartCommunication")
+                return "NO COMPLEMENT", "ECU complement %r (want fe), echo " \
+                    "%r" % (fe.hex(), echo.hex()), r
+        else:
+            # ISO 14230 FAST INIT (2026-10-13, ME711_OBD_KLINE.md 6.2): the
+            # tester asserts the wake-up, so it does not need the quiet line
+            # the 5-baud byte needs
+            link.stage = "kwp fast init"
+            p.wakeup()
+            self.raw(link, "fast init wake-up", b"", b"")
+        d = self.kwp_req(link, b"\x81", "kwp StartCommunication")
         if not d or d[0] != 0xC1:
-            if r["entry"] == "fast init":
-                return "NO INIT RESPONSE", ("no sync byte after the 5-baud "
-                                            "address 0x01, and no answer to a "
-                                            "fast init"), r
+            if kind == "fast":
+                return "NO INIT RESPONSE", "no answer to a fast init", r
             return "STARTCOMM FAILED", "StartCommunication reply %r" % (
                 d.hex() if d is not None else None), r
-        d = kwp_req(b"\xB0HC", "kwp IDENTIFY")
+        d = self.kwp_req(link, b"\xB0HC", "kwp IDENTIFY")
         if not d or d[0] != 0xF0:
             return "IDENTIFY FAILED", "IDENTIFY reply %r" % (
                 d.hex() if d is not None else None), r
         r["identify"] = d[1:].decode("latin1", "replace")
-        d = kwp_req(bytes([0xB1, RATE_CODE.get(rate, 0x02)]), "kwp GOFAST")
-        if not d or d[0] != 0xF1:
-            return "GOFAST FAILED", "GOFAST reply %r" % (
-                d.hex() if d is not None else None), r
-        p.set_baud(rate)
-        link.stage = "after GOFAST"
+        return "IDENTIFIED", "", r
+
+    def kwp_req(self, link, data, stage, timeout=0.5):
+        p = link.p
+        link.stage = stage
+        f = bytes([0x80 | len(data), 0x01, 0xF1]) + data
+        f += bytes([sum(f) & 0xFF])
+        t0 = time.perf_counter()
+        p.write(f)
+        e = p.read(len(f), 0.3)
+        h = p.read(1, timeout)
+        if not h:
+            self.raw(link, stage, f, e)
+            link.log(stage, False, "timeout (echo %s)" % ("ok" if e == f
+                                                           else e.hex()),
+                     (time.perf_counter() - t0) * 1e3, len(e))
+            return None
+        n = h[0] & 0x3F
+        rest = p.read(2 + n + 1, 0.3)
+        fr = h + rest
+        self.raw(link, stage, f, e + fr)
+        ok = len(fr) == 3 + n + 1 and (sum(fr[:-1]) & 0xFF) == fr[-1]
+        link.log(stage, ok, None if ok else "bad frame %s" % fr.hex(),
+                 (time.perf_counter() - t0) * 1e3, len(fr))
+        return fr[3:3 + n] if ok else b""
+
+    def proven(self, link, reads=10):
+        """A rate holds when the ECU answers a probe AND data reads at it."""
         n, sig = self.direct_probe(link, 6)
         if not n:
-            return "TIMEOUT AFTER TRANSITION", ("no CRC-valid reply at %d after "
-                                                "GOFAST" % rate), r
-        r["signature"] = sig
-        return "OK", "", r
+            return None
+        link.stage = "rate proof"
+        good = sum(link.och(0, 64, retries=0)[0] is not None
+                   for _ in range(reads))
+        return sig if good >= reads - 1 else None
+
+    def gofast(self, link, rate, r):
+        """GOFAST `rate` after IDENTIFY. -> (stage, why, rate_used)"""
+        d = self.kwp_req(link, bytes([0xB1, RATE_CODE.get(rate, 0x02)]),
+                         "kwp GOFAST %d" % rate)
+        if not d or d[0] != 0xF1:
+            return "GOFAST FAILED", "GOFAST %d reply %r" % (
+                rate, d.hex() if d is not None else None), None
+        link.p.set_baud(rate)
+        link.stage = "after GOFAST %d" % rate
+        sig = self.proven(link)
+        if sig:
+            r["signature"] = sig
+            return "OK", "", rate
+        if rate == 10400:
+            return "TIMEOUT AFTER TRANSITION", "no data at 10400", None
+        # the line does not carry `rate`: the ECU goes back to 10400 by
+        # itself after 2 s without a valid request (and stays LOCKED there)
+        link.stage = "10400 fallback"
+        time.sleep(2.3)
+        link.p.set_baud(10400)
+        sig = self.proven(link, 4)
+        if sig:
+            r["signature"] = sig
+            return "FALLBACK", "%d does not hold, 10400 does" % rate, 10400
+        return "TIMEOUT AFTER TRANSITION", ("no CRC-valid reply at %d after "
+                                            "GOFAST, nor at 10400" % rate), None
+
+    def kwp(self, link, rate):
+        """One entry (5-baud, else fast init) and GOFAST `rate` (the direct
+        path and the key-cycle test). -> (stage, why, r)"""
+        stage, why, r = self.enter(link, "5baud", 0.0)
+        if stage == "NO INIT RESPONSE":
+            stage, why, r = self.enter(link, "fast", 0.0)
+        if stage != "IDENTIFIED":
+            return stage, why, r
+        stage, why, used = self.gofast(link, rate, r)
+        if stage == "FALLBACK":
+            self.s.say("KLINE: %s - logging at 10400 (slow)" % why)
+            stage = "OK"
+        r["rate_used"] = used or rate
+        return stage, why, r
+
+    def sweep(self, link):
+        """The OBD path: every entry, every rate. -> (stage, why, r, tries)"""
+        tries = []
+        last = ("NO INIT RESPONSE", "nothing tried", {})
+        for rnd in range(1, 4):
+            for label, kind, idle in self.ENTRIES:
+                stage, why, r = self.enter(link, kind, idle)
+                tries.append({"round": rnd, "entry": label, "stage": stage,
+                              "detail": why, "sync": r.get("sync")})
+                self.s.say("KLINE: OBD round %d, %s: %s%s" % (
+                    rnd, label, stage, (" - " + why) if why else ""))
+                last = (stage, why, r)
+                if stage != "IDENTIFIED":
+                    continue
+                # the entry works: the rate is the question now
+                fell_back = False
+                for i, rate in enumerate(self.FAST_RATES):
+                    if i:
+                        stage, why, r = self.enter(link, kind, 0.5)
+                        if stage != "IDENTIFIED":
+                            tries.append({"rate": rate, "stage": stage,
+                                          "detail": why})
+                            continue
+                    stage, why, used = self.gofast(link, rate, r)
+                    tries.append({"entry": label, "rate": rate,
+                                  "stage": stage, "detail": why})
+                    self.s.say("KLINE: OBD %s GOFAST %d: %s%s" % (
+                        label, rate, stage, (" - " + why) if why else ""))
+                    if stage == "OK":
+                        r["rate_used"] = rate
+                        return "OK", "", r, tries
+                    fell_back |= stage == "FALLBACK"
+                    last = (stage, why, r)
+                if fell_back:
+                    # no fast rate holds: 10400 does - a fresh entry, stay
+                    stage, why, r = self.enter(link, kind, 0.5)
+                    if stage == "IDENTIFIED":
+                        stage, why, used = self.gofast(link, 10400, r)
+                        tries.append({"entry": label, "rate": 10400,
+                                      "stage": stage, "detail": why})
+                        if stage == "OK":
+                            r["rate_used"] = 10400
+                            self.s.say("KLINE: no fast rate holds on this "
+                                       "line - logging at 10400 (slow)")
+                            return "OK", "", r, tries
+                    last = (stage, why, r)
+                return last + (tries,)    # the init works, the rates do not
+        return last + (tries,)
 
     def attempt(self, path):
         """One physical path. -> (link or None, dict)."""
@@ -828,19 +1027,34 @@ class Kline:
         if heard:
             self.s.say("KLINE: %s path - %d bytes heard on an idle bus "
                        "(another module is talking?)" % (path, len(heard)))
-        n, sig = self.direct_probe(link)
-        if n:
-            res.update(stage="OK", how="direct %d baud" % self.baud,
-                       attempts=n, signature=sig)
-            return link, res
-        res["direct_probe"] = "no reply at %d baud" % self.baud
-        self.s.say("KLINE: %s path - no reply to a direct probe at %d; "
-                   "trying the VAG/KWP cold init" % (path, self.baud))
-        stage, why, r = self.kwp(link, self.baud)
-        res.update(kwp=r, stage=stage, detail=why)
+        if path != "OBD":
+            n, sig = self.direct_probe(link)
+            if n:
+                res.update(stage="OK", how="direct %d baud" % self.baud,
+                           attempts=n, signature=sig)
+                return link, res
+            res["direct_probe"] = "no reply at %d baud" % self.baud
+            self.s.say("KLINE: %s path - no reply to a direct probe at %d; "
+                       "trying the VAG/KWP cold init" % (path, self.baud))
+            for att in range(1, 3):
+                stage, why, r = self.kwp(link, self.baud)
+                res.update(kwp=r, stage=stage, detail=why, kwp_attempts=att)
+                if stage == "OK":
+                    res["how"] = "KWP %s -> %d" % (r.get("entry", "5-baud"),
+                                                   r.get("rate_used",
+                                                         self.baud))
+                    return link, res
+                time.sleep(0.4)
+            port.close()
+            return None, res
+        # THE OBD PATH: no TunerStudio probes first - through the instrument
+        # cluster the car's 115200 probes only ever arrived as framing errors
+        # (5 sessions) - straight to the vehicle entry, as a VAG tester does.
+        stage, why, r, tries = self.sweep(link)
+        res.update(kwp=r, stage=stage, detail=why, sweep=tries)
         if stage == "OK":
-            res["how"] = "KWP %s -> GOFAST %d" % (r.get("entry", "5-baud"),
-                                                  self.baud)
+            res["how"] = "KWP %s -> %d" % (r.get("entry", "5-baud"),
+                                           r.get("rate_used", 0))
             return link, res
         port.close()
         return None, res
@@ -1043,6 +1257,7 @@ class Ecu:
         self.s.meta.setdefault("boot_history", {})[tag] = recs
         self.s.save_meta()
         self.s.say("BOOT HISTORY (%s): %d boots recorded" % (tag, len(recs)))
+        return recs
 
     def witness_live(self):
         """The LIVE half of the reset witness (hcrtmon711.c updates it all
@@ -1082,7 +1297,7 @@ class Ecu:
         if prev.get("magic") == 0x5257:
             self.s.say(
                 "RESET WITNESS (%s) - the last state BEFORE this boot: uptime "
-                "%d ms, %d rpm, battery %.1f V, S5500 frames ok %d / checksum "
+                "%d ms (16-bit: modulo 65.5 s), %d rpm, battery %.1f V, S5500 frames ok %d / checksum "
                 "errors %d / timeouts %d, worst S5500 gap %d ms, monitoring "
                 "mismatches %d (health/expect 0x%04X), worst main-loop pass "
                 "%.1f ms, watchdog gap %d ms, ETB status 0x%04X; S5500 "
@@ -1680,6 +1895,8 @@ class Runtime:
                       "onchange": 0, "snapshots": 0, "reboots": 0}
         self.kwp = None           # Kline.kwp, when the link needed it
         self.on_reboot = None     # the guided session re-applies RAM tests
+        self.ko = None            # the key-off being followed (keyoff_*)
+        self.keyoffs = []
 
     # -------------------------------------------------------- snapshots ----
     def snapshot(self, reason):
@@ -1785,19 +2002,163 @@ class Runtime:
         return "RUNNING" if fl & 1 else ("CRANKING" if fl & 2 or rpm else
                                          "STOPPED")
 
+    # ------------------------------------------- THE KEY-OFF CHECK (9a) ----
+    # 2026-10-15, owner: the recorder checks every key-off by itself, no
+    # prompts: how long run-on held the ECU up, whether a pending Burn
+    # finished, whether the ECU came back with a reboot and why (its own
+    # boot history), and how long the hot restart took. One verdict each.
+    RO = {0: "RUN", 1: "HOLD", 2: "RELEASED", 3: "TIMEOUT",
+          4: "not configured", 5: "booted during key-off"}
+
+    def keyoff_feed(self, row):
+        ro = row.get("runOn")
+        if ro is None:
+            return
+        ro = int(ro)
+        off, st = (ro >> 8) & 1, ro & 255
+        ko = self.ko
+        if off and (ko is None or ko.get("done")):
+            nst = int(row.get("nvmState") or 0) & 0xFF
+            self.ko = ko = {
+                "t_off": self.s.t(), "rpm": self.latest.get("RPMValue"),
+                "nvm_state": nst, "gen": row.get("nvmGeneration"),
+                "commits": row.get("nvmCommits"), "states": [],
+                "boot": self.boot}
+            self.s.say("KEY-OFF: seen at %.1f s (rpm %s)%s" % (
+                ko["t_off"], ko["rpm"],
+                " - a Burn is PENDING" if nst == 2 else ""))
+        if ko is None or ko.get("done") or "t_drop" in ko:
+            return
+        name = self.RO.get(st, st)
+        if not ko["states"] or ko["states"][-1] != name:
+            ko["states"].append(name)
+        ko["run_on_ms"] = row.get("runOnMs")
+        ko["gen_now"] = row.get("nvmGeneration")
+        ko["nvm_state_now"] = int(row.get("nvmState") or 0) & 0xFF
+        if not off:
+            ko["back_on_s"] = round(self.s.t() - ko["t_off"], 1)
+            if self.boot is not None and ko.get("boot") is not None                     and self.boot != ko["boot"]:
+                # 2026-10-15 car: this row came from a NEW boot - the ECU
+                # powered down during the key-off, it did not stay up
+                ko["powered_down"] = True
+                self.s.say("KEY-OFF: the key came back ON after %.1f s - the "
+                           "ECU had POWERED DOWN (boot #%s -> #%s, run-on %s)"
+                           % (ko["back_on_s"], ko["boot"], self.boot,
+                              " > ".join(ko["states"])))
+                self.keyoff_close("powered down, key back on")
+                return
+            self.s.say("KEY-OFF: the key came back ON after %.1f s - the ECU "
+                       "stayed up (run-on %s)" % (ko["back_on_s"],
+                                                   " > ".join(ko["states"])))
+            self.keyoff_close("key back on before power-down")
+
+    def keyoff_link_lost(self):
+        ko = self.ko
+        if ko and not ko.get("done") and "t_drop" not in ko:
+            ko["t_drop"] = self.s.t()
+            ko["run_on_s"] = round(ko["t_drop"] - ko["t_off"], 1)
+            self.s.say("KEY-OFF: the ECU went quiet %.1f s after the key-off "
+                       "(run-on %s)" % (ko["run_on_s"],
+                                         " > ".join(ko["states"]) or "?"))
+
+    def keyoff_link_back(self, entry):
+        ko = self.ko
+        if not ko or ko.get("done") or "t_drop" not in ko:
+            return
+        ko["t_back"] = self.s.t()
+        ko["down_s"] = round(ko["t_back"] - ko["t_drop"], 1)
+        if entry:
+            ko["gen_after"] = entry.get("nvm_generation")
+            ko["boot_after"] = entry.get("boot_count")
+        recs = None
+        try:
+            recs = self.e.boot_history("keyoff_%d" % (len(self.keyoffs) + 1))
+        except Exception:
+            pass
+        if recs:
+            last = recs[-1]
+            ko["reboot"] = {k: last.get(k) for k in (
+                "reset_kind", "raw_reset", "prev_uptime_ms", "prev_runon",
+                "prev_min_batt_v", "kl15_at_boot", "prev_held_power")}
+        rb = ko.get("reboot") or {}
+        self.s.say("KEY-OFF: the ECU is back after %.1f s down - boot #%s, "
+                   "reset %s, previous run-on %s" % (
+                       ko["down_s"], ko.get("boot_after"),
+                       rb.get("reset_kind", "?"), rb.get("prev_runon", "?")))
+        ko["waiting_restart"] = True
+
+    def keyoff_engine(self, state):
+        ko = self.ko
+        if not ko or not ko.get("waiting_restart"):
+            return
+        if state == "CRANKING" and "t_crank" not in ko:
+            ko["t_crank"] = self.s.t()
+        elif state == "RUNNING":
+            ko["t_run"] = self.s.t()
+            ko["hot_restart_s"] = round(
+                ko["t_run"] - ko.get("t_crank", ko["t_run"]), 2)
+            self.s.say("HOT RESTART: running %.2f s after cranking began"
+                       % ko["hot_restart_s"])
+            self.keyoff_close("hot restart")
+
+    def keyoff_close(self, how):
+        ko = self.ko
+        if not ko or ko.get("done"):
+            return
+        ko["done"] = True
+        ko["how"] = how
+        held = "HOLD" in ko["states"] or (ko.get("run_on_s") or 0) >= 1.0
+        burn = ""
+        ok = True
+        if ko["nvm_state"] == 2:
+            g0 = ko.get("gen")
+            g1 = ko.get("gen_after", ko.get("gen_now"))
+            fin = g0 is not None and g1 is not None and g1 != g0
+            burn = "; the pending Burn %s" % ("FINISHED (gen %s -> %s)"
+                                              % (g0, g1) if fin
+                                              else "did NOT finish")
+            ok &= fin
+        rb = ko.get("reboot") or {}
+        txt = ("run-on %s%s%s%s%s" % (
+            " > ".join(ko["states"]) or "not seen",
+            (", ECU down after %.1f s" % ko["run_on_s"])
+            if "run_on_s" in ko else "",
+            burn,
+            ("; came back: %s, previous run-on %s" % (
+                rb.get("reset_kind"), rb.get("prev_runon"))) if rb else "",
+            ("; hot restart %.2f s" % ko["hot_restart_s"])
+            if "hot_restart_s" in ko else
+            (" (key back on, %.1f s%s)" % (
+                ko["back_on_s"],
+                ", the ECU had powered down" if ko.get("powered_down")
+                else "")
+             if "back_on_s" in ko else "")))
+        ok &= held or "back_on_s" in ko
+        ko["verdict"] = "PASS" if ok else "WARNING"
+        ko["text"] = txt
+        self.s.verdict("KEYOFF", ko["verdict"], txt)
+        self.keyoffs.append({k: v for k, v in ko.items()
+                             if k != "waiting_restart"})
+        self.stats["keyoffs"] = self.keyoffs
+
     def reconnect(self):
         link = self.e.link
+        self.keyoff_link_lost()
         self.stats["drops"] += 1
         t0 = time.monotonic()
         self.s.say("KLINE: DROPOUT - reconnecting")
         link.stage = "runtime reconnect"
-        t_kwp = t0 + 5.0
+        # 2026-10-15 car: over OBD the entry IS the way back (the ECU drops a
+        # silent tester's rate after 1.5 s) - re-enter after 1 s, then every
+        # 2.5 s; a direct cable keeps the old 5 s
+        obd = link.path == "OBD"
+        t_kwp = t0 + (1.0 if obd else 5.0)
         while not self._stopped():
             body, err, ms = link.exchange(b"S", 0.4)
             if body is None and self.kwp and time.monotonic() >= t_kwp:
                 # an ECU that restarted behind an OBD path that needs the
-                # VAG/KWP entry: try it every 5 s
-                t_kwp = time.monotonic() + 5.0
+                # VAG/KWP entry
+                t_kwp = time.monotonic() + (2.5 if obd else 5.0)
                 stage, why, _r = self.kwp(link, link.p.baud)
                 self.s.say("KLINE: reconnect via KWP: %s %s" % (stage, why))
                 if stage == "OK":
@@ -1814,7 +2175,7 @@ class Runtime:
                             0, 1])
                 # V100 §3: a reconnect may be an ECU power cycle, so the
                 # configuration and the counters are re-read, not assumed.
-                self.snapshot("reconnect")
+                self.keyoff_link_back(self.snapshot("reconnect"))
                 return True
             time.sleep(0.2)
         return False
@@ -1895,10 +2256,14 @@ class Runtime:
             if "ecuMs" in row and self.ring:
                 self.ring.ms_ref = (int(row["ecuMs"]), t)
             self.check_reboot(row)
+            # 2026-10-15 car: runOn is in the fast block too - a key-off the
+            # ECU powers down from within one medium period was missed
+            self.keyoff_feed(row)
             st = self.engine_state(row)
             if st != self.state:
                 s.say("ENGINE: %s (rpm %s)" % (st, row.get("RPMValue")))
                 self.state = st
+                self.keyoff_engine(st)
             now = time.monotonic()
             if med.due(now):
                 v, _err = med.read()
@@ -1906,6 +2271,7 @@ class Runtime:
                     tm = med.write(v, lead=self._lead()[1:])
                     self._keep(v, tm, "medium")
                     self.note_changes(v, tm)
+                    self.keyoff_feed(v)
                     self.stats["medium_rows"] = med.rows
                 now = time.monotonic()
             if slow.due(now):
@@ -1945,6 +2311,8 @@ class Runtime:
                           n_rate / (now - t_rate), row.get("_rtt_ms", 0),
                           med.rows, slow.rows, self.stats["events"]))
                 t_rate, n_rate = now, 0
+        if self.ko and not self.ko.get("done") and "t_drop" in self.ko:
+            self.keyoff_close("session ended before a restart")
         if self.ring:
             evs = self.ring.poll()
             self.ring.write(evs)
@@ -3528,6 +3896,10 @@ def run(a, open_port=None, stdin_q=None) -> int:
                          cfg.get("lambdaHeatPolicy"), cfg.get("trigAngleX10")))
         ecu.boot_history("start")
         ecu.reset_witness("start")
+        try:
+            kline_forensics(ecu, sess)
+        except Exception as e:          # an older image: nothing there
+            sess.say("ECU K-LINE: not readable (%s)" % e)
         ring = Ring(ecu, sess)
         evs = ring.poll(first=True)
         ring.write(evs)
@@ -3559,16 +3931,24 @@ def run(a, open_port=None, stdin_q=None) -> int:
         # --------------------------------------------------- 3. RUNTIME
         if a.runtime:
             sess.say("=== PHASE 3: ENGINE RUNTIME FLIGHT RECORDER ===")
-            if stdin_q is None and not a.no_prompt and a.duration is None:
-                def wait_enter():
-                    try:
-                        input()
-                    except EOFError:
-                        return
-                    stop_evt.set()
-                threading.Thread(target=wait_enter, daemon=True).start()
             rt = Runtime(ecu, sess, ring, stop_evt, a.duration,
                          profile=profile)
+            if stdin_q is None and not a.no_prompt and a.duration is None:
+                sess.say(">>> RECORDING. Type a word + ENTER to mark a moment "
+                         "(e.g. 'stumble'); ENTER alone stops.")
+
+                def wait_enter():
+                    while True:
+                        try:
+                            line = input().strip()
+                        except EOFError:
+                            return
+                        if not line:
+                            stop_evt.set()
+                            return
+                        rt.marker = line
+                        sess.say("MARKER: %s" % line)
+                threading.Thread(target=wait_enter, daemon=True).start()
             rt.kwp = kl.kwp
             st = rt.run()
             sess.meta["phases"]["runtime"] = st
@@ -3668,8 +4048,11 @@ def parse(argv=None):
     ap.add_argument("--resume", metavar="SESSION_FOLDER",
                     help="continue a guided session in that folder")
     ap.add_argument("--recorder", action="store_true",
-                    help="the plain flight recorder (the pre-2026-10-10 "
-                         "default): K-line + record until ENTER")
+                    help="the flight recorder (THE DEFAULT since 2026-10-14)")
+    ap.add_argument("--guided", action="store_true",
+                    help="the guided walkthrough (pedal, throttle, start, "
+                         "idle, tip-ins, key-off) - only when one of those "
+                         "systems is being investigated")
     ap.add_argument("--time-scale", dest="time_scale", type=float,
                     default=1.0, help=argparse.SUPPRESS)
     a = ap.parse_args(argv)
@@ -3677,13 +4060,16 @@ def parse(argv=None):
         a.profile = "reduced"
     if a.full:
         a.kline = a.autocal = a.runtime = True
-    a.guided = False
+    # THE DEFAULT IS THE RECORDER (owner, 2026-10-14): "why should I press
+    # the pedal again and again to log when we already know that part works".
+    # Connect (OBD first, automatically), then record the engine's runtime
+    # variables until ENTER; type a word + ENTER to drop a marker. The guided
+    # walkthrough is --guided (or --phase / --resume).
+    a.guided = bool(a.guided or a.phase or a.resume)
+    if not a.guided and not (a.kline or a.autocal or a.runtime):
+        a.recorder = True
     if a.recorder:
-        a.kline = a.runtime = True
-    elif not (a.kline or a.autocal or a.runtime):
-        # THE DEFAULT (owner, 2026-10-10): the GUIDED session - every system
-        # the engine needs, phase by phase, with a PASS / WARN / FAIL report.
-        a.guided = True
+        a.runtime = True
     return a
 
 

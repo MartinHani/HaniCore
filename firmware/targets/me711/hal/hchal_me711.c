@@ -460,7 +460,7 @@ void hc_hal_trig_disarm(void)
  * That is the single most important decision here and it is deliberate. The
  * CPU pin does not drive a coil or an injector; it drives the INPUT of a
  * CJ920 / CJ420 low-side stage. THE ACTIVE POLARITY OF THOSE STAGES IS NOT
- * ESTABLISHED ANYWHERE IN THIS REPOSITORY - docs/ARCHITECTURE.md says in
+ * ESTABLISHED ANYWHERE IN THIS REPOSITORY - the maintainer's design notes says in
  * as many words that "polarity and cavity are what the test measures", and
  * the same is true of every EV and ZUE cavity.
  *
@@ -920,7 +920,7 @@ void hc_hal_out(unsigned char sem, unsigned char on)
     }
 
     /* OFF IS HIGH-IMPEDANCE, NOT DRIVEN LOW, AND THAT IS A SAFETY REGRESSION
-     * BEING REPAIRED - see docs/CONTRIBUTING.md.
+     * BEING REPAIRED - see the maintainer's design notes.
      *
      * Until V62 the bench owned these pins directly and its dbw_disarm() put
      * the direction back to INPUT on the way out. V63 routed the bridge

@@ -33,4 +33,12 @@
     ((unsigned int)(((unsigned int)hc_cal_u8(off) << 8)                   \
                     | (unsigned int)hc_cal_u8((unsigned int)(off) + 1u)))
 
+/* VARIABLE OFFSETS. With a constant offset the macros above fold to one
+   SRAM or near read; with a variable one they inline the whole three-way
+   test, ~40 bytes per call site. These are the same reads behind one far
+   call (hc_config_manager.c) - use them where the offset is computed
+   (2026-10-14: far code space for the auxiliary functions). */
+unsigned char far hc_cal_u8v(unsigned int off);
+unsigned int  far hc_cal_u16v(unsigned int off);
+
 #endif

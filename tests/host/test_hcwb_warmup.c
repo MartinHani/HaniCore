@@ -206,6 +206,15 @@ int main(void)
     m.diag_force = 0xFFu;               /* ... with the DIAG kept clean, so
                                            ONLY the UR evidence can decide   */
     run(&w, &m, 90000u);
+    /* 2026-10-14: with the engine STOPPED a railed UR cannot tell "no
+       sensor" from "no heater feed yet" (VAG: H+ from the pump relay), so
+       it PARKS - no fault before the start. The engine turning re-arms the
+       warm-up and the same evidence then faults as OPEN_CELL. */
+    printf("O1 no sensor, engine stopped: state %u, fault %u (parked)\n",
+           w.state, w.fcode);
+    assert(w.state == HCWB_ST_WAIT && w.fcode == HCWB_F_NONE);
+    m.running = 1u;
+    run(&w, &m, 90000u);
     printf("O1 no sensor, clean DIAG: state %u, fault %u\n", w.state, w.fcode);
     assert(w.state == HCWB_ST_FAULT);
     assert(w.fcode == HCWB_F_OPEN_CELL);

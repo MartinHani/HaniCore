@@ -26,7 +26,7 @@ class Rig(C.Rig):
         self.ms=(self.ms+dt)&65535;self.put('hc_tick_ms',self.ms)
         self('hc_hal_main_sample',14,0xe000|500,1,self.ms)
         self.put('eng_sensor_err',0 if valid else C.d((C.SHARED/'engine/hcengine.h').read_text(),'ENG_ERR_MAP'));self.put('eng_map_kpa_x10',pressure if valid else 0)
-        self.put('eng_tps_x10',tps);self('hc_load_select',rpm,tps)
+        self.put('eng_tps_x10',tps);self('hc_load_select',tps)  # 2026-10-16: rpm fed only the retired standstill ambient learn
     def hog(self,raw,tag=8,fresh=True):
         """One accepted S5500 frame whose window slot 8 carries `raw` with
         ADDAT channel `tag` (the onboard sensor is ASIC AN8)."""
@@ -52,31 +52,40 @@ def main():
     for p in (600,1000,2000,4000):
         r.step(p);rho=r('hc_af_density_x1000',r.val('effective'),r.val('temperature'));vals.append(rho)
     check('Continuous pressure produces linear density, no pressure squared',abs(vals[2]/vals[1]-2)<.01 and abs(vals[3]/vals[1]-4)<.01,str(vals))
+    # 2026-10-16 (owner): the ambient is ALWAYS the onboard sensor (HOG, ASIC
+    # AN8, hPa = counts x 1265/1024 - me711_ambient_pressure.py); the page's
+    # ambientSource is not read. 729 counts = 900 hPa, 828 = 1022 (the car,
+    # 2026-10-03). A missing / implausible sample HOLDS the last good one for
+    # ambientMaxAge; only then the fault value (densityReference, flag 4).
     r.model(3,2,2);r.cfg('BARO_SOURCE',1,True)
-    for _ in range(51):r.step(900,rpm=0)
-    check('Stopped valid pressure capture has explicit ambient provenance',r.val('ambient')==900 and r.val('ambient_source')==1 and r.val('ambient_valid')==1)
+    r.hog(729);r.step(900,rpm=0)
+    check('The ambient is the onboard sensor whatever ambientSource says',r.val('ambient')==900 and r.val('ambient_source')==2 and r.val('ambient_valid')==1 and not(r.val('flags')&4),str([r.val(n) for n in ['ambient','ambient_source','ambient_valid','flags']]))
     results=[]
     for p in (899,900,949,950,951,1050,1149,1150,1151):
-        r.step(p);results.append((p,r.val('effective'),r.val('blend')))
+        r.hog(729);r.step(p);results.append((p,r.val('effective'),r.val('blend')))
     reference=lambda p:900+max(p-900,0)*min(max((p-900-50)/200,0),1)
     check('Finite BARO-relative blend matches continuous independent reference',results[3][1]==900 and results[7][1]==1150 and all(abs(e-reference(p))<1.01 for p,e,w in results),str(results))
     r.cfg('BLEND_FULL',50);check('Equal blend thresholds are rejected',bool(r('hc_validate',0)&C.VAL['HC_VAL_FAULT_STRATEGY']))
     r.step(1050);check('Bad ordering cannot divide or emit a valid new model',r.val('effective')==0 and r.val('flags')&1)
     r.cfg('BLEND_FULL',250);r.cfg('BARO_MAX_AGE',1)
-    for _ in range(52):r.step(1200,rpm=3000)
-    check('Stopped ambient capture expires terminally into fixed fallback',r.val('ambient_valid')==0 and r.val('ambient_source')==0 and r.val('ambient')==1013)
-    for _ in range(700):r.step(1200,rpm=3000,dt=100)
-    check('Millisecond wrap cannot resurrect expired BARO',r.val('ambient_valid')==0 and r.val('ambient_source')==0)
-    # Onboard sensor: hPa = counts x 1265/1024 (this ECU's DSUGRAD/DSUOFS,
-    # me711_ambient_pressure.py), only from a fresh AN8-tagged sample inside
-    # the OEM's own 400..1200 hPa window. 828 counts = the car on 2026-10-03.
-    r.cfg('BARO_SOURCE',2,True);r.hog(828);r.step(2000)
+    r.hog(729);r.step(1000)
+    for _ in range(10):r.hog(729,fresh=False);r.step(1000)
+    check('A missing onboard sample holds the last good reading (not the fixed value)',r.val('ambient')==900 and r.val('ambient_valid')==1 and not(r.val('flags')&4),str([r.val(n) for n in ['ambient','ambient_valid','flags']]))
+    for _ in range(52):r.hog(729,fresh=False);r.step(1000)
+    check('A held reading expires into the fault value after ambientMaxAge',r.val('ambient_valid')==0 and r.val('ambient_source')==0 and r.val('ambient')==1013 and r.val('flags')&4)
+    for _ in range(700):r.hog(729,fresh=False);r.step(1000,dt=100)
+    check('Millisecond wrap cannot resurrect an expired reading',r.val('ambient_valid')==0 and r.val('ambient_source')==0)
+    r.cfg('BARO_MAX_AGE',3600)
+    r.hog(828);r.step(2000)
     check('Onboard sensor: fresh AN8 sample is the ambient, by the target transfer',r.val('ambient')==1022 and r.val('ambient_source')==2 and r.val('ambient_valid')==1 and not(r.val('flags')&4),str([r.val(n) for n in ['ambient','ambient_source','ambient_valid','flags']]))
     r.hog(828);r.step(1172)
     check('Charge blend is relative to the onboard ambient',abs(r.val('effective')-1097)<=1 and r.val('blend')==500,str([r.val('effective'),r.val('blend')]))
     for raw,kw,why in ((828,{'fresh':False},'stale'),(828,{'tag':7},'not AN8'),(973,{},"above 1200 hPa"),(323,{},'below 400 hPa')):
+        r.hog(828);r.step(2000)
         r.hog(raw,**kw);r.step(2000)
-        check('Onboard sensor: %s sample falls back to the fixed reference'%why,r.val('ambient_valid')==0 and r.val('ambient_source')==0 and r.val('ambient')==1013 and r.val('flags')&4,str([r.val(n) for n in ['ambient','ambient_source','flags']]))
+        check('Onboard sensor: a %s sample holds the last good reading'%why,r.val('ambient_valid')==1 and r.val('ambient_source')==2 and r.val('ambient')==1022 and not(r.val('flags')&4),str([r.val(n) for n in ['ambient','ambient_source','flags']]))
+    r.model(1,0,0);r.hog(729);r.step(valid=False)
+    check('Pure Alpha-N density is the onboard ambient, not 1013',r.val('effective')==900,str(r.val('effective')))
     r.model(3,2,1);r.step(valid=False);r('hc_load_protect',3000,1000)
     check('Lost authoritative pressure cuts fuel under load',bool(r.g16('eng_fuelcut')&16))
     r.step(1013);r('hc_load_protect',3000,1000)

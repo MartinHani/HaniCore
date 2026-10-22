@@ -52,7 +52,7 @@
 /* ================================== the calibration page =================
  *
  * TWO REGIONS, ONE FLAT PAGE, exactly the shape Bosch Motorsport's MS 4 Sport
- * uses (see docs/ARCHITECTURE.md): all 675 of its calibration
+ * uses (see the maintainer's design notes): all 675 of its calibration
  * parameters - 74 maps, 108 curves, 489 scalars - live in ONE contiguous 32 KB
  * page, mirrored between flash and RAM.
  *
@@ -185,7 +185,19 @@
    proven; mode ON there is observable as a request but cannot drive a pin. */
 #define CFG_MAIN_RELAY_MODE     73      /* u8   0 OFF, 1 ON, 2 AUTO         */
 #define CFG_MAIN_RELAY_GRACE_MS 74      /* u16  mismatch debounce           */
-#define CFG_RESERVED            76      /* to HC_CFG_CORE - 1               */
+/* The tachometer output's frequency scale (2026-10-16, car: the VAG cluster
+   read ~300 rpm high): %, 0 = 100 (a page from before reads exact). A
+   reserved byte of version 1, like the relay fields above. */
+#define CFG_TACHO_SCALE         76      /* u8   %, 0 = 100                  */
+#define CFG_PAD_77              77      /* u8   alignment pad               */
+/* IGNITION UNDER BOOST (2026-10-16): a timing correction by the pressure
+   ABOVE AMBIENT (charge or manifold sensor - eng_map - minus the onboard
+   ambient), added like the CLT/IAT corrections (hcigncorr711.c). The
+   Link G4 "ignition trim by MAP" / Haltech "ignition boost correction"
+   idea: a throttle-axis ignition table cannot see boost. 0 = off. */
+#define CFG_IGN_BOOST_AX        78      /* u16[8] boost above ambient, 0.1 kPa */
+#define CFG_IGN_BOOST_CORR      94      /* s16[8] correction, 0.1 deg       */
+#define CFG_RESERVED            110     /* to HC_CFG_CORE - 1               */
 
 #define MAIN_RELAY_OFF           0u
 #define MAIN_RELAY_ON            1u

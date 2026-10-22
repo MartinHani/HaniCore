@@ -306,7 +306,7 @@ unsigned char hcts_cfg_burn(void);
  * against a 10 ms S5500 supervision raster that is serviced ONLY from the main
  * loop (hc_asic_start_service()). A single routine TunerStudio realtime poll
  * would starve it for SEVEN rasters. That is precisely the V15 defect
- * (docs/ARCHITECTURE.md), where a ~127 ms blocking
+ * (the maintainer's design notes), where a ~127 ms blocking
  * bench print reset the ECU at ~140 ms every boot.
  *
  * So every bounded wait in this file calls hcts_target_yield(). A target

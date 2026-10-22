@@ -324,6 +324,37 @@ def main_one(stem):
               abs(t_rich + limr * 10) <= 2,
               "trim %+.1f %% (limit -%d %%), state %d region %d, cut 0x%04X"
               % (t_rich / 10, limr, stw & 255, stw >> 8, r.g16("eng_fuelcut")))
+
+    # ------------------------------------------- 10 injector pressure (2026-10-15)
+    # rusEFI injectorCompensationMode: the flow scales with sqrt(pressure
+    # across the injector / its test pressure); none = as rated.
+    if has("hc_aux_fuel_kpa"):
+        if lam_addr is not None:
+            r.m.w16(lam_addr, 0)                      # no closed-loop trim
+        mo, ro = off("CFG_U_INJ_PRESS_MODE"), off("CFG_U_FUEL_REG_KPA")
+        r("hc_cal_set_u16", off("CFG_U_INJ_REF_KPA"), 300)
+
+        def ti_at(mode, reg):
+            r("hc_cal_set_u8", mo, mode)
+            r("hc_cal_set_u16", ro, reg)
+            return tick(r, 2500, 20, 378, 30)["ti"]
+        t0 = ti_at(0, 330)
+        t1 = ti_at(1, 330)
+        t2 = ti_at(1, 270)
+        t3 = ti_at(3, 330)
+        r("hc_cal_set_u8", mo, 1)
+        r("hc_cal_set_u16", ro, 300)
+        q1, q2, q3 = t1 / t0, t2 / t0, t3 / t0
+        check("inj pressure: none -> as rated; regulator 330/300 kPa -> "
+              "x sqrt(300/330) = 0.953",
+              abs(q1 - 0.9535) <= 0.01, "ti %d -> %d us (x%.4f)" % (t0, t1, q1))
+        check("inj pressure: regulator 270/300 kPa -> x sqrt(300/270) = 1.054",
+              abs(q2 - 1.0541) <= 0.01, "ti %d -> %d us (x%.4f)" % (t0, t2, q2))
+        check("inj pressure: sensed rail, no sensor -> the fixed-rail value "
+              "(charge sensor: manifold = ambient)",
+              abs(q3 - q1) <= 0.005, "x%.4f vs x%.4f" % (q3, q1))
+    else:
+        check("inj pressure compensation present (hc_aux_fuel_kpa)", False)
     return FAILS
 
 

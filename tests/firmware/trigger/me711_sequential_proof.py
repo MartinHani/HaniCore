@@ -14,7 +14,7 @@ knows the PHYSICAL truth: cylinder 1's compression TDC is at physical cycle
 angle 78, cylinder 3's at 258, 4's at 438, 2's at 618 - so every pin event is
 graded against the engine, not against the firmware's own coordinates.
 
-WHAT IS CHECKED (docs/ARCHITECTURE.md):
+WHAT IS CHECKED (the maintainer's design notes):
   S1 crank-only page, sequential strategies: the FALLBACK - each injector two
      half pulses per cycle, each coil a spark at its compression TDC and one
      360 later; mass per intake = the cycle's.

@@ -56,6 +56,11 @@ DIFF WRITE + verify:
 
    py .\hanicore_me7boot.py --port COM3 diffWrite HaniCore.bin --verify
 
+HaniCore ME7.1.1: new code, calibration store (0x70000.., SA10..SA18) kept as
+the ECU has it, pre-write read kept as the rollback:
+
+   py .\hanicore_me7boot.py --port COM3 diffWrite HaniCore.bin --keep-from 0x70000 --pre-read-dump before.bin --verify-dump after.bin
+
 Verify an already-flashed image without writing:
 
    py .\hanicore_me7boot.py --port COM3 verify HaniCore.bin

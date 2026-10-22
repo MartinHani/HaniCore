@@ -832,14 +832,20 @@ static void dbw_step(unsigned int now_ms, unsigned int rpm, unsigned char armed)
         unsigned char rng = hc_cal_u8(CFG_U_IDLE_ETB_RANGE);
         unsigned int r0 = hc_cal_u16(CAL_DBW_REVLIM_RPM);
         unsigned int rr = hc_cal_u16(CAL_DBW_REVLIM_RANGE);
-        if (rng != 0u) {
+        /* ALWAYS rusEFI's compression (2026-10-14, car): the old
+           alternative - idle as a FLOOR under the pedal map, max(map, floor)
+           - could only ADD air: with the map's released-pedal cell at 4 %
+           the idle loop sat at its negative limit and rpm stayed above
+           target. etbIdleRange 0 means 100 %: the idle position IS throttle
+           % (base curve, trim, A/C idle-up keep their meaning), and the
+           pedal map's released row is 0 (rusEFI's convention). */
+        if (rng == 0u) rng = 100u;
+        {
             unsigned int add = (unsigned int)(((unsigned long)hc_idle_floor_x10
                                                * rng) / 100uL);
             if (add > 1000u) add = 1000u;
             want = (unsigned int)(add + (unsigned int)(((unsigned long)want
                                    * (1000u - add)) / 1000uL));
-        } else if (want < hc_idle_floor_x10) {
-            want = hc_idle_floor_x10;
         }
         if (r0 != 0u && rpm > r0) {
             unsigned int over = (unsigned int)(rpm - r0);

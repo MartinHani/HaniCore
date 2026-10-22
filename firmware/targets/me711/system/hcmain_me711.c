@@ -227,7 +227,7 @@ void hc_tick_isr(void) interrupt TGT_TRAP_T8INT using TICKBANK
        9.2-9.4 ms, 4.9 engine off), and on the bench a main loop held 20 ms
        every 100 ms (frame periods 27 ms) reset the ECU with 0x1C in 0.8 s
        with zero monitoring mismatches - the S5500 resets on LATE frames
-       (evidence/CAR_20261013_RESETS). The OEM runs this dialogue from a
+       (the maintainer's records). The OEM runs this dialogue from a
        10 ms OS task. Here: one state transition per tick, a frame started
        on the millisecond whatever the main loop is doing; the reply
        snapshot is taken at the accept (hc_hal_ain_capture), the CJ120 slot
@@ -259,7 +259,7 @@ void hc_tick_isr(void) interrupt TGT_TRAP_T8INT using TICKBANK
    was sampled depended on how fast the main loop ran: at 8500 rpm with
    TunerStudio polling at 115200 a TPS track went > 100 ms without a sample,
    hc_fresh_service() latched DBW_F_STALE and engine protection cut the fuel
-   (simulator, docs/ARCHITECTURE.md). Now one
+   (simulator, the maintainer's design notes). Now one
    conversion completes and the next starts every tick: each of the sixteen
    channels every 16 ms, the AN1/AN3 TPS pair 1 ms apart, whatever the loop
    is doing. The knock KI read (AN15) is a REQUEST served here, not a second
@@ -318,7 +318,7 @@ static void adc_service(void)
  *
  * the two measurement bytes go out through ASC0's S0LB INTERNAL
  * loopback, not the wire - see hcts_rx_learn() below (and
- * docs/ARCHITECTURE.md, "S0LB, a loopback bit that ties the
+ * the maintainer's design notes, "S0LB, a loopback bit that ties the
  * transmitter to the receiver inside the chip... keeps a stray byte off the
  * wire", hardware-confirmed for that probe) for the same mechanism used the
  * same way. Real K-line tracing over a genuine KKL cable found this
@@ -417,7 +417,7 @@ unsigned int io_boost_req;
  * against a 10 ms S5500 supervision raster serviced ONLY from the main loop.
  * A single routine TunerStudio poll would starve hc_asic_start_service() for
  * several rasters, which is exactly the V15 defect that reset this ECU at
- * ~140 ms every boot (docs/ARCHITECTURE.md).
+ * ~140 ms every boot (the maintainer's design notes).
  *
  * So the shared server calls this from every bounded wait it has, and here it
  * services the supervision state machine THROUGH a long reply instead of
@@ -452,7 +452,7 @@ static unsigned int svc_t, pass_t;
    and D are per step, so its effective gains moved with engine load. With a
    due-check after every timed service (cheap: one compare when not due) the
    step interval is bounded by the longest single background stretch.
-   docs/ARCHITECTURE.md, DBW cadence. */
+   the maintainer's design notes, DBW cadence. */
 static void wdt_main(void);
 static void service_boundary(void);
 static void dbw_poll(void)
@@ -837,7 +837,7 @@ static void stage(unsigned int s)
  * call and starved hc_asic_start_service() - the runtime ASIC exchange's own
  * state machine, serviced only from this loop - which is what let the S5500
  * reset us at ~140 ms regardless of UMKOM answer content
- * (docs/ARCHITECTURE.md). The comment where
+ * (the maintainer's design notes). The comment where
  * alive_line() used to live reserved room for "a future NON-BLOCKING or
  * interrupt-driven liveness facility". This is it, kept to the bare minimum:
  *
@@ -883,7 +883,7 @@ static void stage(unsigned int s)
    function nobody calls is exactly the kind of dead code the boot-contract
    build already refuses to carry silently. The mechanism (T7-paced,
    one-byte-per-pass, never blocking) is described in full in
-   docs/ARCHITECTURE.md and in the V19 archive
+   the maintainer's design notes and in the V19 archive
    (the maintainer's hardware-session record) if it is ever
    reinstated as an interrupt-driven facility instead of unsolicited K-line
    traffic. */
@@ -1136,7 +1136,7 @@ void main(void)
        nothing before this line has touched FRAME or those counters this
        boot: the zero-list above stops at adc_raw[], irq_disable_all() only
        clears interrupt-control SFRs, and start_me711.a66 has no bulk
-       RAM clear of any kind. See docs/ARCHITECTURE.md. */
+       RAM clear of any kind. See the maintainer's design notes. */
     hc_asicdump_salvage(reset_raw);
     hc_power_hold_assert();
     hc_io_init();          /* ASIC images at the OEM idle values, run-on idle */
@@ -1206,7 +1206,7 @@ void main(void)
         hcts_service();
         SVC_END(svc_comms);
         /* the 5-baud decoder and the KWP session (P3.11 = RXD0) */
-        hc_kwp_service(tick_ms, (unsigned char)((P3 & 0x0800u) ? 1u : 0u));
+        hc_kwp_service(tick_ms);   /* the tick samples the pin */
 
         hc_knock_service(tick_ms);  /* V97; KI via the tick (hc_ki_req) */
         wdt_main();

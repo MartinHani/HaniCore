@@ -532,7 +532,7 @@ ENGINE_PRESETS: list[Preset] = [
                # 194/194). Until the cycle is confirmed the sequential
                # strategies run their fallback (wasted COP + two half pulses),
                # which needs crank sync only - so this page starts exactly as
-               # the V91..V96 batch/wasted page did (docs/ARCHITECTURE.md).
+               # the V91..V96 batch/wasted page did (the maintainer's design notes).
                "syncMode": Value(2, P,
                                  "SYNC_CAM1_CYCLE - the quick-start cam on 86 "
                                  "(LEVEL method); docs/firmware/design/ME711_CAM_QUALIFICATION.md"),
@@ -757,7 +757,11 @@ ENGINE_PRESETS: list[Preset] = [
                "injRefPressureKpa": Value(300, P,
                    "FR RKTI 11.40: Qstat is measured at pdr_evmes, 'meist "
                    "3000hPa'; the AWT regulator is manifold-referenced "
-                   "(FRLFSDP = 1). HaniCore's fuel path does not read it yet"),
+                   "(FRLFSDP = 1)"),
+               "injPressMode": Value(1, P, "AWT: manifold-referenced 3 bar "
+                                     "regulator (FRLFSDP = 1)"),
+               "fuelRegKpa": Value(300, P, "3 bar across the injector = the "
+                                   "test pressure: factor 1.0"),
                # 0 = the dwell-vs-battery curve decides while cranking too.
                "deadtimeVal": Value([1877, 1850, 1085, 685, 557, 437, 267, 267],
                                     V, S_BIN + "TVUB @0x813EB0 (tinjection_sy "
@@ -906,7 +910,7 @@ ENGINE_PRESETS: list[Preset] = [
                # +92 needs offset -92 = 3600 - 920. Operator's baseline 92.
                # A starting value: the final number is a timing-light
                # calibration with timingModeCfg FIXED (fixedTimingX10 10.0).
-               # V97: THE PHYSICAL CONVENTION (docs/ARCHITECTURE.md).
+               # V97: THE PHYSICAL CONVENTION (the maintainer's design notes).
                # trigAngleX10 = where tooth #1 - the first tooth after the
                # gap, the edge that ENDS it - is, in deg after cylinder-1 TDC.
                # The AWT's is -78.0. Evidence: rusEFI's Quick-Start phase with the
@@ -953,10 +957,13 @@ ENGINE_PRESETS: list[Preset] = [
                     500, 800, 1000, 1250, 1500, 1750, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500, 6000, 6800,
                    ], V,
                    "me711_awt_base_calibration.py: KFZW rpm range"),
+               # 2026-10-16 (owner-approved): ignition on CYLINDER FILLING (rl, ME7's
+               # own KFZW axis) - rl rises with boost, so the timing sees boost
+               "ignLoadMode": Value(3, P, "Cylinder filling (%): the stock KFZW axis"),
                "ignLoadAx": Value([
-                      0,  10,  20,  30,  40,  55,  70, 100, 130, 160, 200, 250, 300, 400, 500, 1000,
-                   ], V,
-                   "throttle %, 0.1 %, = fuelLoadAx (alpha-N)"),
+                    100, 150, 200, 270, 350, 450, 550, 650, 800, 900, 1000, 1100, 1200, 1300, 1400, 1600,
+                   ], P,
+                   "rl %, 0.1 %: the stock KFZW range 15..140 % + 10 / 160"),
                # V98: the target lambda table has its own axes; the AWT keeps
                # the ones it was written against (= the ignition axes)
                "lambdaRpmAx": Value([500 + 450 * i for i in range(16)], V, "= ignRpmAx (the afrMap columns below)"),
@@ -1020,7 +1027,7 @@ ENGINE_PRESETS: list[Preset] = [
                "cltMaxDegX10": Value(11150, P, "115 C (10*C + 10000)"),
                # V98r2: IDLE CONTROL ON - it acts only through the ETB (a
                # throttle floor: base(CLT) + bounded PI toward target(CLT),
-               # docs/ARCHITECTURE.md), so nothing moves while dbwEnable is 0.
+               # the maintainer's design notes), so nothing moves while dbwEnable is 0.
                # Base 9..6.5 % / target 1300..800 rpm are the board's
                # defaults; the V91 car idled ~1000 rpm on the 6.4 % limp
                # opening, which brackets them.
@@ -1030,36 +1037,45 @@ ENGINE_PRESETS: list[Preset] = [
                # band, where the loop holds (in-gear coasting must not close
                # the throttle). Base 0.5 % lower than the owner's car page,
                # band 600 so a high idle is inside the loop, timing 12 deg.
-               "idleBaseVal": Value([61, 56, 51, 46, 41, 36, 36, 36], P,
-                                    "owner's car page (6.6..4.1 %) - 0.5 %"),
-               "idleRpmBand": Value(600, P, "car 2026-10-11: 1400 rpm idle was "
-                                    "above 860 + 400 - never regulated"),
+               # 2026-10-16 (car 2026-10-15 logs, the maintainer's records
+               # TUNE_NOTES.md): warm idle = 2.6 % throttle at 852 rpm (221
+               # rows); the owner's colder points; gains in the new units
+               # (Kp % per 100 rpm, Ki %/s per 100 rpm) - the old ones swung
+               # the trim between its limits / ran the engine to the limiter
+               "idleBaseVal": Value([52, 47, 42, 37, 32, 26, 26, 26], P,
+                                    "owner's 2026-10-15 curve, 2.6 % warm (measured)"),
+               "idleRpmBand": Value(300, P, "closed loop near idle only (1500 "
+                                    "fought every blip)"),
+               "idleRangeX10": Value(20, P, "+-2 % throttle = ~+-600 rpm at idle"),
+               "idleKp": Value(3, P, "0.3 % per 100 rpm (~300 rpm/% plant)"),
+               "idleKi": Value(2, P, "1.0 %/s per 100 rpm"),
+               "idlePedalX10": Value(20, P, "rusEFI 2 %: a foot on = not idling"),
+               "idleStartMs": Value(1000, P, "1 s on the base after cranking"),
                "ignMap": Value([
                      64,  64,  64,  64,  66,  72,  80,  95,  97,  97,  96,  96, 100, 107, 114, 120,
                      64,  64,  64,  64,  66,  72,  80,  95,  97,  97,  96,  96, 100, 107, 114, 120,
-                     60,  64,  64,  64,  66,  72,  80,  95,  97,  97,  96,  96, 100, 107, 114, 120,
-                     51,  64,  64,  64,  66,  72,  80,  95,  97,  97,  96,  96, 100, 107, 114, 120,
-                     45,  64,  64,  64,  66,  72,  80,  95,  97,  97,  96,  96, 100, 107, 114, 120,
-                     40,  64,  64,  66,  70,  76,  82,  98,  97,  97,  96,  96, 100, 107, 114, 120,
-                     40,  60,  68,  72,  78,  86,  92, 116, 107,  97,  96,  96, 100, 107, 114, 120,
-                     40,  51,  61,  75,  83,  92,  98, 110, 120, 124, 122, 105, 101, 107, 114, 120,
-                     40,  49,  56,  68,  76,  84,  90, 103, 113, 118, 122, 118, 117, 116, 116, 120,
-                     40,  47,  53,  64,  71,  78,  83,  98, 106, 111, 116, 116, 113, 114, 118, 122,
-                     40,  46,  51,  60,  66,  72,  76,  93, 100, 104, 108, 109, 108, 110, 116, 121,
-                     40,  46,  50,  58,  64,  69,  72,  88,  93,  99, 102, 102, 101, 103, 109, 116,
-                     40,  44,  48,  55,  59,  63,  66,  77,  82,  89,  91,  92,  91,  94, 101, 106,
-                     40,  42,  45,  49,  53,  56,  58,  61,  60,  65,  65,  66,  69,  76,  82,  89,
-                     40,  40,  43,  47,  46,  47,  48,  51,  48,  54,  57,  58,  60,  66,  73,  78,
-                     40,  40,  43,  47,  46,  47,  48,  51,  48,  54,  57,  58,  60,  66,  73,  78,
+                     64,  64,  64,  64,  66,  72,  80, 115, 123, 124, 126, 119, 117, 116, 119, 122,
+                     61,  64,  64,  64,  66,  72,  80, 112, 119, 121, 122, 118, 115, 114, 117, 121,
+                     54,  64,  64,  64,  66,  72,  80, 107, 114, 115, 117, 115, 111, 111, 115, 120,
+                     49,  70,  79,  85,  87,  92,  94, 102, 108, 109, 111, 109, 106, 106, 110, 115,
+                     44,  62,  71,  77,  80,  84,  88,  97, 102, 104, 106, 104, 102, 102, 106, 110,
+                     40,  53,  60,  69,  73,  77,  81,  92,  97, 100, 102, 100,  99,  99, 103, 106,
+                     40,  45,  49,  57,  61,  66,  69,  83,  88,  92,  94,  94,  91,  93,  99, 102,
+                     40,  41,  44,  49,  55,  59,  62,  74,  82,  88,  88,  88,  86,  90,  96,  98,
+                     40,  40,  42,  46,  50,  54,  57,  68,  76,  81,  79,  81,  82,  85,  90,  93,
+                     40,  40,  40,  40,  43,  45,  48,  61,  66,  70,  69,  71,  72,  76,  81,  83,
+                     40,  40,  40,  40,  40,  42,  44,  56,  60,  64,  64,  66,  68,  72,  76,  78,
+                     40,  40,  40,  40,  40,  40,  40,  51,  54,  59,  60,  62,  65,  68,  72,  74,
+                     40,  40,  40,  40,  40,  40,  40,  45,  48,  54,  57,  59,  60,  64,  68,  71,
+                     40,  40,  40,  40,  40,  40,  40,  40,  42,  48,  51,  52,  54,  58,  62,  64,
                    ], P,
-                   "stock AWT KFZW/KFZW2 via the stock throttle model - "
-                   "me711_awt_base_calibration.py, EXCEPT the idle region "
-                   "(throttle <= 7 %, <= 2000 rpm): min(stock, 12 deg at "
-                   "idle blending to the stock map by 2000 rpm) - the stock "
-                   "ME7 idles retarded from its KFZW base (torque reserve "
-                   "for the idle controller); the car idled at 25-33 deg "
-                   "2026-10-11 and the owner's spec is 10-15 deg. Only ever "
-                   "retarded from stock. NOT KNOCK-TESTED"),
+                   "stock AWT min(KFZW, KFZW2) ON ITS OWN rl AXIS - "
+                   "me711_awt_base_calibration.py --rl (2026-10-16), -2 deg "
+                   "above rl 100 %, held and -3 deg more by rl 160 %; the "
+                   "idle rule unchanged: rl <= 35 % up to 2000 rpm is "
+                   "min(stock, 12 deg blending to 20 deg at 2000 rpm) - the "
+                   "stock ME7 idles retarded from KFZW (torque reserve), "
+                   "owner spec 10-15 deg. Only ever retarded from stock"),
                "afrMap": Value([
                     147, 147, 147, 147, 147, 147, 147, 147, 147, 147, 147, 147, 147, 147, 147, 147,
                     147, 147, 147, 147, 147, 147, 147, 147, 147, 147, 147, 147, 147, 147, 147, 147,
@@ -1097,11 +1113,12 @@ ENGINE_PRESETS: list[Preset] = [
                # JUDGEMENT, rusEFI-like starting points (wwaeBeta/wwaeTau
                # class values, more film and a slower one when cold); no
                # AWT wall-film calibration is in this repository. Tune with a
-               # wideband on tip-ins (docs/ARCHITECTURE.md).
+               # wideband on tip-ins (the maintainer's design notes).
                "transEnable": Value(1, P, "wall film + after-start on"),
-               "wwXPct": Value([55, 52, 48, 45, 42, 40, 37, 35, 33, 31, 30,
-                                30, 30, 30, 30, 30], P,
-                               "JUDGEMENT: 55 % at -30 C -> 30 % from 70 C"),
+               "wwXPct": Value([70, 70, 70, 69, 68, 67, 66, 65, 64, 63, 62,
+                                60, 60, 60, 60, 60], P,
+                               "car 2026-10-15: 30 % warm tipped in lean, 70 % "
+                               "rich in / starved out - 70 cold -> 60 warm"),
                "wwTau": Value([100, 85, 70, 60, 50, 40, 32, 26, 22, 19, 17,
                                15, 15, 15, 15, 15], P,
                               "JUDGEMENT: 2.0 s at -30 C -> 0.3 s from 80 C "
@@ -1121,7 +1138,7 @@ ENGINE_PRESETS: list[Preset] = [
                # V97: idle ignition timing - rusEFI setDefaultIdleParameters
                # (P 0.1 deg/rpm, +-10 deg, I 0) and canam's 1 s soft entry;
                # OFF like idleEnable (no AWT idle calibration located:
-               # docs/ARCHITECTURE.md)
+               # the maintainer's design notes)
                "idleTimingEnable": Value(1, P, "rusEFI idle timing PID: spark "
                                          "holds the idle (12 deg base)"),
                "idleTimingKp": Value(100, P, "rusEFI default 0.1 deg/rpm"),
@@ -1130,9 +1147,10 @@ ENGINE_PRESETS: list[Preset] = [
                "idleTimingSoftMs": Value(1000, P, "rusEFI canam 1 s"),
                # V97: the dashpot - OFF: rusEFI's adder is in idle-VALVE %,
                # which says nothing about this throttle body; tune on the car
-               "idleDashX10": Value(0, P, "off (no AWT dashpot evidence)"),
-               "idleDashHoldMs": Value(1000, P, "JUDGEMENT when enabled"),
-               "idleDashDecayMs": Value(2000, P, "JUDGEMENT when enabled"),
+               "idleDashX10": Value(15, P, "1.5 %: every 2026-10-15 blip landed "
+                                    "575..720 rpm (throttle closed to 0.3 %)"),
+               "idleDashHoldMs": Value(1000, P, "1 s"),
+               "idleDashDecayMs": Value(1500, P, "1.5 s"),
                # V97: the check-engine lamp on the AWT's own MIL wire - the
                # AWT ME7.5 map puts the MIL lamp on cavity 47 (the harness
                # plugs it onto this ECU's ASIC P7.0 low side)
@@ -1155,7 +1173,7 @@ ENGINE_PRESETS: list[Preset] = [
                # ASIC P7.0); this binary actuator-tests BOTH P7.0
                # [0x08F8C6] and P7.1 [0x08F6C8]. First key-on at the car:
                # the AWT cluster's MIL must do the 3 s test - if it does
-               # not, the bit is P7.1 (hcio711.c ch_bit[], docs/ARCHITECTURE.md).
+               # not, the bit is P7.1 (hcio711.c ch_bit[], the maintainer's design notes).
                "celEnable": Value(1, P, "ON (project decision); lamp bit "
                                   "P7.0 from the W12 sheet - confirm with "
                                   "the key-on test at the car"),
@@ -1170,29 +1188,32 @@ ENGINE_PRESETS: list[Preset] = [
                "pinCam1Sol": Value(115, P, "docs/HANICORE_ENGINE_IO_MAP.md: "
                                    "AWT N205 cam adjust valve on 115"),
                "vvtFreqHz": Value(250, V, "OEM 250 Hz [BIN 0x8C0D78]"),
-               "knockMode": Value(1, P, "MONITOR: first sessions log knock "
-                                  "per cylinder without retarding"),
+               # 2026-10-16: THE AWT'S OWN KR CALIBRATION, read from 4B0906018DC at
+               # the X505P A2L address - 0x199 (seven independent code matches,
+               # the maintainer's records); ACTIVE = retard only
+               "knockMode": Value(2, P, "ACTIVE (owner, 2026-10-16): retard "
+                                  "only, bounded by knockMaxQ"),
                "knockDiagN": Value(100, P, "JUDGEMENT: 100 windows"),
-               "knockSafeQ": Value(60, P, "sibling KRDWSN 15 deg"),
-               "knockMaxQ": Value(72, P, "sibling KRMXN 18 deg"),
-               "knockStepQ": Value(9, P, "sibling KRFKN 2.25 deg"),
+               "knockSafeQ": Value(48, P, "AWT KRDWSN 8.25..12 deg -> 12"),
+               "knockMaxQ": Value(51, P, "AWT KRMXN 11.25..12.75 deg -> 12.75"),
+               "knockStepQ": Value(12, P, "AWT KRFKN 3.0 deg"),
                "knockStopN": Value(0, P, "off (sibling DKRAMX 255 = never)"),
                "knockLearn": Value(20, P, "JUDGEMENT: 20 quiet windows"),
                "knockRefMax": Value(1000, P, "JUDGEMENT: below saturation"),
                "knockRefMin": Value(5, P, "JUDGEMENT: an open sensor reads ~0"),
                "knockDiagRpm": Value(1500, P, "JUDGEMENT: above idle"),
-               "knockReapplyMs": Value(800, P, "sibling KRVFN ~ constant time "
-                                       "(~2.4 s per 0.75 deg)"),
+               "knockReapplyMs": Value(1000, P, "AWT KRVFN 41..126 ignitions "
+                                       "per 0.75 deg step = 2.5..3.8 s"),
                "knockRefInit": Value(204, P, "sibling REFINI 0.996 V"),
                "knockCltMin": Value(10390, P, "sibling TMKR 39 C"),
                "knockRpmMin": Value(400, P, "sibling NKRF"),
-               "knockLoadMin": Value(22, P, "sibling LKRN ~22 % rl"),
+               "knockLoadMin": Value(31, P, "AWT LKRN 31 % rl (low rpm)"),
                "knockTpDyn": Value(4, P, "sibling KRFTP2/3"),
                "knockTp": Value(16, P, "sibling KRFTP1"),
                "knockKefDyn": Value(18, P, "sibling FKENDY/FKELDY 1.125"),
-               "knockKef": Value([43, 43, 42, 40, 35, 32], P,
-                                 "sibling KFKEF1 2.69..2.0 (x16) - the "
-                                 "threshold to CALIBRATE from a MONITOR log"),
+               "knockKef": Value([50, 50, 46, 40, 36, 34], P,
+                                 "AWT KFKEF1..4, rl 120 % column, the lowest "
+                                 "cylinder (x16): 3.125 .. 2.125"),
                "knockKefRpm": Value([1000, 2000, 3000, 4000, 5000, 6000], P,
                                     "sibling KFKEF1 rpm points"),
                "knockWinLen": Value([270, 270, 278, 330, 360, 398, 413, 413],
@@ -1223,7 +1244,7 @@ ENGINE_PRESETS: list[Preset] = [
                       0,  50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 800, 850, 900, 950, 1000,
                    ], V, "pedal %, 0.1 %"),
                "pedalMap": Value([
-                        8,   8,   8,   8,   8,   8,   8,   8,   8,   8,   8,   8,   8,   8,   8,   8,
+                        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
                        12,  12,  12,  12,  12,  12,  12,  12,  12,  12,  12,  12,  12,  12,  12,  12,
                        16,  16,  16,  16,  16,  16,  16,  16,  16,  16,  16,  16,  16,  16,  16,  16,
                        21,  21,  21,  21,  21,  21,  21,  21,  21,  21,  21,  21,  21,  21,  21,  21,
@@ -1240,8 +1261,11 @@ ENGINE_PRESETS: list[Preset] = [
                       183, 183, 183, 183, 183, 183, 183, 183, 183, 183, 183, 183, 183, 183, 183, 183,
                       200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200,
                    ], V,
-                   "4.0 % at a released pedal (idle air; no idle controller "
-                   "exists), progressive to 100 %, rpm-independent"),
+                   "0 at a released pedal - the idle controller owns the "
+                   "idle air (rusEFI convention, 2026-10-14) - progressive "
+                   "to 100 %, rpm-independent"),
+               "etbIdleRange": Value(100, P, "rusEFI etbIdleThrottleRange at "
+                                     "100 %: the idle position is throttle %"),
                # ---- V92: THE QUICK-START CAM, OBSERVED, NOT DECIDING ----
                # bench measurements. LEVEL method: at physical
                # 204 after the gap-end tooth (engine 126.0 with tooth #1 at

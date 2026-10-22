@@ -17,4 +17,4 @@ py tools\tunerstudio\gen_ts_ini_me711.py
 | `plugin/HaniCore_KLine_Transport_<version>.jar` | K-line connection plugin, with its build record (`.json`) |
 
 The `.ini` and dashboard are generated locally and not committed. Guide:
-[../docs/TUNERSTUDIO.md](../docs/TUNERSTUDIO.md).
+the maintainer's design notes.

@@ -8,8 +8,7 @@ sees it: the label TunerStudio shows, the Bosch net name, the capabilities
 the validator allows, the evidence class of those capabilities, the CPU/ASIC
 resource, and the meaning. `SPECIAL_LOCKED` cavities are never routable.
 **PROBABLE** = Bosch documentation for this family, not measured on this board;
-**VERIFIED** = measured or settled by agreeing primary sources. The
-hardware behind it is described in [PLATFORM.md](PLATFORM.md); per-capability
+**VERIFIED** = measured or settled by agreeing primary sources. Per-capability
 sources are in `tools/config_source/hw_descriptors.py`.
 
 | cavity | TunerStudio label | Bosch net | capabilities | evidence | resource | meaning |

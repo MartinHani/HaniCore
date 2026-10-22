@@ -3,7 +3,7 @@
  *
  * What hcengine.c computes from the sensors (air, base fuel, base spark) is
  * turned here into what a mature standalone ECU does with it, each piece
- * after its rusEFI runtime counterpart (docs/ARCHITECTURE.md):
+ * after its rusEFI runtime counterpart (the maintainer's design notes):
  *
  *   firing order -> TDC geometry           firing_order.cpp
  *   control value of a FAILED sensor       Sensor::get(..).value_or() per
@@ -101,7 +101,17 @@ typedef struct {
     unsigned int lag_x16;           /* filled load, 0.1 % x 16              */
     unsigned int lag_ms;            /* its clock                            */
     unsigned char lag_ok, lag_pad;
+    /* injector pressure compensation (2026-10-15, rusEFI
+       injectorCompensationMode): the pressure ACROSS the injector now and
+       at its rating, 0.1 kPa - 0/0 = flow as rated (hc_af_flow_at_dp_x100);
+       the compensated flow eng_service() used last, 0.01 mg/ms, for the
+       key-on prime; inj_st: EC_INJ_* */
+    unsigned int inj_dp_x10, inj_ref_x10, inj_flow_x100;
+    unsigned char inj_st, inj_pad;
 } hc_ec_t;
+#define EC_INJ_ON        0x01u  /* compensating                           */
+#define EC_INJ_NO_MAP    0x02u  /* no manifold pressure: ambient assumed  */
+#define EC_INJ_SENSOR    0x04u  /* sensed mode: the rail sensor is bad    */
 
 #define HC_EC (*(hc_ec_t huge *)(TGT_EXTRAM_BASE + TGT_RAM_ENGCTL))
 
@@ -125,6 +135,11 @@ unsigned int  far hc_ec_load_lag(unsigned int throttle_x10, unsigned int rpm);
    DFCO and soft-limit retard, launch / flat-shift / anti-lag timing,
    clamped -30..+60 deg and rate-limited in the advance direction. */
 int           far hc_ec_spark(int base_x10, unsigned char cranking);
+/* The dwell, 0.01 ms, from the battery curve's: while cranking a non-zero
+   crankingDwellMsX100 replaces it (V77, moved here 2026-10-14), otherwise
+   the dwell-by-rpm factor scales it (rusEFI sparkDwellRpmBins, Speeduino
+   dwell map), bounded to the battery curve's own 10.00 ms. */
+unsigned int  far hc_ec_dwell(unsigned int batt_x100);
 /* The cycle's open time -> with closed-loop and motorsport fuel. */
 unsigned int  far hc_ec_fuel(unsigned int te_us);
 /* After the fuel: closed loop, the flags, the injection angle. */

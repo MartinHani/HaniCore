@@ -26,7 +26,7 @@
  *     report the switch, so the target changes S0BG strictly AFTER the answer
  *     (and its echo) has left the wire.
  *
- * EVIDENCE CLASSES (see docs/ARCHITECTURE.md for the full table):
+ * EVIDENCE CLASSES (see the maintainer's design notes for the full table):
  *   - address 0x01 -> sync 0x55, keybytes EF 8F, tester complement 70,
  *     ECU complement FE ............................ OEM PROVEN
  *     (Porsche ME7.1.1 image the target OEM firmware, slow-init records at file
@@ -96,7 +96,7 @@
                                        wake-up pattern (25 ms low, 25 ms high);
                                        waiting for StartCommunication at 10400 */
 
-/* FAST INIT (2026-10-13, docs/ARCHITECTURE.md).
+/* FAST INIT (2026-10-13, the maintainer's design notes).
  * On a shared vehicle K-line the 5-baud entry needs a quiet line to arm; the
  * fast-init wake-up is ASSERTED by the tester, so it works on a busy bus.
  * The TARGET recognises the wake-up (pin timing, like the 5-baud byte) and

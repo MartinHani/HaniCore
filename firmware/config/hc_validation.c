@@ -114,13 +114,13 @@ static unsigned char ign_pin_of(unsigned int cyl)
 static unsigned int check_pin(unsigned char pin, unsigned int need,
                               unsigned int off)
 {
-    const hc_pin_desc_t *d;
+    const hc_pin_desc_t HC_PIN_MEM *d;
 
     if (HC_PIN_IS_UNASSIGNED(pin)) {
         return 0u;
     }
     d = hc_pin_desc(pin);
-    if (d == (const hc_pin_desc_t *)0) {
+    if (d == (const hc_pin_desc_t HC_PIN_MEM *)0) {
         bad(off);
         return HC_VAL_FAULT_TARGET;     /* no such pin ON THIS ECU */
     }
@@ -171,7 +171,7 @@ typedef char hc_val_assert_claims[
    list is scratch rebuilt on every call (n = 0 below), so battery-backed
    contents from a previous boot mean nothing, and it is read only at
    validation time - background work, not worth on-chip RAM (XRAM was full
-   to the byte). docs/ARCHITECTURE.md, memory. */
+   to the byte). the maintainer's design notes, memory. */
 #define CLAIMS_MEM huge
 typedef char hc_val_claims_fit[
     (sizeof(claims_t) <= TGT_RAM_VALCLAIMS_LIMIT) ? 1 : -1];
@@ -282,7 +282,7 @@ static unsigned int check_trigger(void)
            85:8766: a candidate long interval is accepted as the gap when
            (candidate >> 1) > previous1 AND (candidate >> 1) > previous2,
            strict unsigned - which is a fixed ratio of 2.0 and NOT a tunable.
-           docs/ARCHITECTURE.md.
+           the maintainer's design notes.
 
            So the ratio field is not free here, and the A2L-declared geometry
            is 60-2. Validating it against the generic missing-tooth range would
@@ -1023,8 +1023,7 @@ unsigned int hc_validate(unsigned char src)
             bad(CFG_CRANK_RPM_MAX);
             f |= HC_VAL_FAULT_REV;
         }
-        if (rd8(CAL_REVLIM_MODE) > 2u
-            || rd8(CAL_REVLIM_PATTERN) < 1u || rd8(CAL_REVLIM_PATTERN) > 8u) {
+        if (rd8(CAL_REVLIM_MODE) > 2u) {
             bad(CAL_REVLIM_MODE);
             f |= HC_VAL_FAULT_REV;
         }
@@ -1078,6 +1077,73 @@ unsigned int hc_validate(unsigned char src)
             f |= claim(c, p, sw_off[i]);
         }
     }
+#if defined(TGT_AUX_CAV0)
+    /* THE AUXILIARY FUNCTIONS (hcaux711.c, 2026-10-14). An output is driven
+       only on the CPU's spare low sides; the request switch must be one the
+       HAL can read; the oil sensor one of this ECU's analog inputs with a
+       transfer that rises. Each owns its cavity like any other function. */
+    {
+        static const unsigned int ax_off[4] = {
+            CFG_U_PIN_FAN, CFG_U_PIN_AC_CLUTCH, CFG_U_GP1_PIN, CFG_U_GP2_PIN
+        };
+        unsigned char p, n;
+        unsigned char bad_val = 0u;
+
+        for (i = 0u; i < 4u; i++) {
+            p = rd8(ax_off[i]);
+            if (!HC_PIN_IS_UNASSIGNED(p)
+                && p != TGT_AUX_CAV0 && p != TGT_AUX_CAV1) {
+                bad(ax_off[i]);
+                f |= HC_VAL_FAULT_PIN_CAP;
+            }
+            f |= claim(c, p, ax_off[i]);
+        }
+        p = rd8(CFG_U_PIN_AC_REQ);
+        if (!HC_PIN_IS_UNASSIGNED(p) && !hc_hal_din_ok(p)) {
+            bad(CFG_U_PIN_AC_REQ);
+            f |= HC_VAL_FAULT_PIN_CAP;
+        }
+        f |= claim(c, p, CFG_U_PIN_AC_REQ);
+        p = rd8(CFG_U_PIN_OIL_PRESS);
+        if (!HC_PIN_IS_UNASSIGNED(p)) {
+            n = hc_pin_adc_channel(p);
+            if (!hc_pin_can(p, HC_PINCAP_AIN)
+                || (!HC_ADC_IS_ASIC(n) && n >= TGT_ADC_CH_COUNT)) {
+                bad(CFG_U_PIN_OIL_PRESS);
+                f |= HC_VAL_FAULT_PIN_CAP;
+            }
+            if (rd16(CFG_U_OILP_HI_MV) <= rd16(CFG_U_OILP_LO_MV)
+                || rd16(CFG_U_OILP_HI_MV) > 5000u
+                || rd16(CFG_U_OILP_HI_KPA) == 0u) {
+                bad(CFG_U_OILP_HI_MV);
+                bad_val = 1u;
+            }
+        }
+        /* a zero byte here is -12.8 deg: refuse it rather than clamp it */
+        for (i = 0u; i < 8u; i++) {
+            n = rd8((unsigned int)(CFG_U_IGN_TRIM + i));
+            if (n < 28u || n > 228u) {
+                bad((unsigned int)(CFG_U_IGN_TRIM + i));
+                bad_val = 1u;
+            }
+        }
+        for (i = 0u; i < 6u; i++) {
+            unsigned int d = rd16((unsigned int)(CFG_U_DWELL_RPM_PCT + 2u * i));
+            if (d < 10u || d > 200u) {
+                bad((unsigned int)(CFG_U_DWELL_RPM_PCT + 2u * i));
+                bad_val = 1u;
+            }
+        }
+        /* the outputs' sources, comparisons and the fan / A/C switches
+           need no check: hcaux711.c reads an unknown source as never true
+           and any non-zero switch as on - nothing unsafe follows, and the
+           whole-page apply budget (me711_config_state_test) is tight */
+        if (bad_val) {
+            f |= HC_VAL_FAULT_STRATEGY;
+        }
+    }
+    f |= axis_ok(CFG_U_DWELL_RPM_AX, 6u);
+#endif
 #endif
 
     /* 8. Throttle. */

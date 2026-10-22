@@ -42,7 +42,7 @@ NOTHING IN THIS FILE IS TYPED FROM MEMORY. Every capability comes from one of:
         ownership of the temperature channels
 
   ME7.5 (4B0906018DC):
-    docs/PLATFORM.md          "This file outranks every earlier
+    the maintainer's design notes          "This file outranks every earlier
         pin table" - three sources reconciled, disagreements stated
 
 A pin this evidence does not describe gets NO capabilities and evidence
@@ -109,7 +109,7 @@ SIGNAL_CLASS: dict[str, tuple[int, str]] = {
     # Still NOT claimed: the CJ420's current rating is not printed on the
     # sheet, and CJ420 pin 15 RES is ED_RST - the monitoring net that also
     # gates the throttle bridge - so an EGAS shutdown drops this output too.
-    # Both are recorded in docs/PLATFORM.md and
+    # Both are recorded in the maintainer's design notes and
     # neither is a reason to withhold the capability.
     "ZAS": (PinCap.LOW_SIDE | PinCap.RELAY_OUT,
             "Zylinderabschaltung - CJ420 smart low side, TVS clamped, "
@@ -350,7 +350,7 @@ _PORT_ALIAS: dict[str, tuple[str, EvidenceClass, str]] = {
 }
 
 # ZUEn (connector) and ZDGn (port map) are the same eight ignition stages.
-# Corroborated independently for 1..4 by docs/PLATFORM.md, whose
+# Corroborated independently for 1..4 by the maintainer's design notes, whose
 # ME7.5 coil table is ZUE1=102/P2.0, ZUE2=103/P2.1, ZUE3=94/P2.2, ZUE4=95/P2.3
 # - identical pins and identical ordinals to this join.
 for _n in range(1, 9):
@@ -629,7 +629,7 @@ _ASIC_FRAME_OUTPUTS = {
 #   ASIC  the OEM switch inputs. The S5500 reads them on ITS ports and sends a
 #         port snapshot in every runtime reply (RX words 53..59 = ASIC P0, P1,
 #         P2, P3, P5, P6:P4, P8:P7). Evidence chain:
-#         docs/ARCHITECTURE.md.
+#         the maintainer's design notes.
 #           S5500 IROM (bins/ASIC-IROM-7x00005d, sibling, same ASIC): 0x47A2
 #             /0x4858 snapshot the ports, 0x48AE copies the 7 words to reply
 #             byte +0x6A = word 53 (reply header 0x781E written there too);
@@ -1035,7 +1035,7 @@ def _apply_me711_sheet(d: "HwDescriptor") -> None:
 
 
 # --------------------------------------------------------------------------
-# ME7.5 4B0906018DC - typed, but ONLY from docs/PLATFORM.md,
+# ME7.5 4B0906018DC - typed, but ONLY from the maintainer's design notes,
 # which states plainly that it outranks every earlier pin table on this board
 # and names the three sources it reconciles. Every row below quotes it.
 #

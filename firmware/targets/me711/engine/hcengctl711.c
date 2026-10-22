@@ -36,6 +36,7 @@
 #include "hc_validation.h"
 #include "hcdeadline711.h"
 #include "hcevlog711.h"
+#include "hcaux711.h"        /* the rail pressure sensor */
 
 #define T1_PER_MS  ((unsigned int)(TGT_TICKS_PER_MS_X10 / 10uL))   /* 1250 */
 /* 32/16 unsigned division, quotient bounded to 16 bits by every caller. */
@@ -151,14 +152,14 @@ static void och(unsigned int at, unsigned int v)
 static unsigned char ax8(unsigned int ax, unsigned int x, unsigned int *frac)
 {
     unsigned char i;
-    unsigned int a0 = hc_cal_u16(ax), a1;
+    unsigned int a0 = hc_cal_u16v(ax), a1;
 
     *frac = 0u;
     if (x <= a0) {
         return 0u;
     }
     for (i = 1u; i < 8u; i++) {
-        a1 = hc_cal_u16((unsigned int)(ax + 2u * i));
+        a1 = hc_cal_u16v((unsigned int)(ax + 2u * i));
         if (x < a1) {
             if (a1 > a0) {
                 *frac = DIV32U((unsigned long)(unsigned int)(x - a0) * 256u,
@@ -183,10 +184,10 @@ static unsigned int lut8(unsigned int tab, unsigned int xax, unsigned int yax,
     unsigned int r0 = (unsigned int)(iy * 8u), r1 = (unsigned int)(r0 + 8u);
 
     if (wide) {
-        c00 = hc_cal_u16((unsigned int)(tab + 2u * (r0 + ix)));
-        c01 = hc_cal_u16((unsigned int)(tab + 2u * (r0 + ix + 1u)));
-        c10 = hc_cal_u16((unsigned int)(tab + 2u * (r1 + ix)));
-        c11 = hc_cal_u16((unsigned int)(tab + 2u * (r1 + ix + 1u)));
+        c00 = hc_cal_u16v((unsigned int)(tab + 2u * (r0 + ix)));
+        c01 = hc_cal_u16v((unsigned int)(tab + 2u * (r0 + ix + 1u)));
+        c10 = hc_cal_u16v((unsigned int)(tab + 2u * (r1 + ix)));
+        c11 = hc_cal_u16v((unsigned int)(tab + 2u * (r1 + ix + 1u)));
         top = DIV32U((unsigned long)c00 * (unsigned int)(256u - fx)
                      + (unsigned long)c01 * fx, 256u);
         bot = DIV32U((unsigned long)c10 * (unsigned int)(256u - fx)
@@ -194,10 +195,10 @@ static unsigned int lut8(unsigned int tab, unsigned int xax, unsigned int yax,
         return DIV32U((unsigned long)top * (unsigned int)(256u - fy)
                       + (unsigned long)bot * fy, 256u);
     }
-    c00 = hc_cal_u8((unsigned int)(tab + r0 + ix));
-    c01 = hc_cal_u8((unsigned int)(tab + r0 + ix + 1u));
-    c10 = hc_cal_u8((unsigned int)(tab + r1 + ix));
-    c11 = hc_cal_u8((unsigned int)(tab + r1 + ix + 1u));
+    c00 = hc_cal_u8v((unsigned int)(tab + r0 + ix));
+    c01 = hc_cal_u8v((unsigned int)(tab + r0 + ix + 1u));
+    c10 = hc_cal_u8v((unsigned int)(tab + r1 + ix));
+    c11 = hc_cal_u8v((unsigned int)(tab + r1 + ix + 1u));
     top = (unsigned int)(c00 * (unsigned int)(256u - fx) + c01 * fx);
     bot = (unsigned int)(c10 * (unsigned int)(256u - fx) + c11 * fx);
     return DIV32U((unsigned long)top * (unsigned int)(256u - fy)
@@ -226,7 +227,7 @@ static unsigned char clt_ok(void)
 /* A motorsport switch: 1 active, 0 inactive or not readable. */
 static unsigned char sw(unsigned int pin_off, unsigned char mask)
 {
-    unsigned char lvl = hc_hal_din(hc_cal_u8(pin_off));
+    unsigned char lvl = hc_hal_din(hc_cal_u8v(pin_off));
 
     if (lvl > 1u) {
         return 0u;
@@ -635,9 +636,9 @@ static unsigned char stft_region(unsigned int rpm, unsigned int load_x10)
 static void stft_bank(unsigned char b, unsigned int lam, unsigned char learn,
                       unsigned char reg)
 {
-    int lim_hi = (int)(hc_cal_u8((unsigned int)(CFG_U_STFT_ADD + reg)) * 160u);
-    int lim_lo = -(int)(hc_cal_u8((unsigned int)(CFG_U_STFT_REMOVE + reg)) * 160u);
-    unsigned int tau = (unsigned int)(hc_cal_u8((unsigned int)(CFG_U_STFT_TAU + reg))
+    int lim_hi = (int)(hc_cal_u8v((unsigned int)(CFG_U_STFT_ADD + reg)) * 160u);
+    int lim_lo = -(int)(hc_cal_u8v((unsigned int)(CFG_U_STFT_REMOVE + reg)) * 160u);
+    unsigned int tau = (unsigned int)(hc_cal_u8v((unsigned int)(CFG_U_STFT_TAU + reg))
                                       * 100u);
     int err, a;
     unsigned int mag, step;
@@ -839,6 +840,62 @@ unsigned int far hc_ec_load_lag(unsigned int x, unsigned int rpm)
 }
 
 /* =================================================================== pre */
+/* THE PRESSURE ACROSS THE INJECTOR (2026-10-15, rusEFI InjectorModel::
+   getFuelDifferentialPressure). The flow figure was measured at
+   injRefPressureKpa across the injector; eng_service() scales it by
+   sqrt(dp / that) through hc_af_flow_at_dp_x100(), which leaves the rated
+   flow untouched while either value is 0.
+     1 manifold-referenced regulator: dp = the regulator pressure, constant
+     2 fixed rail: dp = rail + ambient - manifold (a MANIFOLD sensor only;
+       a charge-pressure sensor or none = ambient manifold, flagged)
+     3 sensed rail: the same with the measured rail; a bad sensor falls back
+       to 2 and is flagged (P0190, hcdtc711.c)
+   Bounded to 10..1500 kPa: a nonsense page cannot zero or multiply the fuel
+   beyond sqrt(1500 / 10). */
+static void inj_pressure(void)
+{
+    unsigned char mode = hc_cal_u8(CFG_U_INJ_PRESS_MODE);
+    unsigned int ref = hc_cal_u16(CFG_U_INJ_REF_KPA);
+    unsigned int reg = hc_cal_u16(CFG_U_FUEL_REG_KPA);
+    unsigned int dp, man;
+    unsigned char st = 0u;
+
+    if (mode == 0u || mode > 3u || ref == 0u || reg == 0u) {
+        E.inj_dp_x10 = 0u;
+        E.inj_ref_x10 = 0u;
+        E.inj_st = 0u;
+        return;
+    }
+    if (ref > 1500u) ref = 1500u;
+    if (reg > 1500u) reg = 1500u;
+    dp = (unsigned int)(reg * 10u);
+    if (mode >= 2u) {
+        if (mode == 3u) {
+            if (hc_aux_fuel_ok()) {
+                unsigned int f = hc_aux_fuel_kpa();
+                dp = (unsigned int)((f > 1500u ? 1500u : f) * 10u);
+            } else {
+                st |= EC_INJ_SENSOR;
+            }
+        }
+        /* rail above the atmosphere + ambient - manifold */
+        man = eng_baro_kpa_x10;
+        if (hc_cal_u8(CFG_U_PRESSURE_ROLE) == 1u
+            && !(eng_sensor_err & ENG_ERR_MAP)) {
+            man = eng_map_kpa_x10;
+        } else {
+            st |= EC_INJ_NO_MAP;
+        }
+        dp = (unsigned int)(dp + eng_baro_kpa_x10);
+        dp = (dp > man) ? (unsigned int)(dp - man) : 0u;
+    }
+    if (dp < 100u) dp = 100u;
+    if (dp > 15000u) dp = 15000u;
+    E.inj_dp_x10 = dp;
+    E.inj_ref_x10 = (unsigned int)(ref * 10u);
+    E.inj_st = (unsigned char)(st | EC_INJ_ON);
+}
+
 void far hc_ec_pre(unsigned int rpm)
 {
     unsigned int now = T1;
@@ -871,6 +928,7 @@ void far hc_ec_pre(unsigned int rpm)
     if (E.run_ms != 0u) {
         E.prime_count = 0u;               /* the engine ran: prime next key-on */
     }
+    inj_pressure();
     dfco_update(rpm);
     motorsport_update(rpm);
     revlimit_update();
@@ -887,6 +945,9 @@ int far hc_ec_spark(int base_x10, unsigned char cranking)
     int a = base_x10;
     unsigned int f;
 
+    /* per-cylinder trim: everyone up by the largest, each slot back down
+       by its difference (hcknock711.c slot_retard) */
+    a = (int)(a + hc_ign_trim_off_x10());
     if (cranking) {
         E.spark_last = a;
         return a;
@@ -939,6 +1000,31 @@ int far hc_ec_spark(int base_x10, unsigned char cranking)
     }
     E.spark_last = a;
     return a;
+}
+
+/* ================================================================= dwell */
+#define DWELL_RPM_N    6u
+#define DWELL_MAX_X100 1000u      /* the battery curve's own limit, 10.00 ms */
+
+unsigned int far hc_ec_dwell(unsigned int batt_x100)
+{
+    unsigned int cd, p;
+
+    if (eng_cranking) {
+        cd = hc_cal_u16(CFG_U_CRANK_DWELL_X100);
+        if (cd != 0u) {
+            return cd;
+        }
+    }
+    /* the factor, %, interpolated on its axis (validated 10..200) */
+    p = hc_cal_curve16(CFG_U_DWELL_RPM_AX, CFG_U_DWELL_RPM_PCT, DWELL_RPM_N,
+                       trg_rpm);
+    if (p == 0u) {
+        p = 100u;                 /* never on a valid page; the old default */
+    }
+    p = DIV32U((unsigned long)batt_x100 * p, 100u);
+    return (p > DWELL_MAX_X100 && batt_x100 <= DWELL_MAX_X100)
+         ? DWELL_MAX_X100 : p;
 }
 
 /* ================================================================== fuel */
@@ -1069,9 +1155,11 @@ void far hc_ec_prime_service(void)
     if (mass == 0u || flow < 10u) {
         return;
     }
-    /* flow 0.01 mg/ms = cc/min x 745 / 600 (hc_af_flow_x100); open time
-       us = mass 0.1 mg x 10000 / flow, held to 200 ms. */
-    flow = DIV32U((unsigned long)flow * 745u, 600u);
+    /* flow 0.01 mg/ms = cc/min x 745 / 600 (hc_af_flow_x100) - or the
+       pressure-compensated flow eng_service() used last (2026-10-15);
+       open time us = mass 0.1 mg x 10000 / flow, held to 200 ms. */
+    flow = (E.inj_flow_x100 >= 12u) ? E.inj_flow_x100
+                                    : DIV32U((unsigned long)flow * 745u, 600u);
     num = (unsigned long)mass * 10000u;
     if (num >= (unsigned long)flow * 60000u) {
         us = 60000u;
@@ -1088,22 +1176,16 @@ void far hc_ec_prime_service(void)
     hc_drysched_prime(DIV32U((unsigned long)us * 5u, 32u));
 }
 
-/* The largest knock retard any cylinder carries, 0.1 deg. */
+/* The largest knock retard any cylinder carries, 0.1 deg - knock alone:
+   slot_ret[] also carries the per-cylinder ignition trim (2026-10-14). */
 static unsigned int kn_max(void)
 {
-    unsigned char i, m = 0u;
-
-    for (i = 1u; i <= 8u; i++) {
-        if (HC_KN711.slot_ret[i] > m) {
-            m = HC_KN711.slot_ret[i];
-        }
-    }
-    return m;
+    return (unsigned int)HC_KN711.ret_knock;
 }
 
 /* ============================================================= telemetry
  * 1136..1199 THE FAST BLOCK - the tuning core, contiguous so a TunerStudio
- * datalog reads it in ONE request (docs/TUNERSTUDIO.md).
+ * datalog reads it in ONE request (the maintainer's design notes).
  * 1200..       the engine-control state. Big-endian, as every channel. */
 void far hc_ec_publish(unsigned int boost_req_x10)
 {

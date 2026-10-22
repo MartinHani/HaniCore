@@ -2,7 +2,7 @@
  * hcpower.h - NLEN_FR, the Bosch ME7.1.1 power hold.
  *
  * NOT COMPILED INTO RESETDIAG_V2. This is prepared source for the image after
- * it. See docs/ARCHITECTURE.md for the evidence chain.
+ * it. See the maintainer's design notes for the evidence chain.
  */
 #ifndef HCPOWER_H
 #define HCPOWER_H

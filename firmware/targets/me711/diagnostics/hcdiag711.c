@@ -70,7 +70,7 @@ static void put16(unsigned int at, unsigned int v)
        bench, overdwell, AIN snapshot, DBW: up to 1.2 ms) once per wall
        millisecond INSIDE the slice: at 9600 rpm, where the main loop has a
        third of the CPU, that cost more than the millisecond held and a slice
-       stretched to 48 ms (simulator, docs/ARCHITECTURE.md). */
+       stretched to 48 ms (simulator, the maintainer's design notes). */
     hcts_rx_pump();
     OCHP[at]     = (unsigned char)((v >> 8) & 0xFF);
     OCHP[at + 1] = (unsigned char)(v & 0xFF);

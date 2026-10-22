@@ -728,7 +728,7 @@ CH += [
                                "+256 when all five passed"),
     (972,"dbwFaultClears","U16","","latched DBW faults cleared by a key-on "
                                     "or a valid calibration"),
-    # V97: sequential with fallback (docs/ARCHITECTURE.md), fuel/cycle
+    # V97: sequential with fallback (the maintainer's design notes), fuel/cycle
     (974,"seqActive","U16","","1 = at least one cylinder is in TRUE sequential "
                              "(one whole pulse / one spark per cycle); 0 = the "
                              "fallback (two halves, wasted COP) or not sequential"),
@@ -1140,7 +1140,7 @@ CH += [
 # ======================== V98: THE FAST BLOCK + THE ENGINE-CONTROL STATE ===
 # hcengctl711.c hc_ec_publish(). 1136..1199 is the TUNING CORE, contiguous so
 # a TunerStudio datalog / dashboard is ONE K-line read
-# (docs/TUNERSTUDIO.md.4 phase 2); the names are the plain
+# (the maintainer's design notes.4 phase 2); the names are the plain
 # ones (ts_gauges_me711 files the older copies at their historical offsets
 # under Developer / Raw block).
 CH += [
@@ -1303,6 +1303,9 @@ CH += [(1652, "dtcStoredMask0", "U16", "", "Trouble codes stored since the last 
        (1654, "dtcStoredMask1", "U16", "", "Trouble codes stored, paths 16..31"),
        (1656, "dtcActiveMask0", "U16", "", "Trouble codes active now, paths 0..15"),
        (1658, "dtcActiveMask1", "U16", "", "Trouble codes active now, paths 16..31")]
+# 2026-10-14: the auxiliary functions (hcaux711.c) - the last four bytes.
+CH += [(1660, "auxStatus", "U16", "", "Fan, A/C and programmable outputs: bit0 fan on, 1 A/C requested, 2 A/C relay on, 3 output 1 on, 4 output 2 on, 5 oil pressure reading valid, 6 outputs held (not permitted / bench test), 7 oil sensor configured; bits 8..11 why the A/C relay is off (1 engine not running, 2 rpm, 3 throttle, 4 coolant, 5 delay)"),
+       (1662, "oilPressKpa", "U16", "kPa", "Oil pressure (0 while the sensor is unconfigured or its reading invalid)")]
 
 # (raw + translate) * scale, TunerStudio's order: raw is 10*degC + 10000.
 TRANSLATE = {130: -10000.0, 132: -10000.0, 780: -10000.0}   # V91: 780 cltCtrlDc
@@ -1378,6 +1381,7 @@ TRANSLATE[1146] = -10000.0
 _AMB = AMB.transfer()
 _AMB_EXPR, _AMB_NOTE = AMB.ini_expression(_AMB)
 
+from ts_dtc_me711 import DTC_DERIVED as _DTC_DERIVED   # noqa: E402
 DERIVED_CH = [
     # ---- STAGE A: THE PACKED WORDS, TAKEN APART.
     # hcmain_me711.c:639-641,666 publishes two meanings per 16-bit word. The
@@ -1512,6 +1516,7 @@ DERIVED_CH = [
     ("lam2Fault", "{ (lamFault >> 8) & 255 }", "", "V96 bank 2 latched fault, as lam1Fault"),
     ("vvt1Fault", "{ (vvt1State >> 8) & 127 }", "", "V97 cam 1 VVT fault (hcVvtFaultList)"),
     ("vvt2Fault", "{ (vvt2State >> 8) & 127 }", "", "V97 cam 2 VVT fault"),
+] + [(_n, _e, "", _c) for _n, _e, _c in _DTC_DERIVED] + [
     ("vvt1Closed", "{ (vvt1State & 16) > 0 }", "", "V97 cam 1 closed loop"),
     ("vvt2Closed", "{ (vvt2State & 16) > 0 }", "", "V97 cam 2 closed loop"),
     ("knockModeNow", "{ knockState & 255 }", "", "V97 knock: 0 off 1 monitor 2 active"),
@@ -1578,12 +1583,14 @@ DERIVED_CH = [
      "what the VE table is looked up on (hcLoadAxisList)"),
     ("cfgDensityKind",
      "{ fuelModel == 2 ? 0 : (fuelModel == 3 ? (densityPolicy == 2 ? 5 : 1) "
-     ": (fuelModel == 1 ? (ambientCorrection == 1 ? 4 : 3) "
+     ": (fuelModel == 1 ? 4 "
      ": (loadSource == 2 ? 3 : (pressureRole == 1 ? 0 "
      ": (pressureRole == 2 ? 1 : 2))))) }", "",
      "which pressure sets the air density (hcDensityList)"),
-    ("ambientFallback", "{ (loadFlags & 4) != 0 && ambientSource != 0 }", "",
-     "the selected ambient source has no valid reading: reference in use"),
+    ("boostAboveAmbient", "{ MAPValue > ambientUsed ? MAPValue - ambientUsed : 0 }", "kPa",
+     "pressure above the onboard ambient - the boost timing correction's axis"),
+    ("ambientFallback", "{ (loadFlags & 4) != 0 }", "",
+     "the onboard ambient sensor has no valid reading: the fault value is in use"),
     ("iatDensityFallback",
      "{ (loadFlags & 8) != 0 && fuelModel != 0 && fuelUseIat == 1 }", "",
      "intake temperature selected for density but not valid: 20 C in use"),
@@ -1721,7 +1728,8 @@ if not CFG_FAULT_CH:
 # The table, its order and its checks: ts_dtc_me711 (shared with the UI
 # generator, which draws one row per code).
 from ts_dtc_me711 import (DTC_TEXT, DTC_CODES, DTC_ORDER,   # noqa: E402
-                          DTC_PATHS, DTC_UNKNOWN)
+                          DTC_PATHS, DTC_UNKNOWN, DTC_LISTS, DTC_DERIVED,
+                          list_line)
 
 
 def dtc_list_line():
@@ -2162,6 +2170,25 @@ HELP_TOPICS = [
         "Not yet measured on hardware: check each sensor's signal with a "
         "tapped sensor and a log in Monitor before using Active.",
     ]),
+    ("hcHelpPrgOut", "Programmable outputs", [
+        "Each output switches a relay or a lamp on cavity 115 or 120 (the "
+        "ECU's spare low-side stages; they sink current to ground, so wire "
+        "the load between +12 V and the pin). A cavity can have only one "
+        "function: the cam solenoids, the fan and the A/C relay use the same "
+        "two.",
+        "Condition A compares its source with the threshold: 'On above' "
+        "switches on when the value rises above the threshold and off when "
+        "it falls below the threshold minus the hysteresis; 'On below' is "
+        "the mirror. Condition B is optional (source 'Not used'); Combine "
+        "says whether both or either must be true.",
+        "The threshold is in the source's own units: rpm, degrees C, %, kPa, "
+        "0.1 V for the battery (125 = 12.5 V), lambda x 100 (100 = 1.00), "
+        "degrees of advance, seconds since the start, oil pressure kPa. A "
+        "source whose sensor has failed is never true.",
+        "On delay: the conditions must hold this long before the output "
+        "switches on; it switches off at once. Every output is released "
+        "with the key off, an invalid page or a lost S5500 link.",
+    ]),
     ("hcHelpLambda", "Wideband lambda", [
         "Two onboard Bosch LSU wideband controllers. A VAG 1.8T (AWT) sensor "
         "plugs into bank 1 (cavities 70, 51, 71, 52; heater low side 5).",
@@ -2426,6 +2453,10 @@ def crosscheck():
     # V98: the engine-control layer (hcengctl711.c) - och(<offset>u, ...)
     ec_c = (TDIR / "engine/hcengctl711.c").read_text(errors="replace")
     for m in re.finditer(r"\boch\(\s*(\d+)u\s*,", ec_c):
+        fw.add(int(m.group(1)))
+    # 2026-10-14: the auxiliary functions (hcaux711.c) - och(<offset>u, ...)
+    ax_c = (TDIR / "control/hcaux711.c").read_text(errors="replace")
+    for m in re.finditer(r"\boch\(\s*(\d+)u\s*,", ax_c):
         fw.add(int(m.group(1)))
     # V99: the event ring / vehicle-test telemetry (hcevlog711.c)
     ev_c = (TDIR / "diagnostics/hcevlog711.c").read_text(errors="replace")
@@ -2734,7 +2765,7 @@ def main() -> int:
     # active gauges and the datalog name, merging ranges closer than this
     # (rusEFI #5927: 1000 is for USB, a small value for slow links). The
     # datalog's tuning core is contiguous (the fast block, 1136..1199), so a
-    # log is one read. docs/TUNERSTUDIO.md.
+    # log is one read. the maintainer's design notes.
     w("   maxUnusedRuntimeRange = 32")
     w("   defaultRuntimeRecordPerSec = 25")
     w("")
@@ -2861,6 +2892,8 @@ def main() -> int:
         w("   " + name + " = bits, U08, [0:3], " + ", ".join('"'+v+'"' for v in labels))
     w(dtc_list_line())
     w(dtc_row_list_line())
+    for _n, _labels in DTC_LISTS:          # 2026-10-15: the DTC reasons
+        w(list_line(_n, _labels))
     w(cfg_field_list_line())
     for _name, _labels in LOAD_AXIS_LISTS:
         top = 1
@@ -3155,7 +3188,7 @@ def main() -> int:
             w('   entry = %s, "%s", float, "%s"' % (name, title, fmt))
     w("")
     # ============================================ V98: TUNE ANALYZE LIVE ====
-    # rusEFI / Speeduino [VeAnalyze] (docs/TUNERSTUDIO.md):
+    # rusEFI / Speeduino [VeAnalyze] (the maintainer's design notes):
     # the VE table, the target lambda table (stored as lambda x 147, shown as
     # lambda), the MEASURED lambda, the closed-loop correction in force (so a
     # trimmed sample is not double counted) and Speeduino's flag filters on

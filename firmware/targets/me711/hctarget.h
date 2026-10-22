@@ -90,7 +90,7 @@
  * back, at 4204 bytes. */
 /* #define TGT_BURN_DIAGNOSTICS 1 */
 
-#define TGT_SIGNATURE         "rusEFI HaniCore ME711 5AB824FA"
+#define TGT_SIGNATURE         "rusEFI HaniCore ME711 83D8361E"
 /* THE SIGNATURE CARRIES THE PAGE LAYOUT, AND UNTIL V60 IT DID NOT.
 
    It read "rusEFI Hanicore v1" from V21 to V59 - a frozen literal
@@ -149,13 +149,16 @@
 /* HC_COLD marks the public functions of the modules compiled MOD167
    MEDIUM (FCODE, segment 0x85): validation, the config manager, the bench
    qualifier and analog routing. Their NCODE callees go through the far
-   thunks in hcfar_me711.c - see hcfarbridge.h and docs/ARCHITECTURE.md. */
+   thunks in hcfar_me711.c - see hcfarbridge.h and the maintainer's design notes. */
 #define HC_COLD far
 /* the generated preset item tables (~10 KB) live in HCONST, not in
    the 16 KB near-constant class NCONST, which they had filled - the u16 VE
    table's first use of a new constant failed the link (L115 DGROUP). huge,
    so an array may cross a 16 KB page; read only by an APPLY. */
 #define HC_PRESET_MEM huge
+/* the pin descriptor table (hc_pin_desc_bosch_me711.c, 740 bytes) too:
+   NCONST is at its reserve, and only FCODE reads it (2026-10-14) */
+#define HC_PIN_MEM huge
 /* Deliberate release identity, not a claim about a Git commit. The release
    manifest separately records the source-build and packaging commits. */
 #define TGT_RELEASE_ID        0x446Eu    /* V102 = 17416 + 102. V100 was 0x446C,
@@ -215,7 +218,7 @@
    only hcbench.c can reach the bridge, under its own invariants.
  *
  * AND IT IS OFF AGAIN AT V56, DELIBERATELY. It costs 2632 bytes of NCODE, and
- * NCODE is one CGROUP with a hard 0x84FFFF ceiling (docs/ARCHITECTURE.md).
+ * NCODE is one CGROUP with a hard 0x84FFFF ceiling (the maintainer's design notes).
  * After the V56 cam-fault fix there were 36 bytes left - not enough to ship,
  * let alone to edit again.
  *
@@ -299,7 +302,7 @@ void hc_rt_wdt_mark(void);
  * folds one more bit INTO the value it hands this firmware in T0: every warm
  * reset on this bench reads RAW=0x001C (LHWR|SHWR|SWR), while the first boot
  * of a session - a genuine power-on - reads RAW=0x003C, exactly 0x0020 more.
- * See docs/ARCHITECTURE.md ("the reset mechanism NAMED"), hcpower.c and
+ * See the maintainer's design notes ("the reset mechanism NAMED"), hcpower.c and
  * hcasicstart.c, which independently document the same two observed values.
  * TGT_RESET_PONR names that boot-block-synthesized bit so it is declared
  * once, like every other shared layout constant in this file. */
@@ -330,7 +333,7 @@ void hc_rt_wdt_mark(void);
    rather than assuming: the yield hook services the raster DURING the reply,
    so the worst gap is bounded by the yield period and not by the reply
    length. TGT_RAM_OCH_LIMIT is 1024, so the region has ample room. */
-#define TGT_OCH_SIZE          1660    /* must match ochBlockSize in the .ini; +8 (1652..1659 trouble-code masks: stored, active - every code, not four slots); +16 (1636..1651 proposed bias axis); +36 (1600..1635 ETB friction band: midpoint, width, spread per position); +2 (1598 dbwPwmAppliedHz: the frequency the bridge is really switching at); V99 +24 (vehicle-test telemetry 1224..1247: ETB stop decision, lambda dynamics, spark skips, event ring head); V98 +92 (1132..1135 unused, the FAST BLOCK 1136..1199, engine control 1200..1223); V97 +20 (VVT 1112..1131); V97 +96 (knock 1024..1111, OCH2 region; 1016..1023 unused); V97 +6 (wideband reason / CJ120 link 1010..1015); V97 +2 (idle timing 1008); V97 +2 (ignition correction 1006); V97 +2 (check-engine lamp 1004); V97 +12 (transient fuel 992..1003); V97 +18 (sequential state, injection width, fuel per cycle, dead time 974..991); V97 +24 (DBW terms / battery factor / pending faults / commissioning verify 950..973); V97 +78 (lam1IpUa / lam2IpUa 872..875, cam PATTERN 876..891, boost 892..905, idle 906..913, DTC 914..945, limp 946..949); V96 +8 (wideband 850..870, with V95 linkDiag 848); V79 +30 (hcio711); V86 +12 (engine preset apply, 764..775); V90 +4 (ETB calibration 776, overdwell 778); V91 +4 (control CLT 780, 782 overdwell latch); V92 +40 (tooth profile, corrections, cycle, cam 784..804; ETB cal/autotune 806..820; 822 reserved); V93 +40 (ETB procedure telemetry 822..838, wideband/boot/load 840..862) */
+#define TGT_OCH_SIZE          1664    /* must match ochBlockSize in the .ini; +4 (1660 auxStatus, 1662 oilPressKpa - hcaux711.c, 2026-10-14); +8 (1652..1659 trouble-code masks: stored, active - every code, not four slots); +16 (1636..1651 proposed bias axis); +36 (1600..1635 ETB friction band: midpoint, width, spread per position); +2 (1598 dbwPwmAppliedHz: the frequency the bridge is really switching at); V99 +24 (vehicle-test telemetry 1224..1247: ETB stop decision, lambda dynamics, spark skips, event ring head); V98 +92 (1132..1135 unused, the FAST BLOCK 1136..1199, engine control 1200..1223); V97 +20 (VVT 1112..1131); V97 +96 (knock 1024..1111, OCH2 region; 1016..1023 unused); V97 +6 (wideband reason / CJ120 link 1010..1015); V97 +2 (idle timing 1008); V97 +2 (ignition correction 1006); V97 +2 (check-engine lamp 1004); V97 +12 (transient fuel 992..1003); V97 +18 (sequential state, injection width, fuel per cycle, dead time 974..991); V97 +24 (DBW terms / battery factor / pending faults / commissioning verify 950..973); V97 +78 (lam1IpUa / lam2IpUa 872..875, cam PATTERN 876..891, boost 892..905, idle 906..913, DTC 914..945, limp 946..949); V96 +8 (wideband 850..870, with V95 linkDiag 848); V79 +30 (hcio711); V86 +12 (engine preset apply, 764..775); V90 +4 (ETB calibration 776, overdwell 778); V91 +4 (control CLT 780, 782 overdwell latch); V92 +40 (tooth profile, corrections, cycle, cam 784..804; ETB cal/autotune 806..820; 822 reserved); V93 +40 (ETB procedure telemetry 822..838, wideband/boot/load 840..862) */
 /* V53 grew it by 16 bytes - eight channels - for the reclaim. The store is
    erased at runtime now, and that has never happened on this ECU; a bench
    that cannot see the slice count has no way to tell a slow erase from one
@@ -371,7 +374,9 @@ void hc_rt_wdt_mark(void);
 /* AND THE RESET WITNESS after the runtime health record (hcrtmon711.c,
    64 words: 32 live, 32 of the boot before - big-endian). */
 #define TGT_WT_EXPORT_BYTES   128u
-#define TGT_OCH_READ_SIZE     (TGT_OCH_SIZE + 344u + TGT_TL_EXPORT_BYTES + TGT_BH_EXPORT_BYTES + TGT_EV_EXPORT_BYTES + TGT_RT_EXPORT_BYTES + TGT_WT_EXPORT_BYTES)
+/* AND THE K-LINE CAPTURE after the witness (TGT_RAM_KLCAP, raw bytes). */
+#define TGT_KC_EXPORT_BYTES   256u
+#define TGT_OCH_READ_SIZE     (TGT_OCH_SIZE + 344u + TGT_TL_EXPORT_BYTES + TGT_BH_EXPORT_BYTES + TGT_EV_EXPORT_BYTES + TGT_RT_EXPORT_BYTES + TGT_WT_EXPORT_BYTES + TGT_KC_EXPORT_BYTES)
 unsigned char HC_COLD hc_lf_export_byte(unsigned int offset);
 unsigned char HC_COLD hc_och_ext_byte(unsigned int offset);
 #define HCTS_TARGET_OCH_EXT_READ(offset) hc_och_ext_byte(offset)
@@ -592,6 +597,10 @@ extern unsigned char far hc_kwp_rx_take(unsigned char b);
 extern unsigned char far hc_kwp_active(void);
 #define HCTS_TARGET_RX_TAKE(b)   hc_kwp_rx_take(b)
 #define HCTS_TARGET_LINK_HOLD()  hc_kwp_active()
+/* a CRC-VALID request arrived (hcts.c): the pinned vehicle rate's tester is
+   still there (hckwp_me711.c KL_IDLE_MS). The flag is the K-line capture's
+   word 7 (kc_t.good); hc_kwp_service() consumes it. Main-loop context both. */
+#define HCTS_TARGET_GOOD_FRAME()     (*(unsigned int huge *)(TGT_EXTRAM_BASE + TGT_RAM_KLCAP + 14u) = 1u)
 
 /* The complete K-line electrical path [BOSCH-SCH, Ein-Ausgaenge sheet]:
  *
@@ -751,7 +760,7 @@ typedef char hc_plan_period_ok[(HC_PLAN_PERIOD_TICKS * 2u < HC_PLAN_HORIZON_TICK
 
 /* hcvec_me711.c IS THE ONE MODULE COMPILED `MOD167 MEDIUM`, and this is the
    one declaration that has to know. See linker_me711.lnp's FCODE class and
-   docs/ARCHITECTURE.md: far code moves the 117 unclaimed-trap
+   the maintainer's design notes: far code moves the 117 unclaimed-trap
    catch-alls out of the single 64 KiB NCODE CGROUP into segment 0x85, which is
    the sector already reserved for exactly this. The module calls NOTHING
    outside itself, so it is the cheapest possible module to move - the only
@@ -965,7 +974,17 @@ typedef char hc_plan_period_ok[(HC_PLAN_PERIOD_TICKS * 2u < HC_PLAN_HORIZON_TICK
    values so the two cannot drift apart silently, which is exactly how the
    WDTCON mismatch happened. */
 #define TGT_RAM_ABFLAG        0x2900uL
-#define TGT_RAM_ABFLAG_LIMIT  0x0100uL
+#define TGT_RAM_ABFLAG_LIMIT  0x0010uL    /* 2 bytes used; 0x100 until
+                                              2026-10-14 (TGT_RAM_AUX below) */
+/* THE AUXILIARY FUNCTIONS' STATE (2026-10-14, hcaux711.c: cooling fan, A/C,
+   programmable outputs, oil pressure). Taken from the A/B flag region, of
+   which start_me711.a66 uses the first two bytes. */
+#define TGT_RAM_AUX           0x2910uL
+#define TGT_RAM_AUX_LIMIT     0x00F0uL
+/* the auxiliary functions' outputs: the CPU's spare CJ920 low sides, the
+   cam-solenoid stages (P7.0/POUT0, P7.1/POUT1 - hcaux711.c, hcvvt711.c) */
+#define TGT_AUX_CAV0          115u
+#define TGT_AUX_CAV1          120u
 #define TGT_ABFLAG_MARKER     0xA5u
 #define TGT_AB_BASE           0u
 #define TGT_AB_NLEN           1u
@@ -985,8 +1004,14 @@ typedef char hc_plan_period_ok[(HC_PLAN_PERIOD_TICKS * 2u < HC_PLAN_HORIZON_TICK
 #define TGT_RAM_ASICDUMP      0x2A00uL
 #define TGT_RAM_ASICDUMP_LIMIT 0x0600uL
 
-#define TGT_RAM_NMISNAP       0x2800uL
-#define TGT_RAM_NMISNAP_LIMIT 0x0100uL
+/* THE K-LINE CAPTURE (2026-10-15, hckwp_me711.c). The V49 NMI snapshot
+   that owned this block (hcnmisnap.c) is compiled into no image. Armed at
+   every boot; the first line held low 3 ms that is not our own echo - a
+   tester's 5-baud start bit or fast-init wake-up - records the RXD0 pin
+   once a millisecond for KC_SAMPLES ms: what reaches cavity 43 through the
+   car's instrument cluster, read by the vehicle logger afterwards. */
+#define TGT_RAM_KLCAP         0x2800uL
+#define TGT_RAM_KLCAP_LIMIT   0x0100uL
 
 /* The HAL output-request census and the S5500 correlation window. In the
    EXTERNAL SRAM for the same measured reason as the ME7.5 board: near RAM here
@@ -1220,7 +1245,7 @@ unsigned char hc_tlog_byte(unsigned int i);
 #define TGT_RAM_RSTWIT_LIMIT        0x0080uL
 /* THE SHARED-BUS K-LINE ENTRY (hckwp_me711.c, 2026-10-13): the ISO 14230
    fast-init wake-up detector and the GOFAST proof timer - 8 bytes the far
-   modules' XRAM no longer has (docs/ARCHITECTURE.md). */
+   modules' XRAM no longer has (the maintainer's design notes). */
 #define TGT_RAM_KLINE               0x6F78uL
 #define TGT_RAM_KLINE_LIMIT         0x0008uL
 #if ((TGT_RAM_BURNDEFER + TGT_RAM_BURNDEFER_LIMIT) > TGT_RAM_KLINE)
@@ -1316,7 +1341,7 @@ unsigned char hc_tlog_byte(unsigned int i);
 
 /* -------------------------------- the APPEND-ONLY calibration record ----
  *
- * SA7 and SA8. Not a free choice - docs/PLATFORM.md reserved
+ * SA7 and SA8. Not a free choice - the maintainer's design notes reserved
  * exactly these two sectors for persistent configuration before any of it
  * existed, and reserved 0x020200-0x03FFFF for a resident update loader that
  * must stay reachable when the application sector is erased. Persistent
@@ -1353,7 +1378,7 @@ unsigned char hc_tlog_byte(unsigned int i);
  *     NO RUNTIME FLASH WRITE MAY EVER CHANGE THE FIRST OR THE LAST WORD OF
  *     ANY 8 KiB PAGE IN 0x800000-0x80FFFF OR 0x820000-0x8FFFFF.
  *
- * The ME7.5 target has obeyed this for months - docs/PLATFORM.md
+ * The ME7.5 target has obeyed this for months - the maintainer's design notes
  * says its linker script "has to dodge the words the bootrom's program-page
  * checksum samples". This target now dodges them too.
  * =========================================================================
@@ -1431,9 +1456,14 @@ unsigned char hc_tlog_byte(unsigned int i);
  * sectors is 100000 * 80 = EIGHT MILLION Burns before the guaranteed endurance
  * of the first sector is reached. There is no case for wear levelling here.
  */
-#define TGT_FLASH_CFG_A       0x860000uL   /* SA9,  first store sector       */
-#define TGT_FLASH_CFG_SEG     0x0086u      /* its segment, for 16-bit maths  */
-#define TGT_FLASH_SECTORS     10u          /* SA9..SA18                      */
+/* 2026-10-15: THE STORE STARTS AT SA10. SA9 became far code (FCODE was at
+   its reserve with the start-up, DTC and K-line work still to land) and the
+   bootrom record's second limit rose to 0x86FFFF with it, so every
+   executable byte stays covered and the store stays wholly above it. Nine
+   sectors, seventy-two cells - still millions of Burns (see above). */
+#define TGT_FLASH_CFG_A       0x870000uL   /* SA10, first store sector       */
+#define TGT_FLASH_CFG_SEG     0x0087u      /* its segment, for 16-bit maths  */
+#define TGT_FLASH_SECTORS     9u           /* SA10..SA18                     */
 
 /* One cell per 8 KiB checksum page; eight pages per 64 KiB sector.
    The page geometry is kept even though these pages are no longer sampled:
@@ -1465,8 +1495,10 @@ unsigned char hc_tlog_byte(unsigned int i);
    was spent - which is what it was for. Both sectors are inside the bootrom
    page record, so this changed nothing about the record's boundary and nothing
    about the store above it. It does mean an application update erases TWO
-   sectors rather than one. linker_me711.lnp records the move. */
-#define TGT_CODE_SIZE         0x20000uL
+   sectors rather than one. linker_me711.lnp records the move.
+   2026-10-15: AND SA9 (far code; the store starts at SA10). SA6 below
+   TGT_CODE_BASE is far code too since V97. */
+#define TGT_CODE_SIZE         0x30000uL
 
 /* ======================================================= the ASIC link ====
  *
@@ -1556,7 +1588,7 @@ unsigned char hc_tlog_byte(unsigned int i);
  * SALVAGE_V12. The A1104F A2L (the A1104F A2L)
  * names ECU address 0xC022 - independently identified from the OEM ME7.1.1 binary
  * itself as the scheduler slot owning the ASIC runtime service, see
- * docs/ARCHITECTURE.md "the runtime raster PINNED" - as `r10msCtr`,
+ * the maintainer's design notes "the runtime raster PINNED" - as `r10msCtr`,
  * "10ms-Raster-Zaehler der Funktion", one of four distinctly-addressed
  * siblings (r2msCtr=0xC028, r5msCtr=0xC02C, r10msCtr=0xC022, r20msCtr=0xC026:
  * no ambiguity). Confirmed by direct disassembly of the OEM ME7.1.1 binary, not
@@ -1603,7 +1635,7 @@ unsigned char hc_tlog_byte(unsigned int i);
  *
  * WHAT THE MAIN CPU CAN AND CANNOT DO TO ITS OWN POWER. Established
  * 2026-09-02 from the vector geometry of the Rechnerkern and Ein-Ausgaenge
- * sheets, not from reading pixels; docs/PLATFORM.md carries the
+ * sheets, not from reading pixels; the maintainer's design notes carries the
  * derivation and the segment coordinates.
  *
  *   KL15 (connector cavity 3) --R4000--> CJ910 pin 21 EIN     "turn on"
@@ -1647,7 +1679,7 @@ unsigned char hc_tlog_byte(unsigned int i);
  * name hc_power_hold_assert() predates this derivation.
  *
  * TO CONFIRM IT: meter on connector cavity 3 (KL15) and on the ECU's own
- * VCC while the key drops. See docs/PLATFORM.md, measurement 3.
+ * VCC while the key drops. See the maintainer's design notes, measurement 3.
  *
  * THERE IS NO MAIN-RELAY OUTPUT ON THIS CPU. All 112 MAIN CPU rows of
  * tools/config_source/data/me711_iomap.csv were enumerated: no HR, no HRS, nothing
@@ -1992,7 +2024,7 @@ extern volatile unsigned char hc_probe_sink;
 /* ================================================ boot-stage numbering ====
  * Published as bootStage AND written into the reset log, so ONE bench reading
  * says how far the last boot got even if it never got far enough to answer
- * TunerStudio. See docs/ARCHITECTURE.md. */
+ * TunerStudio. See the maintainer's design notes. */
 #define BOOT_ENTRY            1
 #define BOOT_RAM              2
 #define BOOT_WDT              3

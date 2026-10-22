@@ -93,12 +93,12 @@ static int lerp_s(int v0, int v1, unsigned int f256)
 static unsigned char axis(unsigned int ax_off, unsigned int x, unsigned int *f)
 {
     unsigned char i;
-    unsigned int a0 = hc_cal_u16(ax_off), a1;
+    unsigned int a0 = hc_cal_u16v(ax_off), a1;
     *f = 0u;
     if (x <= a0) return 0u;
     for (i = 0u; i < 7u; i++) {
-        a0 = hc_cal_u16((unsigned int)(ax_off + 2u * i));
-        a1 = hc_cal_u16((unsigned int)(ax_off + 2u * (i + 1u)));
+        a0 = hc_cal_u16v((unsigned int)(ax_off + 2u * i));
+        a1 = hc_cal_u16v((unsigned int)(ax_off + 2u * (i + 1u)));
         if (x < a1) {
             if (a1 > a0) {
                 *f = (unsigned int)(((unsigned long)(x - a0) * 256u) / (unsigned int)(a1 - a0));
@@ -114,7 +114,7 @@ static unsigned char axis(unsigned int ax_off, unsigned int x, unsigned int *f)
    xBins = rpm, yBins = load reads it (hc_cal_map has the same order). */
 static int cell(unsigned int tbl, unsigned char r, unsigned char c)
 {
-    return (int)hc_cal_u16((unsigned int)(tbl + 2u * (8u * c + r)));
+    return (int)hc_cal_u16v((unsigned int)(tbl + 2u * (8u * c + r)));
 }
 
 /* r = rpm index, l = load index */
@@ -141,6 +141,12 @@ void far hc_vvt_init(void)
     hcvvt_reset(&VV.v[1]);
 }
 
+void far hc_vvt_clear_faults(void)
+{
+    VV.fault[0] = VVT_F_NONE; VV.err_ms[0] = 0u;
+    VV.fault[1] = VVT_F_NONE; VV.err_ms[1] = 0u;
+}
+
 unsigned char far hc_vvt_fault(unsigned char b)
 {
     return VV.fault[b & 1u];
@@ -160,19 +166,19 @@ static void step_cam(unsigned char b, unsigned int ms, unsigned char bench)
     int clt;
     unsigned char u, cls;
 
-    c.mode = hc_cal_u8((unsigned int)(CFG_U_VVT_MODE + b));
-    c.invert = hc_cal_u8((unsigned int)(CFG_U_VVT_INVERT + b));
+    c.mode = hc_cal_u8v((unsigned int)(CFG_U_VVT_MODE + b));
+    c.invert = hc_cal_u8v((unsigned int)(CFG_U_VVT_INVERT + b));
     c.min_rpm = hc_cal_u16(CFG_U_VVT_MIN_RPM);
     t = hc_cal_u16(CFG_U_VVT_MIN_CLT);             /* 10*C + 10000 */
     c.min_clt_c = (t >= 10000u) ? (int)((t - 10000u) / 10u)
                                 : -(int)((10000u - t) / 10u);
     c.delay_ms = hc_cal_u16(CFG_U_VVT_DELAY_MS);
-    c.kp = hc_cal_u16((unsigned int)(CFG_U_VVT_KP + 2u * b));
-    c.ki = hc_cal_u16((unsigned int)(CFG_U_VVT_KI + 2u * b));
-    c.kd = hc_cal_u16((unsigned int)(CFG_U_VVT_KD + 2u * b));
-    c.duty_min_x10 = hc_cal_u16((unsigned int)(CFG_U_VVT_DUTY_MIN + 2u * b));
-    c.duty_max_x10 = hc_cal_u16((unsigned int)(CFG_U_VVT_DUTY_MAX + 2u * b));
-    c.duty_on_x10 = hc_cal_u16((unsigned int)(CFG_U_VVT_DUTY_ON + 2u * b));
+    c.kp = hc_cal_u16v((unsigned int)(CFG_U_VVT_KP + 2u * b));
+    c.ki = hc_cal_u16v((unsigned int)(CFG_U_VVT_KI + 2u * b));
+    c.kd = hc_cal_u16v((unsigned int)(CFG_U_VVT_KD + 2u * b));
+    c.duty_min_x10 = hc_cal_u16v((unsigned int)(CFG_U_VVT_DUTY_MIN + 2u * b));
+    c.duty_max_x10 = hc_cal_u16v((unsigned int)(CFG_U_VVT_DUTY_MAX + 2u * b));
+    c.duty_on_x10 = hc_cal_u16v((unsigned int)(CFG_U_VVT_DUTY_ON + 2u * b));
 
     pin = hc_cal_u8(b ? CFG_U_PIN_CAM2_SOL : CFG_U_PIN_CAM1_SOL);
     u = (pin == 115u) ? 0u : (pin == 120u) ? 1u : 0xFFu;

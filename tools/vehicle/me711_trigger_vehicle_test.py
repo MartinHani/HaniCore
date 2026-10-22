@@ -343,8 +343,7 @@ class TriggerTest:
                         "twice-per-rev %.0f per mille)" % (
                             pd["confidence"], pd["rev_harmonic_permille"],
                             pd["half_rev_harmonic_permille"]),
-                        "  Read it with tools/analysis/me711_awt_spark_hypotheses.py "
-                        "and the coil continuity result."]
+                        "  Compare it with the coil continuity result."]
                 else:
                     lines.append("PLUGS-OUT: NO PAIR DECISION - %s" % pd["why"])
             lines.append("  NOTHING WAS CHANGED. Enter a new trigAngleX10 only "

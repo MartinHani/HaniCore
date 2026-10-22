@@ -62,7 +62,7 @@ CRITICAL = [
     # V97: the PHYSICAL trigger angle - tooth #1 (the first tooth after the
     # gap) 78.0 deg BTDC, stored as the s16 -780 = 0xFCF4, carried whole
     # through APPLY, Burn and restart. (The car's own page keeps the -2.0 =
-    # old 358.0 it ran on - docs/ARCHITECTURE.md.)
+    # old 358.0 it ran on - the maintainer's design notes.)
     ("trigDecoder", 2539, 1, 1), ("trigAngleX10", 2540, 2, 0xFCF4),
     # 2026-10-11 car: sequential + sequential COP ran with camPhaseLevel 1
     # (wasted / semi fallback until the cycle is known) - the preset since

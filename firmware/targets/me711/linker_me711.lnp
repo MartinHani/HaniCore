@@ -41,6 +41,7 @@
 "build\hcvvt711.obj",
 "build\hcidle.obj",
 "build\hcidle711.obj",
+"build\hcaux711.obj",
 "build\hctrans.obj",
 "build\hctrans711.obj",
 "build\hccel.obj",
@@ -261,7 +262,7 @@ CLASSES (
   ; SA8 is still reserved and still inside the boot page record; reaching it
   ; needs FCODE - a second code class and a memory model per module - not a
   ; larger number here. That is a deliberate piece of work with its own
-  ; qualification, and it is written down in docs/ARCHITECTURE.md rather
+  ; qualification, and it is written down in the maintainer's design notes rather
   ; than discovered again.
   ;
   ; What paid for V55 instead: the 117 unclaimed-trap catch-alls in
@@ -276,19 +277,29 @@ CLASSES (
   ; L5). SA6 is blank and inside the boot page record; 0x838000-0x83800F is
   ; left out because the builder writes the boot block's defensive far
   ; pointer at 0x838004 (bootmode 0xDD). The resident-loader reservation
-  ; (docs/PLATFORM.md) keeps SA5. A firmware update now erases
+  ; (the maintainer's design notes) keeps SA5. A firmware update now erases
   ; SA6..SA8.
   ; FCODE ends inside SA8, below the constant classes; each class keeps its
   ; >=1024-byte reserve (me711_resource_budget_proof). The store sectors
-  ; (SA9.., 0x860000) are never used for code.
-  FCODE  (0x830000-0x837FFF, 0x838010-0x83FFFF, 0x850000-0x85CCBF),
+  ; (SA10.., 0x870000) are never used for code.
+  ; 2026-10-15: SA9 (0x860000-0x86FFFF) JOINS FCODE. The store moved up one
+  ; sector (hctarget.h TGT_FLASH_CFG_A 0x870000, 72 cells) and the bootrom
+  ; record's second limit rose to 0x86FFFF (build_hanicore_me711.py
+  ; BOOTSUM_R2_LIMIT), so SA9 is boot-checksummed code like SA6..SA8. A
+  ; firmware update now erases SA6..SA9. 64 KiB of far-code headroom.
+  FCODE  (0x830000-0x837FFF, 0x838010-0x83FFFF, 0x850000-0x85CEBF,
+          0x860000-0x86FFFF),
   ; V98r2: HCONST - the generated preset item tables (hc_presets.c,
   ; HC_PRESET_MEM huge) had filled NCONST; 16 KB out of FCODE's SA8 tail
   ; (FCODE used 3 KB of 0x850000-0x85BFFF).
   ; 2026-10-11: the presets are byte runs (generate_config.py), HCONST
   ; 10530 -> 2890 bytes; 6 KB (0x85B4C0-0x85CCBF) go back to FCODE, which
   ; was at its reserve. HCONST keeps 5440 bytes (> 2 x its use + reserve).
-  HCONST (0x85CCC0-0x85E1FF),
+  ; 2026-10-15: 512 bytes more to FCODE (0x85CCC0-0x85CEBF): the injector
+  ; pressure compensation, the K-line capture and the DTC-clear resets
+  ; needed far code with FCODE 212 bytes above its reserve; HCONST held
+  ; 3649 of 5440 (1791 free) and keeps 1279 free (reserve 1024).
+  HCONST (0x85CEC0-0x85E1FF),
   ; NCONST stays inside the near-constant page 0x85C000-0x85FFFF.
   NCONST (0x85E200-0x85FFFF),
 

@@ -14,7 +14,7 @@ TWO executions, one modelled S5500 stimulus:
 
 driven with the identical word-1 sequence a modelled S5500 would send. The
 model implements the S5500-side semantics recovered in
-docs/ARCHITECTURE.md: an 8-bit LFSR question (FR taps 7/6/4/2), the
+the maintainer's design notes: an 8-bit LFSR question (FR taps 7/6/4/2), the
 shared trust-counter ramp (11..0 then 3..0), and the FR +3 / -1 error counter.
 
 CHECKS:
@@ -169,7 +169,7 @@ def call(c, seg, off, farptr=None, maxs=200000):
 
 
 class S5500:
-    """the S5500 side, from docs/ARCHITECTURE.md."""
+    """the S5500 side, from the maintainer's design notes."""
 
     def __init__(self, seed=0xAA):
         self.reg = seed or 1

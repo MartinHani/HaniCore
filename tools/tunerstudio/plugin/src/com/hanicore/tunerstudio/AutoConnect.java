@@ -18,7 +18,7 @@ import java.io.IOException;
  *            (a hunting link after one bad request, a locked one after three -
  *            V95/V96, physically qualified), so a few probes are enough on the
  *            bench and on a plain wire to cavity 43.
- *   VEHICLE  the VAG way in (docs/ARCHITECTURE.md): 5-baud 0x01 at
+ *   VEHICLE  the VAG way in (the maintainer's design notes): 5-baud 0x01 at
  *            10400, 55 EF 8F, tester 70, ECU FE, StartCommunication 81 -> C1,
  *            IDENTIFY B0 'HC' -> F0 + the TS signature, GOFAST B1 <code> ->
  *            F1 <code>, then the port moves to the target rate and one probe

@@ -17,7 +17,7 @@
  *                        S5500 frame for CLT / IAT / TMOT2, plus a bench-safe
  *                        output sink
  *
- * See docs/ARCHITECTURE.md for the port matrix.
+ * See the maintainer's design notes for the port matrix.
  *
  * THREE RULES ARE BAKED INTO THIS INTERFACE:
  *

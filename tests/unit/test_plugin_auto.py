@@ -22,7 +22,7 @@ import host_c_test as H
 SRC = H.ROOT / "tools" / "tunerstudio" / "plugin" / "src" / "com" / "hanicore" / "tunerstudio"
 TST = H.ROOT / "tools" / "tunerstudio" / "plugin" / "test" / "com" / "hanicore" / "tunerstudio"
 OUT = H.TMP / "plugin_test_classes"
-ENGINE = ["Line", "HcProtocol", "AutoConnect", "SilenceWatch", "Backoff", "RetryPolicy"]
+ENGINE = ["Line", "HcProtocol", "AutoConnect", "SilenceWatch", "ReplyWatch", "Backoff", "RetryPolicy"]
 TESTS = ["HcklineSimLine", "AdapterLine", "AutoConnectTests"]
 
 JDK = Path(r"C:\Program Files\Eclipse Adoptium\jdk-25.0.3.9-hotspot\bin")

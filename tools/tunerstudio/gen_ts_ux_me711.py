@@ -248,8 +248,6 @@ def rpanel(pid, cols, gauges):
 # ==========================================================================
 UNUSED = {
     # --- a whole feature this firmware does not have
-    "oilPressMinKpa": "no oil pressure input exists yet",
-    "oilPressMinRpm": "no oil pressure input exists yet",
     "boostFreqHz": "N75 runs at the 10 ms ASIC frame quantum",
     "lambda1Bank": "closed loop trims every cylinder from its sensor",
     "lambda1AuthPct": "the closed-loop limits are per region (Fuel menu)",
@@ -260,8 +258,6 @@ UNUSED = {
     "pinMapSwitch": "no map switching exists",
     # B6 (V98): pins a dialog showed with no reader and no label
     "pinBaro": "the ambient sensor is on the ECU board (Tools > Barometric sensor)",
-    "pinOilPress": "no oil pressure input path exists",
-    "pinFuelPress": "no fuel pressure input path exists",
     "pinFlex": "no flex fuel input exists",
     "pinGenericAin": "no generic analog input exists yet",
     "pinGenericPwm": "no generic PWM output exists yet",
@@ -273,17 +269,16 @@ UNUSED = {
     # --- a dead scalar that sat beside the live thing that replaced it
     "revMin": "not read",
     "simRpm": "there is no trigger simulator in the ME7.1.1 build",
-    "injChannel": "outputs are routed by cavity (Injection hardware)",
+    "injChannel": "outputs are routed by cavity (Fuel > Injector Characteristics)",
     "ignChannel": "outputs are routed by cavity (Ignition hardware)",
     "dwellMsX100": "running dwell is the Ignition / Dwell curve",
-    "injDeadtimeUs": "dead time is the curve in Injection configuration",
+    "injDeadtimeUs": "dead time is the curve in Fuel > Injector Characteristics",
     "cltPullupOhm": "the CLT sensor curve maps counts to temperature",
     "iatPullupOhm": "the IAT sensor curve maps counts to temperature",
     "injModeLegacy": "superseded by Injection mode",
     "injectorPreset": "not applied - enter the injector data directly",
     "coilPreset": "not applied",
     "mapSensorPreset": "not applied - enter offset and gradient directly",
-    "injRefPressureKpa": "no fuel-pressure compensation",
     "pwmInvert": "the bridge polarity is a board fact (hctarget.h)",
     "cylBank": "no per-bank strategy reads it",
     "testMode": "the bench command itself selects the mode",
@@ -360,13 +355,12 @@ panel("hcEngineFiringExt", "Cylinders 9..12", [
 # (hcsched_dry.c, rusEFI rpmHardLimit + cutFuelOnHardLimit): above revLimit
 # every injector event is planned undriven, fuel returns 200 rpm below it.
 panel("hcLimitsRev", "Rev limiter", [
-    T("#Above the rev limit, cut fuel, spark or both until the speed is back"),
-    T("#below the limit minus the hysteresis. Spark cut skips that many of"),
-    T("#every 8 sparks (8 = all). 0 = no limiter. Inactive while cranking."),
+    T("#Above the rev limit, cut fuel, spark or both - every injection or"),
+    T("#spark - until the speed is back below the limit minus the hysteresis."),
+    T("#0 = no limiter. Inactive while cranking."),
     F("revLimit"),
     F("revLimitHyst"),
     F("revlimMode"),
-    F("revlimPattern", None, "revlimMode != 1"),
     T("#Soft limit: within the hysteresis band below the limit, timing"),
     T("#retard and added fuel ramp in. 0 = off."),
     F("revLimitSoftRetard"),
@@ -621,18 +615,15 @@ panel("hcSensorMap", "Pressure sensor", [
 ])
 
 panel("hcSensorBaro", "Ambient pressure", [
-    T("#The ambient (barometric) pressure the fuel model uses where it needs"),
-    T("#one: Pure Alpha-N ambient correction and the Boosted Alpha-N blend."),
-    F("ambientSource"),
-    F("ambientMaxAge", None, "ambientSource == 1"),
+    T("#The ambient (barometric) pressure is ALWAYS the onboard sensor: on"),
+    T("#the ECU board, read every 10 ms, with this ECU's own factory"),
+    T("#calibration, valid 400..1200 hPa. Pure Alpha-N uses it for the air"),
+    T("#density, Boosted Alpha-N for the blend and the boost gauge."),
+    F("ambientMaxAge"),
     B(),
-    T("#Onboard barometric sensor: on the ECU board, read every 10 ms, with"),
-    T("#this ECU's own factory calibration. Valid 400..1200 hPa; a missing"),
-    T("#or out-of-range reading falls back to the reference pressure."),
-    T("#Engine stopped: the pressure sensor is read after 1 s at rest (50..120"),
-    T("#kPa) and kept for the set time; it never learns running boost."),
-    T("#Reference pressure: the fixed value set in Fuel > Fuel model; also"),
-    T("#the fallback whenever the selected source has no valid reading."),
+    T("#A missing or out-of-range reading holds the last good one for the"),
+    T("#time above; only a sensor that never read valid uses the fault"),
+    T("#value in Fuel > Fuel model (shown as AMBIENT FALLBACK)."),
 ])
 
 panel("hcSensorBattery", "Battery", [
@@ -1138,8 +1129,6 @@ panel("hcUnusedEngine", "Engine and trigger", [
     F("revMin"),
     F("simRpm"),
     F("trigDecoder"),
-    F("oilPressMinKpa"),
-    F("oilPressMinRpm"),
     E("cylBank", "cylinders"),
     F("dbwDevX10"),
     F("dbwDevMs"),
@@ -1147,7 +1136,6 @@ panel("hcUnusedEngine", "Engine and trigger", [
 
 panel("hcUnusedFuel", "Fuel and sensors", [
     F("injectorPreset"),
-    F("injRefPressureKpa"),
     F("injDeadtimeUs"),
     F("injModeLegacy"),
     F("mapSensorPreset"),
@@ -1413,6 +1401,7 @@ ipanel("hcProtLights", 3, [
     IND("(limpCut & 2) > 0", "THROTTLE LIMP OFF", "THROTTLE LIMP", RED),
     IND("(limpCut & 8) > 0", "INJ DUTY PROTECT OFF", "INJ DUTY PROTECT", RED),
     IND("(limpCut & 16) > 0", "FLOOD CLEAR OFF", "FLOOD CLEAR", YELLOW),
+    IND("(limpCut & 4) > 0", "OIL PROTECT OFF", "OIL PRESSURE CUT", RED),
     IND("flagBoostCut", "BOOST CUT OFF", "BOOST CUT", RED),
 ])
 
@@ -1532,10 +1521,6 @@ dialog("hcInjTimingTblDlg", "Injection timing table", [
     P("hcInjTimingTblOptions", "South"),
 ], layout="border")
 
-dialog("hcFuelInjHw", "Injection hardware", [
-    P("hcInjectorPins"),
-    P("hcTestInjectors"),
-], layout="xAxis", help_topic="hcHelpRouting")
 
 
 # V97: TRANSIENT FUEL (firmware/engine/hctrans.c) - rusEFI's wall-wetting AE, on the
@@ -2040,8 +2025,6 @@ dialog("hcUnusedSettings", "Stored settings this firmware does not use", [
 # Outputs / Motorsport dialogs (a tuner must not wire to a cavity that
 # nothing reads or drives).
 panel("hcUnusedIn", "Inputs", [
-    F("pinOilPress"),
-    F("pinFuelPress"),
     F("pinFlex"),
     F("pinBaro"),
     F("pinVss"),
@@ -2129,7 +2112,15 @@ for _i, _code in enumerate(_GI.DTC_PATHS):
                           "white, black, yellow, black"))
     _DTC_BOARD.append(IND("(dtcActive%s & %d) != 0" % (_w, _bit), "-",
                           "ACTIVE NOW", "white, black, red, white"))
-ipanel("hcDtcBoard", 2, _DTC_BOARD)
+    # 2026-10-15 (owner): the third column - what to check; while the code
+    # is stored, what the ECU itself latched (its reason channel), if any
+    _cause = "Check: " + _GI.DTC_CAUSE[_code]
+    _why = _GI.DTC_REASON.get(_code)
+    _DTC_BOARD.append(IND(
+        "(dtcStored%s & %d) != 0" % (_w, _bit), _cause,
+        ("{ ECU: bitStringValue(%s, %s)}" % _why) if _why else _cause,
+        "white, black, yellow, black"))
+ipanel("hcDtcBoard", 3, _DTC_BOARD)
 
 ipanel("hcDtcNone", 1, [
     IND("dtcStoredN == 0",
@@ -2254,7 +2245,7 @@ dialog("hcHelpInfo", "HaniCore - setup order", [
 # order, with its box titles; a Speeduino line HaniCore has no setting for
 # is left out. The MENUS stay HaniCore's (owner). redialog() replaces a
 # window by its id, so menu entries and help topics keep working. No text
-# is copied (docs/CONTRIBUTING.md class F).
+# is copied (the maintainer's design notes class F).
 # ==========================================================================
 def redialog(did, title, items, layout=None, help_topic=None):
     for i, d in enumerate(WORKFLOWS):
@@ -2270,8 +2261,8 @@ panel("swReqFuel", "Calculate Required Fuel", [
     P("swReadReqFuel"),
     F("displacementCc", "Engine displacement"),
     F("cylinders", "Number of cylinders"),
-    F("injFlowCcMin", "Injector flow"),
     N("Required fuel: injector time per cylinder at VE 100 %"),
+    N("Injector flow: Fuel > Injector Characteristics"),
 ])
 panel("swEngine", "", [
     F("fuelModel", "Control algorithm"),
@@ -2308,10 +2299,32 @@ panel("swInjAngle", "Injector close angles", [
     F("injStartDegX10", "Injection angle", "injPhaseMode == 0"),
     N("The angle table: Fuel > Injection timing table"),
 ])
-redialog("hcFuelInjector", "Injector Characteristics", [
+# 2026-10-15: rusEFI's injector pressure compensation (injector dialog:
+# injectorCompensationMode, fuelReferencePressure). Owner 2026-10-15: the
+# WHOLE injector configuration in one window - flow and its compensation
+# together (rusEFI injChars), then dead time, angles, outputs and the test.
+panel("swInjPress", "Injector flow and fuel pressure", [
+    F("injFlowCcMin", "Injector flow"),
+    F("injPressMode", "Pressure compensation"),
+    F("injRefPressureKpa", "Injector flow measured at", "injPressMode != 0"),
+    F("fuelRegKpa", "Regulator pressure",
+      "injPressMode == 1 || injPressMode == 2"),
+    F("pinFuelPress", "Rail pressure sensor", "injPressMode == 3"),
+    F("fuelSensorKpa", "Sensor pressure at 4.5 V", "injPressMode == 3"),
+])
+panel("swInjWest", "", [
+    P("swInjPress"),
     P("swInjOpen"),
+])
+panel("swInjEast", "", [
     P("swInjAngle"),
-], layout="yAxis", help_topic="hcHelpInjMode")
+    P("hcInjectorPins"),
+    P("hcTestInjectors"),
+])
+redialog("hcFuelInjector", "Injector Characteristics", [
+    P("swInjWest"),
+    P("swInjEast"),
+], layout="xAxis", help_topic="hcHelpInjMode")
 
 # ---- Trigger Settings -------------------------------------------------------
 panel("swTrigger", "Trigger Settings", [
@@ -2366,6 +2379,7 @@ redialog("swProtRev", "Rev Limiters", [P("hcLimitsRev")])
 redialog("swProtBoost", "Boost Cut", [P("hcLimitsBoost")])
 redialog("swProtAfr", "AFR Protection", [P("hcProtLean")])
 redialog("swProtPressure", "Pressure-loss Protection", [P("hcProtPressure")])
+redialog("swProtOilDlg", "Oil Pressure Protection", [P("swProtOil")])
 
 # ---- AFR/O2 --------------------------------------------------------------
 panel("swEgo", "", [
@@ -2410,11 +2424,23 @@ redialog("hcIgnitionHw", "Spark Settings", [
 ], layout="yAxis", help_topic="hcHelpIgnition")
 panel("swDwell", "Dwell Settings", [
     F("crankingDwellMsX100", "Cranking dwell"),
-    T("0 = the running dwell curve below applies"),
+    T("0 = the running dwell curves below apply"),
     N("Running dwell, against battery voltage:"),
     P("dwellBattCurve"),
 ])
-redialog("hcDwellDlg", "Dwell Settings", [P("swDwell")])
+panel("swDwellRpm", "Dwell Compensation by rpm", [
+    N("Multiplies the battery dwell; 100 % = no change"),
+    P("dwellRpmCurve"),
+])
+redialog("hcDwellDlg", "Dwell Settings", [P("swDwell"), P("swDwellRpm")],
+         layout="xAxis")
+
+# ---- Sequential spark trims (rusEFI cylinder ignition trims) ---------------
+panel("swIgnTrim", "Ignition trim per cylinder (deg, + = advance)", [
+    E("ignTrim"),
+    N("Cylinder numbers, not firing order. Not applied in fixed timing."),
+])
+redialog("hcIgnTrimDlg", "Sequential spark trims", [P("swIgnTrim")])
 
 # ---- Cranking Settings / ASE ----------------------------------------------
 panel("swCrankOpts", "", [
@@ -2459,10 +2485,10 @@ panel("swIdle", "Idle Settings", [
 panel("swIdleCl", "Closed loop Idle", [
     F("idleKp", "P", "idleEnable == 1"),
     F("idleKi", "I", "idleEnable == 1"),
-    F("idleRangeX10", "Maximum valve value (trim authority)", "idleEnable == 1"),
+    F("idleRangeX10", "Trim authority (never more than 10 % throttle)", "idleEnable == 1"),
     F("idleRpmBand", "Active up to target +", "idleEnable == 1"),
     F("idlePedalX10", "Active below pedal", "idleEnable == 1"),
-    F("etbIdleRange", "Throttle blend range", "idleEnable == 1"),
+    F("etbIdleRange", "Idle throttle range (100 = position is throttle %)", "idleEnable == 1"),
 ])
 panel("swIdleDash", "Dashpot", [
     F("idleDashX10", "Dashpot adder", "idleEnable == 1"),
@@ -2500,7 +2526,89 @@ redialog("swFuelPumpDlg", "Fuel pump", [
 ])
 redialog("swTachoDlg", "Tacho", [
     F("pinTacho", "Output pin"),
+    F("tachoScale", "Output scale (100 = exact, 0 = 100)"),
     C("cmdTachoTest", "Test: 3000 rpm for 6 s (engine stopped)"),
+])
+
+# ---- Accessories: thermo fan / A/C / programmable outputs / pressures -----
+# (2026-10-14, hcaux711.c). Outputs: cavity 115 or 120 only - the CPU's
+# spare low sides, also the cam solenoid stages.
+panel("swFan", "Thermo Fan", [
+    F("pinFan", "Fan output pin"),
+    F("fanOnTemp", "Fan temperature SP (on)", "pinFan != 255"),
+    F("fanOffTemp", "Fan off temperature", "pinFan != 255"),
+    F("fanWithAc", "Fan on with the A/C compressor", "pinFan != 255"),
+    F("fanStoppedOff", "Fan off when the engine is stopped", "pinFan != 255"),
+    N("Output: cavity 115 or 120. A failed coolant sensor runs the fan."),
+])
+ipanel("swFanState", 2, [
+    IND("(auxStatus & 1) > 0", "FAN OFF", "FAN ON"),
+    IND("(auxStatus & 64) > 0", "OUTPUTS PERMITTED", "OUTPUTS HELD"),
+])
+redialog("swFanDlg", "Thermo Fan", [P("swFan"), P("swFanState")])
+panel("swAc", "Air Conditioning Control", [
+    F("pinAcRequest", "A/C request input"),
+    F("acRequestActive", "A/C request is active when", "pinAcRequest != 255"),
+    F("pinAcClutch", "A/C compressor output pin", "pinAcRequest != 255"),
+    F("acDelay", "Compressor delay after request", "pinAcRequest != 255"),
+    F("acIdleUpX10", "Idle up: throttle added", "pinAcRequest != 255"),
+    F("acIdleRpm", "Idle up: target rpm added", "pinAcRequest != 255"),
+    F("acMinRpm", "Compressor off below rpm", "pinAcRequest != 255"),
+    F("acMaxRpm", "Compressor off above rpm (0 = none)", "pinAcRequest != 255"),
+    F("acMaxTps", "Compressor off above throttle (0 = none)", "pinAcRequest != 255"),
+    F("acMaxClt", "Compressor off above coolant", "pinAcRequest != 255"),
+])
+ipanel("swAcState", 1, [
+    IND("(auxStatus & 2) > 0", "A/C NOT REQUESTED", "A/C REQUESTED"),
+    IND("(auxStatus & 4) > 0", "COMPRESSOR OFF", "COMPRESSOR ON"),
+    IND("((auxStatus >> 8) & 15) == 1", "-", "OFF: ENGINE NOT RUNNING"),
+    IND("((auxStatus >> 8) & 15) == 2", "-", "OFF: RPM"),
+    IND("((auxStatus >> 8) & 15) == 3", "-", "OFF: THROTTLE"),
+    IND("((auxStatus >> 8) & 15) == 4", "-", "OFF: COOLANT"),
+    IND("((auxStatus >> 8) & 15) == 5", "-", "WAITING: DELAY"),
+])
+redialog("swAcDlg", "Air Conditioning Control", [P("swAc"), P("swAcState")],
+         layout="xAxis")
+for _n in (1, 2):
+    _on = "pinGp%d != 255" % _n
+    _b = "pinGp%d != 255 && gp%dSrcB != 0" % (_n, _n)
+    panel("swPrgOut%d" % _n, "Output %d" % _n, [
+        F("pinGp%d" % _n, "Output pin"),
+        F("gp%dSrcA" % _n, "Condition A: source", _on),
+        F("gp%dOpA" % _n, "Condition A", _on),
+        F("gp%dThrA" % _n, "Condition A: threshold", _on),
+        F("gp%dHystA" % _n, "Condition A: hysteresis", _on),
+        F("gp%dSrcB" % _n, "Condition B: source (Not used = A only)", _on),
+        F("gp%dOpB" % _n, "Condition B", _b),
+        F("gp%dThrB" % _n, "Condition B: threshold", _b),
+        F("gp%dHystB" % _n, "Condition B: hysteresis", _b),
+        F("gp%dLogic" % _n, "Combine", _b),
+        F("gp%dDelay" % _n, "On delay", _on),
+    ])
+ipanel("swPrgOutState", 2, [
+    IND("(auxStatus & 8) > 0", "OUTPUT 1 OFF", "OUTPUT 1 ON"),
+    IND("(auxStatus & 16) > 0", "OUTPUT 2 OFF", "OUTPUT 2 ON"),
+])
+panel("swPrgOutCols", "", [P("swPrgOut1"), P("swPrgOut2")], layout="xAxis")
+redialog("swPrgOutDlg", "Programmable outputs", [
+    P("swPrgOutCols"), P("swPrgOutState"),
+], layout="yAxis", help_topic="hcHelpPrgOut")
+panel("swPressures", "Fuel/Oil pressure", [
+    F("pinOilPress", "Oil pressure sensor pin"),
+    F("oilSensLoMv", "Sensor voltage at 0 kPa", "pinOilPress != 255"),
+    F("oilSensHiMv", "Sensor voltage at full scale", "pinOilPress != 255"),
+    F("oilSensHiKpa", "Full scale pressure", "pinOilPress != 255"),
+    N("Any analog input this ECU reads. Below 0.2 V or above 4.8 V is a fault."),
+])
+ipanel("swOilState", 1, [
+    IND("(auxStatus & 32) > 0", "OIL PRESSURE: NO VALID READING", "OIL PRESSURE: VALID"),
+])
+redialog("swPressureDlg", "Fuel/Oil pressure", [P("swPressures"), P("swOilState")])
+panel("swProtOil", "Oil Pressure Protection", [
+    F("oilPressMinKpa", "Minimum oil pressure (0 = off)", "pinOilPress != 255"),
+    F("oilPressMinRpm", "Check above rpm", "pinOilPress != 255"),
+    F("oilPressDelay", "Low pressure for", "pinOilPress != 255"),
+    N("Fuel cut until the engine stops; also if no pressure within 5 s of the start"),
 ])
 panel("swBoost", "Boost Control", [
     F("boostEnable", "Boost control enabled"),
@@ -2537,7 +2645,7 @@ EMBEDDED_TABLES = {"boostTgtTbl", "boostDutyTbl", "veTableTbl", "ignMapTbl", "af
 # estimated - the model, the legacy variant, where the pressure sensor
 # measures, which pressure the air density uses, and the table loads - with
 # what is configured and what runs, in words, beside it. Theory and formulas
-# live in docs/ARCHITECTURE.md, not here.
+# live in the maintainer's design notes, not here.
 panel("hcLoadPolicyPanel", "Fuel model", [
     T("#Air per cylinder = air density x cylinder volume x VE, with the VE"),
     T("#table looked up on rpm and the VE table axis."),
@@ -2549,7 +2657,6 @@ panel("hcLoadPolicyPanel", "Fuel model", [
     F("pressureRole"),
     F("densityPolicy", None, "fuelModel != 0"),
     F("densityReference", None, "fuelModel != 0"),
-    F("ambientCorrection", None, "fuelModel == 1"),
     F("fuelUseIat", None, "fuelModel != 0"),
     F("chargeBlendStart", None, "fuelModel == 3 && densityPolicy == 2"),
     F("chargeBlendFull", None, "fuelModel == 3 && densityPolicy == 2"),
@@ -2587,7 +2694,6 @@ dialog("hcLoadPolicies", "Fuel model", [
 MENU = [
     ("&Setup", [
         ("hcSetupEngine", "Engine Constants"),
-        ("hcFuelInjector", "Injector Characteristics"),
         ("hcSetupTrigger", "Trigger Setup"),
         ("hcTriggerLiveDlg", "Trigger live check"),
         SEP,
@@ -2599,19 +2705,19 @@ MENU = [
             ("swProtBoost", "Boost Cut"),
             ("swProtAfr", "AFR Protection"),
             ("swProtPressure", "Pressure-loss Protection"),
+            ("swProtOilDlg", "Oil Pressure Protection"),
         ]),
     ]),
 
     ("&Fuel", [
         ("hcLoadPolicies", "Fuel model"),
+        ("hcFuelInjector", "Injector Characteristics"),
         ("hcVeDlg", "VE Table"),
         ("hcLambdaTblDlg", "Lambda Target Table"),
         ("hcInjTimingTblDlg", "Injection timing table"),
         SEP,
         ("hcAccelDlg", "Acceleration Enrichment"),
         ("hcStftDlg", "AFR/O2"),
-        SEP,
-        ("hcFuelInjHw", "Injector outputs"),
         SEP,
         ("mapEstimateTblEdit", "Pressure estimate (sensor fault)"),
     ]),
@@ -2620,7 +2726,9 @@ MENU = [
         ("hcIgnitionHw", "Spark Settings"),
         ("hcIgnTblDlg", "Spark Table"),
         ("hcDwellDlg", "Dwell settings"),
+        ("hcIgnTrimDlg", "Sequential spark trims"),
         ("ignIatCorrCurve", "IAT Retard"),
+        ("ignBoostCorrCurve", "Boost Retard"),
         ("ignCltCorrCurve", "Cold Advance"),
         SEP,
         ("hcIgnOutDlg", "Ignition outputs"),
@@ -2661,6 +2769,10 @@ MENU = [
         ("boostIatCurve", "Boost duty by intake air"),
         SEP,
         ("swTachoDlg", "Tacho Output"),
+        ("swFanDlg", "Thermo Fan"),
+        ("swAcDlg", "Air Conditioning Control"),
+        ("swPrgOutDlg", "Programmable outputs"),
+        ("swPressureDlg", "Fuel/Oil pressure"),
         SEP,
         ("GROUP", "Electronic throttle (ETB)", [
             ("hcEtbMain", "Electronic Throttle Body"),
@@ -2705,7 +2817,12 @@ MENU = [
 # curve, or named here with a reason.
 # ==========================================================================
 NOT_SHOWN = {
+    # 2026-10-16 (owner): the ambient is always the onboard sensor - the
+    # firmware reads neither field any more (layout kept)
+    "ambientSource": "retired: the onboard sensor is always the ambient",
+    "ambientCorrection": "retired: Pure Alpha-N always uses the onboard ambient",
     "v102Pad": "alignment only",
+    "pad77": "alignment only",
     # Seeds the ambient value for the first main-loop pass after power-up;
     # from then on the Ambient pressure source decides (hcload711.c). Not a
     # setting a tuner should meet.
@@ -2723,6 +2840,7 @@ NOT_SHOWN = {
     # V84: the manual output arm is RETIRED. The byte stays in
     # the page for layout-id stability; showing it would be a dead knob.
     "outputsArmedCfg": "retired V84 - no firmware path reads it on ME7.1.1",
+    "revlimPattern": "retired 2026-10-14 - the spark cut skips every spark",
     "pwmPad": "alignment pad - no runtime path reads it",
     "msPad": "alignment pad - no runtime path reads it",
     "camPad": "alignment pad - no runtime path reads it",
@@ -3219,7 +3337,7 @@ FRONT_INDICATORS = [
     ("fuelCut != 0", "FUEL OK", "FUEL CUT", YELLOW),
     ("dbwFaults != 0", "DBW OK", "DBW FAULT", YELLOW),
     # V97: the MIL request (rusEFI's check-engine line). The DTC framework
-    # owns it - a stored code alone does not light it (docs/ARCHITECTURE.md).
+    # owns it - a stored code alone does not light it (the maintainer's design notes).
     ("dtcMil", "CEL", "CEL", RED),
     # bank 1 lambda is a fresh measurement (lam1Why 0); the reason it is
     # not is the "Lam why" gauge / Diagnostics > Wideband

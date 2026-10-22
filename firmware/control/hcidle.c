@@ -9,7 +9,7 @@
  */
 #include "hcidle.h"
 
-static const int hundred = 100;
+static const int thousand = 1000;
 
 static int i16(unsigned int v)
 {
@@ -23,9 +23,19 @@ static int div100_sat(long v)
     return (int)(v / 100);
 }
 
+/* the I term is kept x1000 (2026-10-15): x100 made Ki 1, the smallest gain,
+   integrate 5 % throttle per second per 100 rpm - faster than the intake
+   lets any idle loop be stable, so no page value could tune it */
+static int div1000_sat(long v)
+{
+    if (v >= 1000000L) return 1000;
+    if (v <= -1000000L) return -1000;
+    return (int)(v / 1000);
+}
+
 void HCIDLE_FAR hcidle_reset(hcidle_t *d)
 {
-    d->integ100 = 0L;
+    d->integ1000 = 0L;
     d->last_rpm = 0u;
     d->have_last = 0u;
     d->run_ms = 0u;
@@ -79,8 +89,9 @@ unsigned int HCIDLE_FAR hcidle_step(hcidle_t *d, const hcidle_cfg_t *c,
                                    const hcidle_in_t *in, unsigned int ms)
 {
     int range = i16(c->range_x10 > 1000u ? 1000u : c->range_x10);
-    int e, p, i;
+    int e, p, i, held;
     long di;
+    unsigned char over;
 
     if (!c->enabled) {
         hcidle_reset(d);
@@ -89,7 +100,7 @@ unsigned int HCIDLE_FAR hcidle_step(hcidle_t *d, const hcidle_cfg_t *c,
     }
     if (in->rpm == 0u) {
         d->dash_ms = 0xFFFFu;
-        d->integ100 = 0L;
+        d->integ1000 = 0L;
         d->run_ms = 0u;
         d->p_x10 = 0;
         d->i_x10 = 0;
@@ -112,6 +123,17 @@ unsigned int HCIDLE_FAR hcidle_step(hcidle_t *d, const hcidle_cfg_t *c,
         (void)place(d, in, d->i_x10, range, HCIDLE_S_PEDAL);
         return with_dash(d, dash_add(d, c));
     }
+    /* NO ADDED AIR ABOVE THE BAND (2026-10-15, car; rusEFI getClosedLoop:
+       "a positive correction could inhibit a return to idle"): pedal
+       released and the engine above target + band, a POSITIVE trim is not
+       applied - it is kept (the learned air, for the return) but it does not
+       open the throttle. A held +100 % trim, wound up while a cold engine
+       stumbled, kept the throttle open to the rev limiter with the pedal
+       released. A negative trim is still applied (less air helps the
+       return). */
+    over = (unsigned char)((unsigned long)in->rpm
+                           >= (unsigned long)in->target_rpm + c->band_rpm);
+    held = (over && d->i_x10 > 0) ? 0 : d->i_x10;
     if (d->dash_ms != 0xFFFFu)
         d->dash_ms = (d->dash_ms >= 0xFFFEu - ms) ? 0xFFFEu
                    : (unsigned int)(d->dash_ms + ms);
@@ -119,13 +141,13 @@ unsigned int HCIDLE_FAR hcidle_step(hcidle_t *d, const hcidle_cfg_t *c,
         unsigned int add = dash_add(d, c);
         if (add != 0u) {
             d->p_x10 = 0;
-            (void)place(d, in, d->i_x10, range, HCIDLE_S_DASH);
+            (void)place(d, in, held, range, HCIDLE_S_DASH);
             return with_dash(d, add);
         }
     }
-    if ((unsigned long)in->rpm >= (unsigned long)in->target_rpm + c->band_rpm) {
+    if (over) {
         d->p_x10 = 0;
-        return place(d, in, d->i_x10, range, HCIDLE_S_COAST);
+        return place(d, in, held, range, HCIDLE_S_COAST);
     }
 
     /* closed loop: error in rpm, clamped so the products stay in range */
@@ -147,13 +169,13 @@ unsigned int HCIDLE_FAR hcidle_step(hcidle_t *d, const hcidle_cfg_t *c,
     d->last_rpm = in->rpm;
     d->have_last = 1u;
     /* the I part alone never exceeds the authority (anti-windup) */
-    d->integ100 += di;
+    d->integ1000 += di;
     {
-        long lim = (long)range * hundred;           /* int x int: inline MUL */
-        if (d->integ100 > lim) d->integ100 = lim;
-        if (d->integ100 < -lim) d->integ100 = -lim;
+        long lim = (long)range * thousand;          /* int x int: inline MUL */
+        if (d->integ1000 > lim) d->integ1000 = lim;
+        if (d->integ1000 < -lim) d->integ1000 = -lim;
     }
-    i = div100_sat(d->integ100);
+    i = div1000_sat(d->integ1000);
     d->p_x10 = p;
     d->i_x10 = i;
     {

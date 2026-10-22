@@ -205,10 +205,18 @@ unsigned char HC_COLD hc_och_ext_byte(unsigned int offset)
         if (offset >= TGT_BH_EXPORT_BYTES + TGT_EV_EXPORT_BYTES) {
             offset = (unsigned int)(offset - TGT_BH_EXPORT_BYTES
                                     - TGT_EV_EXPORT_BYTES);
-            /* and the reset witness after it (hcrtmon711.c) */
+            /* and the reset witness after it (hcrtmon711.c), then the
+               K-line capture (hckwp_me711.c, 2026-10-15) */
             if (offset >= TGT_RT_EXPORT_BYTES) {
-                return hc_rtwit_byte((unsigned int)(offset
-                                                    - TGT_RT_EXPORT_BYTES));
+                offset = (unsigned int)(offset - TGT_RT_EXPORT_BYTES);
+                if (offset >= TGT_WT_EXPORT_BYTES) {
+                    offset = (unsigned int)(offset - TGT_WT_EXPORT_BYTES);
+                    return (offset < TGT_KC_EXPORT_BYTES)
+                        ? ((unsigned char huge *)(TGT_EXTRAM_BASE
+                                                  + TGT_RAM_KLCAP))[offset]
+                        : 0u;
+                }
+                return hc_rtwit_byte(offset);
             }
             return hc_rt_byte(offset);
         }

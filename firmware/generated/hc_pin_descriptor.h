@@ -44,6 +44,12 @@ typedef struct {
    not "not a sensor". */
 #define HC_ADC_NONE   0xFFu
 
+/* Where the table lives: huge on ME7.1.1 (HCONST, 2026-10-14 - the
+   near-constant class had no room left; only far code reads it). */
+#ifndef HC_PIN_MEM
+#define HC_PIN_MEM
+#endif
+
 /* V86: an analog input read by the PERIPHERAL ASIC's converter channel n
    (ME7.1.1: coolant cavity 93 = ASIC AN0, intake air cavity 26 = ASIC AN1).
    It is a real, routable resource - the board's HAL reads it out of the
@@ -54,12 +60,12 @@ typedef struct {
 #define HC_ADC_IS_ASIC(c)   (((c) & 0xF0u) == 0xE0u)
 
 /* Provided by exactly one hc_pin_desc_<target>.c. */
-extern const hc_pin_desc_t hc_pin_table[HC_PHYSICAL_PIN_COUNT];
+extern const hc_pin_desc_t HC_PIN_MEM hc_pin_table[HC_PHYSICAL_PIN_COUNT];
 extern const unsigned int  hc_pin_target_id;
 extern const char          hc_pin_target_name[];
 
 /* 0 for pin 0, pin > 121, or HC_PIN_NONE. */
-const hc_pin_desc_t *HC_COLD hc_pin_desc(unsigned char pin);
+const hc_pin_desc_t HC_PIN_MEM *HC_COLD hc_pin_desc(unsigned char pin);
 
 /* 1 only when the pin exists, is ROUTABLE on this board, and its circuit
    provides EVERY bit in `need`.

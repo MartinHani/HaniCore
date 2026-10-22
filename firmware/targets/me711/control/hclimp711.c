@@ -12,9 +12,12 @@
  *   duty       injDutyInstX10 / injDutySustX10 for injDutySustMs (0 = off)
  *   flood      floodClearX10 (0 = off): no fuel while cranking with the
  *              pedal (throttle without DBW) above it
- *   oil        NOT fed: this image has no oil pressure input (the core
- *              supports it - host-tested - and oilPressMinKpa stays
- *              labelled "not used" until an input exists)
+ *   oil        oilPressMinKpa (0 = off) above oilPressMinRpm for
+ *              oilPressDelay, or no pressure within OIL_START_MS of the
+ *              start: a fuel cut latched to the engine stop (rusEFI
+ *              minOilPressureAfterStart / enableOilPressureProtect). The
+ *              sensor is hcaux711.c's (2026-10-14); unrouted or failed, the
+ *              protection is off - a dead sensor must not stop the engine
  */
 #include "hcfarbridge.h"
 #include "hctarget.h"
@@ -27,9 +30,11 @@
 #include "hclimp.h"
 #include "hclimp711.h"
 #include "hcdeadline711.h"
+#include "hcaux711.h"           /* the oil pressure sensor */
 extern unsigned char dry_seq_active;   /* hcsched_dry.h: true sequential */
 
 #define STEP_MS 10u
+#define OIL_START_MS 5000u     /* pressure must appear this soon after start */
 #define ETB_FAULTS (DBW_F_APP_PAIR | DBW_F_TPS_PAIR | DBW_F_APP_RANGE \
                     | DBW_F_TPS_RANGE | DBW_F_SF | DBW_F_DEV | DBW_F_STALE)
 
@@ -99,10 +104,10 @@ void far hc_limp_service(unsigned int now_ms)
     c.clt_rpm = v ? v : 3000u;
     v = hc_cal_u16(CFG_U_ETB_LIMP_RPM);
     c.etb_rpm = v ? v : 1500u;
-    c.oil_min_kpa = 0u;                          /* no oil input: off   */
-    c.oil_rpm = 0u;
-    c.oil_ms = 0u;
-    c.oil_start_ms = 0u;
+    c.oil_min_kpa = hc_aux_oil_ok() ? hc_cal_u16(CFG_U_OILP_MIN_KPA) : 0u;
+    c.oil_rpm = hc_cal_u16(CFG_U_OILP_MIN_RPM);
+    c.oil_ms = (unsigned int)(hc_cal_u8(CFG_U_OILP_DELAY) * 100u);
+    c.oil_start_ms = OIL_START_MS;
     c.duty_inst_x10 = hc_cal_u16(CFG_U_INJ_DUTY_INST_X10);
     c.duty_sust_x10 = hc_cal_u16(CFG_U_INJ_DUTY_SUST_X10);
     c.duty_sust_ms = hc_cal_u16(CFG_U_INJ_DUTY_SUST_MS);
@@ -114,8 +119,8 @@ void far hc_limp_service(unsigned int now_ms)
     in.cranking = eng_cranking;
     in.clt_x10 = (int)((long)eng_clt_dc - (long)CAL_TEMP_BIAS * 10L);
     in.clt_ok = (unsigned char)((eng_sensor_err & ENG_ERR_CLT) == 0u);
-    in.oil_kpa = 0u;
-    in.oil_ok = 0u;
+    in.oil_kpa = hc_aux_oil_kpa();
+    in.oil_ok = hc_aux_oil_ok();
     /* + the Bosch DLR's reversible request (FR DLR 3.60, hcetbcal.c): the
        controller saturated beyond DLRPID1T - lifted when it recovers. */
     in.etb_fault = (unsigned char)(dbw_on && ((hc_dbw_faults() & ETB_FAULTS) != 0u
