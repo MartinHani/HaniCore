@@ -41,7 +41,8 @@ drive-by-wire, on the Porsche ECU.
 * VVT, launch, flat shift, anti-lag, check-engine lamp: simulator only
 * outputs 5–8 and the second wideband bank: unused on a 4-cylinder
 * no CAN
-* the K-line updater is bench-proven on the Porsche and the 2.7T only
+* the K-line update on the 4F: not tried on hardware (bench-proven on the
+  Porsche, the 2.7T and the 1.8T ME7.5)
 
 ## Known bugs
 
@@ -75,10 +76,10 @@ The build writes a full 1 MiB flash image, `bins\hanicore\<image>.bin`. Write
 it with any ME7 boot-mode tool; do not let the tool correct checksums. A
 full-image flash leaves the calibration store blank.
 
-**Update over the K-line, ECU closed.** Build the resident loader once, then
-the image with `--updater` (`<image>_updater.bin`): the first one goes in by
-boot mode, every later one over cavity 43 or the car's diagnostic port,
-engine stopped:
+**Update over the K-line, ECU closed.** The release images take it: the
+first one goes in by boot mode, every later one over cavity 43 or the car's
+diagnostic port, engine stopped. Building your own, build the resident loader
+once, then the image with `--updater` (`<image>_updater.bin`):
 
 ```powershell
 py tools\build\build_loader.py [--board <b>]
@@ -88,7 +89,8 @@ py tools\flash\hc_update.py --image bins\hanicore\<image>_updater.bin --port COM
 
 It saves the tune, writes the new image, lets a resident loader install it
 and puts the tune back (carried across by field name after a page-layout
-change). Bench: ~40 s on the Porsche, ~60 s on the 2.7T. An interrupted
+change). Bench: ~40 s on the Porsche, ~60 s on the 2.7T, ~45 s on the
+1.8T ME7.5. An interrupted
 update is recovered by boot mode.
 
 ## Wiring
