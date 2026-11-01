@@ -18,7 +18,7 @@ Two questions came out of that, and they must not be answered together:
     A. does TunerStudio ever SEND the command?      -> the .ini's problem
     B. would the firmware ACT on it if it arrived?  -> this tool's problem
 
-A is answered by tests/tunerstudio/ts_ini_ui_contract.py, which reproduces the exact
+A is answered by tests/tuning/ts_ini_ui_contract.py, which reproduces the exact
 TunerStudio load errors from the frozen .ini (an unterminated string, and four
 output channels used as page Constants).
 
@@ -53,12 +53,12 @@ import me711_heartbeat_gap_proof as HB   # noqa: E402  the Rig
 import me711_image as PI                 # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
-LIVE_INI = ROOT / "tunerstudio/hanicore_me711.ini"
+LIVE_INI = ROOT / "tuning/hanicore_me711.ini"
 # 2026-10-11: the S5500 window buttons are a developer page, in the
 # FORENSIC project only (gen_ts_ini_me711.DEV_ONLY); the tuner's project no
 # longer declares cmdS5500Win*. The forensic file carries the same page,
 # channels and commands as the tuner's, plus the developer pages.
-_DEV = sorted((ROOT / "tunerstudio").glob("hanicore_me711_*_forensic.ini"))
+_DEV = sorted((ROOT / "tuning").glob("hanicore_me711_*_forensic.ini"))
 if _DEV:
     LIVE_INI = _DEV[-1]
 

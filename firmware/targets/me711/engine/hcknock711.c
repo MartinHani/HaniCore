@@ -543,7 +543,14 @@ void far hc_knock_service(unsigned int now_ms)
     if (mode > KN_MODE_ACTIVE) {
         mode = KN_MODE_OFF;
     }
-    if (mode != KN.mode || (mode != KN_MODE_OFF && cfg_rev != hc_cfg_active_rev)) {
+    /* ...and when the scheduler's geometry arrived after the load
+       (2026-10-29): it is built on the FIRST TOOTH, while this runs from
+       boot, so a load with no geometry (SRAM lost: first start after a
+       flash or a battery disconnect) latched HCKNOCK_E_CYLS and knock
+       control stayed refused until the next page apply. cfg.cyls is the
+       geom_n it was loaded with (1 for none). */
+    if (mode != KN.mode || (mode != KN_MODE_OFF && (cfg_rev != hc_cfg_active_rev
+            || KN.cfg.cyls != (unsigned char)(KN.geom_n ? KN.geom_n : 1u)))) {
         if (mode == KN_MODE_OFF) {
             pins_release();
             hc_io_knock_band(0xFFu);            /* the OEM idle image again */

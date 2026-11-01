@@ -66,6 +66,19 @@ import c167sim as S                        # noqa: E402
 import me711_heartbeat_gap_proof as HB   # noqa: E402
 import me711_image as PI
 import me711_dpp as _dpp                 # noqa: E402
+import hc_board as HCB                   # noqa: E402
+
+def _dc_p2_own():
+    if not HCB.IS_DC:
+        return 0
+    t = HCB.target_text()
+    bits = [int(re.search(r"#define\s+%s\s+(\d+)" % n, t).group(1))
+            for n in ("TGT_MON_PORT_BIT", "TGT_DC_LSU_HEAT_BIT",
+                      "TGT_DC_NB_HEAT_BIT")]
+    return sum(1 << b for b in bits)
+
+
+DC_P2_OWN = _dc_p2_own()
 
 ROOT = Path(__file__).resolve().parents[3]
 MAP = PI.MAP
@@ -216,9 +229,9 @@ def main() -> int:
     # DPP1 WAS A LITERAL, AND IT WAS THE V52 CONST PAGE.
     # tools/lib/me711_dpp.py reads it from the map, as the startup does.
     _dpp.apply(m)
-    m.sfr[0xFE10] = 0xFC00
+    m.sfr[0xFE10] = PI.main_regbank()          # CP, from the map
     m.sfr[0xFE12] = 0xF700
-    m.w16(0xFC00, 0xF9F0)
+    m.w16(m.sfr[0xFE10], PI.user_stack_top())  # R0
     a = sym("hc_hal_outputs_live")
     sp = (m.sfr[0xFE12] - 2) & 0xFFFF
     m.w16(sp, a >> 16)
@@ -248,11 +261,26 @@ def main() -> int:
     def _log(addr, v, width):
         aa = addr & 0xFFFF
         nm = FORBIDDEN.get(aa)
+        hi = False
         if nm is None and width == 1:
             nm = FORBIDDEN.get(aa - 1)      # high byte of a word SFR
-        if nm is not None:
-            hits.append((rig.cpu.steps,
-                         (rig.cpu.csp << 16) | rig.cpu.ip, nm, v))
+            hi = nm is not None
+        if nm is None:
+            return
+        # THE ME7.5 DC's OWN P2 FUNCTIONS (2026-10-29). On that board P2.5 is
+        # the 68HC05 monitor line (CC5) and P2.4 / P2.12 the two lambda
+        # heaters - bits the Porsche uses for coils 5/6 and the fuel pump.
+        # There a P2/DP2 write is judged by the bits it CHANGES: those three
+        # may move, any other P2 bit is still a forbidden write.
+        if DC_P2_OWN and nm in ("P2", "DP2"):
+            reg = aa - 1 if hi else aa
+            old = rig.mem.r16(reg)
+            new = ((old & 0x00FF) | ((v & 0xFF) << 8)) if hi else (
+                ((old & 0xFF00) | (v & 0xFF)) if width == 1 else v & 0xFFFF)
+            if not ((old ^ new) & ~DC_P2_OWN & 0xFFFF):
+                return
+        hits.append((rig.cpu.steps,
+                     (rig.cpu.csp << 16) | rig.cpu.ip, nm, v))
 
     def w8(s_, addr, v, _o=ow8):
         _log(addr, v, 1)
@@ -301,7 +329,8 @@ def main() -> int:
     # the output latch happens to contain.
     dp2, dp7, dp8 = (rig.mem.r16(0xFFC2), rig.mem.r16(0xFFD2),
                      rig.mem.r16(0xFFD6))
-    coil_out = dp2 & 0x00FF                      # P2.0-7  = ZDG1..ZDG8
+    coil_out = dp2 & 0x00FF & ~DC_P2_OWN         # P2.0-7  = ZDG1..ZDG8 (on
+                                                 # the DC P2.4/P2.5 are its own)
     inj_out = (dp7 & 0x00F0) | (dp8 & 0x00F8)    # P7.4-7, P8.3-7
     check("every coil and injector pin is still an INPUT at the end",
           coil_out == 0 and inj_out == 0,

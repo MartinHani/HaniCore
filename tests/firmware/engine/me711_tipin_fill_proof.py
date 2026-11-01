@@ -66,9 +66,31 @@ def s16(v):
     return v - 0x10000 if v & 0x8000 else v
 
 
+def table_adv_x10(page, rpm, load):
+    """the page's own ignition cell at (rpm, load), interpolated like
+    hc_cal_map (bilinear, axes clamped), in 0.1 deg"""
+    import me711_config_state_test as T
+    off = lambda n: 12 + T.d(T._cfg, n)          # hcconfig.h; page bytes start after 12
+    u16 = lambda o: page[o] << 8 | page[o + 1]
+    rax = [u16(off("CAL_IGN_RPM_AX") + 2 * i) for i in range(16)]
+    lax = [u16(off("CAL_IGN_LOAD_AX") + 2 * i) for i in range(16)]
+
+    def bracket(ax, v):
+        v = min(max(v, ax[0]), ax[-1])
+        i = max(k for k in range(15) if ax[k] <= v) if v < ax[-1] else 14
+        return i, (v - ax[i]) / ((ax[i + 1] - ax[i]) or 1)
+    ri, rf = bracket(rax, rpm)
+    li, lf = bracket(lax, load)
+    cell = lambda l, r: page[off("CAL_IGN_MAP") + l * 16 + r]
+    c = ((cell(li, ri) * (1 - lf) + cell(li + 1, ri) * lf) * (1 - rf)
+         + (cell(li, ri + 1) * (1 - lf) + cell(li + 1, ri + 1) * lf) * rf)
+    return round((c - 40) * 5)
+
+
 def main() -> int:
     print("=== quick throttle step at 1300 rpm - %s ===" % M.PI.image())
-    s = M.Stress(M.build_awt_page(), ts=False)
+    page = M.build_board_page()
+    s = M.Stress(page, ts=False)
     s.throttle = 0.05
     s.boot()
     rpm = 1300
@@ -95,9 +117,17 @@ def main() -> int:
           a100 >= aend + 30, "%.1f deg (full load %.1f)" % (a100 / 10, aend / 10))
     check("F3 the load reaches the throttle (50 % within 1 %) by 1.2 s",
           abs(lend - 500) <= 10, "%.1f %%" % (lend / 10))
-    # the table's own value at (1300 rpm, 50 %): AWT preset ignMap row 50 %
+    # the table's own value at (1300 rpm, the load ignLoadMode selects) -
+    # read from the page, never a literal: the AWT preset moved the ignition
+    # table to rl (ignLoadMode 3, the stock KFZW axis) after this gate was
+    # written against MAP and its 3.5 deg
+    import me711_config_state_test as T
+    mode = page[12 + T.d(T._gen, "CFG_U_IGN_LOAD_MODE")]
+    load = s.r16(("eng_load", "eng_map_kpa_x10", "eng_tps_x10", "eng_rl_x10")[mode & 3])
+    want = table_adv_x10(page, rpm, load)
     check("F4 the steady advance is the table's full-load value (+-1 deg)",
-          abs(aend - 35) <= 10, "%.1f deg (table 3.5)" % (aend / 10))
+          abs(aend - want) <= 10, "%.1f deg (table %.1f at load %.1f, mode %d)"
+          % (aend / 10, want / 10, load / 10, mode))
     print("\nPASS" if not FAILS else "\n%d FAIL" % FAILS)
     return 1 if FAILS else 0
 

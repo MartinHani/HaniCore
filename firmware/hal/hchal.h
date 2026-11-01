@@ -30,10 +30,6 @@
  *    channel has no backing source on this board (no MAP sensor on ME7.1.1) or
  *    no fresh data yet (an S5500-backed channel before the runtime frame is
  *    flowing). That is the honest state, and it is NOT a guessed mapping.
- *
- * 3. On ANY build with HANICORE_BENCH_SAFE defined, every hc_hal_out*() call
- *    is a counting no-op. Common logic starting to run cannot energise a coil,
- *    an injector, a throttle motor or a boost valve.
  */
 #ifndef HCHAL_H
 #define HCHAL_H
@@ -178,11 +174,10 @@ extern unsigned char hc_hal_trig_armed;
 #define HC_OUT_BOOST      22u
 #define HC_OUT_COUNT      23u
 
-/* Digital on/off. On a HANICORE_BENCH_SAFE build this only records the
-   request and returns - no port, no latch, no direction register is touched. */
+/* Digital on/off. */
 void          hc_hal_out(unsigned char sem, unsigned char on);
 
-/* A duty cycle in 0.1 %, for the PWM-driven outputs. Same bench-safe rule. */
+/* A duty cycle in 0.1 %, for the PWM-driven outputs. */
 void          hc_hal_out_duty(unsigned char sem, unsigned int duty_x10);
 
 /* THE THROTTLE BRIDGE'S OWN FAULT PIN, asked as a question rather than as a
@@ -209,8 +204,7 @@ unsigned char hc_hal_dbw_sf_level(void);
 void far hc_hal_dbw_motor(unsigned char on, unsigned char dir, unsigned int duty);
 #endif
 
-/* 0 whenever HANICORE_BENCH_SAFE is defined or the automatic output
-   permissions (hcsafety.c) are not met. The output paths check this IN
+/* 0 whenever the automatic output permissions (hcsafety.c) are not met. The output paths check this IN
    ADDITION to their own class permission - defence in depth. */
 unsigned char hc_hal_outputs_live(void);
 

@@ -52,7 +52,8 @@ def checks(sizes=None):
     res.append(("S2 system stack worst %d of %d B (%.0f %%, limit %.0f %%)" % (s, ss, 100.0 * s / ss, 100 * LIMIT),
                 s <= LIMIT * ss))
     res.append(("S3 no recursion / indirect call: %s" % (out["problems"] or "none"), not out["problems"]))
-    h = SAFETY_H.read_text(errors="replace")
+    import hc_board
+    h = hc_board.board_text(SAFETY_H)     # this board's guard band
     glo = int(re.search(r"#define\s+HC_STK_GUARD_LO\s+(0x[0-9A-Fa-f]+)", h).group(1), 16)
     ghi = int(re.search(r"#define\s+HC_STK_GUARD_HI\s+(0x[0-9A-Fa-f]+)", h).group(1), 16)
     mp = PI.MAP.read_text(errors="replace")

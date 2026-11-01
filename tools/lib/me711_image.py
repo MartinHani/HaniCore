@@ -48,8 +48,18 @@ BINS = Path(os.environ.get("HANICORE_ME711_BINS", str(ROOT / "bins/hanicore")))
 # build living in a file named v62 is how six gates once audited a stale
 # binary. Point a gate at the frozen one with HANICORE_ME711_STEM when that is
 # genuinely what is wanted.
+# 2026-10-24: HANICORE_BOARD=vag_me71_c4 (tools/lib/hc_board.py) makes the
+# 2.7T image the default; HANICORE_ME711_STEM still wins over both.
+import hc_board as _BOARD  # noqa: E402
 STEM = os.environ.get("HANICORE_ME711_STEM",
-                      "HaniCore_ME711_v102_dev")
+                      _BOARD.STEM or "HaniCore_ME711_v102_dev")
+# the image's own generated TunerStudio file (gen_ts_ini_me711 OUT_VERSIONED):
+# tuning/hanicore_me711_v102_dev.ini, hanicore_me71_27t_v102_dev.ini
+# (the board's own image may share another's file: the 4F uses the Porsche's,
+# also when a gate names that image through HANICORE_ME711_STEM)
+INI = ROOT / "tuning" / ((_BOARD.INI_STEM
+                               if STEM == (_BOARD.STEM or "HaniCore_ME711_v102_dev")
+                               and _BOARD.INI_STEM else STEM).lower() + ".ini")
 
 # STEM -> the build name its manifest carries.
 #
@@ -302,7 +312,23 @@ EXPECTED_BUILD = {
     "HaniCore_ME711_v100_dev": "V100_DEV",
     "HaniCore_ME711_v101_dev": "V101_DEV",
     "HaniCore_ME711_v102_dev": "V102_DEV",
-}.get(STEM)
+    # 2026-10-24: the second board of the family - the Audi 2.7T ME7.1 C4
+    # (build_hanicore_me711.py --board vag_me71_c4). Point a gate at it with
+    # HANICORE_ME711_STEM=HaniCore_ME71_27T_v102_dev.
+    "HaniCore_ME71_27T_v102_dev": "V102_ME71_27T_DEV",
+    # 2026-10-27: the Audi 4F 4.2 V8 ME7.1.1 - Porsche code, its own boot
+    # region (build_hanicore_me711.py --board audi_4f_v8)
+    "HaniCore_ME711_4F_v102_dev": "V102_ME711_4F_DEV",
+    # 2026-10-28: the VAG 1.8T ME7.5 DC (--board vag_me75_dc), the 2.7T
+    # branch with the CC650 + monitor service
+    "HaniCore_ME75_DC_v102_dev": "V102_ME75_DC_DEV",
+}.get(__import__("re").sub(
+    r"(_ownboot|_boschboot)?(_p0test|_p0srst)?(_updater)?$", "", STEM))
+# 2026-10-29: `<stem>_boschboot` is the same build on the donor's Bosch boot
+# region (build_hanicore_me711.py --bosch-boot, the 05.xx mask-ROM boards;
+# `_ownboot` the earlier name of today's default);
+# `_p0test` / `_p0srst` the firmware-update P0 bench test images;
+# 2026-10-30: `_updater` the resident-loader layout (--updater), app in SA6
 if EXPECTED_BUILD is None:
     raise SystemExit(f"unknown HANICORE_ME711_STEM {STEM!r}")
 
@@ -437,6 +463,17 @@ def near_segments() -> list:
             out.append((int(m.group(1), 16) & 0xFFFF,
                         int(m.group(2), 16) & 0xFFFF, m.group(3)))
     return out
+
+
+def main_regbank() -> int:
+    """CP for a function-call rig: where the linker put ?C_MAINREGISTERS.
+    0xFC00 on the Porsche; 0xFD00 on the 2.7T, whose C167CR IRAM puts the
+    register banks beside the planner's idata (REGBANK, 2026-10-26). A rig
+    that typed 0xFC00 wrote its registers over the 2.7T's own data."""
+    import re
+    m = re.search(r"^([0-9A-F]{6})H\s+[0-9A-F]{6}H\s+[0-9A-F]{6}H\s+DATA\s.*\*REG\*\s+\?C_MAINREGISTERS",
+                  MAP.read_text(errors="replace"), re.M)
+    return (int(m.group(1), 16) & 0xFFFF) if m else 0xFC00
 
 
 def user_stack_top() -> int:

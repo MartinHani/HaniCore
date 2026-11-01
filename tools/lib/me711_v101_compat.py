@@ -20,6 +20,13 @@ def known_identity(layout,page):
     if len(page)!=4096 or int.from_bytes(page[MAGIC_OFF:MAGIC_OFF+2],'big')!=value('HC_UNIVERSAL_MAGIC'):return False
     schema=int.from_bytes(page[SCHEMA_OFF:SCHEMA_OFF+2],'big')
     return (layout,schema) in ((OLD_LAYOUT,OLD_SCHEMA),(LAYOUT,SCHEMA))
+def aux_defaults():
+    """hc_config_manager.c aux_defaults[], byte for byte (comments dropped)."""
+    m=re.search(r'aux_defaults\[(\d+)\]\s*=\s*\{(.*?)\};',MANAGER,re.S)
+    body=re.sub(r'/\*.*?\*/','',m.group(2),flags=re.S)
+    out=bytes(int(t,0) for t in re.findall(r'0x[0-9A-Fa-f]+|\d+',body))
+    assert len(out)==int(m.group(1)),(len(out),m.group(1))
+    return out
 def migrate_v101(page):
     if not known_identity(OLD_LAYOUT,page):raise ValueError('not exact V101 schema/layout')
     p=bytearray(page);start=value('CFG_U_FUEL_MODEL');reference=value('CFG_U_PRESSURE_REF')
@@ -34,6 +41,10 @@ def migrate_v101(page):
     # the throttle words appended after that block (hc_cfg_v102_defaults)
     p[value('CFG_U_DBW_PWM_HZ'):value('CFG_U_DBW_PWM_HZ')+2]=(2000).to_bytes(2,'big')
     p[value('CFG_U_DBW_FRICTION_X10'):value('CFG_U_DBW_FRICTION_X10')+2]=b'\0\0'
+    # the auxiliary functions' block (hc_cfg_aux_defaults, 2026-10-14): a V101
+    # page has zeros there - ignition trim 0 = -12.8 deg, pin 0 instead of
+    # "no pin" (255) - so the firmware seeds it and this path must as well
+    aux=aux_defaults();a0=value('CFG_U_DWELL_RPM_AX');p[a0:a0+len(aux)]=aux
     p[SCHEMA_OFF:SCHEMA_OFF+2]=SCHEMA.to_bytes(2,'big')
     off=value('CFG_U_CRC');p[off:off+2]=b'\0\0'
     return bytes(p)

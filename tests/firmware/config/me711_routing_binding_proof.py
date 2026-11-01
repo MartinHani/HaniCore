@@ -217,11 +217,11 @@ def main():
     # it replaced. The .ini is generated; this is what stops it drifting.
     import re as _re
     ini = [p for p in (Path(__file__).resolve().parents[3]
-                       / "tunerstudio").glob("hanicore_*.ini")
-           if p.stem.lower() == PI.STEM.lower()]
+                       / "tuning").glob("hanicore_*.ini")
+           if p.name == PI.INI.name]
     if not ini:
         ck("the .ini for this image is present to check the dropdown", False,
-           "generate it: py tools\\tunerstudio\\gen_ts_ini_me711.py")
+           "generate it: py tools\\tuning\\gen_ts_ini_me711.py")
     else:
         txt = ini[-1].read_text(encoding="utf-8", errors="replace")
         m = _re.search(r"^\s*pinCrank\s*=\s*bits,\s*U08,\s*\d+,\s*"

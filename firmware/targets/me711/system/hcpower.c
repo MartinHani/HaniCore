@@ -124,7 +124,12 @@ unsigned char hc_power_hold_done = 0;
 
 void hc_power_hold_assert(void)
 {
+#if TGT_BOARD_VAG_ME75_DC
+    NLEN_FR_LATCH = 0;     /* ME7.5 DC: NLEN_FR LOW, as the OEM (0x070316);
+                              the hold is the CC650's reg 0x44 bit 2 */
+#else
     NLEN_FR_LATCH = 1;     /* drive value first ... */
+#endif
     NLEN_FR_DIR   = 1;     /* ... then enable the driver. Never the reverse. */
     hc_power_hold_done = 1;
 }

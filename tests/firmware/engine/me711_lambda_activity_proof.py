@@ -77,12 +77,15 @@ def main():
     # (the CMPB of `valid` against 1 and the load of `lambda`).
     r.m.flash[addr:addr+6]=orig
     import re
-    asm=D.disassemble(bytes(r.m.flash),addr,16,T.sym('hc_io_lambda')>>16)
-    near_lam=int(re.search(r'MOV\s+R4, \[R\d+\+#([0-9A-F]+)h\]',asm).group(1),16)
-    mv=re.search(r'MOVB\s+RL4, \[R5\+#([0-9A-F]+)h\]',asm)
-    # an image whose hc_io_lambda never reads `valid` (before 2026-10-10):
-    # hcwb_t puts valid 4 bytes before lambda (hcwb.h)
-    near_valid=int(mv.group(1),16) if mv else near_lam-4
+    # 48 instructions: since 2026-10-24 the page's external-lambda test comes
+    # first, and its own MOVB RL4,[R4+#..] is not `valid`
+    asm=D.disassemble(bytes(r.m.flash),addr,48,T.sym('hc_io_lambda')>>16)
+    lams=[int(x,16) for x in re.findall(r'MOV\s+R4, \[R\d+\+#([0-9A-F]+)h\]',asm)]
+    vals=[int(x,16) for x in re.findall(r'MOVB\s+RL4, \[R\d+\+#([0-9A-F]+)h\]',asm)]
+    # hcwb_t puts valid 4 bytes before lambda (hcwb.h); an image whose
+    # hc_io_lambda never reads `valid` (before 2026-10-10) has no pair
+    pair=[(v,l) for l in lams for v in vals if l-v==4]
+    near_valid,near_lam=pair[0] if pair else (lams[0]-4,lams[0])
     assert near_lam-near_valid==4, (hex(near_valid),hex(near_lam))
     dpp=next(k for k,v in D.SFR.items() if v=='DPP%d'%(near_valid>>14))
     page=r.m.sfr.get(dpp,3)

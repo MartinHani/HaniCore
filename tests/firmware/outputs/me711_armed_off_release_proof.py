@@ -115,11 +115,24 @@ def gen_off(name):
 
 
 def tgt_int(name):
+    import hc_board   # THIS board's value (the C4 branch differs: EKP P4.4)
     m = re.search(r"#define\s+%s\s+(\d+)" % name,
-                  TGT_H.read_text(errors="replace"))
+                  hc_board.target_text())
     if not m:
         raise SystemExit("%s is not in hctarget.h" % name)
     return int(m.group(1))
+
+
+# the EKP port's DP / P registers (REG167.H): P2 0xFFC2/0xFFC0, P4 0xFFCA/0xFFC8
+def _ekp_regs():
+    try:
+        no = tgt_int("TGT_EKP_PORT_NO")
+    except SystemExit:
+        no = 2
+    return {2: (0xFFC2, 0xFFC0), 4: (0xFFCA, 0xFFC8)}[no], no
+
+
+(EKP_DP, EKP_P), EKP_PORT = _ekp_regs()
 
 
 class Rig:
@@ -152,13 +165,15 @@ class Rig:
         cpu = self.cpu
         saved = (cpu.csp, cpu.ip, cpu.m.sfr[0xFE12], cpu.ext)
         cpu.ext = None
+        sp0 = cpu.m.sfr[0xFE12]   # returned = SENTINEL AND the frame unwound:
+        # code at seg:0002 exists (0x860002, 2026-10-25)
         cpu.push(SENTINEL)
         cpu.csp = (addr >> 16) & 0xFF
         cpu.ip = addr & 0xFFFF
         for i, v in enumerate(args):
             cpu.sr(8 + i, v & 0xFFFF)
         for _ in range(400_000):
-            if (cpu.ip & 0xFFFF) == SENTINEL:
+            if (cpu.ip & 0xFFFF) == SENTINEL and cpu.m.sfr[0xFE12] >= sp0:
                 break
             cpu.step()
         else:
@@ -168,7 +183,8 @@ class Rig:
         return out
 
     def dp2(self):
-        return self.rig.mem.r16(0xFFC2)
+        """The EKP port's direction register (DP2, or DP4 on the C4 board)."""
+        return self.rig.mem.r16(EKP_DP)
 
     def pump(self, ms, ign, rpm):
         self.call(sym("hc_fuelpump_service"),
@@ -183,7 +199,7 @@ def main() -> int:
     print("=== HaniCore ME7.1.1 - an armed output that is commanded OFF is "
           "RELEASED ===\n")
     print("  image   %s" % PI.IMG.name)
-    print("  EKP     P2.%d, DP2 mask 0x%04X\n" % (ekp, mask))
+    print("  EKP     P%d.%d, DP%d mask 0x%04X\n" % (EKP_PORT, ekp, EKP_PORT, mask))
 
     r = Rig(PI.image())
     check("the page was armed during the run", r.armed_written,
@@ -199,7 +215,7 @@ def main() -> int:
           "hc_fuelpump_command() = %d" % cmd_on)
     check("...and the pin is DRIVEN while it is on",
           (dp_on & mask) != 0,
-          "DP2 = 0x%04X, bit %d set" % (dp_on, ekp))
+          "DP%d = 0x%04X, bit %d set" % (EKP_PORT, dp_on, ekp))
 
     # ---- the prime expires. ARMING IS NOT WITHDRAWN. --------------------
     #

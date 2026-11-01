@@ -99,18 +99,43 @@ def prologue(startup: int) -> bytes:
 
 
 def compose(img: bytearray, startup: int, r1_limit: int, r2_start: int,
-            r2_limit: int) -> None:
+            r2_limit: int, mask_rom_header: bytes | None = None,
+            vector_seg: int = VECTOR_SEG) -> None:
     """Write the whole boot region into `img` (file offsets 0..0x1FFFF).
     The sums are NOT written here: the caller computes them over the final
-    image, because they sample HaniCore's code pages too."""
+    image, because they sample HaniCore's code pages too.
+
+    `mask_rom_header` (2026-10-29): the 05.xx mask-ROM family (2.7T, 4F,
+    ME7.5 DC - ROMSYS variant 0x5BDC / 0x5B00). Their CPU always starts in
+    the mask ROM (ROMEN set by the board), which reads exactly what this
+    region already provides: the header fields, the sampled words, the two
+    markers and the record that sums them (0x971D on every donor read). The
+    64-byte header of the board's own read is the base - its descriptor
+    table and variant word are the checking scheme's parameters, not code -
+    and every field written below overrides it. No prologue: a reset never
+    fetches from flash 0 there. Slot 0 jumps straight to ?C_STARTUP and slots
+    1..127 forward to seg82, so the same table is correct if the startup ever
+    clears ROMEN.
+
+    `vector_seg`: the segment slots 1..127 forward to (N*4 in it) - HaniCore's
+    second-level table, seg82 today; a later layout (an application table at
+    the start of SA6) changes this value and the two sampled-range limits
+    only."""
     img[0:REGION_LEN] = b"\xFF" * REGION_LEN
-    img[0:4] = _jmps(0x00, PROLOGUE)
+    if mask_rom_header is not None:
+        if len(mask_rom_header) != 0x40:
+            raise ValueError("mask_rom_header: the 64 bytes at 0x8000")
+        img[HEADER:HEADER + 0x40] = mask_rom_header
+        img[0:4] = _jmps((startup >> 16) & 0xFF, startup & 0xFFFF)
+    else:
+        img[0:4] = _jmps(0x00, PROLOGUE)
     for slot in range(1, 128):
-        img[slot * 4:slot * 4 + 4] = _jmps(VECTOR_SEG, slot * 4)
+        img[slot * 4:slot * 4 + 4] = _jmps(vector_seg, slot * 4)
     for off, word in MARKERS:
         img[off:off + 2] = word.to_bytes(2, "little")
-    p = prologue(startup)
-    img[PROLOGUE:PROLOGUE + len(p)] = p
+    if mask_rom_header is None:
+        p = prologue(startup)
+        img[PROLOGUE:PROLOGUE + len(p)] = p
 
     def put32(off, v):
         img[off:off + 4] = (v & 0xFFFFFFFF).to_bytes(4, "little")

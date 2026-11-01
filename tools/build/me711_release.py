@@ -44,8 +44,8 @@ import hcpaths  # noqa: F401,E402  (puts every tools/ and tests/ module on sys.p
 import me711_image as PI            # noqa: E402  names the image ONCE
 
 TDIR = ROOT / "firmware/targets/me711"
-INI = ROOT / ("tunerstudio/hanicore_%s.ini"
-              % PI.STEM.replace("HaniCore_ME711_", "me711_").lower())
+INI = ROOT / ("tuning/hanicore_%s.ini"
+              % PI.STEM.replace("HaniCore_ME711_", "me711_").replace("HaniCore_ME71_", "me71_").lower())
 FORENSIC_INI = INI.with_name(INI.stem + "_forensic.ini")
 ROLLBACK = ROOT / ("release/Porsche_ME711_V29_PHYSICAL_TEST/"
                    "ROLLBACK_HaniCore_ME711_A1146_mainrelay_v26.bin")
@@ -175,10 +175,10 @@ def main(argv) -> int:
         print("  forensic read-only view %d, firmware and companion .ini agree"
               % forensic_och)
     print("\n  NOW PROVE IT, do not take the equality above as the proof:")
-    print("    py tests\\tunerstudio\\me711_och_contract_proof.py --image %s --ini %s"
+    print("    py tests\\tuning\\me711_och_contract_proof.py --image %s --ini %s"
           % ((out / img.name).relative_to(ROOT),
              (out / INI.name).relative_to(ROOT)))
-    print("    py tests\\tunerstudio\\ts_ini_ui_contract.py %s"
+    print("    py tests\\tuning\\ts_ini_ui_contract.py %s"
           % (out / INI.name).relative_to(ROOT))
     print("\n  And write the bench card. A package without one is a binary "
           "nobody can safely flash.")

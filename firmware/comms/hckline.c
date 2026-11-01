@@ -31,7 +31,7 @@ static unsigned long elapsed(unsigned long now, unsigned long since)
     return (unsigned long)(now - since);
 }
 
-static void tx_reset(hckline_t *k)
+static void tx_reset(hckline_t HCKL_FAR *k)
 {
     k->tx_head = 0u;
     k->tx_tail = 0u;
@@ -41,7 +41,7 @@ static void tx_reset(hckline_t *k)
    this core sends (a KWP reply is a handful of bytes and the FIFO is 64), but
    it is checked rather than assumed: a dropped tail is counted, never wrapped
    silently over live data. */
-static void tx_put(hckline_t *k, unsigned char b)
+static void tx_put(hckline_t HCKL_FAR *k, unsigned char b)
 {
     unsigned char next = (unsigned char)((k->tx_head + 1u) % HCKLINE_TX_MAX);
     if (next == k->tx_tail) {
@@ -52,13 +52,13 @@ static void tx_put(hckline_t *k, unsigned char b)
     k->tx_head = next;
 }
 
-static void rx_reset(hckline_t *k)
+static void rx_reset(hckline_t HCKL_FAR *k)
 {
     k->rx_len = 0u;
     k->rx_need = 0u;
 }
 
-static void enter(hckline_t *k, unsigned char st, unsigned long now)
+static void enter(hckline_t HCKL_FAR *k, unsigned char st, unsigned long now)
 {
     k->state = st;
     k->t_state = now;
@@ -82,7 +82,7 @@ static void enter(hckline_t *k, unsigned char st, unsigned long now)
 
 /* How many bytes the buffered frame needs in total, or 0 if not yet known.
    Returns 0xFF if the header is malformed (caller drops the frame). */
-static unsigned int frame_total(const hckline_t *k)
+static unsigned int frame_total(const hckline_t HCKL_FAR *k)
 {
     unsigned char fmt;
     unsigned char len;
@@ -115,13 +115,13 @@ static unsigned int frame_total(const hckline_t *k)
 }
 
 /* Pointers into a validated frame. */
-static unsigned char frame_data_off(const hckline_t *k)
+static unsigned char frame_data_off(const hckline_t HCKL_FAR *k)
 {
     unsigned char fmt = k->rx[0];
     return (unsigned char)(((fmt & 0x3Fu) != 0u) ? 3u : 4u);
 }
 
-static unsigned char frame_data_len(const hckline_t *k)
+static unsigned char frame_data_len(const hckline_t HCKL_FAR *k)
 {
     unsigned char fmt = k->rx[0];
     if ((fmt & 0x3Fu) != 0u) {
@@ -130,7 +130,7 @@ static unsigned char frame_data_len(const hckline_t *k)
     return k->rx[3];
 }
 
-static unsigned char checksum(const unsigned char *p, unsigned int n)
+static unsigned char checksum(const unsigned char HCKL_FAR *p, unsigned int n)
 {
     unsigned int i;
     unsigned char c = 0u;
@@ -142,11 +142,11 @@ static unsigned char checksum(const unsigned char *p, unsigned int n)
 
 /* Queue a reply carrying the given service payload. Addressed form, length in a
    separate byte when it does not fit in the format nibble. */
-static void send_reply(hckline_t *k, const unsigned char *data, unsigned char n)
+static void send_reply(hckline_t HCKL_FAR *k, const unsigned char HCKL_FAR *data, unsigned char n)
 {
     /* STATIC, not a local: on the ME7.1.1 the user stack is 256 bytes with a
        margin of tens (me711_stack_proof), and this core is not re-entrant. */
-    static unsigned char frame[HCKLINE_TX_MAX];
+    static unsigned char HCKL_FAR frame[HCKLINE_TX_MAX];
     unsigned int idx = 0u;
     unsigned int i;
 
@@ -174,9 +174,14 @@ static void send_reply(hckline_t *k, const unsigned char *data, unsigned char n)
     }
 }
 
-static void send_negative(hckline_t *k, unsigned char sid, unsigned char nrc)
+static void send_negative(hckline_t HCKL_FAR *k, unsigned char sid, unsigned char nrc)
 {
+#if HCKL_FAR_SET
+    static unsigned char HCKL_FAR d[3];  /* no stack address into a far
+                                            pointer (the 2.7T build) */
+#else
     unsigned char d[3];
+#endif
     d[0] = HCKLINE_SID_NEG;
     d[1] = sid;
     d[2] = nrc;
@@ -185,13 +190,13 @@ static void send_negative(hckline_t *k, unsigned char sid, unsigned char nrc)
 }
 
 /* ------------------------------------------------------- service dispatch -- */
-static void service(hckline_t *k, unsigned long now)
+static void service(hckline_t HCKL_FAR *k, unsigned long now)
 {
     unsigned char off = frame_data_off(k);
     unsigned char len = frame_data_len(k);
-    const unsigned char *d = &k->rx[off];
+    const unsigned char HCKL_FAR *d = &k->rx[off];
     unsigned char sid;
-    static unsigned char resp[HCKLINE_SIG_MAX + 2u];   /* not on the stack */
+    static unsigned char HCKL_FAR resp[HCKLINE_SIG_MAX + 2u];   /* not on the stack */
     const unsigned char *sig;
     unsigned char sig_len;
     unsigned int i;
@@ -260,6 +265,16 @@ static void service(hckline_t *k, unsigned long now)
             send_negative(k, sid, HCKLINE_NRC_SUBF_NOT_SUP);
             break;
         }
+#ifdef HCKLINE_NO_115200
+        /* A 24 MHz CPU cannot make 115200 (S0BG 5 = 125000, 6 = 107143,
+           both ~8 % off): refuse it BEFORE the positive answer, so the
+           tester keeps the line at the old rate instead of switching into a
+           rate this ECU can only miss (2026-10-24, the 2.7T ME7.1 board). */
+        if (d[1] == HCKLINE_BAUD_115200) {
+            send_negative(k, sid, HCKLINE_NRC_SUBF_NOT_SUP);
+            break;
+        }
+#endif
         /* Positive response at the OLD baud, THEN (once drained) the switch. */
         resp[0] = (unsigned char)(HCKLINE_SID_GOFAST + HCKLINE_RESP_OFFSET);
         resp[1] = d[1];
@@ -288,7 +303,7 @@ static void service(hckline_t *k, unsigned long now)
    frame refreshes P3 now; a run of HCKLINE_BAD_RUN_MAX bad ones means the
    tester is gone or talking at another rate, and the session ends at once so
    the target can give the line back to TunerStudio. */
-static void session_bad(hckline_t *k, unsigned long now)
+static void session_bad(hckline_t HCKL_FAR *k, unsigned long now)
 {
     rx_reset(k);
     k->frames_bad++;
@@ -305,7 +320,7 @@ static void session_bad(hckline_t *k, unsigned long now)
 }
 
 /* ============================================================= public API == */
-void hckline_default_cfg(hckline_cfg_t *cfg)
+void hckline_default_cfg(hckline_cfg_t HCKL_FAR *cfg)
 {
     cfg->addr        = 0x01u;   /* OEM PROVEN: the only slow-init record here  */
     cfg->sync        = 0x55u;   /* OEM PROVEN                                  */
@@ -327,18 +342,29 @@ void hckline_default_cfg(hckline_cfg_t *cfg)
     cfg->sig_len     = 0u;
 }
 
-void hckline_init(hckline_t *k, const hckline_cfg_t *cfg)
+void hckline_init(hckline_t HCKL_FAR *k, const hckline_cfg_t HCKL_FAR *cfg)
 {
     unsigned int i;
-    unsigned char *p = (unsigned char *)k;
+    unsigned char HCKL_FAR *p = (unsigned char HCKL_FAR *)k;
     for (i = 0u; i < sizeof(*k); i++) {
         p[i] = 0u;              /* no ?C_INIT on target: clear explicitly */
     }
+#if HCKL_FAR_SET
+    {   /* a byte copy: a FAR struct assignment calls Keil's near ?C_WCPYFF,
+           which far code must never reach (it returns to the wrong segment) */
+        const unsigned char HCKL_FAR *s = (const unsigned char HCKL_FAR *)cfg;
+        unsigned char HCKL_FAR *d = (unsigned char HCKL_FAR *)&k->cfg;
+        for (i = 0u; i < sizeof(*cfg); i++) {
+            d[i] = s[i];
+        }
+    }
+#else
     k->cfg = *cfg;
+#endif
     k->state = HCKLINE_ST_IDLE;
 }
 
-void hckline_reset(hckline_t *k)
+void hckline_reset(hckline_t HCKL_FAR *k)
 {
     k->state = HCKLINE_ST_IDLE;
     k->t_state = 0u;
@@ -351,7 +377,7 @@ void hckline_reset(hckline_t *k)
     k->baud_code = 0u;
 }
 
-void hckline_on_slow_init(hckline_t *k, unsigned char addr, unsigned long now_us)
+void hckline_on_slow_init(hckline_t HCKL_FAR *k, unsigned char addr, unsigned long now_us)
 {
     if (addr != k->cfg.addr) {
         k->wrong_addr++;
@@ -367,7 +393,7 @@ void hckline_on_slow_init(hckline_t *k, unsigned char addr, unsigned long now_us
     enter(k, HCKLINE_ST_SYNC, now_us);
 }
 
-void hckline_on_fast_init(hckline_t *k, unsigned long now_us)
+void hckline_on_fast_init(hckline_t HCKL_FAR *k, unsigned long now_us)
 {
     tx_reset(k);
     rx_reset(k);
@@ -378,7 +404,7 @@ void hckline_on_fast_init(hckline_t *k, unsigned long now_us)
     enter(k, HCKLINE_ST_FAST, now_us);
 }
 
-void hckline_on_rx(hckline_t *k, unsigned char b, unsigned long now_us)
+void hckline_on_rx(hckline_t HCKL_FAR *k, unsigned char b, unsigned long now_us)
 {
     unsigned int total;
 
@@ -425,7 +451,11 @@ void hckline_on_rx(hckline_t *k, unsigned char b, unsigned long now_us)
             && checksum(k->rx, total - 1u) == k->rx[total - 1u]
             && frame_data_len(k) >= 1u
             && k->rx[frame_data_off(k)] == HCKLINE_SID_START_COMM) {
+#if HCKL_FAR_SET
+            static unsigned char HCKL_FAR r[3];
+#else
             unsigned char r[3];
+#endif
             r[0] = (unsigned char)(HCKLINE_SID_START_COMM + HCKLINE_RESP_OFFSET);
             r[1] = k->cfg.kb1;
             r[2] = k->cfg.kb2;
@@ -493,7 +523,7 @@ void hckline_on_rx(hckline_t *k, unsigned char b, unsigned long now_us)
     rx_reset(k);
 }
 
-void hckline_tick(hckline_t *k, unsigned long now_us)
+void hckline_tick(hckline_t HCKL_FAR *k, unsigned long now_us)
 {
     switch (k->state) {
     case HCKLINE_ST_SYNC:
@@ -568,7 +598,7 @@ void hckline_tick(hckline_t *k, unsigned long now_us)
     }
 }
 
-unsigned char hckline_tx_pop(hckline_t *k, unsigned char *b)
+unsigned char hckline_tx_pop(hckline_t HCKL_FAR *k, unsigned char *b)
 {
     if (k->tx_tail == k->tx_head) {
         return 0u;
@@ -578,12 +608,12 @@ unsigned char hckline_tx_pop(hckline_t *k, unsigned char *b)
     return 1u;
 }
 
-unsigned char hckline_tx_busy(const hckline_t *k)
+unsigned char hckline_tx_busy(const hckline_t HCKL_FAR *k)
 {
     return (unsigned char)(k->tx_tail != k->tx_head);
 }
 
-unsigned char hckline_take_baud(hckline_t *k, unsigned char *code)
+unsigned char hckline_take_baud(hckline_t HCKL_FAR *k, unsigned char *code)
 {
     if (!k->baud_pending) {
         return 0u;
@@ -596,7 +626,7 @@ unsigned char hckline_take_baud(hckline_t *k, unsigned char *code)
     return 1u;
 }
 
-void hckline_enter_private(hckline_t *k)
+void hckline_enter_private(hckline_t HCKL_FAR *k)
 {
     /* The UART is now at the negotiated rate and the K-line carries raw
        HaniCore/TunerStudio framing. The core stops touching the wire. */

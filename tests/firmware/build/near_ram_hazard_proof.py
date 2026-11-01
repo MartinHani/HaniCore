@@ -48,6 +48,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "tools" / "lib"))
 import hcpaths as HCP  # noqa: E402
+import hc_board  # noqa: E402
 REG167 = HCP.REG167        # the toolchain header the ME7.1.1 build includes
 
 # ---------------------------------------------------------------- the regions
@@ -103,6 +104,11 @@ TARGETS = [
     ("ME7.1.1 bosch_me711",
      "firmware/targets/me711/build/hani_me711.M66",
      "firmware/targets/me711/linker_me711.lnp"),
+] if not hc_board.IS_C4 else [
+    # the 2.7T build: its own map and the linker file the builder derives
+    ("ME7.1 C4 vag_me71_c4",
+     "firmware/targets/me711/build_me71c4/hani_me711.M66",
+     "firmware/targets/me711/build_me71c4/linker.lnp"),
 ]
 
 # A KNOWN, MEASURED, ACCEPTED overlap. Printed in full and never hidden; it
@@ -205,7 +211,7 @@ def near_ram_headroom():
     # NDATA0) and data is freed inside them (register banks shared, cold data
     # moved to XRAM). Free = every byte of those ranges no located DATA
     # section (register banks included) and no architectural region covers.
-    lnp = (ROOT / "firmware/targets/me711/linker_me711.lnp").read_text(errors="replace")
+    lnp = (ROOT / TARGETS[0][2]).read_text(errors="replace")
     ranges = []
     for m in CLASSRANGE.finditer(lnp):
         if m.group(1) != "NDATA0":
@@ -242,6 +248,21 @@ def near_ram_headroom():
     print("    XNDATA0 %s: %d bytes free" % (", ".join("0x%04X-0x%04X" % r for r in xr), xfree))
     check("XRAM keeps its reserve for the next cold module", bool(xr) and xfree >= XRAM_RESERVE,
           "%d bytes free - reserve is %d" % (xfree, XRAM_RESERVE))
+    if hc_board.IS_C4:
+        # THE 2.7T's C167CR (hcsafety.h): its IRAM holds only the hot data, by
+        # design, and every byte of near headroom is in the XRAM - where a new
+        # module goes with RENAMECLASS(NDATA0=XNDATA0). So the floor counts
+        # both. The 192-byte engineering reserve is the Porsche roadmap's and
+        # is NOT met on this board: printed, never hidden, not failing - the
+        # next near-data feature on the 2.7T must move cold data to the
+        # external SRAM first (HC_C4FAR, ME71_27T_PORT_PLAN.md section 18).
+        free += xfree
+        check("near RAM has not run out (IRAM + XRAM, 2.7T)", free >= 64,
+              "%d bytes free - hard floor is 64" % free)
+        if free < 192:
+            print("  [KNOWN] 2.7T near RAM below the 192-byte engineering "
+                  "reserve: %d bytes free (C167CR, 1 KB less on-chip RAM)" % free)
+        return
     check("near RAM has not run out", free >= 64,
           "%d bytes free - hard floor is 64" % free)
     check("and it still has room for the planned engine subsystems",
@@ -258,8 +279,8 @@ def external_sram_map():
 
     The regions are PARSED from hctarget.h, so adding one puts it under the
     check automatically instead of needing a list here."""
-    print("\n--- ME7.1.1 external SRAM region map (hctarget.h) ---")
-    h = (ROOT / "firmware/targets/me711/hctarget.h").read_text(errors="replace")
+    print("\n--- %s external SRAM region map (hctarget.h) ---" % TARGETS[0][0])
+    h = hc_board.target_text()        # this board's branch of every #if
 
     base = re.search(r"#define\s+TGT_EXTRAM_BASE\s+(0x[0-9A-Fa-f]+)", h)
     size = re.search(r"#define\s+TGT_EXTRAM_SIZE\s+(0x[0-9A-Fa-f]+)", h)
@@ -324,6 +345,11 @@ XRAM_NEAR_LO, XRAM_NEAR_HI = 0xE200, 0xE7FF
 # V97: the class also has 0xE000-0xE09F (linker_me711.lnp); 0xE0A0-0xE0FF is
 # kept for the OEM's K-line PEC receive ring (0xE0A2, hcpecrx_me711.c).
 XRAM_NEAR_RANGES = ((0xE000, 0xE09F), (XRAM_NEAR_LO, XRAM_NEAR_HI))
+if hc_board.IS_C4:
+    # THE 2.7T's C167CR (hcsafety.h): the user stack is the top of the XRAM
+    # (0xE600-0xE7FF), its guard band 0xE5E0 and the health record 0xE5A0
+    # under it, cold data from just above the ASIC frame
+    XRAM_NEAR_RANGES = ((0xE000, 0xE09F), (0xE1EC, 0xE57F))
 PECRX_RESERVED = (0xE0A0, 0xE0FF)
 XRAM_COLD_MODULES = {
     # 2026-10-07: the TunerStudio request ring, its indices and the catch-all
@@ -363,6 +389,12 @@ XRAM_COLD_MODULES = {
     # Active injector tickets are bounded word accesses in on-chip XRAM.
     "HCDEADLINE_PLAN711",
 }
+if hc_board.IS_C4:
+    # the 2.7T only (build_me711.bat HC_C4X): its IRAM is 1 KB smaller, so
+    # the engine's published values and the HAL's route/snapshot state take
+    # the XRAM's 2-state access (C167CR UM 3.3: 16-bit demultiplexed, no
+    # waitstates) instead of the IRAM's
+    XRAM_COLD_MODULES = XRAM_COLD_MODULES | {"HCENGINE", "HCHAL_ME711"}
 
 
 def xram_near_data():
@@ -378,7 +410,8 @@ def xram_near_data():
     fr = int(re.search(r"#define\s+TGT_ASIC_FRAME\s+0x([0-9A-Fa-f]+)", tgt)
              .group(1), 16)
     frn = int(re.search(r"#define\s+TGT_ASIC_FRAME_MAX\s+(\d+)", tgt).group(1))
-    segs = [s for s in data_segments(text) if 0xE000 <= s[0] <= 0xE7FF]
+    segs = [s for s in data_segments(text) if 0xE000 <= s[0] <= 0xE7FF
+            and "?C_USERSTACK" not in s[2]]
     names = [n for _a, _b, n in segs]
     check("every XRAM data segment lies inside %s"
           % " or ".join("0x%04X-0x%04X" % r for r in XRAM_NEAR_RANGES),
@@ -403,12 +436,54 @@ def xram_near_data():
     # 2026-10-06: the stack moved 0xF700 -> 0xF380 (512 B, guard band below
     # it, hcsafety.h). The invariant is that it sits where the linker script
     # PINS it, not a typed address.
-    lnp = (ROOT / "firmware/targets/me711/linker_me711.lnp").read_text(errors="replace")
+    lnp = (ROOT / TARGETS[0][2]).read_text(errors="replace")
     pin = re.search(r"\?C_USERSTACK%NDATA\s*\((0x[0-9A-Fa-f]+)\)", lnp)
     want = int(pin.group(1), 16) if pin else None
     check("the user stack is where linker_me711.lnp pins it (0x%04X)" % (want or 0),
           stk is not None and want is not None and int(stk.group(1), 16) & 0xFFFF == want,
           "at 0x%s" % (stk.group(1) if stk else "?"))
+
+
+def c167cr_ram_hole():
+    """THE 2.7T's C167CR HAS NO RAM AT 0xF200-0xF5FF (2026-10-26: C167CR UM
+    V3.1 "The C167CR provides 2 KByte of IRAM", 0xF600-0xFDFF; BOM
+    SAK-C167CR-4RM; BSL id 0xC5). The first 2.7T image kept its user stack
+    there and never ran on the real ECU - and no gate could see it, because
+    c167sim gave every board the C167CS's 3 KB. Nothing may be located,
+    offered by a class range, or used as a stack there; the system stack sits
+    in the IRAM, the user stack in the XRAM."""
+    if not hc_board.IS_C4:
+        return
+    print("\n--- the C167CR's RAM (2.7T board) ---")
+    mp, lnp = ROOT / TARGETS[0][1], ROOT / TARGETS[0][2]
+    if not mp.exists():
+        check("the 2.7T map exists", False, "")
+        return
+    segs = data_segments(mp.read_text(errors="replace"))
+    hole = [(a, b, n) for a, b, n in segs if overlap(a, b, 0xF200, 0xF5FF)]
+    check("no DATA segment in 0xF200-0xF5FF (no RAM on a C167CR)", not hole,
+          "none" if not hole else ", ".join("%s 0x%04X" % (n, a) for a, b, n in hole[:4]))
+    rngs = declared_ranges(lnp.read_text(errors="replace")) if lnp.exists() else []
+    offered = [r for r in rngs if overlap(r[0], r[1], 0xF200, 0xF5FF)]
+    check("no linker class range offers 0xF200-0xF5FF", not offered,
+          "none" if not offered else ", ".join("0x%04X-0x%04X" % (r[0], r[1]) for r in offered))
+    safety = hc_board.board_text(ROOT / "firmware/targets/me711/system/hcsafety.h")
+    v = {k: int(re.search(r"#define\s+%s\s+0x([0-9A-Fa-f]+)u" % k, safety).group(1), 16)
+         for k in ("HC_STK_BOT", "HC_STK_TOP", "HC_STK_GUARD_LO",
+                   "HC_SSTK_BOT", "HC_SSTK_TOP")}
+    check("the system stack lies in the IRAM 0xF600-0xFDFF",
+          0xF600 <= v["HC_SSTK_BOT"] < v["HC_SSTK_TOP"] <= 0xFE00,
+          "0x%04X-0x%04X" % (v["HC_SSTK_BOT"], v["HC_SSTK_TOP"]))
+    check("the user stack and its guard band lie in the XRAM 0xE000-0xE7FF",
+          0xE000 <= v["HC_STK_GUARD_LO"] < v["HC_STK_BOT"] < v["HC_STK_TOP"] <= 0xE800,
+          "guard 0x%04X, stack 0x%04X-0x%04X" % (v["HC_STK_GUARD_LO"],
+                                                  v["HC_STK_BOT"], v["HC_STK_TOP"]))
+    inside = [(a, b, n) for a, b, n in segs if "?C_USERSTACK" not in n
+              and (overlap(a, b, v["HC_SSTK_BOT"] - 6, v["HC_SSTK_TOP"] - 1)
+                   or overlap(a, b, v["HC_STK_GUARD_LO"] - 0x60, v["HC_STK_TOP"] - 1))]
+    check("no DATA segment meets either stack, the guard band, the health "
+          "record or the serial state under it", not inside,
+          "clear" if not inside else ", ".join("%s 0x%04X" % (n, a) for a, b, n in inside[:4]))
 
 
 def near_segments_do_not_overlap():
@@ -547,6 +622,7 @@ def main() -> int:
     near_segments_do_not_overlap()
     near_ram_headroom()
     xram_near_data()
+    c167cr_ram_hole()
 
     print("\n%d/%d checks pass" % (CHECKS - FAILS, CHECKS))
     if FAILS:

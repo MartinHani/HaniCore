@@ -26,13 +26,44 @@
 
 /* =============================================== identity and build type == */
 
-#define TGT_ID                0x0711      /* ME7.1.1, 0261207696 / 1037371766              */
-
-/* THE OUTPUTS ARE NOW BUILT, so this veto is withdrawn - V63.
+/* THE BOARD (2026-10-24). One target family, two boards, one source tree:
  *
- * The rule this replaced said removing HANICORE_BENCH_SAFE "is a deliberate
- * act and it is not enough on its own - the outputs also have to be built."
- * They are: hchal_me711.c carries a real output back end from V63, resolving
+ *   default                 Porsche Bosch ME7.1.1 0261207696, 40 MHz
+ *   TGT_BOARD_VAG_ME71_C4   Audi 2.7T Bosch ME7.1 "C4" (0261206xxx/
+ *                           0261207xxx, 8D0907551 / 4B0907551 / 4Z7907551
+ *                           up to M), 24 MHz - docs/firmware/design/
+ *                           ME71_27T_PORT_PLAN.md for every difference and
+ *                           its evidence.
+ *
+ * hc_board.h is written by tools/build/build_hanicore_me711.py --board into
+ * the board's own build directory (first on the include path). Every board
+ * value below is written `#if !TGT_BOARD_VAG_ME71_C4 <Porsche> #else <C4>`,
+ * so the Porsche value is always the FIRST occurrence of a #define in this
+ * file - the gates that read this header with a regex keep reading the
+ * Porsche build, and the builder strips the inactive branch for the C4. */
+#include "hc_board.h"
+#ifndef TGT_BOARD_VAG_ME71_C4
+#define TGT_BOARD_VAG_ME71_C4 0
+#endif
+
+#if !TGT_BOARD_VAG_ME71_C4
+#define TGT_ID                0x0711      /* ME7.1.1, 0261207696 / 1037371766              */
+#define TGT_HAS_CJ120         1           /* two on-board LSU controllers   */
+#else
+#define TGT_ID                0x0710      /* ME7.1 C4, Audi 2.7T                          */
+#define TGT_HAS_CJ120         0           /* none (BOM 345;02): external WBO */
+#endif
+/* THE 4F HAS TWO ON-BOARD LSU CONTROLLERS too (CJ120/CJ125 family): chip
+   selects P8.1/P8.2 driven high at init (0x8E754E), IDENT 0x48 / INIT_REG1
+   0x6C/0x56 / INIT_REG2 0x7E/0x5A / DIAG 0x78 as one 16-bit SSC frame
+   (SSCCON 0x461F, 0x8E7992) - the Porsche sends the same commands as two
+   bytes [EXACT TARGET BINARY 4F0910560, the Bosch CJ125 datasheet]. Its software can
+   program a pumped reference (INIT_REG2 PR 2/6 from 0x81A707/08, LSU 4.9),
+   but calibration 0x81A706 bit 0 switches that off on this ECU: PR = 0,
+   reference air, LSU 4.2 - what the Porsche path does (4F plan 2b). */
+
+/* THE OUTPUTS ARE BUILT (V63) and there is no compile-time output veto
+ * (HANICORE_BENCH_SAFE, retired 2026-10-28). hchal_me711.c carries a real output back end from V63, resolving
  * a configured cavity to a port bit for every injector, coil, the fuel pump
  * and the throttle bridge.
  *
@@ -57,11 +88,7 @@
  * polarity of the CJ920/CJ420 stages is NOT established anywhere in this
  * repository - a resting level would be a guess and a wrong guess is an
  * injector held open by a parked ECU, while a resting direction drives
- * nothing whichever way the stage is wired.
- *
- * Define HANICORE_BENCH_SAFE again to force hc_hal_outputs_live() to 0 at
- * compile time. The back end stays linked; it simply becomes unreachable. */
-/* #define HANICORE_BENCH_SAFE   1 */
+ * nothing whichever way the stage is wired. */
 
 /* The closed-loop throttle controller. It contains no pin, no port and no
    sbit - it computes a duty and a direction - so compiling it in cannot by
@@ -69,28 +96,16 @@
 #define TGT_DBW_CONTROLLER    1
 #define TGT_DBW_MOTOR_PRIMITIVE 1
 
-/* THE BURN FORENSICS AND THE ASIC DUMP, and why V63 does not carry them.
- *
- * C167 SMALL model caps code at 64 K. V62 finished at 64390 bytes of 64512 -
- * 122 free - so the engine back end this release exists to build had nowhere
- * to go. The alternatives were re-laying the image under a far-code memory
- * model or moving a module to another segment, and both put the QUALIFIED
- * live-Burn path back under re-qualification for a reason unrelated to the
- * burn. hcnvm.c is 13 364 of those bytes and me711_v48_live_burn_proof reads
- * its linked opcodes.
- *
- * So the 4204 bytes come from the two modules that are pure instrumentation:
- * hcliveforensics.c (2130) and hcasicdump.c (2074). They were built to
- * diagnose live-Burn resets, they did that job across V47..V50, and the
- * answer is frozen in V62 - which keeps them.
- *
- * WHAT AN IMAGE WITHOUT THIS GIVES UP, stated rather than glossed: it cannot
- * explain a live-Burn reset after the fact. The Burn itself is unchanged and
- * still refuses, still bounded, still CRC-checked. Define this to get them
- * back, at 4204 bytes. */
-/* #define TGT_BURN_DIAGNOSTICS 1 */
 
-#define TGT_SIGNATURE         "rusEFI HaniCore ME711 83D8361E"
+#if !TGT_BOARD_VAG_ME71_C4
+#define TGT_SIGNATURE         "HaniCore ME711 3EF8E9EA"
+#else
+/* A different board's .ini must refuse this ECU and vice versa: the pin
+   dropdowns, the descriptor and the defaults differ even where the page
+   layout is shared. The signature names the BOARD, not the engine or the
+   ECU family (owner, 2026-10-25: some 2.7T cars carry an ME7.1.1). */
+#define TGT_SIGNATURE         "HaniCore ME71C4 3EF8E9EA"
+#endif
 /* THE SIGNATURE CARRIES THE PAGE LAYOUT, AND UNTIL V60 IT DID NOT.
 
    It read "rusEFI Hanicore v1" from V21 to V59 - a frozen literal
@@ -122,11 +137,12 @@
    is the gate. gen_ts_ini_me711.py reads the signature from this line,
    so the .ini cannot lag it.
 
-   THE "rusEFI " PREFIX IS A TUNERSTUDIO COMPATIBILITY WORKAROUND, not a
-   claim of identity: HaniCore is not rusEFI firmware. TunerStudio selects
-   its rusEFI-protocol handling from that prefix, and every working
-   HaniCore setup so far depends on it. Everything after it is HaniCore's.
-   Do not rename it for branding without a proven supported alternative. */
+   NO "rusEFI " PREFIX SINCE 2026-10-30. It was there only because the old
+   tuning app chose its protocol handling by it; LibreTune takes the
+   protocol from the .ini (msEnvelope_1.0, ochGetCommand) and treats the
+   prefix only as a hint to look for the .ini on rusefi.com, which fails
+   for HaniCore. HaniCore is not rusEFI firmware. The host tools still
+   accept the old form, so an ECU on an older image can be updated. */
 /* WHAT THE ECU CALLS ITSELF, and it must name the build in the filename.
 
    ON THE BENCH, 2026-09-02, the frozen V29 image identified itself as
@@ -140,11 +156,24 @@
    tools/build_hanicore_me711.py now REFUSES to emit an image whose
    version string does not contain the version in its own output stem, so
    this cannot silently lag a build again. */
+#if !TGT_BOARD_VAG_ME71_C4
 #define TGT_VERSIONTXT        "HaniCore V102 DEV / Bosch ME7.1.1"
+#else
+#define TGT_VERSIONTXT        "HaniCore V102 DEV / Bosch ME7.1 C4"
+#endif
+#ifdef TGT_BOARD_AUDI_4F
+/* the Audi 4F 4.2 V8 (Porsche code on the 4F's own boot region, every
+   output enabled as on the Porsche). Text + build suffix must fit
+   the 64-byte 'V' reply (hcts.c send_text): "(outputs inert)" did not, and
+   the build id arrived cut to 5 characters. */
+#undef TGT_VERSIONTXT
+#define TGT_VERSIONTXT        "HaniCore V102 DEV / Bosch ME7.1.1 4F"
+#endif
 /* + " build XXXXXXXX" (TGT_BUILD_SUFFIX): the source hash of THIS image,
    written by tools/build/build_hanicore_me711.py before every compile, so
-   the 'V' reply names the exact build (2026-10-11). */
-#include "build/hc_build_id.h"
+   the 'V' reply names the exact build (2026-10-11). Found on the include
+   path: the board's build directory is first (2026-10-24). */
+#include "hc_build_id.h"
 
 /* HC_COLD marks the public functions of the modules compiled MOD167
    MEDIUM (FCODE, segment 0x85): validation, the config manager, the bench
@@ -200,17 +229,8 @@
                                           the writer returning into a busy
                                           device), so this is a different
                                           image and it says so. */
-#define TGT_LIVE_BURN_HYBRID_QUAL 1
-/* THE ENGINE RUNTIME IS BACK, AND IT IS ITS OWN SWITCH.
- *
- * V47..V54 stubbed out the crank-angle scheduler and the DBW controller by
- * gating them on TGT_LIVE_BURN_HYBRID_QUAL above - the same symbol that names
- * the burn-forensics instrumentation. That coupling is what made "resume the
- * engine runtime" look like "reopen the persistence work", which it is not.
- * TGT_ENGINE_RUNTIME compiles hcsched_dry.c's planner and hc_dbw.c's
- * controller; TGT_LIVE_BURN_HYBRID_QUAL keeps hcburnforensics.c exactly as
- * V54 shipped it. Neither module the persistence qualification depends on -
- * hcnvm.c, hcts.c, hcasic*.c, hcumkom.c - is touched by either symbol. */
+/* THE ENGINE RUNTIME: hcsched_dry.c's planner and hc_dbw.c's controller.
+   The shared code keeps the switch (host builds compile it out). */
 #define TGT_ENGINE_RUNTIME 1
 /* The DBW controller is a separate switch from the scheduler because it is a
    separate question: hc_dbw.c computes a duty and a direction and contains no
@@ -232,9 +252,6 @@
  * It comes back with the FCODE work, which is what actually buys the room.
  * Until then this line is the single edit that restores it. */
 /* TGT_DBW_CONTROLLER is defined in the identity block above. */
-/* Retain the compact B-path forensic hooks; this compatibility symbol names
-   instrumentation only, not an intentional reset policy. */
-#define TGT_BURN_RESET_FORENSICS 1
 
 /* The Bosch application does not use a bare SRVWDT in normal runtime. Its
    two ordinary service sites at OEM ME7.1.1 0x8223BA and 0x8231D8 load R12 with
@@ -279,12 +296,6 @@
  * Once the service is proven on hardware, 0xCF01 is the value to adopt for a
  * running engine, because 80 ms is a real supervision interval and 401 ms is
  * not. */
-/* RESETDIAG_V1 ISOLATES THE ASIC LINK, and it is compiled out rather than
-   merely not called. See the long note in hcasic.c: a routine that programs
-   PEC pointers and sets SSCEN must be ABSENT from a build whose whole purpose
-   is to test ONE reset hypothesis, and tools/me711_wdt_audit.py fails the
-   build if those register writes appear in the final BIN. */
-#define TGT_ASIC_ISOLATED     0
 
 #define TGT_WDTCON_SERVICE    0x0B01u
 #define TGT_WDTCON_OEM_RUN    0xCF01u   /* what a running ME7.1.1 uses */
@@ -338,25 +349,10 @@ void hc_rt_wdt_mark(void);
    erased at runtime now, and that has never happened on this ECU; a bench
    that cannot see the slice count has no way to tell a slow erase from one
    that will never converge. TGT_RAM_OCH_LIMIT is 1024, so there is room. */
-/* THE READ-ONLY FORENSIC VIEW, AND ITS SIZE IS DERIVED FOR THE SAME REASON
-   ITS BASE IS.
-
-   The offset/count output command serves everything at or above TGT_OCH_SIZE
-   from hc_lf_export_byte(off - TGT_OCH_SIZE), so the live-Burn record starts
-   where the ordinary block ends and the window has to cover BOTH.
-
-   IT WAS THE LITERAL 1024, and 1024 is exactly 680 + 344 - the ordinary block
-   as it stood at V48 plus HC_LF_BYTES. V53 grew the block to 696 and V55 to
-   722, and this number did not move, so the last 21 words of the record
-   stopped being reachable at all: LF_TICK_MAX_GAP, LF_WRITER_RESULT and
-   LF_IR_DROPPED - the V49 and V50 starvation and interrupt-drop evidence -
-   were off the end of the window while the .ini still claimed to publish
-   them. Found 2026-09-16 by reading the record off the ECU and getting the
-   "HC" magic out of a channel named lfCursor.
-
-   344 is HC_LF_BYTES. It is spelled out because hcliveforensics.h includes
-   THIS file, so the dependency cannot run the other way;
-   me711_v49_forensics_proof checks the two against each other. */
+/* THE EXTENDED OUTPUT-CHANNEL WINDOW. The offset/count output command
+   serves everything at or above TGT_OCH_SIZE from hc_och_ext_byte(). Its
+   first 344 bytes were the V49 live-Burn record (retired 2026-10-28) and now
+   read 0: kept so every offset the vehicle tools read stays where it is. */
 /* AND THE TOOTH PROFILE AFTER IT. 60 u16 per-mille tooth periods
    (hcsched_dry.c, the '!K' test) are served from the same window, right
    after the 344-byte live-Burn record, so TunerStudio's ordinary poll does
@@ -377,7 +373,6 @@ void hc_rt_wdt_mark(void);
 /* AND THE K-LINE CAPTURE after the witness (TGT_RAM_KLCAP, raw bytes). */
 #define TGT_KC_EXPORT_BYTES   256u
 #define TGT_OCH_READ_SIZE     (TGT_OCH_SIZE + 344u + TGT_TL_EXPORT_BYTES + TGT_BH_EXPORT_BYTES + TGT_EV_EXPORT_BYTES + TGT_RT_EXPORT_BYTES + TGT_WT_EXPORT_BYTES + TGT_KC_EXPORT_BYTES)
-unsigned char HC_COLD hc_lf_export_byte(unsigned int offset);
 unsigned char HC_COLD hc_och_ext_byte(unsigned int offset);
 #define HCTS_TARGET_OCH_EXT_READ(offset) hc_och_ext_byte(offset)
 
@@ -530,7 +525,17 @@ unsigned char HC_COLD hc_och_ext_byte(unsigned int offset);
  * CAL=0x028A is consistent but could never have decided it: CAL =
  * 10*32*(S0BG+1)/(8*2^T7I) = 650 with fCPU cancelled out, exactly as before.
  */
+#if !TGT_BOARD_VAG_ME71_C4
 #define TGT_FCPU_HZ           40000000uL
+#else
+/* THE 2.7T ME7.1 C4 RUNS AT 24 MHz - every one of the 54 ME7.1 2.7T images
+   in ME7Sum bins: S0BG 0x47 beside S0CON 0x80D1 at 10400 baud
+   (= 24 MHz / (32 x 72)), and independently the DBW bridge period PP2 =
+   11999 at the OEM's 2 kHz [EXACT TARGET BINARY 4B0907551F]; BOM 345;02:
+   Q5000 = 8 MHz on a C167CR-4RM, PLL x3. The CPU strap sets it; firmware
+   cannot change it. */
+#define TGT_FCPU_HZ           24000000uL
+#endif
 
 /* [DS] C167CR UM Table 15-2: a CAPCOM timer's input is fCPU/8 at TxI = 0 and
    fCPU/(8 * 2^TxI) generally. T7I = T8I = T0I = 2 puts all three on the same
@@ -546,11 +551,33 @@ unsigned char HC_COLD hc_och_ext_byte(unsigned int offset);
    fCPU correction: the old figure said 1.248 MHz from 19.968/16, the new one
    says 1.250 MHz from 40/32, and 0.16 % apart is why every timing this
    firmware has ever produced was right even while the clock was wrong. */
+#if !TGT_BOARD_VAG_ME71_C4
 #define TGT_TICKS_PER_MS_X10  12500UL       /* 1.250 MHz x 10 per ms */
+#else
+/* SAME PRESCALER (fCPU/32, T7I = T8I = T0I = T1I = 2 - the 2.7T OEM's own
+   T7I [4B0907551F 0x078CA0 T78CON = 0x464A]), so every timer REGISTER value
+   below is unchanged and only the tick length moves: 0.750 MHz, 1.333 us,
+   wrap 87.4 ms. Every 16-bit interval the firmware measures therefore has
+   MORE headroom than on the 40 MHz board, at a resolution (0.06 deg at
+   7000 rpm) far below anything a spark needs. Code uses US_TO_TICKS() /
+   TGT_TICKS_PER_MS_X10, never a literal 1250. */
+#define TGT_TICKS_PER_MS_X10  7500UL        /* 0.750 MHz x 10 per ms */
+#endif
 #define TGT_T78CON            0x4242u       /* T7I=2,T7R / T8I=2,T8R */
-#define TGT_T01CON            0x0042u       /* V26 baseline: T0 runs, T1 stopped */
+/* T0 AND T1 RUN FROM BOOT (2026-10-28). T1 is the CC25 executor's clock
+   (hcdeadline711.c now_ticks), the 1 ms output supervisor's (hcrtmon711.c)
+   and the ME7.5 DC monitor's (CC5); until now it ran only with
+   trigSource 1, so on a fresh page a bench coil/injector pulse never ended
+   (bench 2.7T: output ON until the 5 s run guard). The captures CC8/9/15
+   stay disarmed unless trigSource is 1 - that, not a stopped timer, is what
+   keeps a floating crank input quiet. */
+#define TGT_T01CON            0x4242u       /* T0 and T1 internal, /32, running */
 #define TGT_T1CON_RUNNING     0x4200u       /* T1 internal, /32, running          */
+#if !TGT_BOARD_VAG_ME71_C4
 #define TGT_TICK_RELOAD       1250u         /* T8 reload for a 1 ms tick */
+#else
+#define TGT_TICK_RELOAD       750u          /* T8 reload for a 1 ms tick */
+#endif
 
 #define TGT_PWM_SLOW_HZ       (TGT_FCPU_HZ / 64uL)
 
@@ -571,7 +598,16 @@ unsigned char HC_COLD hc_och_ext_byte(unsigned int offset);
  * asynchronous UART tolerance and the user's K-line hardware is proven at
  * nominal 57600. Exact 19200 (0x40) remains a trivial diagnostic fallback.
  */
+#if !TGT_BOARD_VAG_ME71_C4
 #define TGT_S0BG              0x15
+#else
+/* 24 MHz: baud = 750 000 / (S0BG + 1). EXACT-ish rates: 0x0C = 57692
+   (+0.16 %), 0x05 = 125000 (124800 +0.16 %), 0x47 = 10417 (10400). 115200
+   is NOT reachable (0x05 = +8.5 %, 0x06 = -7 %), so this board offers two
+   link rates and refuses a 115200 GOFAST (hckline.c HCKLINE_NO_115200).
+   TunerStudio without the plugin: 57600. */
+#define TGT_S0BG              0x0C
+#endif
 #define TGT_BAUD              57600
 /* reply bytes go out back to back and the K-line echo is dropped by
    count (hcts.c, "PIPELINED ECHO ACCOUNTING"). Measured V93 r2: 238.7 us per
@@ -582,8 +618,21 @@ unsigned char HC_COLD hc_och_ext_byte(unsigned int offset);
    list offers 115200) and at 124800 (0x09, exact - the KKL runs the flash
    loader at it). It boots at TGT_S0BG and follows the host on evidence
    (hcts.c, "THE LINK RATE"). */
+#if !TGT_BOARD_VAG_ME71_C4
 #define TGT_S0BG_ALT          0x0A
 #define TGT_S0BG_ALT2         0x09
+#define TGT_LINK_RATES        3u
+#define TGT_S0BG_124800       TGT_S0BG_ALT2
+#define TGT_S0BG_115200       TGT_S0BG_ALT
+#define TGT_S0BG_10400        0x77      /* 40 MHz / (32 x 120) */
+#define TGT_S0BG_250000       0x04      /* 1.25 MHz / 5 - the OBD updater's bulk rate ('!b') */
+#else
+#define TGT_S0BG_ALT          0x05      /* 124800 (125000)     */
+#define TGT_LINK_RATES        2u
+#define TGT_S0BG_124800       TGT_S0BG_ALT
+#define TGT_S0BG_10400        0x47      /* 24 MHz / (32 x 72), the OEM's own */
+#define TGT_S0BG_250000       0x02      /* 750 kHz / 3 - the OBD updater's bulk rate ('!b') */
+#endif
 /* THE CAR'S K-LINE IS SHARED (cluster + tester, ME711_OBD_KLINE.md): answer
    no plain byte and no error reply until a CRC-valid request has locked
    the link (hcts.c HCTS_MAY_ANSWER_NOISE). 2026-10-13. */
@@ -719,11 +768,58 @@ extern unsigned char far hc_kwp_active(void);
 /* How far past the next delivered tooth the planner publishes (hcsched_dry.c
    plan_tooth): 2500 T1 ticks = 2.0 ms, the publication allowance that covers
    the walk period and the planner level's own latency. */
+#if !TGT_BOARD_VAG_ME71_C4
 #define HC_PLAN_HORIZON_TICKS 2500u
+#else
+/* 2.7T: 3000 ticks = 4.0 ms (see HC_PLAN_PERIOD_TICKS) */
+#define HC_PLAN_HORIZON_TICKS 3000u
+#endif
 /* ...and the full per-cylinder walk runs at most this often (0.4 ms); every
-   capture still advances the angle epoch. Must stay well under the horizon. */
+   capture still advances the angle epoch. Must stay well under the horizon.
+   2.7T: 1450 ticks = 1.93 ms with a 4.0 ms horizon, so a publication still
+   leads its event by >= 2.0 ms (Porsche: 1.6 ms) and a walk publishes about
+   two events at 7000 rpm instead of one; the walk's fixed cost (~700
+   instructions) was 17 % of the 24 MHz CPU at 7000 rpm at a 0.67 ms period
+   (port plan section 15). Extrapolating 4 ms ahead at 7000 rpm moves a
+   spark by < 0.2 deg at 1500 rpm/s of acceleration. */
+#if !TGT_BOARD_VAG_ME71_C4
 #define HC_PLAN_PERIOD_TICKS  500u
+#else
+#define HC_PLAN_PERIOD_TICKS  1450u
+#endif
 typedef char hc_plan_period_ok[(HC_PLAN_PERIOD_TICKS * 2u < HC_PLAN_HORIZON_TICKS) ? 1 : -1];
+/* The crank capture ring between the crank ISR and the planner level
+   (hcsched_dry.c), a power of two; CAP_N - 1 teeth waiting = overflow =
+   quiesce. 2.7T: 16. A planner run that publishes three events is ~1 ms of
+   the 24 MHz CPU plus preemption - more than seven teeth at 6000 rpm, so the
+   8-deep ring overflowed there in simulation (port plan section 15). */
+#if !TGT_BOARD_VAG_ME71_C4
+#define TGT_PLAN_CAP_N        8u
+#define TGT_PLAN_CAP_MEM
+#else
+#define TGT_PLAN_CAP_N        16u
+/* its own on-chip RAM section (?ID0?), so the 96 bytes take a hole of their
+   own instead of growing ?ND0?HCSCHED_DRY - the fragmented NDATA0 ranges
+   had no contiguous room left for ?ND0?HCDEADLINE711 behind it (L5) */
+#define TGT_PLAN_CAP_MEM      idata
+#endif
+typedef char tgt_plan_cap_pow2[((TGT_PLAN_CAP_N & (TGT_PLAN_CAP_N - 1u)) == 0u) ? 1 : -1];
+/* Teeth shorter than this many ticks are handed to the planner every OTHER
+   tooth (hcsched_dry.c hc_drysched_tooth), never the two teeth around the
+   gap; 0 = every tooth. 2.7T: 250 ticks = above 3000 rpm on a 60-2. The
+   planner walks every 1.93 ms there anyway (HC_PLAN_PERIOD_TICKS), and the
+   per-tooth ring push + epoch count was ~10 % of the 24 MHz CPU at 7000
+   rpm (port plan section 15). */
+/* ...and below TGT_PLAN_DECIM4_DT ticks (2.7T: 150 = above 5000 rpm) only
+   every FOURTH tooth: four teeth are at most the wheel's gap step plus one
+   tooth (the epoch's step limit) on any wheel with a gap. */
+#if !TGT_BOARD_VAG_ME71_C4
+#define TGT_PLAN_DECIM_DT     0u
+#define TGT_PLAN_DECIM4_DT    0u
+#else
+#define TGT_PLAN_DECIM_DT     250u
+#define TGT_PLAN_DECIM4_DT    150u
+#endif
 #define TGT_TRAP_T8INT        0x3E    /* the 1 ms system tick                */
 #define TGT_TRAP_SSCRINT      0x2E    /* ASIC frame complete (PEC4 exhausted) */
 #define TGT_TRAP_SSCTINT      0x2D
@@ -795,7 +891,39 @@ typedef char hc_plan_period_ok[(HC_PLAN_PERIOD_TICKS * 2u < HC_PLAN_HORIZON_TICK
 #else
 #define TGT_ILVL_SERIAL       12      /* the drain tick                      */
 #endif
-#define TGT_ILVL_TICK         8       /* the 1 ms system tick                */
+#define TGT_ILVL_TICK         8       /* the 1 ms tick's BODY (CC28, below)  */
+/* THE MILLISECOND ITSELF IS COUNTED AT THE CRANK'S LEVEL (2026-10-28).
+   T8's overflow handler (hc_tick_isr) only counts tick_ms, requests the
+   S5500 step (CC27) and requests the tick's body, which runs at the old
+   tick level 8 as the software-requested CC28 interrupt (hc_slowtick_isr,
+   the same code as before). At level 8 the T8 interrupt itself was starved
+   under engine load: on the bench 2.7T above ~7100 rpm (polled logger) a
+   third of the ticks were LOST (stress rig 8500 rpm: 97 of 150 in 150 ms),
+   tick_ms fell behind real time, the S5500 raster stretched to 11-15 ms
+   (witness: 1804 frames > 10.5 ms, 3 UMKOM mismatches) and the ASIC reset
+   MAIN about every 600 ms. Level 12 group 0 is free (crank 3, cams 2/1;
+   the K-line receive is PEC6 at 15) and the handler is three statements,
+   so no new level joins the interrupt nest. CC28 is pinless in this use:
+   a software-requested interrupt never touches CC28IO (P7.4) - the
+   hardware compare executor (ME711_HW_COMPARE_EXECUTOR.md) needs another
+   source for injector 3 when it is built. */
+/* THE CPU'S OWN SPEED CEILING (2026-10-28). The decoder rejects an edge
+   closer than one tooth period at min(revMax, this) as noise
+   (hctrig_me711.c min_edge_ticks), so above it nothing is planned - a hard
+   cut, never an overloaded CPU, whatever revMax a tuner sets. 2.7T bench
+   (24 MHz, logger polling the full block): main loop starved from ~8000 rpm
+   (watchdog gap 91 ms at 8100, limit 200); before the millisecond moved to
+   level 12 the S5500 reset MAIN from ~7100. Raise it as CPU is freed. */
+#if TGT_BOARD_VAG_ME71_C4
+#define TGT_RPM_CPU_MAX       7800u
+#else
+#define TGT_RPM_CPU_MAX       12000u
+#endif
+#define TGT_ILVL_MSTICK       12
+#define TGT_GLVL_MSTICK       0
+#define TGT_TRAP_SLOWTICK     0x3C    /* CC28INT, software-requested         */
+#define TGT_SLOWTICK_IC       CC28IC
+#define TGT_SLOWTICK_IR       CC28IR
 #define TGT_ILVL_ENGINE_MAX   12      /* ceiling for anything added later    */
 #define TGT_ILVL_CRANK        12
 #define TGT_ILVL_ANGLE        11
@@ -950,8 +1078,26 @@ typedef char hc_plan_period_ok[(HC_PLAN_PERIOD_TICKS * 2u < HC_PLAN_HORIZON_TICK
 #define TGT_RAM_OCH_LIMIT     0x0400uL
 #define TGT_RAM_RSTLOG        0x2400uL    /* the reset log                   */
 #define TGT_RAM_RSTLOG_LIMIT  0x0100uL
-#define TGT_RAM_ASICLOG       0x2500uL    /* last accepted ASIC frames       */
-#define TGT_RAM_ASICLOG_LIMIT 0x0300uL
+/* THE BAD S5500 REPLY (2026-10-28, stability issue 02, hcasicstart.c): the
+   latest runtime reply that failed its checksum, whole, with its sums, times
+   and rpm - served in the first 344 bytes of the extended output-channel
+   window (hcprofile711.c), read by the vehicle logger. 16 header words + the
+   frame. Taken from the old RXSNAP block (hcasic.c's superseded machine). */
+#define TGT_RAM_ASICBAD       0x2500uL
+#define TGT_RAM_ASICBAD_LIMIT 0x0120uL
+#define TGT_ASICBAD_HDR       16u          /* words before the frame        */
+/* THE MAIN-LOOP PASS PROFILE (2026-10-28, stability issue 03, hcmain_me711.c
+   HC_PASS_CP / hcrtmon711.c hc_pass_begin): the worst pass in ms (no T7
+   wrap), its longest segment, passes > 20 ms, each segment's worst. Served
+   right after the bad-reply capture in the extended window (offset 268). */
+#define TGT_RAM_PASSREC       0x2620uL
+#define TGT_RAM_PASSREC_LIMIT 0x0040uL      /* 32 words */
+#define TGT_ASICBAD_EXPORT    268u          /* window bytes of the capture
+                                               (16 + 118 words); the pass
+                                               profile follows at 268 */
+/* FREE (2026-10-28) */
+#define TGT_RAM_SPARE_C       0x2660uL
+#define TGT_RAM_SPARE_C_LIMIT 0x01A0uL
 #define TGT_RAM_FLASHBUF      0x3000uL
 #define TGT_RAM_FLASHBUF_LIMIT 0x1400uL    /* was 0x2000; the Burn
                                               record is ~0x1018 (hcnvm.c
@@ -983,29 +1129,50 @@ typedef char hc_plan_period_ok[(HC_PLAN_PERIOD_TICKS * 2u < HC_PLAN_HORIZON_TICK
 #define TGT_RAM_AUX_LIMIT     0x00F0uL
 /* the auxiliary functions' outputs: the CPU's spare CJ920 low sides, the
    cam-solenoid stages (P7.0/POUT0, P7.1/POUT1 - hcaux711.c, hcvvt711.c) */
+#if !TGT_BOARD_VAG_ME71_C4
 #define TGT_AUX_CAV0          115u
 #define TGT_AUX_CAV1          120u
+/* the cavities the MAIN CPU's own PWM units reach (P7.0/POUT0, P7.1/POUT1)
+   - the cam-solenoid stages KNWS1/KNWS2 on this board */
+#define TGT_POUT0_CAV         115u
+#define TGT_POUT1_CAV         120u
+#else
+/* AUDI 2.7T ME7.1 C4 (2026-10-24): POUT0 = AGR (the EGR valve stage,
+   cavity 114 A_T_EAGR), POUT1 = LDR/SU (the N75 boost valve, cavity 104),
+   POUT3 = TEV (64) [me7_port.xls FR "ME7.1"; OEM PP1 = 12499 at fCPU/64 =
+   30 Hz, 4B0907551F]. The cam valve (115, NWS 3.7 A) is the S5500's
+   P2.11 here, frame word 55 (hcio711.c), and cavity 120 is not fitted. */
+#define TGT_AUX_CAV0          114u
+#define TGT_AUX_CAV1          104u
+#define TGT_POUT0_CAV         114u
+#define TGT_POUT1_CAV         104u
+#define TGT_NWS_ASIC_CAV      115u
+#endif
 #define TGT_ABFLAG_MARKER     0xA5u
 #define TGT_AB_BASE           0u
 #define TGT_AB_NLEN           1u
 
-/* The frozen ASIC reply capture. ITS OWN REGION, and that is the whole point.
-   V6 and V7 both put it at TGT_RAM_ASICLOG, which hcasic.c's RXSNAP already
-   owned - and asic_init() zeroes 118 words of RXSNAP on every boot and every
-   SSC re-initialisation. That wiped the capture's D_VALID, D_CALC and D_RECV
-   (words 1, 6, 7) and its whole payload, while leaving G_MAGIC at word 224
-   outside the cleared range - so hc_asicdump_init() saw a valid magic, never
-   re-initialised, and the "frozen" frame was silently re-captured on every
-   single boot. Chunks printed across boots therefore came from DIFFERENT
-   exchanges, and the metadata from a different one again.
-   This is exactly what feedback_one_place_for_shared_layout exists to stop:
-   two modules hardcoding the same base. Every region this target owns is
-   declared HERE and nowhere else. */
-#define TGT_RAM_ASICDUMP      0x2A00uL
-#define TGT_RAM_ASICDUMP_LIMIT 0x0600uL
+#if !TGT_BOARD_VAG_ME71_C4
+/* FREE (2026-10-28): the old frozen-ASIC-reply block (hcasicdump.c, V6..V62,
+   compiled into no image since V63). The 2.7T keeps its far data here. */
+#define TGT_RAM_SPARE_A       0x2A00uL
+#define TGT_RAM_SPARE_A_LIMIT 0x0600uL
+#define HC_C4FAR
+#else
+/* THE 2.7T's NEAR DATA THAT DOES NOT FIT ITS C167CR (2026-10-26). That CPU
+   has 1 KB less on-chip RAM than the Porsche's C167CS (hcsafety.h), so the
+   K-line transport state and the cold objects marked HC_C4FAR live here, in
+   the block that is spare on the Porsche. start_me711.a66 ZEROES it at every boot (the SRAM is
+   battery-backed; the linker places class FDATA0 here, hcserial711.c's
+   transport state at its start). MUST MATCH start_me711.a66's clear loop. */
+#define TGT_RAM_C4FAR         0x2A00uL
+#define TGT_RAM_C4FAR_LIMIT   0x0600uL
+#define TGT_RAM_C4SER         TGT_RAM_C4FAR          /* the 64-byte TX buffer */
+#define HC_C4FAR              far
+#endif
 
 /* THE K-LINE CAPTURE (2026-10-15, hckwp_me711.c). The V49 NMI snapshot
-   that owned this block (hcnmisnap.c) is compiled into no image. Armed at
+   that owned this block is retired. Armed at
    every boot; the first line held low 3 ms that is not our own echo - a
    tester's 5-baud start bit or fast-init wake-up - records the RXD0 pin
    once a millisecond for KC_SAMPLES ms: what reaches cavity 43 through the
@@ -1176,11 +1343,9 @@ unsigned char hc_tlog_byte(unsigned int i);
 #endif
 #define TGT_RAM_NVM           0x6800uL
 #define TGT_RAM_NVM_LIMIT     0x0100uL
-/* V49's first-event live-Burn forensic record.  Native aligned word stores
-   keep the writer/NMI paths short; the TunerStudio export converts the fixed
-   344-byte record to the target protocol's big-endian byte order. */
-#define TGT_RAM_LIVEFORENSICS       0x6900uL
-#define TGT_RAM_LIVEFORENSICS_LIMIT 0x0158uL
+/* FREE (2026-10-28): the V49 live-Burn forensic record's 344 bytes. */
+#define TGT_RAM_SPARE_B       0x6900uL
+#define TGT_RAM_SPARE_B_LIMIT 0x0158uL
 /* The phase offsets in force for the four cursor kinds (the close kind is
    unused): hc_deadline_plan_offset() holds a live timing change back while
    the next event is inside the publication horizon. */
@@ -1277,7 +1442,7 @@ unsigned char hc_tlog_byte(unsigned int i);
 #if ((TGT_RAM_TOOTHLOG + TGT_RAM_TOOTHLOG_LIMIT) > TGT_RAM_ETBCAL)
 #error "tooth-log and ETB-calibration SRAM regions overlap"
 #endif
-#if ((TGT_RAM_LIVEFORENSICS + TGT_RAM_LIVEFORENSICS_LIMIT) > TGT_RAM_VALCLAIMS) || ((TGT_RAM_VALCLAIMS + TGT_RAM_VALCLAIMS_LIMIT) > TGT_RAM_TOOTHLOG)
+#if ((TGT_RAM_SPARE_B + TGT_RAM_SPARE_B_LIMIT) > TGT_RAM_VALCLAIMS) || ((TGT_RAM_VALCLAIMS + TGT_RAM_VALCLAIMS_LIMIT) > TGT_RAM_TOOTHLOG)
 #error "TGT_RAM_VALCLAIMS overlaps its neighbours"
 #endif
 #if ((TGT_RAM_BOOTHIST + TGT_RAM_BOOTHIST_LIMIT) > TGT_RAM_HALCENSUS)
@@ -1287,11 +1452,8 @@ unsigned char hc_tlog_byte(unsigned int i);
 #define TGT_ETBCAL_FAR              1
 /* Set only for the frozen characterization bench image. */
 #define TGT_ETB_DIAGNOSTIC_BENCH    0
-#if ((TGT_RAM_NVM + TGT_RAM_NVM_LIMIT) > TGT_RAM_LIVEFORENSICS)
-#error "NVM and live-forensic SRAM regions overlap"
-#endif
-#if ((TGT_RAM_LIVEFORENSICS + TGT_RAM_LIVEFORENSICS_LIMIT) > TGT_RAM_HALCENSUS)
-#error "live-forensic and HAL-census SRAM regions overlap"
+#if ((TGT_RAM_NVM + TGT_RAM_NVM_LIMIT) > TGT_RAM_SPARE_B)
+#error "NVM and spare SRAM regions overlap"
 #endif
 /* V47 has no retained V45 Burn diary alias in this region.  Architecture-D
    live telemetry is transient at NVM_LIVE and reset/NMI diagnostics retain
@@ -1463,7 +1625,23 @@ unsigned char hc_tlog_byte(unsigned int i);
    sectors, seventy-two cells - still millions of Burns (see above). */
 #define TGT_FLASH_CFG_A       0x870000uL   /* SA10, first store sector       */
 #define TGT_FLASH_CFG_SEG     0x0087u      /* its segment, for 16-bit maths  */
+#if HC_UPDATER
+/* --updater (spec.md): the running app writes a new image into STAGING
+   (SA15..SA18, 0x8C0000) and the loader copies it to the app on the next
+   reset. The store gives those four sectors up and keeps SA10..SA14 - forty
+   cells, 100000*40 = 4,000,000 Burns, still past any vehicle's life. The page
+   LAYOUT does not change (same fields, same HC_CFG_LAYOUT_ID), only the
+   store's capacity; a layout move still blanks the store and the host tool
+   restores the tune. D1 in the spec sized this: reclaim at 8 free, LKG keeps
+   4, so five sectors is ample. */
+#define TGT_FLASH_SECTORS       5u         /* SA10..SA14                     */
+#define TGT_FLASH_STAGE_A       0x8C0000uL /* SA15, first staging sector     */
+#define TGT_FLASH_STAGE_SEG     0x008Cu
+#define TGT_FLASH_STAGE_SECTORS 4u         /* SA15..SA18 (0x8C0000-0x8FFFFF) */
+#define TGT_FLASH_STAGE_HDR     0x0200uL   /* image header offset in a sector */
+#else
 #define TGT_FLASH_SECTORS     9u           /* SA10..SA18                     */
+#endif
 
 /* One cell per 8 KiB checksum page; eight pages per 64 KiB sector.
    The page geometry is kept even though these pages are no longer sampled:
@@ -1538,13 +1716,37 @@ unsigned char hc_tlog_byte(unsigned int i);
    part's CLKCFG is strapped on P0H at reset and its ROM never writes SYSCON,
    so its fCPU is not known here and MAIN's 40 MHz does not apply to it. The
    OEM master's measured behaviour is the authoritative figure. */
+#if !TGT_BOARD_VAG_ME71_C4
 #define TGT_ASIC_CS_ARM_TICKS 79u
+#else
+#define TGT_ASIC_CS_ARM_TICKS 47u       /* the same 63 us at 0.75 MHz */
+#endif
 
 #define TGT_ASIC_SSCCON_IDLE  0x461Fu
 #define TGT_ASIC_SSCCON_RUN   0xC61Fu
+#if !TGT_BOARD_VAG_ME71_C4
 #define TGT_ASIC_SSCBR        0x0013u
+#else
+/* [4B0907551F 0x076B54 / 8D0907551M 0x07D768: MOV R13,#0Bh before the SSC
+   init call] - 24 MHz / (2 x 12) = 1 MHz, the SAME link rate as 0x13 at
+   40 MHz: Bosch kept the S5500 link timing identical across the boards. */
+#define TGT_ASIC_SSCBR        0x000Bu
+#endif
 #define TGT_ASIC_WORDS_START  0x60u
+#if !TGT_BOARD_VAG_ME71_C4
 #define TGT_ASIC_WORDS_RUN    0x76u
+#else
+/* THE ME7.1 RUNTIME FRAME IS 96 WORDS (2026-10-24). Every one of the 11
+   frame checksums in 4B0907551F sums 0x5F words into word 95 (0x76B48..),
+   and the S5500 mask ROM - bins/ASIC-IROM-7x00005d, dumped from this very
+   board family (8D0907551M) - arms a FIXED 0x60-word PEC on chip select
+   (IROM 0x190A) and flags a frame that ends short (0x180E). Word map: a
+   subset of the ME7.1.1 one at the same positions - TX 4..10, 25..26,
+   41..42, port images 52..58; RX 4..9, 11, 15..19, 21..23, 25, 37..39,
+   41, switch snapshot 53..59 [pack/unpack tables 0x817106 / 0x81718C];
+   words 71..94 are the mailbox (0x76702, empty = 0). */
+#define TGT_ASIC_WORDS_RUN    0x60u
+#endif
 /* TWO headers, and they are NOT the same frame.
    [BIN] the RUNTIME packer 0x8BE2B6 writes them as two BYTE immediates -
    MOVB #A5h into byte 0 and MOVB #BAh into byte 1 - so word 0 = 0xBAA5. A
@@ -1552,8 +1754,30 @@ unsigned char hc_tlog_byte(unsigned int i);
    doubted; it is written bytewise.
    [BIN] the STARTUP frame's word 0 is 0x0055, decoded from the OEM builder at
    0x8B189C, and the ASIC IROM compares a received byte against 0x55. */
+#if !TGT_BOARD_VAG_ME71_C4
 #define TGT_ASIC_HEADER       0xBAA5u    /* runtime, 118 words */
+#else
+/* [4B0907551F 0x0766C8: MOVB [R12],#A0h; MOVB [R12+1],#8Eh] - 0x8E is the
+   byte length of the fixed part (words 0..70), as 0xBA is on ME7.1.1. */
+#define TGT_ASIC_HEADER       0x8EA0u    /* runtime, 96 words  */
+#endif
+
+/* THE UMKOM GRACE: how many validated runtime frames go out with words 1..3
+   echoed before hc_umkom_service() owns them - it aligns HaniCore's 4-frame
+   question/answer cycle with the S5500's (hcasicstart.c). Porsche: 2, from
+   the OEM's 0x8BE8F4 two-frame handler and V14 hardware. 2.7T: MEASURED on
+   the bench (2026-10-27): with 2 the real C4 S5500 counted a monitoring
+   mismatch at every process tick and reset MAIN after ~300 ms. */
+#if !TGT_BOARD_VAG_ME71_C4
+#define TGT_UM_GRACE          2u
+#else
+#define TGT_UM_GRACE          2u
+#endif
+#if !TGT_BOARD_VAG_ME71_C4
 #define TGT_ASIC_HEADER_START 0x0055u    /* startup, 96 words  */
+#else
+#define TGT_ASIC_HEADER_START 0x005Fu    /* [4B0907551F 0x871872; IROM 0x19E4] */
+#endif
 
 /* [BIN] 0x8BE7CC / 0x8BE88A: the OEM waits at most 0xA5 T4 ticks for a
    transfer to complete before treating it as failed. HaniCore measures the
@@ -1721,6 +1945,30 @@ unsigned char hc_tlog_byte(unsigned int i);
    pattern), so it is an output, ACTIVE LOW. Not yet on a meter. */
 #define TGT_MIL_CAV           47
 #define TGT_KL15STAT_PORT_BIT 2         /* P6.2 */
+/* KL15 AS FIRMWARE SEES IT - one seam for every reader (2026-10-24).
+   Porsche ME7.1.1: the CJ910 ST/IGN line on P6.2 (both ME7.1.1 port-map
+   columns, KL15_STAT on CS2). Audi 2.7T ME7.1 C4: KL15STAT is on the MAIN
+   ADC, AN12 (me7_port.xls FR column "ME7.1"; P6.2/CS2 is "unbenutzt"
+   there), read from the 1 ms ADC round robin (adc_raw[], verbatim ADDAT)
+   and sampled once synchronously at boot (hcmain_me711.c) so the boot-time
+   "booted with the key off" rule sees a real value. 400 counts = 1.96 V:
+   a logic-level ST line reads ~5 V, a divided KL15 ~9 V of battery. */
+#if !TGT_BOARD_VAG_ME71_C4
+#define TGT_KL15_ON()         ((P6 & (1u << TGT_KL15STAT_PORT_BIT)) != 0u)
+/* run-on is the native CJ910 MR stage's, used while MAIN_RELAY routes to
+   it (cavity 23, hc_hal_main_relay_bound() == 2) */
+#define TGT_RUNON_ENABLED()   (hc_hal_main_relay_bound() == 2u)
+#else
+#define TGT_ADC_KL15_CH       12u
+#define TGT_KL15_ADC_ON       400u
+extern unsigned int adc_raw[];
+#define TGT_KL15_ON()         ((adc_raw[TGT_ADC_KL15_CH] & 0x03FFu) >= TGT_KL15_ADC_ON)
+/* SSB "Nachlauf intern" x / "Nachlauf ueber externes Hauptrelais" -: the
+   C4 board holds its own supply (CJ910 from KL30 on 62, NL = NLEN_FR OR
+   NOT NLEN_AS, the same keep-alive as the Porsche) with NO relay output, so
+   run-on is the board's, always available. */
+#define TGT_RUNON_ENABLED()   1u
+#endif
 
 /* ==================================================== EKP, the fuel pump ==
  *
@@ -1761,7 +2009,20 @@ unsigned char hc_tlog_byte(unsigned int i);
  * released. The startup leaves it an input; nothing but the HAL and the
  * bench mode ever makes it an output.
  */
+#if !TGT_BOARD_VAG_ME71_C4
 #define TGT_EKP_PORT_BIT      12        /* P2.12 / CC12IO, CPU pin 61 */
+#define TGT_EKP_PORT_NO       2u
+#else
+/* THE 2.7T ME7.1 C4 PUMP RELAY IS P4.4 (A20): me7_port.xls FR "ME7.1" A20 =
+   EKP, CC12IO "unbenutzt, Eingang"; the OEM writes P4.4 [4B0907551F: BSET/
+   BCLR P4.4; the Porsche image never touches P4.4] and initialises it HIGH
+   as an output [0x078CC2 P4 = 0x00F0, DP4 = 0x00DF] - HIGH = off, the same
+   active-LOW CJ920 stage class as the Porsche's P2.12 (not yet measured on
+   this board). P4.0..P4.3 are the segment address lines, owned by the bus
+   controller, so bit writes to P4.4 cannot touch them. */
+#define TGT_EKP_PORT_BIT      4         /* P4.4 / A20 */
+#define TGT_EKP_PORT_NO       4u
+#endif
 #define TGT_EKP_CONN_PIN      65        /* A_S_EKPR - VW ME7.1 Steckerbelegung,
                                            CONFIRM continuity on this ECU */
 #define TGT_EKP_ACTIVE_HIGH   0         /* MEASURED: P2.12 LOW = cavity 65
@@ -1883,7 +2144,11 @@ unsigned char hc_tlog_byte(unsigned int i);
    produced "two very small twitches"; rusEFI drives this same Bosch body to
    both stops with 50 %.
    20000 still divides a 0.1 % duty step into an integer count (20). */
+#if !TGT_BOARD_VAG_ME71_C4
 #define TGT_DBW_PWM_PERIOD  20000
+#else
+#define TGT_DBW_PWM_PERIOD  12000   /* the 2.7T OEM's PP2 = 11999: 2 kHz at 24 MHz */
+#endif
 
 /* ===================================================== analog inputs ======
  *
@@ -1980,8 +2245,7 @@ unsigned char hc_tlog_byte(unsigned int i);
  * reason the port is a configuration change: it is one Bosch platform.
  *
  * hc_hal_outputs_safe() in startup releases every one of these pins (high
- * impedance) before anything else runs. A build with HANICORE_BENCH_SAFE
- * defined (not the default) leaves the output backends as counting no-ops.
+ * impedance) before anything else runs.
  */
 #define TGT_N_IGN             8
 #define TGT_N_INJ             8
@@ -1990,7 +2254,7 @@ unsigned char hc_tlog_byte(unsigned int i);
  * One 16-bit summary for the TunerStudio front page. Counters answer "how
  * many"; this answers "what is it doing right now". */
 #define HC_ST_ARMED           0x0001u  /* retired (V84), never set           */
-#define HC_ST_BENCHSAFE       0x0002u  /* HANICORE_BENCH_SAFE build only     */
+#define HC_ST_BENCHSAFE       0x0002u  /* retired (2026-10-28), never set    */
 #define HC_ST_TICK            0x0004u  /* the 1 ms tick is running           */
 #define HC_ST_RXTICK          0x0008u  /* the serial drain tick is running   */
 #define HC_ST_ASIC_INIT       0x0010u  /* SSC configured                     */
@@ -2036,5 +2300,66 @@ extern volatile unsigned char hc_probe_sink;
 #define BOOT_IRQ              9
 #define BOOT_ASIC             10
 #define BOOT_LOOP             11
+
+/* ===================================== THE VAG 1.8T ME7.5 "DC" BOARD ====
+ *
+ * 4B0906018DC / 0261207636 (2026-10-28). Built ON the 2.7T branch
+ * (TGT_BOARD_VAG_ME71_C4 = 1: 24 MHz C167CR, 05.12 mask-ROM boot, the same
+ * memory map), with the S5500 path swapped for the CC650 bus ASIC and the
+ * 68HC05 monitor (asic/hcasicstart_dc.inc). Only the facts that differ
+ * from the 2.7T are overridden here. Evidence for every value:
+ * .scratch/me75-reverse/ (IO_MAP.md, CC650_REGISTER_MAP.md, PORT_SPEC.md),
+ * EXACT TARGET BINARY 4B0906018DC unless marked.
+ */
+#ifndef TGT_BOARD_VAG_ME75_DC
+#define TGT_BOARD_VAG_ME75_DC 0
+#endif
+#if TGT_BOARD_VAG_ME75_DC
+#undef  TGT_ID
+#define TGT_ID                0x0750      /* ME7.5 DC, 4B0906018DC / 0261207636 */
+#undef  TGT_SIGNATURE
+#define TGT_SIGNATURE         "HaniCore ME75DC 3EF8E9EA"
+#undef  TGT_VERSIONTXT
+#define TGT_VERSIONTXT        "HaniCore V102 DEV / Bosch ME7.5 DC"
+/* the analog CJ110 wideband controller (30345): UA on AN6, LA through the
+   CC650 (reg 0x46 bit 0) - hccj110.c; no SPI chip, no Ri */
+#define TGT_HAS_CJ110         1
+
+/* KL15 status: P4.4 (`S_kl15` <- P4.4, X505P 0x0799C0; stock DP4.4 = 0) */
+#undef  TGT_KL15_ON
+#define TGT_KL15_ON()         ((P4 & 0x0010u) != 0u)
+/* run-on: NLEN_FR (P3.12) is driven LOW from the start, as the stock does
+   for calibration 0x819540 = 0x14 (0x070316); the hold itself is the
+   CC650's reg 0x44 bit 2 (`B_nachl`, 0x070392) - hcio711.c */
+#undef  TGT_RUNON_ENABLED
+#define TGT_RUNON_ENABLED()   1u
+
+/* the fuel pump relay: P3.7 (`NOT B_ekp`), CJ920 E14 -> cavity 65, active
+   LOW like every CJ920 stage here (stock P3 = 0x2FC1: P3.7 HIGH = off) */
+#undef  TGT_EKP_PORT_BIT
+#define TGT_EKP_PORT_BIT      7         /* P3.7 / T2IN */
+#undef  TGT_EKP_PORT_NO
+#define TGT_EKP_PORT_NO       3u
+
+/* the CC650: CS2, ADDRSEL2 0x4800 / BUSCON2 0x064E (start_me711.a66) */
+#define TGT_CC650_BASE        0x480000uL
+#define TGT_CC650_WRITES_PER_MS 2u      /* bus writes per 1 ms service      */
+#define TGT_CC650_ANA_MS      10u       /* analog read + output raster      */
+#define TGT_CC650_SETUP_3E    0x01u     /* stock: 0x8195C3 == 0xF0 ? F1 : 01;
+                                           the DC holds 0x00 there          */
+
+/* the 68HC05 monitor: P2.5 (CC5 capture both edges / compare mode 1 on
+   T1), P3.5 = FPW (HIGH stops the module - held LOW, start_me711.a66) */
+#define TGT_MON_PORT_BIT      5u        /* P2.5 / CC5IO                    */
+#define TGT_MON_TICK_SHIFT    1u        /* hcme75mon ticks (1.5 MHz) = T1 ticks
+                                           (0.75 MHz, fCPU/32) << 1          */
+
+/* the heaters: LSU pre-cat on P2.12 (`B_hsve`, active HIGH, BUK105 ->
+   cavity 5), post-cat on P2.4 (`NOT B_hshe`, active LOW -> cavity 63) */
+#define TGT_DC_LSU_HEAT_BIT   12u
+#define TGT_DC_NB_HEAT_BIT    4u
+#else
+#define TGT_HAS_CJ110         0           /* the DC's analog CJ110 only     */
+#endif
 
 #endif /* HCTARGET_H */

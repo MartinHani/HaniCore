@@ -32,7 +32,7 @@ def main():
         manifest=json.loads(stem.with_suffix('.json').read_text());manifest.update(sha256=sha(image),bench_only=True,normal_dbw_inhibited=True,calibration_journal_sha256=sha(old[0x60000:]),calibration_journal_unchanged=True)
         dest.with_suffix('.json').write_text(json.dumps(manifest,indent=2))
         for suffix in ('','_forensic','_userdefined_fallback'):
-            shutil.copy2(ROOT/f'tunerstudio/hanicore_me711_v102_dev{suffix}.ini',a.out/f'hanicore_me711_etb_characterization_bench{suffix}.ini')
+            shutil.copy2(ROOT/f'tuning/hanicore_me711_v102_dev{suffix}.ini',a.out/f'hanicore_me711_etb_characterization_bench{suffix}.ini')
         print('Frozen bench candidate',dest,'SHA256',sha(image),flush=True)
         print('Existing journal preserved byte-for-byte; no calibration Burn.',flush=True)
     finally:

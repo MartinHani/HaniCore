@@ -49,29 +49,36 @@ real decoder on four wheels and requires every delivered `dt` to be one
 nominal tooth, so the divisor this gate insists on is grounded in measured
 decoder behaviour rather than in a plausible reading of a variable name.
 
-SECTION 2 MEASURES BEHAVIOUR, NOT A STRUCT.
+SECTION 2 MEASURES WHAT THE PLANNER HANDS THE EXECUTOR.
 
-`ev_deadline[]` is `static` and deliberately not published; this gate never
-reads it. It feeds clean teeth until exactly ONE event is staged, then advances
-the timer ONE TICK AT A TIME through `hc_drysched_time_service()` and records
-the tick on which `dry_sched_executed` moves. That is the edge a coil sees.
-`delta` comes from `dry_sched_last_angle` - the angle of the event that just
-executed - minus the angle of the tooth that staged it, both published.
+Since the 2026-10-07 executor the polled path this section used to drive
+(`hc_drysched_time_service()`, `dry_sched_last_angle`) is an empty
+compatibility stub, and the section found no event at all. Every edge now
+leaves the planner through ONE call, `hc_deadline_publish(generation, stamp,
+ahead, type, ...)`: the CC25 executor fires it at `stamp + ahead` and does no
+angle arithmetic of its own. So the gate records that call's arguments at its
+entry - what the callee receives (R9 stamp, R10:R11 ahead, R12 type) - while
+clean teeth are fed through `hc_drysched_tooth()` / `hc_drysched_service()`,
+and turns each deadline back into the angle it implies with the WHEEL'S tooth:
 
-**It is deliberately NOT `dry_sched_next_angle`, and that cost a wrong number
-once.** `next_angle` is whatever `queue_event()` wrote LAST, and a tooth may
-stage two events of which one is due immediately - so on a 12-tooth wheel it
-named an event that had already fired inside the staging tooth's own service
-call, giving delta 0 for an event whose real offset was 160.
+    implied = angle(stamp's tooth) + ahead * tooth_x10 / dt
 
-CONTROLS, and the 60-tooth row is the important one:
+That must be the angle the configuration puts the event at - every spark at
+TDC - advance, every injector start at the start-of-injection angle, every
+dwell start at the spark minus the dwell's angle - on every wheel, for every
+event the planner publishes (not one hand-picked event). The clock is the
+board's own (`me711_heartbeat_gap_proof.TPMS`), so the same gate measures the
+2.7T's 0.75 MHz timer.
 
-  * **60 teeth must be exact on EVERY image, before and after the fix.** The
-    literal and the derived value are the same number there, so if that row
-    ever fails the rig is wrong rather than the firmware.
-  * 36, 24 and 12 are measured wrong before the fix by exactly `tooth_x10/60`,
-    which is the arithmetic and not a coincidence - so the measurement
-    identifies the defect rather than merely detecting one.
+CONTROLS:
+
+  * **60 teeth must be exact on EVERY image.** The literal and the derived
+    tooth width are the same number there, so if that row fails the rig is
+    wrong rather than the firmware.
+  * **The rig can tell.** The same deadlines decoded with the 60-tooth
+    literal must miss by more than a degree on 36, 24 and 12 - otherwise the
+    published events sit too close to their teeth for the measurement to see
+    the defect class it exists for.
 
 NOT PHYSICALLY VERIFIED: no coil or injector has been connected to this ECU and
 no pin has been observed moving. What is asserted is the tick on which the
@@ -89,12 +96,22 @@ import hcpaths  # noqa: F401,E402  (puts every tools/ and tests/ module on sys.p
 import c167sim as S                   # noqa: E402
 import me711_image as PI              # noqa: E402
 import me711_trigger_test as PT       # noqa: E402
+import me711_plan_cost_proof as C     # noqa: E402  (planning_fixture)
+import me711_heartbeat_gap_proof as HB  # noqa: E402
+
+TPS = HB.TPMS * 100                   # this board's T1 ticks per second
 
 sym = PT.sym
 
 CYCLE_X10 = 7200
 RPM = 3000
 CYLINDERS = 4
+TDC = [0, 5400, 1800, 3600]           # 1-3-4-2, x10 degrees after TDC 1
+ADV, DWELL_MS, SOI = 200, 3.0, 3600   # planning_fixture's operating point
+# how far the implied angle may sit from the configured one: the firmware's
+# truncating division and the dwell's own angle rounding, a few hundredths
+# of a degree; one tenth leaves room and is far below a tooth
+TOL_X10 = 1.0
 # (total teeth, missing teeth). The gap is what makes the premise interesting:
 # it is the only place where the angle step and the tooth period disagree.
 WHEELS = ((60, 2), (36, 1), (24, 1), (12, 1))
@@ -164,7 +181,7 @@ def delivered_teeth(teeth, gap, revs=4):
     S.CPU.step = step
     try:
         w = Wheel(teeth, gap)
-        period = round(75_000_000 / (RPM * teeth))
+        period = round(TPS * 60 / (RPM * teeth))
         for _ in range(revs):
             w.rev(period)
     finally:
@@ -193,70 +210,69 @@ def premise(teeth, gap):
 # SECTION 2 - when a staged event actually executes
 # ======================================================================
 
-def drain(c, stamp, dt):
-    # EIGHT TOOTH PERIODS, NOT FOUR. On a 12-tooth wheel the defect under test
-    # inflates a deadline to five tooth periods, so a four-period drain LEFT
-    # THE EVENT QUEUED - and the next tooth then looked like a clean
-    # single-event tooth carrying somebody else's event. That is how a rig
-    # measures the wrong thing while reporting a plausible number.
-    for t in range(1, 8 * dt + 8):
-        c.call("hc_drysched_time_service", (stamp + t) & 0xFFFF)
-        if u16(c, "dry_sched_queued") == 0:
-            return
-
-
-def stage_one(teeth):
-    """Feed clean teeth until EXACTLY ONE event is staged, then return
-    (rig, tooth_angle, stamp, dt) for the tooth that staged it.
-
-    The teeth are fed directly rather than through the decoder, with the shape
-    section 1 measured the decoder delivering: the angle steps by one tooth
-    width and `dt` is one tooth period."""
-    dt = round(75_000_000 / (RPM * teeth))
-    c = PT.Call()
-    PT.describe_engine(c, cylinders=CYLINDERS, teeth=teeth)
+def published(teeth, revs=3):
+    """Every (type, implied angle x10 with the wheel's tooth, implied angle
+    with the 60-tooth literal, delta x10) the planner publishes over `revs`
+    revolutions of clean teeth on a `teeth`-tooth wheel."""
+    dt = round(TPS * 60 / (RPM * teeth))
+    c = C.planning_fixture(CYLINDERS, teeth)
+    PT.describe_engine(c, cylinders=CYLINDERS, teeth=teeth, tdc=TDC,
+                       soi_x10=SOI, cam_refs=0)
     c.call("hc_drysched_init")
-    for name, v in (("eng_adv_x10", 200), ("eng_dwell_x100", 300),
-                    ("eng_ti_base_us", 10000), ("eng_deadtime_us", 0)):
-        c.m.w16(sym(name) & 0xFFFF, v)
+    entry = sym("hc_deadline_publish")
+    seg, ip = (entry >> 16) & 0xFF, entry & 0xFFFF
+    log = []
+    orig = S.CPU.step
 
-    step = 3600 // teeth
-    stamp = 1000
-    c.call("hc_drysched_tooth", 0, stamp, dt)
-    c.call("hc_drysched_service", stamp, 3)        # seeds the cursors
-    for k in range(1, 4 * teeth):
-        stamp = (stamp + dt) & 0xFFFF
-        angle = (k * step) % CYCLE_X10
-        # CATCH-UP IS COUNTED PER TOOTH, NOT SINCE BOOT. walk_kind() issues a
-        # catch-up with delta forced to 0 when the offset has stepped over an
-        # anchor, and the tooth after seed_cursors() always does - so the
-        # counter is already 1 before any ordinary tooth runs. What
-        # disqualifies a tooth is the counter MOVING on it; comparing the
-        # total to zero rejected every tooth in the run.
-        catch = u16(c, "dry_sched_catchup")
-        before = u16(c, "dry_sched_queued")
-        c.call("hc_drysched_tooth", angle, stamp, dt)
-        c.call("hc_drysched_service", stamp, 3)
-        q = u16(c, "dry_sched_queued")
-        # THE QUEUE MUST HAVE BEEN EMPTY GOING IN. Otherwise "exactly one
-        # queued" can be an event staged by an EARLIER tooth, and the delta
-        # derived from this tooth's angle belongs to a different tooth.
-        if before == 0 and q == 1 and u16(c, "dry_sched_catchup") == catch:
-            return c, angle, stamp, dt
-        if q != 0:
-            drain(c, stamp, dt)
-    return None, 0, 0, dt
+    def step(self):
+        if (self.ip & 0xFFFF) == ip and (self.csp & 0xFF) == seg:
+            log.append((self.gr(9) & 0xFFFF,
+                        (self.gr(10) & 0xFFFF) | ((self.gr(11) & 0xFFFF) << 16),
+                        self.gr(12) & 0xFF))
+        return orig(self)
+
+    S.CPU.step = step
+    angle_at = {}
+    try:
+        stamp, step_x = 1000, 3600 // teeth
+        for k in range(revs * teeth):
+            stamp = (stamp + dt) & 0xFFFF
+            angle = (k * step_x) % CYCLE_X10
+            angle_at[stamp] = angle
+            c.set_t1(stamp)
+            c.call("hc_drysched_tooth", angle, stamp, dt)
+            c.call("hc_drysched_service", stamp, 3)
+    finally:
+        S.CPU.step = orig
+    tx = tooth_x10(teeth)
+    out = []
+    for st, ahead, typ in log:
+        if st not in angle_at:          # a catch-up publishes from T1 now
+            continue
+        a0 = angle_at[st]
+        out.append((typ, (a0 + ahead * tx / dt) % 3600,
+                    (a0 + ahead * 60 / dt) % 3600, ahead * tx / dt))
+    return out, dt
 
 
-def fire_tick(c, stamp, dt):
-    """Advance the timer one tick at a time and return the offset from `stamp`
-    at which the staged event actually executes."""
-    before = u16(c, "dry_sched_executed")
-    for t in range(0, 8 * dt + 8):
-        c.call("hc_drysched_time_service", (stamp + t) & 0xFFFF)
-        if u16(c, "dry_sched_executed") != before:
-            return t
+def wanted(typ):
+    """Where the configuration puts an event of `typ`, mod 360 degrees
+    (crank sync: wasted spark and batch fire every revolution)."""
+    spark = sorted({(t - ADV) % 3600 for t in TDC})
+    if typ == 2:
+        return spark
+    if typ == 1:                          # dwell start = spark - dwell angle
+        da = DWELL_MS * RPM * 3600 / 60000.0
+        return [(x - da) % 3600 for x in spark]
+    if typ == 3:
+        return [SOI % 3600]
     return None
+
+
+def miss(typ, angle):
+    w = wanted(typ)
+    return None if w is None else min(min(abs(angle - x), 3600 - abs(angle - x))
+                                      for x in w)
 
 
 def main() -> int:
@@ -293,60 +309,49 @@ def main() -> int:
           "across a gap, and it is the PERIOD that dt belongs to"
           % ", ".join("%d-%d:%d" % (p[0], p[1], p[3]) for p in gaps))
 
-    # ---------------- SECTION 2: when the event executes -------------------
-    print("\n  --- the tick a staged event executes on ---")
-    print("  %-10s %8s %8s %10s %10s"
-          % ("wheel", "tooth", "delta", "expected", "measured"))
+    # ---------------- SECTION 2: where each published event lands ---------
+    print("\n  --- every event published, decoded with the wheel's tooth ---")
+    print("  %-8s %6s %7s %9s %10s %12s"
+          % ("wheel", "dt", "events", "max delta", "worst miss", "60-literal"))
     rows = []
     for teeth, _gap in WHEELS:
-        c, angle, stamp, dt = stage_one(teeth)
-        if c is None:
-            check("%d teeth: an event was staged" % teeth, False,
-                  "no single-event tooth found in four revolutions")
-            continue
-        tx = tooth_x10(teeth)
-        got = fire_tick(c, stamp, dt)
-        # AFTER, not before: last_angle names the event that just executed.
-        delta = (u16(c, "dry_sched_last_angle") - angle) % CYCLE_X10
-        want = (dt * delta) // tx
-        rows.append((teeth, tx, delta, want, got))
-        print("  %-10d %8d %8d %10s %10s"
-              % (teeth, tx, delta, want, "-" if got is None else got))
+        ev, dt = published(teeth)
+        known = [(t, a, a60, d) for t, a, a60, d in ev if wanted(t) is not None]
+        worst = max((miss(t, a) for t, a, _a60, _d in known), default=None)
+        lit = max((miss(t, a60) for t, _a, a60, _d in known), default=None)
+        far = max((d for *_x, d in known), default=0)
+        rows.append((teeth, len(known), worst, lit, far))
+        print("  %-8d %6d %7d %9.0f %10s %12s"
+              % (teeth, dt, len(known), far,
+                 "-" if worst is None else "%.2f" % (worst / 10.0),
+                 "-" if lit is None else "%.2f" % (lit / 10.0)))
+    print("  (angles in degrees; '60-literal' = the same deadlines read with "
+          "a 60-tooth width)\n")
+    for teeth, n, worst, _lit, far in rows:
+        check("%2d teeth: every spark/dwell/injection at its angle" % teeth,
+              n >= 6 and worst is not None and worst <= TOL_X10,
+              "%d events, worst %.2f deg from the configured angle, up to "
+              "%.0f deg ahead of the tooth" % (n, (worst or 0) / 10.0, far / 10.0))
 
-    print()
-    for teeth, tx, delta, want, got in rows:
-        # ONE TICK OF SLACK, and only one: the firmware's division truncates
-        # and so does the expectation, so they agree exactly unless the
-        # conversion itself is different.
-        ok = got is not None and abs(got - want) <= 1
-        detail = "fires %s ticks after its tooth, wants %d" % (got, want)
-        if got is not None and want and got != want:
-            detail += "  (%.1f%% late)" % ((got - want) * 100.0 / want)
-        check("%2d teeth (%3d x10 per tooth) fires on time" % (teeth, tx),
-              ok, detail)
-
-    # ===================== THE CONTROL ON THE CONTROL =====================
-    #
-    # A rig that always answered "on time" would pass every row above. This
-    # says the measurement is a real one: the 60-tooth wheel is the case where
-    # the literal 60 and the derived 60 are THE SAME NUMBER, so it must be
-    # exact on every image this gate has ever run against - including the ones
-    # that fail the rows beside it. If it ever fails, the rig is wrong.
+    # ===================== THE CONTROLS ON THE MEASUREMENT =================
     sixty = [r for r in rows if r[0] == 60]
     check("the 60-tooth row is exact - the rig measures",
-          bool(sixty) and sixty[0][4] is not None
-          and abs(sixty[0][4] - sixty[0][3]) <= 1,
-          "a wheel whose tooth IS 6.0 degrees must agree on any image")
+          bool(sixty) and sixty[0][2] is not None and sixty[0][2] <= TOL_X10
+          and sixty[0][3] <= TOL_X10,
+          "a wheel whose tooth IS 6.0 degrees must agree either way")
+    other = [r for r in rows if r[0] != 60]
+    check("the rig can tell: the 60-tooth literal misses on 36/24/12",
+          bool(other) and all(r[3] is not None and r[3] > 10 for r in other),
+          ", ".join("%d: %.1f deg" % (r[0], (r[3] or 0) / 10.0) for r in other))
 
     print("\n%d/%d checks pass" % (CHECKS - FAILS, CHECKS))
     if FAILS:
-        print("TOOTH DEADLINE FAILS - the scheduler is converting angle to "
-              "time with a wheel constant it was not given. Every edge on a "
-              "non-60-tooth wheel lands late by tooth_x10/60 of its offset.")
+        print("TOOTH DEADLINE FAILS - an event is not published at the time "
+              "its own wheel's tooth width puts it at.")
         return 1
-    print("TOOTH DEADLINE PASSES - every wheel's events fire at the tick its "
-          "own tooth width puts them at, and the decoder was asked what a "
-          "tooth period means rather than told.")
+    print("TOOTH DEADLINE PASSES - every wheel's events are published at the "
+          "tick its own tooth width puts them at, and the decoder was asked "
+          "what a tooth period means rather than told.")
     print("NOT PHYSICALLY VERIFIED: no coil or injector has been connected.")
     return 0
 

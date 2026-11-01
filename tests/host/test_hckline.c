@@ -330,9 +330,16 @@ static void test_gofast_115200(void)
     gf[1] = HCKLINE_BAUD_115200;
     send_kwp(&k, &t, gf, 2u); hckline_tick(&k, t);
     n = drain(&k, o, sizeof(o));
+#ifdef HCKLINE_NO_115200
+    /* the 24 MHz Audi 2.7T board cannot make 115200: refused, no rate move */
+    assert(n >= 6u && o[3] == HCKLINE_SID_NEG && o[5] == HCKLINE_NRC_SUBF_NOT_SUP);
+    assert(hckline_take_baud(&k, &code) == 0u);
+    printf("  GOFAST 115200 REFUSED (HCKLINE_NO_115200), 0x05 refused: OK\n");
+#else
     assert(n >= 6u && o[4] == HCKLINE_BAUD_115200);
     assert(hckline_take_baud(&k, &code) == 1u && code == HCKLINE_BAUD_115200);
     printf("  GOFAST 115200 accepted, 0x05 refused: OK\n");
+#endif
 }
 
 static void test_bad_frames(void)

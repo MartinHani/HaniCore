@@ -28,7 +28,8 @@ def main():
     check('Retained SRAM accepts the same exact V101 contract',r.g16('hc_cfg_source')==1 and page(r)==old)
     r('hc_cfg_migrate_v101');migrated=page(r)
     check('Linked migration equals restoration migration byte for byte',migrated==expected)
-    allowed=set(range(V.value('CFG_U_FUEL_MODEL'),V.value('CFG_U_DBW_FRICTION_X10')+2))|{V.SCHEMA_OFF,V.SCHEMA_OFF+1,V.value('CFG_U_CRC'),V.value('CFG_U_CRC')+1}
+    aux=V.value('CFG_U_DWELL_RPM_AX')  # + the auxiliary block (hc_cfg_aux_defaults)
+    allowed=set(range(V.value('CFG_U_FUEL_MODEL'),V.value('CFG_U_DBW_FRICTION_X10')+2))|set(range(aux,aux+len(V.aux_defaults())))|{V.SCHEMA_OFF,V.SCHEMA_OFF+1,V.value('CFG_U_CRC'),V.value('CFG_U_CRC')+1}
     check('Every original calibration byte is preserved outside the declared extension/identity',all(a==b for i,(a,b) in enumerate(zip(old,migrated)) if i not in allowed))
     check('Migrated fuel mode is explicit Legacy, lean guard remains disabled',migrated[V.value('CFG_U_FUEL_MODEL')]==0 and migrated[V.value('CFG_U_LEAN_ENABLE')]==0)
     r('hc_cfg_init');check('Migrated retained page checksum survives reinitialization',r.g16('hc_cfg_source')==1 and page(r)==expected)

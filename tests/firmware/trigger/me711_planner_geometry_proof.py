@@ -13,6 +13,9 @@ import me711_trigger_test as P
 import me711_config_state_test as CFG
 import me711_deadline_proof as D
 import me711_image as I
+import me711_heartbeat_gap_proof as HB
+# the board's capture clock: TPMS = ticks per 10 ms (12500 / 7500)
+TPS = HB.TPMS * 100
 
 def main():
     print(I.STEM,I.sha256())
@@ -24,7 +27,7 @@ def main():
         r.m.w8(P.sym('trg_state')&65535,state)
         for name,value in (('eng_ti_base_us',65535),('eng_deadtime_us',1000)):
             r.m.w16(P.sym(name)&65535,value)
-        dt=round(1250000/rpm);stamp=r.m.r16(0xfe52)
+        dt=round(TPS/rpm);stamp=r.m.r16(0xfe52)
         for tooth in range(240):
             stamp=(stamp+dt)&65535;r.set_t1(stamp)
             r.call('hc_drysched_tooth',tooth*60%7200,stamp,dt)
@@ -36,7 +39,7 @@ def main():
         expected=[3600]*4
         D.check(f'{label} {rpm}: actual repeated-output interval is precomputed',spans==expected,str(spans))
         accepted=[r.m.r16(0x387290+4*b)|(r.m.r16(0x387292+4*b)<<16) for b in range(4)]
-        limit=(dt*(7200 if state==4 else 3600)//60-125)*4//5
+        limit=(dt*(7200 if state==4 else 3600)//60-HB.TPMS//100)*10000//HB.TPMS
         D.check(f'{label} {rpm}: accepted electrical width respects its active repetition',max(accepted)>0 and all(v<=limit for v in accepted),str((accepted,limit)))
         D.check(f'{label} {rpm}: requested high duty is reported clipped',r.m.r16(D.DIAG+22)>0)
         r.call('hc_drysched_cancel',0);r.advance_deadlines(40000)

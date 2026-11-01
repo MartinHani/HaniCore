@@ -56,18 +56,31 @@ USTK_TOP = PI.user_stack_top()          # ?C_USERSTACK top (R0 start)
 # STKUN, start_me711.a66: 0xF800 since 2026-10-06; before, the 256-byte user
 # stack sat at 0xF700-0xF7FF and the system stack ended below it (0xF700)
 SSTK_TOP = 0xF700 if USTK_TOP == 0xF800 else 0xF800
+import hc_board as _HB                    # noqa: E402
+if _HB.IS_C4:
+    SSTK_TOP = 0xF880   # the 2.7T C167CR: STKUN 0xF880 (start_me711.a66)
+# the health record (hcrtmon711.h TGT_RTMON_ADDR): XRAM on the 2.7T C167CR
+RT_ADDR = 0xE5A0 if _HB.IS_C4 else 0xF280
 T1, T7 = 0xFE52, 0xF050
 PSW, SP = 0xFF10, 0xFE12
 P2, DP2, DP7, DP8 = 0xFFC0, 0xFFC2, 0xFFD2, 0xFFD6
-TICKS_PER_S = 1_250_000
-SPT = HB.STEPS_PER_TICK                    # 8 -> 10 MIPS
+# the board's CAPCOM rate (Porsche 1.25 MHz, 2.7T 0.75 MHz - both 32 CPU
+# clocks per tick, so 8 instructions per tick either way)
+TICKS_PER_S = HB.TPMS * 100
+SPT = HB.STEPS_PER_TICK                    # 8 -> 10 MIPS (2.7T: 6)
+STEPS_PER_US = SPT * TICKS_PER_S / 1e6
+US_PER_TICK = 1e6 / TICKS_PER_S
+STEPS_PER_MS = int(round(STEPS_PER_US * 1000))
+import hc_board as _HBRD  # noqa: E402
+C4 = _HBRD.IS_C4
 VECTOR_SEG = S.VECTOR_SEG
 
 TRAPS = {0x1F: "CC15 crank", 0x18: "CC8 cam", 0x19: "CC9 cam2",
          0x17: "CC7 drain", 0x39: "CC25 deadline", 0x3E: "T8 tick",
          0x2E: "SSC RX", 0x2D: "SSC TX", 0x2F: "SSC err", 0x30: "CC16 knock",
          0x3A: "CC26 planner", 0x47: "S0TB reply",
-         0x3B: "CC27 S5500"}   # the S5500 exchange level (2026-10-14)
+         0x3B: "CC27 S5500",   # the S5500 exchange level (2026-10-14)
+         0x3C: "CC28 tick body"}   # the tick's work, requested by T8 (2026-10-28)
 
 
 def envelope(payload):
@@ -165,7 +178,7 @@ class Stress:
         self.a_dl_count = sym("hc_dl_count")
         self.a_dl_types = sym("hc_dl_q_type")
         self.svc_addr = {}
-        for n in ['hc_diag_publish', 'eng_service', 'eng_acquire', 'eng_calculate', 'hc_io_lambda_service', 'hc_dbw_service', 'hc_boost_service', 'hc_cfg_mgr_service', 'hc_asic_start_service', 'hc_hal_ain_service', 'hcts_service', 'hc_nvm_service', 'hc_idle_service', 'hc_limp_service', 'hc_dtc_service', 'hc_knock_service', 'hc_vvt_service', 'hc_route_service', 'hc_fuelpump_service', 'hc_main_relay_service', 'hc_safety_service', 'hc_io_runon_service', 'hc_io_test_service', 'hc_cel_service', 'hcts_poll', 'asic_service', 'trg_service', 'hc_drysched_service']:
+        for n in ['hc_diag_publish', 'eng_service', 'eng_acquire', 'eng_calculate', 'hc_io_lambda_service', 'hc_dbw_service', 'hc_boost_service', 'hc_cfg_mgr_service', 'hc_asic_start_service', 'hc_hal_ain_service', 'hcts_service', 'hc_nvm_service', 'hc_idle_service', 'hc_limp_service', 'hc_dtc_service', 'hc_knock_service', 'hc_vvt_service', 'hc_route_service', 'hc_fuelpump_service', 'hc_main_relay_service', 'hc_safety_service', 'hc_io_runon_service', 'hc_io_test_service', 'hc_cel_service', 'hcts_poll', 'trg_service', 'hc_drysched_service']:
             try:
                 self.svc_addr[sym(n)] = n
             except KeyError:
@@ -252,6 +265,13 @@ class Stress:
             k = min(1.0, dt / 0.030)
             self.throttle += (min(max(tgt, 0.0), 1.0) - self.throttle) * k
         f, p = self.throttle, self.pedal
+        if C4 and ch in (12, 13):
+            # the 2.7T board: AN12 = KL15 sense (key on), AN13 = the on-board
+            # ambient sensor (820 counts = 1014 hPa at 1267/1024)
+            # (AN12 follows P6.2, the rig's key switch - the Porsche's own
+            # KL15 input - so a key-off vector works on both boards)
+            return {12: 800 if self.mem.sfr.get(0xFFCC, 0) & 4 else 20,
+                    13: 820}[ch]
         return {1: int(102 + f * 852), 3: int(919 - f * 848),
                 8: int(150 + p * 699), 9: int(75 + p * 349),
                 5: 767,                  # 13.5 V (CFG_ADC_BATT_FS_DV 18.0 V)
@@ -284,7 +304,7 @@ class Stress:
         if S.Mem.r8 is r._restore[0]:
             S.Mem.r8, S.Mem.w8, S.Mem.w16 = r._hooks
         sfr = mem.sfr
-        t_end = self.t1_ext + int(us * 1.25)
+        t_end = self.t1_ext + int(us * TICKS_PER_S / 1e6)
         t_base = self.t1_ext
         # Bootstrap precedes timer enable. This host escape bound allows 100 ms
         # for initialization; firmware wall-time budgets are checked separately.
@@ -537,15 +557,15 @@ class Stress:
             self.replies += 1
             if crc != (binascii.crc32(payload) & 0xFFFFFFFF) or L != self.och_count + 1:
                 self.reply_bad += 1
-            ms = (cpu.steps - self.req_at) / 10000.0
+            ms = (cpu.steps - self.req_at) / STEPS_PER_MS
             self.reply_ms_max = max(self.reply_ms_max, ms)
             self.req_at = None
-            self.next_req_step = cpu.steps + 10000   # 1 ms host turnaround
+            self.next_req_step = cpu.steps + STEPS_PER_MS   # 1 ms host turnaround
             return
-        if cpu.steps - self.req_at > 10000 * 1000:     # 1 s: give up
+        if cpu.steps - self.req_at > STEPS_PER_MS * 1000:     # 1 s: give up
             self.reply_timeouts += 1
             self.req_at = None
-            self.next_req_step = cpu.steps + 10000
+            self.next_req_step = cpu.steps + STEPS_PER_MS
 
     # ------------------------------------------------------------ analysis
     def tooth_angle_at(self, t):
@@ -567,7 +587,7 @@ class Stress:
         return (rev0 * 360.0 + k0 * 6.0 + (t - t0) / (t1 - t0) * span)
 
     def summary(self):
-        us = lambda steps: steps / 10.0     # 10 MIPS
+        us = lambda steps: steps / STEPS_PER_US     # 10 MIPS (2.7T 6)
         out = {}
         out["isr"] = {TRAPS.get(k, hex(k)): dict(n=v[0], max_incl_us=us(v[1]),
                                                  max_excl_us=us(v[2]),
@@ -599,7 +619,7 @@ class Stress:
             key = TRAPS.get(trap, "main") + ":" + module(pc)
             top[key] = top.get(key, 0) + 1
         out["wdt_gap_top_us"] = sorted(
-            ((round(n * 64 / 10.0, 1), key) for key, n in top.items()), reverse=True)[:10]
+            ((round(n * 64 / STEPS_PER_US, 1), key) for key, n in top.items()), reverse=True)[:10]
         total = max(1, sum(self.cpu_counts.values()))
         out["cpu_percent"] = {TRAPS.get(k, "main"): round(100.0 * v / total, 3)
                               for k, v in self.cpu_counts.items()}
@@ -637,7 +657,7 @@ def gap_histogram(samples):
     for pc in samples:
         k = module(pc)
         h[k] = h.get(k, 0) + 1
-    return sorted(((v * 64 / 10.0, k) for k, v in h.items()), reverse=True)
+    return sorted(((v * 64 / STEPS_PER_US, k) for k, v in h.items()), reverse=True)
 
 
 def where(pc):
@@ -647,6 +667,50 @@ def where(pc):
 
 
 # ------------------------------------------------------------ the page
+def build_27t_page(dbw=True, edits=()):
+    """The Audi 2.7T preset page (HANICORE_BOARD=vag_me71_c4): APPLY preset
+    6, a Burn's commit, the same TEST-ONLY edits as the AWT page. The preset
+    carries real fuel data, so no test fuel is installed."""
+    import me711_config_state_test as T
+    import me711_preset_apply_proof as AP
+    r = T.boot()
+    AP.press_apply(r, 6)
+    AP.service(r)
+    assert AP.och(r, 764) & 0xFF == 1, "APPLY refused"
+    assert r("hc_cfg_mgr_commit_burn", 1, steps=60_000_000) == 0
+    for name, v in (("CFG_REV_MAX", 10000), ("CFG_REV_LIMIT", 9900),
+                    # TEST-ONLY: the endpoints of THIS RIG's throttle and
+                    # pedal model (adc_value) - the preset leaves them to a
+                    # Grab / AutoCal on the car, as it must
+                    ("CAL_TPS1_MIN", 102), ("CAL_TPS1_MAX", 954),
+                    ("CAL_TPS2_MIN", 919), ("CAL_TPS2_MAX", 71),
+                    ("CAL_PEDAL1_MIN", 150), ("CAL_PEDAL1_MAX", 849),
+                    ("CAL_PEDAL2_MIN", 75), ("CAL_PEDAL2_MAX", 424)):
+        AP.set_active(r, AP.off(name), v, 2)
+    if dbw:
+        AP.set_active(r, AP.off("CAL_DBW_ENABLE"), 1)
+    import os
+    if os.environ.get("HANICORE_STRESS_INJ"):   # A/B runs of the strategy
+        edits = list(edits) + [("CFG_U_INJ_STRATEGY",
+                                int(os.environ["HANICORE_STRESS_INJ"]), 1)]
+    for name, v, width in edits:          # experiments (prof / A-B runs)
+        AP.set_active(r, AP.off(name), v, width)
+    r("hc_cfg_mgr_init")
+    r("hc_cfg_commit", steps=20_000_000)
+    blob = bytes(r.m.r8(0x380000 + i) for i in range(12 + 4096))
+    o = AP.off("CFG_U_DISPLACEMENT_CC")
+    assert (blob[12 + o] << 8) | blob[13 + o] == 2671, "displacement lost"
+    return blob
+
+
+def build_board_page(dbw=True):
+    """A runnable engine page for the board under test: the AWT page on the
+    Porsche board, the Audi 2.7T page on the C4 board (whose image carries
+    no AWT preset). For gates that need A running engine, not THE AWT."""
+    import hc_board
+    return build_27t_page(dbw=dbw) if hc_board.IS_C4 else build_awt_page(dbw=dbw)
+
+
 def build_awt_page(dbw=True):
     """The AWT preset page as battery-backed SRAM bytes (header + 4096):
     APPLY preset 3, a Burn's commit (RESTART fields into ACTIVE), and two
@@ -702,21 +766,24 @@ def edges_stats(s, t0, t1, rpm):
                 if now and not was: on[("c", b)] = t
                 if was and not now:
                     sparks[b] = sparks.get(b, 0) + 1
-                    if ("c", b) in on: dwells.append((t - on.pop(("c", b))) / 1250.0)
+                    if ("c", b) in on: dwells.append((t - on.pop(("c", b))) / (TICKS_PER_S / 1000.0))
                     a = s.tooth_angle_at(t)
                     if a is not None: spark_ang.setdefault(b, []).append(a % 720.0)
             inj = (prev[1] << 8 | prev[2], o[1] << 8 | o[2])
             for b in range(16):
                 was, now = (inj[0] >> b) & 1, (inj[1] >> b) & 1
                 if now and not was: on[("i", b)] = t
-                if was and not now and ("i", b) in on: pulses.append((t - on.pop(("i", b))) / 1250.0)
+                if was and not now and ("i", b) in on: pulses.append((t - on.pop(("i", b))) / (TICKS_PER_S / 1000.0))
         prev = o
     def spread(v):
         if len(v) < 2: return None
-        # circular spread on 720: unwrap around the first value
-        ref = v[0]; u = [((x - ref + 360.0) % 720.0) - 360.0 for x in v]
+        # circular spread on 720, unwrapped to [-180, 540) around the first
+        # value: a wasted-spark twin (+360) then reads 360 +- jitter. The old
+        # [-360, 360) window put the twin ON its edge, and 359.9 / -360.0 read
+        # as a 720 deg spread (the 2.7T stress run, 2026-10-24).
+        ref = v[0]; u = [((x - ref + 180.0) % 720.0) - 180.0 for x in v]
         return round(max(u) - min(u), 2)
-    revs = (t1 - t0) / 1_250_000 * rpm / 60.0
+    revs = (t1 - t0) / float(TICKS_PER_S) * rpm / 60.0
     return dict(revs=round(revs, 2), sparks=sum(sparks.values()), sparks_per_rev=round(sum(sparks.values()) / revs, 2) if revs else None,
                 spark_angle_spread_deg={b: spread(v) for b, v in spark_ang.items()},
                 dwell_ms=(round(min(dwells), 3), round(max(dwells), 3)) if dwells else None,
@@ -737,7 +804,7 @@ def rt_record(s):
         a = sym("hc_rt_byte")   # noqa: F841 - present only with the record
     except Exception:
         return None
-    return {f: s.mem.r16(0xF280 + 2 * i) for i, f in enumerate(RT_FIELDS)}
+    return {f: s.mem.r16(RT_ADDR + 2 * i) for i, f in enumerate(RT_FIELDS)}
 
 
 def segment(s, name, us, rpm_fn, rpm_end, results):
@@ -749,10 +816,10 @@ def segment(s, name, us, rpm_fn, rpm_end, results):
     after = snap(s)
     d = {k: (after[k] - before[k]) & 0xFFFF for k in after}
     sm = s.summary()
-    sm["gap_max_us"] = s.gap_max / 10.0
+    sm["gap_max_us"] = s.gap_max / STEPS_PER_US
     sm["gap_top"] = [(round(us_, 1), m) for us_, m in gap_histogram(s.gap_prof)[:6]]
     sm["backlog_sites"] = sorted({module(pc) for n, pc, _ in s.backlog_sites if n >= 7})
-    res = dict(segment=name, rpm=rpm_end, fw_delta=d, dl_max_late_us=s.mem.r16(0x387500 + 28) * 0.8,
+    res = dict(segment=name, rpm=rpm_end, fw_delta=d, dl_max_late_us=s.mem.r16(0x387500 + 28) * US_PER_TICK,
                state=dict(trg_state=s.r8("trg_state"), trg_rpm=s.r16("trg_rpm"),
                           fuelcut=s.r16("eng_fuelcut"), seq=s.r8("dry_seq_active"),
                           ti_us=s.r16("eng_ti_base_us"), dbw_st=s.mem.r8(0x387300),
@@ -778,7 +845,10 @@ LAST_RESULTS = []      # what completed, also when a trap ends the run
 def run_matrix(tag, points=(1000, 3000, 5000, 7000, 8500, 9600),
                steady_us=150000, page=None):
     ts = tag.startswith("ts")
-    s = Stress(page or build_awt_page(), ts=ts, baud_div=2 if "115" in tag else 1)
+    import hc_board
+    if page is None:
+        page = build_27t_page() if hc_board.IS_C4 else build_awt_page()
+    s = Stress(page, ts=ts, baud_div=2 if "115" in tag else 1)
     s.dbw_plant = True
     s.pedal = 0.25
     s.boot()

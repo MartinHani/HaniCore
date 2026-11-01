@@ -137,7 +137,7 @@ def main() -> int:
     held, broke = [], []
     for label, stem, expect, why in IMAGES:
         r = nudge(stem)
-        dp2, dp7, _dp8 = r["dp"]
+        dp2, dp7, _dp8 = r["dp"][:3]
         released = (dp2 & en) == 0 and (dp7 & legs) == 0
         detail = ("DP2=0x%04X DP7=0x%04X  %s"
                   % (dp2, dp7, "RELEASED" if released else "STILL DRIVEN"))

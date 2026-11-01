@@ -102,7 +102,11 @@ O = {n: _d(_gen, n) for n in
 # So the "a correct route" case below now uses a cavity this board really does
 # read on its own converter, and cavity 26 becomes a REFUSAL case.
 PIN_CLT = 93           # coolant temperature, ASIC AN0
-PIN_TANS = 26          # intake air temperature, and it is on the ASIC
+import hc_board        # noqa: E402
+# intake air temperature, on the ASIC's AN1: cavity 26 on the Porsche board,
+# 85 on the C4 board (where 26 is only bridged to it and carries no
+# capability of its own - hw_descriptors, SSB 345;02)
+PIN_TANS = 85 if hc_board.IS_C4 else 26
 PIN_MAP = 101          # E_A_PLADE / E_A_DSS(PSR) -> DSS_PA514 = AN14
 PIN_TPS1 = 92
 PIN_TPS2 = 84
@@ -291,7 +295,7 @@ def main() -> int:
     # cavity 26 resolves to TANS on the ASIC's AN1, which is what the sheet
     # says it is. What must never happen is the pre-V62 error - cavity 26 read
     # as the main CPU's AN5, the internal battery rail with no cavity.
-    check("cavity 26 is the ASIC's TANS (AN1), never main-CPU AN5 (UBAT)",
+    check("cavity %d is the ASIC's TANS (AN1), never main-CPU AN5 (UBAT)" % PIN_TANS,
           adc == (0xE0 | 1) and adc != 5,
           "adc code 0x%02X. me711.pdf puts E_A_TANS on TANS_PXA51, the "
           "peripheral ASIC; AN5 UBAT_PA55 is an internal rail with no cavity"

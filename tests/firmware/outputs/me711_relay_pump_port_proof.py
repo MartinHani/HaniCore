@@ -91,9 +91,10 @@ class Ecu(AOR.Rig):
 
     # ---- the port ------------------------------------------------------
     def pin65(self):
-        """(driven-as-output, level) of P2.12 = cavity 65."""
-        dp2 = self.rig.mem.r16(0xFFC2)
-        p2 = self.rig.mem.r16(0xFFC0)
+        """(driven-as-output, level) of the EKP pin = cavity 65: P2.12, or
+        P4.4 on the C4 board."""
+        dp2 = self.rig.mem.r16(AOR.EKP_DP)
+        p2 = self.rig.mem.r16(AOR.EKP_P)
         return bool(dp2 & self.ekp), bool(p2 & self.ekp)
 
     def active65(self):
@@ -109,7 +110,7 @@ class Ecu(AOR.Rig):
 
     def release65_externally(self):
         """What the bench qualifier's exit path does: EKPD = 0."""
-        a = 0xFFC2
+        a = AOR.EKP_DP
         self.rig.mem.w16(a, self.rig.mem.r16(a) & ~self.ekp & 0xFFFF)
 
     # ---- the permission layer -------------------------------------------

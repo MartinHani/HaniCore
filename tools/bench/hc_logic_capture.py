@@ -66,6 +66,7 @@ class Capture:
         return self.utc0
 
     def stop(self, out: Path, name: str = "capture") -> Path:
+        out = out.resolve()        # Logic 2 resolves relative paths in ITS cwd
         out.mkdir(parents=True, exist_ok=True)
         try:
             self.cap.stop()

@@ -25,7 +25,9 @@ F2, inside ?PR?HCNVM (the live-Burn path):
   1  no `MOV <xxIC>, #data16`     (E6 rr ll hh)  - the V48/V49 masking write
   2  no `MOV <xxIC>, Rw` / `,mem` (F6/F2 forms)  - the V48/V49 stale restore
   3  every masking write is `AND <xxIC>, #0FFBFH`  - keeps bit 7 and bits 5..0
+     or `BFLDL <xxIC>, #40H, #00H` (bit-protected, 2026-10-30)
   4  every restoring write is `OR <xxIC>, Rw`      - OR can never clear a bit
+     or `BFLDL <xxIC>, #40H, #40H`
   5  the immediates used cannot modify xxIR or ILVL/GLVL
   6  it FAILS against the frozen V49 binary - the negative control
 
@@ -79,8 +81,10 @@ MASK_IMM = 0xFFBF          # AND immediate that clears ONLY xxIE
 SET_IMM = 0x0040           # OR immediate that sets ONLY xxIE
 
 T8_ADDR, T8REL_ADDR, T78CON_ADDR = 0xF052, 0xF056, 0xFF20
-FCPU_HZ = 40_000_000
-TICK_RELOAD = 1250
+import me711_heartbeat_gap_proof as HB  # noqa: E402
+import hc_board                        # noqa: E402
+FCPU_HZ = 24_000_000 if hc_board.IS_C4 else 40_000_000
+TICK_RELOAD = HB.TPMS // 10            # T8 ticks per 1 ms tick (1250 / 750)
 
 
 def rng(name, m66):
@@ -150,6 +154,15 @@ def scan(img, lo, hi):
         elif op in (0x74, 0x64, 0xF6) and imm in IC_ADDR:
             out.append((fo, {0x74: "OR", 0x64: "AND", 0xF6: "MOV"}[op],
                         IC_ADDR[imm], "reg", rr))
+        elif op == 0x0A and rr >= 0x80:
+            # BFLDL <bitoff>, #mask, #data (bit-protected; since 2026-10-30
+            # fl_enter() masks and restores with it - firmware-stability 07).
+            # A bit offset >= 0x80 names a bit-addressable (E)SFR word.
+            addr = ((0xF100 if esfr_left > 0 else 0xFF00)
+                    + 2 * (rr - 0x80))
+            if addr in IC_ADDR:
+                out.append((fo, "BFLDL", IC_ADDR[addr], "bfld",
+                            (img[fo + 2], img[fo + 3])))
         if op == 0xD1 and (rr & 0xC0) == 0x80:        # EXTR #n
             esfr_left = ((rr >> 4) & 3) + 1
         elif esfr_left:
@@ -163,7 +176,7 @@ def check_f2(tag, img, m66, expect_fixed):
     print("=== %s ===" % tag)
     lo, hi = rng("?PR?HCNVM", m66)
     print("  hcnvm code %06X..%06X  (%d bytes)" % (lo, hi, hi - lo))
-    writes = [a for a in scan(img, lo, hi) if a[3] in ("imm", "mem", "reg")]
+    writes = [a for a in scan(img, lo, hi) if a[3] in ("imm", "mem", "reg", "bfld")]
     bad = []
     ands = ors = 0
     for fo, mnem, reg, kind, val in writes:
@@ -186,6 +199,20 @@ def check_f2(tag, img, m66, expect_fixed):
                 ors += 1
         elif mnem == "OR" and kind == "reg":
             ors += 1                      # OR with a register only ever SETS
+        elif mnem == "BFLDL" and kind == "bfld":
+            # bit-protected, and it may touch ONLY xxIE: #40h,#00h masks,
+            # #40h,#40h restores; any other mask/data is a violation
+            mask, data = val
+            if mask != IE_BIT:
+                bad.append((fo, "BFLDL %s,#%02X,#%02X  <-- touches more than xxIE"
+                            % (reg, mask, data)))
+            elif data == 0:
+                ands += 1
+            elif data == IE_BIT:
+                ors += 1
+            else:
+                bad.append((fo, "BFLDL %s,#%02X,#%02X  <-- bad data"
+                            % (reg, mask, data)))
         else:
             bad.append((fo, "%s %s (%s)  <-- unexpected form"
                         % (mnem, reg, kind)))

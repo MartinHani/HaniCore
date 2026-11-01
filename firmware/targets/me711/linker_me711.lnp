@@ -1,5 +1,4 @@
 "build\start_me711.obj",
-"build\hcnmi_v49.obj",
 "build\hcmain_me711.obj",
 "build\hcvec_me711.obj",
 "build\hcvecstub_me711.obj",
@@ -7,7 +6,6 @@
 "build\hcasicframe.obj",
 "build\hcasicstart.obj",
 "build\hcumkom.obj",
-"build\hcasicdump.obj",
 "build\hcpower.obj",
 "build\hcio711.obj",
 "build\hcdbwmotor711.obj",
@@ -53,8 +51,6 @@
 "build\hclimp.obj",
 "build\hclimp711.obj",
 "build\hcnvm.obj",
-"build\hcburnforensics.obj",
-"build\hcliveforensics.obj",
 "build\hcengine.obj",
 "build\hcmainrelay.obj",
 "build\hcfuelpump.obj",
@@ -287,8 +283,12 @@ CLASSES (
   ; record's second limit rose to 0x86FFFF (build_hanicore_me711.py
   ; BOOTSUM_R2_LIMIT), so SA9 is boot-checksummed code like SA6..SA8. A
   ; firmware update now erases SA6..SA9. 64 KiB of far-code headroom.
+  ; 2026-10-31: SA9's top 16 KiB (0x86C000-0x86FFFF) go to HCONST - every
+  ; board now carries two engine tunes (the 1.8T and the 2.7T on the
+  ; Porsche/4F and 2.7T images, ~2.7 KB of runs each). FCODE used ~117 KB
+  ; of 184 KB and keeps ~47 KB.
   FCODE  (0x830000-0x837FFF, 0x838010-0x83FFFF, 0x850000-0x85CEBF,
-          0x860000-0x86FFFF),
+          0x860000-0x86BFFF),
   ; V98r2: HCONST - the generated preset item tables (hc_presets.c,
   ; HC_PRESET_MEM huge) had filled NCONST; 16 KB out of FCODE's SA8 tail
   ; (FCODE used 3 KB of 0x850000-0x85BFFF).
@@ -299,7 +299,7 @@ CLASSES (
   ; pressure compensation, the K-line capture and the DTC-clear resets
   ; needed far code with FCODE 212 bytes above its reserve; HCONST held
   ; 3649 of 5440 (1791 free) and keeps 1279 free (reserve 1024).
-  HCONST (0x85CEC0-0x85E1FF),
+  HCONST (0x85CEC0-0x85E1FF, 0x86C000-0x86FFFF),
   ; NCONST stays inside the near-constant page 0x85C000-0x85FFFF.
   NCONST (0x85E200-0x85FFFF),
 

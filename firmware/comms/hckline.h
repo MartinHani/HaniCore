@@ -38,6 +38,21 @@
 #ifndef HCKLINE_H
 #define HCKLINE_H
 
+/* HCKL_FAR - the memory type of the session (hckline_t / hckline_cfg_t and
+   this core's two frame buffers). EMPTY everywhere (gcc host tests, the
+   Porsche ME7.1.1 image) except the Audi 2.7T build: its C167CR has 1 KB less
+   on-chip RAM than the Porsche's C167CS (targets/me711/system/hcsafety.h), so
+   the session lives in the external SRAM there, and that build passes
+   DEFINE(HCKL_FAR=far) to EVERY module that includes this header
+   (build_me711.bat HC_KLDEF; hckwp_me711.c refuses to compile without it on
+   that board). */
+#ifdef HCKL_FAR
+#define HCKL_FAR_SET 1
+#else
+#define HCKL_FAR
+#define HCKL_FAR_SET 0
+#endif
+
 /* ------------------------------------------------------------- baud codes --
  * The only rates HaniCore vehicle mode negotiates. One byte on the wire. */
 #define HCKLINE_BAUD_10400   0x01u   /* KWP init rate; emergency fallback     */
@@ -195,44 +210,44 @@ typedef struct {
 #define HCKLINE_STALE_US     60000uL
 
 /* Fill cfg with the OEM/ISO defaults (address 0x01, EF 8F, FE ...). */
-void hckline_default_cfg(hckline_cfg_t *cfg);
+void hckline_default_cfg(hckline_cfg_t HCKL_FAR *cfg);
 
 /* Bring the core up in IDLE with the given configuration. */
-void hckline_init(hckline_t *k, const hckline_cfg_t *cfg);
+void hckline_init(hckline_t HCKL_FAR *k, const hckline_cfg_t HCKL_FAR *cfg);
 
 /* Force back to IDLE (dropped private session, session timeout, target reset).
    Clears the FIFO and any pending baud switch; keeps counters. */
-void hckline_reset(hckline_t *k);
+void hckline_reset(hckline_t HCKL_FAR *k);
 
 /* The target decoded a 5-baud address. Only cfg.addr starts a handshake; any
    other address is counted and ignored (a stock cluster/gateway that is
    "closed until valid 5-baud 0x01" behaves the same way). */
-void hckline_on_slow_init(hckline_t *k, unsigned char addr, unsigned long now_us);
+void hckline_on_slow_init(hckline_t HCKL_FAR *k, unsigned char addr, unsigned long now_us);
 
 /* The target recognised an ISO 14230 fast-init wake-up pattern (and has put
    the line at 10400). Waits for StartCommunication, see HCKLINE_ST_FAST. */
-void hckline_on_fast_init(hckline_t *k, unsigned long now_us);
+void hckline_on_fast_init(hckline_t HCKL_FAR *k, unsigned long now_us);
 
 /* One received byte (echo already removed by the target). */
-void hckline_on_rx(hckline_t *k, unsigned char b, unsigned long now_us);
+void hckline_on_rx(hckline_t HCKL_FAR *k, unsigned char b, unsigned long now_us);
 
 /* Main-loop service: emit scheduled handshake bytes, enforce timeouts. */
-void hckline_tick(hckline_t *k, unsigned long now_us);
+void hckline_tick(hckline_t HCKL_FAR *k, unsigned long now_us);
 
 /* Drain one output byte. Returns 1 and sets *b, or 0 when the FIFO is empty. */
-unsigned char hckline_tx_pop(hckline_t *k, unsigned char *b);
+unsigned char hckline_tx_pop(hckline_t HCKL_FAR *k, unsigned char *b);
 
 /* Nonzero while the FIFO still holds bytes (target waits for this before a
    baud switch). */
-unsigned char hckline_tx_busy(const hckline_t *k);
+unsigned char hckline_tx_busy(const hckline_t HCKL_FAR *k);
 
 /* When a private high-speed transition has been answered AND the FIFO has
    drained, this returns 1 once and reports the negotiated baud code. The
    target then reprograms the UART and calls hckline_enter_private(). */
-unsigned char hckline_take_baud(hckline_t *k, unsigned char *code);
+unsigned char hckline_take_baud(hckline_t HCKL_FAR *k, unsigned char *code);
 
 /* The target has switched the UART; the K-line now carries raw HaniCore
    traffic. The core goes dormant until hckline_reset(). */
-void hckline_enter_private(hckline_t *k);
+void hckline_enter_private(hckline_t HCKL_FAR *k);
 
 #endif /* HCKLINE_H */

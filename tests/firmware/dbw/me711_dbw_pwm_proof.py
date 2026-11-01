@@ -92,12 +92,14 @@ def call(rig, img, name, *args):
     addr = img.sym(name)
     saved = (cpu.csp, cpu.ip, cpu.m.sfr[0xFE12], cpu.ext)
     cpu.ext = None
+    sp0 = cpu.m.sfr[0xFE12]   # returned = SENTINEL AND the frame unwound:
+    # code at seg:0002 exists (0x860002, 2026-10-25)
     cpu.push(SENTINEL)
     cpu.csp, cpu.ip = (addr >> 16) & 0xFF, addr & 0xFFFF
     for i, v in enumerate(args):
         cpu.sr(8 + i, v & 0xFFFF)
     for _ in range(200_000):
-        if (cpu.ip & 0xFFFF) == SENTINEL:
+        if (cpu.ip & 0xFFFF) == SENTINEL and cpu.m.sfr[0xFE12] >= sp0:
             break
         cpu.step()
     else:

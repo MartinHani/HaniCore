@@ -24,7 +24,7 @@ def page(fill=0x11):
 
 def test_builtins_come_from_the_firmware_presets():
     b = U.builtin_names()
-    assert "vag 1.8t dbw (awt)" in b and "vag_18t_me711" in b
+    assert "vag 1.8t dbw" in b and "vag_18t_me711" in b
 
 
 @pytest.mark.parametrize("bad", ["", " lead", "trail ", "a/b", "..\\x",
@@ -34,7 +34,7 @@ def test_invalid_names_are_refused(lib, bad):
         lib.save(bad, page(), "5AB824FA", "test")
 
 
-@pytest.mark.parametrize("name", ["VAG 1.8T DBW (AWT)", "vag 1.8t dbw (awt)",
+@pytest.mark.parametrize("name", ["VAG 1.8T DBW", "vag 1.8t dbw",
                                   "VAG_18T_ME711", "Custom / user defined"])
 def test_builtin_names_cannot_be_taken(lib, name):
     with pytest.raises(U.PresetError):
@@ -63,7 +63,7 @@ def test_delete_only_user_presets(lib):
     lib.save("Keep", page(1), "5AB824FA", "test")
     lib.save("Drop", page(2), "5AB824FA", "test")
     with pytest.raises(U.PresetError):
-        lib.delete("VAG 1.8T DBW (AWT)")
+        lib.delete("VAG 1.8T DBW")
     with pytest.raises(U.PresetError):
         lib.delete("missing")
     lib.delete("drop")
@@ -169,8 +169,8 @@ def test_cli_refuses_without_yes_and_for_builtins(tmp_path, monkeypatch, capsys)
     monkeypatch.setenv("HANICORE_USER_PRESETS", str(tmp_path / "lib"))
     U.Library().save("Mine", page(4), U.layout_id(), "test")
     assert U.main(["delete", "Mine"]) == 2                 # no --yes
-    assert U.main(["delete", "VAG 1.8T DBW (AWT)", "--yes"]) == 2
-    assert U.main(["apply", "VAG 1.8T DBW (AWT)"]) == 2     # built-in: use TS
+    assert U.main(["delete", "VAG 1.8T DBW", "--yes"]) == 2
+    assert U.main(["apply", "VAG 1.8T DBW"]) == 2     # built-in: use TS
     assert U.main(["delete", "Mine", "--yes"]) == 0
     out = capsys.readouterr().out
     assert out.count("REFUSED") == 3 and "deleted user preset 'Mine'" in out

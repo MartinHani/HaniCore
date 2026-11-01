@@ -127,8 +127,9 @@ def find_decision(img, m66):
     """Locate the admission decision inside ?PR?HCNVM, by SYMBOL.
 
     start   the CALLA to hc_ssc_sscon() the admission uses - the one
-            immediately followed by MOV R14,R4 (F0 E4), which is how the
-            compiler keeps the word across the following call
+            immediately followed by MOV Rn,R4 (F0 n4), which is how the
+            compiler keeps the word (R14 until 2026-10-28, R13 since the
+            retired forensic call stopped needing it)
     admit   the CALLA to hc_ssc_pec_tx_left(), the next thing live_admit()
             does once the SSC test has passed
     reject  the MOVB RL6,#3h that writes HCNV_ADMIT_ASIC
@@ -143,7 +144,7 @@ def find_decision(img, m66):
 
     starts = [i for i in range(len(blk) - 6)
               if blk[i:i + 4] == sscon_call
-              and blk[i + 4:i + 6] == b"\xF0\xE4"]
+              and blk[i + 4] == 0xF0 and (blk[i + 5] & 0x0F) == 0x04]
     if len(starts) != 1:
         raise SystemExit("expected exactly one admission sscon call, got %d"
                          % len(starts))

@@ -140,7 +140,7 @@ def main() -> int:
     # V50: the mask is now IE-only. "SSCEIC = 0;" would clear xxIR too,
     # which is the defect the V49 Burn physically proved.
     check("SSC error ordinary vector is always suppressed during busy",
-          "SSCEIC &= HCNV_IE_CLR;" in SRC)
+          "HCNV_IE_OFF(SSCEIC);" in SRC)
     # V51 SUPERSEDES THIS CHECK, and the supersession is the point.
     #
     # It used to require the literal (SSCEN && (SSCCON & 0x0F00)) - V48's fix
@@ -161,7 +161,7 @@ def main() -> int:
           and "(sscon & 0x8000u) != 0u && (sscon & 0x1000u) != 0u" in SRC
           and "0x0F00u" not in SRC)
     check("idle SSC suppresses both PEC terminal ordinary vectors",
-          "if (!pec_in_flight) { SSCTIC &= HCNV_IE_CLR; SSCRIC &= HCNV_IE_CLR; }"
+          "if (!pec_in_flight) { HCNV_IE_OFF(SSCTIC); HCNV_IE_OFF(SSCRIC); }"
           in SRC)
 
     check("NVM claims the word before reporting ready", SRC.index("L_OWNER") < SRC.index("HCNV_ADMIT_READY"))
@@ -169,24 +169,26 @@ def main() -> int:
     check("actual ASIC exchange launcher rejects NVM ownership before SSC state",
           '#include "hcnvm.h"' in ASIC and start.index("hc_nvm_word_owned()") < start.index("SSCBSY"))
     check("NVM releases ownership after writer return and IC restoration",
-          SRC.index("SSCEIC |= (ssce & HCNV_IE_BIT);")
+          SRC.index("HCNV_IE_BACK(SSCEIC, ssce);")
           < SRC.rindex("HCNV_OWNER_NONE"))
     check("ASIC service is scheduled before NVM service each main-loop pass",
           MAIN.index("hc_asic_start_service(tick_ms);") < MAIN.index("hc_nvm_service(tick_ms"))
 
-    check("all active ordinary source ICs are saved/masked/restored",
-          all(x in SRC for x in (
-              "CC7IC &= HCNV_IE_CLR", "CC8IC &= HCNV_IE_CLR",
-              "CC9IC &= HCNV_IE_CLR", "CC15IC &= HCNV_IE_CLR",
-              "T8IC &= HCNV_IE_CLR", "S0RIC &= HCNV_IE_CLR",
-              "S0EIC &= HCNV_IE_CLR", "SSCEIC &= HCNV_IE_CLR",
-              "CC7IC  |= (cc7  & HCNV_IE_BIT)",
-              "CC8IC  |= (cc8  & HCNV_IE_BIT)",
-              "CC9IC  |= (cc9  & HCNV_IE_BIT)",
-              "CC15IC |= (cc15 & HCNV_IE_BIT)",
-              "T8IC   |= (t8   & HCNV_IE_BIT)",
-              "S0RIC  |= (s0r  & HCNV_IE_BIT)",
-              "S0EIC  |= (s0e  & HCNV_IE_BIT)")))
+    # Every flash-backed source the window touches (16 since 2026-10-28):
+    # saved into its local, masked with HCNV_IE_OFF and restored from that
+    # same local with HCNV_IE_BACK (bit-protected BFLDL since issue 07).
+    BURN_SOURCES = (("CC7IC", "cc7"), ("CC8IC", "cc8"), ("CC9IC", "cc9"),
+                    ("CC15IC", "cc15"), ("T8IC", "t8"), ("CC16IC", "cc16"),
+                    ("CC25IC", "cc25"), ("TGT_PLAN_IC", "cc26"),
+                    ("S0TBIC", "s0tb"), ("TGT_ASICX_IC", "cc27"),
+                    ("TGT_SLOWTICK_IC", "cc28"), ("S0RIC", "s0r"),
+                    ("S0EIC", "s0e"), ("SSCTIC", "ssct"), ("SSCRIC", "sscr"),
+                    ("SSCEIC", "ssce"))
+    check("all 16 ordinary source ICs are saved/masked/restored",
+          all(re.search(r"\b%s\s*=\s*%s\s*;" % (v, r), SRC)
+              and "HCNV_IE_OFF(%s)" % r in SRC
+              and re.search(r"HCNV_IE_BACK\(\s*%s\s*,\s*%s\s*\)" % (r, v), SRC)
+              for r, v in BURN_SOURCES))
     # The authoritative "never writes xxIR" check is NOT a source grep:
     # it is tests/firmware/persistence/me711_burn_ir_preserve_proof.py, which reads the opcodes
     # of the FINAL LINKED IMAGE and carries the frozen V49 binary as its
@@ -256,15 +258,16 @@ def main() -> int:
     for reg in sorted(active_ics - {"SSCRIC", "SSCTIC"}):
         check("burn window saves, masks and restores %s" % reg,
               re.search(r"\b\w+\s*=\s*%s\s*;" % reg, SRC) is not None
-              and re.search(r"%s\s*&=\s*HCNV_IE_CLR" % reg, SRC) is not None
-              and re.search(r"%s\s*\|=\s*\(\s*\w+\s*&\s*HCNV_IE_BIT\s*\)" % reg,
+              and "HCNV_IE_OFF(%s)" % reg in SRC
+              and re.search(r"HCNV_IE_BACK\(\s*%s\s*,\s*\w+\s*\)" % reg,
                             SRC) is not None)
     # NEGATIVE CONTROL: the same three-part test must FAIL for a vector the
     # burn window genuinely does not touch, or it is matching on nothing.
     # CC10 is a real capture node on this board (P2.10, the KVA input) that
     # the HAL deliberately does not route and hcnvm.c therefore never saves.
     check("negative control - the mask test rejects an IC hcnvm.c never saves",
-          re.search(r"\bCC10IC\s*&=\s*HCNV_IE_CLR", SRC) is None)
+          "HCNV_IE_OFF(CC10IC)" not in SRC
+          and re.search(r"HCNV_IE_BACK\(\s*CC10IC\b", SRC) is None)
 
     check("running horizon uses clean tooth, rejects gap/cam/sync uncertainty",
           all(x in SRC for x in ("trg_tooth_dt", "trg_gap_pending != 0u", "trg_cam_error != 0u",

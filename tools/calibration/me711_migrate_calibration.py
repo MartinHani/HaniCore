@@ -421,7 +421,7 @@ def v98_semantics(src_page, src, page, dst, rep):
 
 # ------------------------------------------------------------- self-test --
 def selftest() -> int:
-    ini = (ROOT / "tunerstudio/hanicore_me711.ini").read_text(
+    ini = (ROOT / "tuning/hanicore_me711.ini").read_text(
         encoding="utf-8", errors="replace")
     src = parse_ini(ini)
     import random
@@ -581,7 +581,7 @@ def selftest() -> int:
 
     # V98 SEMANTICS: a V97 page (layout 5819ED6C, the tracked V97 .ini) into
     # the current layout - the meanings that changed, not just the bytes
-    v97_path = ROOT / "tunerstudio/history/hanicore_me711_v97_dev.ini"
+    v97_path = ROOT / "tuning/history/hanicore_me711_v97_dev.ini"
     if v97_path.exists() and "firingOrder" in src:
         v97 = parse_ini(v97_path.read_text(encoding="utf-8", errors="replace"))
         sp = bytearray(PAGE)
@@ -667,7 +667,7 @@ def selftest() -> int:
     # 0.1 % layout. The two layouts carry different ids in the signature,
     # so neither firmware accepts the other's record; the migration reads
     # each byte with its OWN .ini's scale - 9 (9 %) becomes 90, never 9.
-    v98_path = ROOT / "tunerstudio/history/hanicore_me711_v98_C22837DF.ini"
+    v98_path = ROOT / "tuning/history/hanicore_me711_v98_C22837DF.ini"
     if v98_path.exists() and src.get("veTable") is not None \
             and src["veTable"].typ == "U16":
         t98 = v98_path.read_text(encoding="utf-8", errors="replace")
@@ -686,7 +686,7 @@ def selftest() -> int:
         check("V98r2: the C22837DF signature differs from this layout's",
               signature_layout(t98) == 0xC22837DF
               and signature_layout(t98) != signature_layout(
-                  (ROOT / "tunerstudio/history/hanicore_me711_v98_dev.ini")
+                  (ROOT / "tuning/history/hanicore_me711_v98_dev.ini")
                   .read_text(errors="replace")))
     print("SELFTEST %s" % ("PASS" if not bad else "FAIL"))
     return 1 if bad else 0

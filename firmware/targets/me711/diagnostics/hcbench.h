@@ -233,21 +233,21 @@ void HC_COLD hcbench_service(unsigned int tick_ms);
 void HC_COLD hcbench_yield_service(unsigned int tick_ms);
 
 /* Published state - see hcmain_me711.c's put16() block. */
-extern unsigned int hcb_state;
-extern unsigned int hcb_mode;
-extern unsigned int hcb_channel;
-extern unsigned int hcb_refuse;      /* HCB_R_* of the LAST request         */
-extern unsigned int hcb_abort;       /* HCB_A_* of the LAST early stop      */
-extern unsigned int hcb_pulses;      /* completed pulses of the current run */
-extern unsigned int hcb_requests;    /* '!T' commands received, ever        */
-extern unsigned int hcb_runs;        /* runs that actually started          */
-extern unsigned int hcb_port;        /* the PORT this run drives: 2, 7 or 8 */
-extern unsigned int hcb_bit;         /* and the bit within it               */
-extern unsigned int hcb_width_us;    /* the CLAMPED width, MICROSECOND modes */
-extern unsigned int hcb_width_ms;    /* the CLAMPED width, MILLISECOND modes */
-extern unsigned int hcb_conn_pin;    /* the connector cavity to put a probe on */
-extern unsigned int hcb_tps_start;   /* DBW: TPS1 counts before the first pulse */
-extern unsigned int hcb_tps_now;     /* DBW: TPS1 counts on the last pass    */
-extern unsigned int hcb_sf_level;    /* DBW: the raw SF pin, 0 or 1          */
+extern unsigned int HC_C4FAR hcb_state;
+extern unsigned int HC_C4FAR hcb_mode;
+extern unsigned int HC_C4FAR hcb_channel;
+extern unsigned int HC_C4FAR hcb_refuse;      /* HCB_R_* of the LAST request         */
+extern unsigned int HC_C4FAR hcb_abort;       /* HCB_A_* of the LAST early stop      */
+extern unsigned int HC_C4FAR hcb_pulses;      /* completed pulses of the current run */
+extern unsigned int HC_C4FAR hcb_requests;    /* '!T' commands received, ever        */
+extern unsigned int HC_C4FAR hcb_runs;        /* runs that actually started          */
+extern unsigned int HC_C4FAR hcb_port;        /* the PORT this run drives: 2, 7 or 8 */
+extern unsigned int HC_C4FAR hcb_bit;         /* and the bit within it               */
+extern unsigned int HC_C4FAR hcb_width_us;    /* the CLAMPED width, MICROSECOND modes */
+extern unsigned int HC_C4FAR hcb_width_ms;    /* the CLAMPED width, MILLISECOND modes */
+extern unsigned int HC_C4FAR hcb_conn_pin;    /* the connector cavity to put a probe on */
+extern unsigned int HC_C4FAR hcb_tps_start;   /* DBW: TPS1 counts before the first pulse */
+extern unsigned int HC_C4FAR hcb_tps_now;     /* DBW: TPS1 counts on the last pass    */
+extern unsigned int HC_C4FAR hcb_sf_level;    /* DBW: the raw SF pin, 0 or 1          */
 
 #endif /* HCBENCH_H */

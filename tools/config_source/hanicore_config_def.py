@@ -78,7 +78,7 @@ PIN_NONE = 255
 # So a SETTING whose name would collide with a runtime channel carries a
 # `Cfg` suffix - the convention the V29B .ini used, which is the one .ini
 # this project has confirmed loads. `outputsArmedCfg` and `mainRelayModeCfg`
-# are those two. tests/tunerstudio/ts_ini_namespace_proof.py fails the build if any new
+# are those two. tests/tuning/ts_ini_namespace_proof.py fails the build if any new
 # collision appears, so this does not have to be remembered.
 #
 # ==========================================================================
@@ -289,6 +289,15 @@ ENUM_INJ_TIMING = ConfigEnum("InjTimingMode", [
     (1, "INJ_TIMING_END", "End of injection"),
 ], "What the injection angle names")
 
+# 2026-10-31: what moves the idle air (rusEFI idle solenoid / secondary
+# solenoid, Speeduino "PWM 2-wire / 3-wire"). A cable throttle has no motor:
+# the idle controller's position is the valve's duty instead.
+ENUM_IDLE_ACTUATOR = ConfigEnum("IdleActuator", [
+    (0, "IDLE_ACT_ETB", "Electronic throttle"),
+    (1, "IDLE_ACT_VALVE", "Idle air valve, one output (2-wire)"),
+    (2, "IDLE_ACT_VALVE2", "Idle air valve, two outputs (3-wire)"),
+], "What moves the idle air")
+
 ENUM_IGN_STRATEGY = ConfigEnum("IgnStrategy", [
     (0, "IGN_WASTED_PAIRED", "Wasted spark, paired coils - crank sync is enough"),
     (1, "IGN_WASTED_COP", "Wasted COP - one coil per cylinder, fired twice per "
@@ -348,7 +357,16 @@ ENUM_LAMBDA_SRC = ConfigEnum("LambdaSource", [
     (1, "LAMBDA_INTERNAL_LSU", "On-board LSU 4.2 controller"),
     (2, "LAMBDA_EXTERNAL_ANALOG", "External controller, analog 0-5 V"),
     (3, "LAMBDA_CAN", "External controller over CAN"),
-], "Wideband controller source")
+    # 2026-10-27: the 2.7T board carries no CJ120 - its stock sensors are
+    # narrowband (any board can use it). Speeduino's model (egoType Narrow Band + the nb.inc
+    # calibration + its simple trim); rusEFI has none. A switching sensor
+    # only says rich or lean of stoichiometric: hcio711.c maps it to a
+    # pseudo-lambda (1.000 at 0.45 V, 0.90..1.10) and the trim acts only
+    # while the target is stoichiometric (hcengctl711.c).
+    (4, "LAMBDA_NARROWBAND", "Narrowband sensor (0-1 V switching)"),
+], "Lambda sensor source. Narrowband: a switching sensor reads only rich or "
+   "lean of 1.00 - the display shows 0.90..1.10 and closed loop trims only "
+   "while the lambda target is 1.00")
 
 # V100: WHEN THE LSU HEATER MAY RUN. rusEFI heater_control.cpp
 # HeaterControllerBase::GetNextState() takes a HeaterAllow plus the supply
@@ -654,7 +672,7 @@ LEGACY: list[Meta] = [
 
     # ---- coolant sensor --------------------------------------------------
     Meta("CAL_CLT_SENS_AX", "cltSensAx", "Coolant sensor counts", L,
-         G.SENSOR_ROUTING, lo=0, hi=1023, category="Sensors"),
+         G.SENSOR_ROUTING, units="cnt", lo=0, hi=1023, category="Sensors"),
     Meta("CAL_CLT_SENS_VAL", "cltSensVal", "Coolant sensor value", L,
          G.SENSOR_ROUTING, units="C", scale=0.1, translate=-1000.0, digits=1,
          # RAW 9500..12000 IS -50..+200 C THROUGH THE BIAS. The bound used to be
@@ -784,7 +802,7 @@ LEGACY: list[Meta] = [
          G.SENSOR_ROUTING, units="C", scale=0.1, translate=-1000.0, digits=1,
          lo=9600, hi=11500, category="Sensors"),
     Meta("CAL_IAT_SENS_AX", "iatSensAx", "Intake air sensor counts", L,
-         G.SENSOR_ROUTING, lo=0, hi=1023, category="Sensors"),
+         G.SENSOR_ROUTING, units="cnt", lo=0, hi=1023, category="Sensors"),
     Meta("CAL_IAT_SENS_VAL", "iatSensVal", "Intake air sensor value", L,
          G.SENSOR_ROUTING, units="C", scale=0.1, translate=-1000.0, digits=1,
          # RAW 9500..12000 IS -50..+200 C THROUGH THE BIAS. The bound used to be
@@ -1804,10 +1822,16 @@ UNIVERSAL: list[NewField] = [
                        "14 V running (Bosch DLRUBSOLL). Factor limited to "
                        "0.70..1.80."),
              "u8 DBW battery compensation, 0 on"),
-    NewField("CFG_U_DBW_PAD", "u8", 1,
-             Meta("CFG_U_DBW_PAD", "dbwPad", "Alignment pad", L, G.DBW_SETUP,
-                  lo=0, hi=255, category="DBW"),
-             "u8 alignment pad"),
+    # 2026-10-31: the idle air valve's pins (idleActuator) took the alignment
+    # bytes after dbwBattComp and injTimingMode - no other field moved.
+    NewField("CFG_U_PIN_IDLE_VALVE", "u8", 1,
+             _pin_meta("CFG_U_PIN_IDLE_VALVE", "pinIdleValve",
+                       "Idle air valve pin", G.OUTPUT_ROUTING, PinCap.PWM_OUT,
+                       "Idle", crit=False,
+                       note="The valve's output: one of the main CPU's two "
+                            "PWM stages. Read only with an idle air valve "
+                            "selected."),
+             "u8 physical connector pin for the idle air valve"),
     # V97: sequential injection (the maintainer's design notes). APPENDED.
     NewField("CFG_U_INJ_TIMING_MODE", "u8", 1,
              Meta("CFG_U_INJ_TIMING_MODE", "injTimingMode",
@@ -1819,10 +1843,14 @@ UNIVERSAL: list[NewField] = [
                        "intake valve whatever the pulse length. The angle is "
                        "degrees BEFORE the cylinder's compression TDC."),
              "u8 injection timing mode, 0 start 1 end"),
-    NewField("CFG_U_SEQ_PAD", "u8", 1,
-             Meta("CFG_U_SEQ_PAD", "seqPad", "Alignment pad", L,
-                  G.INJECTOR_ROUTING, lo=0, hi=255, category="Fuel"),
-             "u8 alignment pad"),
+    NewField("CFG_U_PIN_IDLE_VALVE2", "u8", 1,
+             _pin_meta("CFG_U_PIN_IDLE_VALVE2", "pinIdleValve2",
+                       "Idle air valve second pin", G.OUTPUT_ROUTING,
+                       PinCap.PWM_OUT, "Idle", crit=False,
+                       note="3-wire valves only: the closing coil, driven "
+                            "with the opposite of the first pin (100 % minus "
+                            "the duty, same period)."),
+             "u8 physical connector pin for the idle air valve's 2nd coil"),
     # V97: transient fuel - the X-tau wall film + after-start (shared/
     # hctrans.c, the maintainer's design notes). The curves use the warm-up
     # coolant axis (cltEnrAx). APPENDED.
@@ -1833,10 +1861,14 @@ UNIVERSAL: list[NewField] = [
                        "fuel per cycle (every injection mode). Off: the "
                        "steady model alone."),
              "u8 transient fuel enable"),
-    NewField("CFG_U_TRANS_PAD", "u8", 1,
-             Meta("CFG_U_TRANS_PAD", "transPad", "Alignment pad", L,
-                  G.TABLES, lo=0, hi=255, category="Fuel"),
-             "u8 alignment pad"),
+    # 2026-10-31: took the alignment byte after transEnable
+    NewField("CFG_U_IDLE_VALVE_FREQ", "u8", 1,
+             Meta("CFG_U_IDLE_VALVE_FREQ", "idleValveFreq",
+                  "Idle air valve PWM frequency", L, G.OUTPUT_ROUTING,
+                  units="Hz", scale=10.0, digits=0, lo=0, hi=100,
+                  category="Idle",
+                  note="0 = 200 Hz (rusEFI's default). Allowed 20..1000 Hz."),
+             "u8 idle air valve PWM frequency, 10 Hz"),
     NewField("CFG_U_AS_DECAY_MS", "u16", 1,
              Meta("CFG_U_AS_DECAY_MS", "asDecayMs", "After-start duration", L,
                   G.TABLES, units="s", scale=0.001, digits=1, lo=0, hi=60000,
@@ -1901,10 +1933,17 @@ UNIVERSAL: list[NewField] = [
                        "above it - spark answers within a cycle, the throttle "
                        "takes the manifold's time. Needs idle control on."),
              "u8 idle timing enable"),
-    NewField("CFG_U_IDLE_TIM_PAD", "u8", 1,
-             Meta("CFG_U_IDLE_TIM_PAD", "idleTimingPad", "Alignment pad", L,
-                  G.OUTPUT_ROUTING, lo=0, hi=255, category="Idle"),
-             "u8 alignment pad"),
+    # 2026-10-31: took the alignment byte after idleTimingEnable
+    NewField("CFG_U_IDLE_ACTUATOR", "u8", 1,
+             Meta("CFG_U_IDLE_ACTUATOR", "idleActuator", "Idle actuator", Z,
+                  G.OUTPUT_ROUTING, lo=0, hi=2, enum=ENUM_IDLE_ACTUATOR,
+                  category="Idle",
+                  note="Electronic throttle: the idle position opens the "
+                       "throttle. Idle air valve (cable throttle): the idle "
+                       "position is the valve's duty, and 'pedal released' "
+                       "is read from the TPS. A valve needs the electronic "
+                       "throttle disabled."),
+             "u8 idle actuator, 0 throttle 1 valve 2 3-wire valve"),
     NewField("CFG_U_IDLE_TIM_KP", "u16", 1,
              Meta("CFG_U_IDLE_TIM_KP", "idleTimingKp",
                   "Idle timing proportional gain", L, G.OUTPUT_ROUTING,

@@ -71,6 +71,8 @@ BINS = ROOT / "bins/hanicore"
 
 REFERENCE_STEM = "HaniCore_ME711_A1146_v27a_trigger_audit_fix"
 BUDGET_MS = 20.0
+S0TBUF, S0TIC = 0xFEB0, 0xFF6C
+TX_BYTE_STEPS = 435          # 174 us at the ruler's 2500 steps per ms
 # The append-only store scan's own bound - see the check that uses it. The
 # measured value is ~470 ms and its size is fixed by the geometry, so this
 # leaves room for noise and fails if the scan is ever made to do more.
@@ -127,6 +129,22 @@ def measure(img_path, map_path, limit=4_000_000):
     img = img_path.read_bytes()
     entry = ((img[0x8002] | (img[0x8003] << 8)) << 16) | (img[0x8000] | (img[0x8001] << 8))
     cpu = S.CPU(mem, (entry >> 16) & 0xFF, entry & 0xFFFF)
+    # THE ASC0 TRANSMITTER, which c167sim does not model (2026-10-29). The
+    # boot's cal_measure() sends two loopback bytes and waits for S0TIC.IR
+    # under a 40000-pass guard; with no transmitter both guards ran out, and
+    # that spin - about 330 ms of simulated boot, plus the ticks it let pile
+    # up - was most of what this gate reported as boot cost. On the ECU it is
+    # two byte times. A write to S0TBUF now sets S0TIC.IR one byte later
+    # (10 bits at 57600 baud = 174 us), in the reference run as well.
+    tx_due = [None]
+    w8 = mem.w8
+
+    def w8_tx(a, v, _w8=w8):
+        _w8(a, v)
+        if (a & 0xFFFFFF) == S0TBUF:
+            tx_due[0] = n + TX_BYTE_STEPS
+
+    mem.w8 = w8_tx
     tx &= 0xFFFF
     tick &= 0xFFFF
     first = None
@@ -143,6 +161,9 @@ def measure(img_path, map_path, limit=4_000_000):
                 nvm_out = n
         cpu.step()
         n += 1
+        if tx_due[0] is not None and n >= tx_due[0]:
+            tx_due[0] = None
+            mem.w16(S0TIC, mem.r16(S0TIC) | 0x0080)
         if first is None and mem.r16(tx) > 0:
             first = n
         t = mem.r16(tick)

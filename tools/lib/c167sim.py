@@ -38,6 +38,15 @@ import sys
 # SY_C167CS = 1. The model stopped at the C167CR's 0xF600 until HaniCore moved
 # its user stack to 0xF400, which then read back as unmapped.
 IRAM_LO, IRAM_HI = 0x00F200, 0x00FDFF
+# THE 2.7T IS A C167CR (2026-10-26): 2 KB IRAM, 0xF600-0xFDFF [C167CR UM
+# V3.1; BOM SAK-C167CR-4RM; BSL id 0xC5 vs the Porsche's 0xD5]. Modelling
+# every board as the C167CS let the first 2.7T image keep its user stack at
+# 0xF380 - it never ran on the real ECU. Under HANICORE_BOARD=vag_me71_c4 any
+# access to 0xF200-0xF5FF is a Trap, as loud as the silicon is fatal.
+# the ME7.5 DC (2026-10-28) is a C167CR too - same hole
+if __import__("os").environ.get("HANICORE_BOARD") in ("vag_me71_c4", "vag_me75_dc"):
+    IRAM_LO = 0x00F600
+NORAM_LO, NORAM_HI = (0x00F200, IRAM_LO - 1) if IRAM_LO > 0x00F200 else (1, 0)
 SFR_LO, SFR_HI = 0x00FE00, 0x00FFFF
 ESFR_LO, ESFR_HI = 0x00F000, 0x00F1FF
 XRAM_LO, XRAM_HI = 0x380000, 0x387FFF
@@ -98,6 +107,11 @@ IC_TRAP = {
     0xF172: 0x39,   # ME711 CC25 deadline compare
     0xF174: 0x3A,   # CC26IC  ME711 planner - a SOFTWARE-set request (2026-10-06)
     0xF176: 0x3B,   # CC27IC  ME711 S5500 exchange - SOFTWARE-set by the tick (2026-10-13)
+    0xF178: 0x3C,   # CC28IC  (reg167.h) the tick's body - SOFTWARE-set by T8 (2026-10-28).
+                    #         NOTE: the CC23/28/29/30 rows above use addresses
+                    #         reg167.h gives to CC30IC (0xF18C) / XP-area words;
+                    #         reg167.h: CC23IC 0xF16E, CC28IC 0xF178, CC29IC
+                    #         0xF184, CC30IC 0xF18C - unused (software injectors)
     0xF19C: 0x47,   # S0TBIC  ASC0 transmit buffer empty (ME711 reply job, 2026-10-06)
     0xF17A: 0x3D,   # T7IC
     0xF17C: 0x3E,   # T8IC    MEASURED
@@ -271,6 +285,8 @@ class Mem:
 
     def r8(self, a: int) -> int:
         a &= 0xFFFFFF
+        if NORAM_LO <= a <= NORAM_HI:
+            raise Trap("read from 0x%06X - no RAM there on the C167CR" % a)
         if LRAM_LO <= a <= LRAM_HI:
             return self.lram[a - LRAM_LO]
         if IRAM_LO <= a <= IRAM_HI:
@@ -329,13 +345,18 @@ class Mem:
                 if self.fetching:
                     self.fl_fetch_while_busy += 1
                 self.fl_busy -= 1
-                return 0x00                      # DQ7 low: not finished
+                # DQ7 = NOT data bit 7 on the low byte (2026-10-29: a plain
+                # 0x00 let "read until it equals the data" end early on a
+                # 0x0000 word, with the device still busy for the next read)
+                return getattr(self, "fl_prog_dq7", 0) if not (off & 1) else 0x00
             return self.flash[off]
         raise Trap("read from UNMAPPED address 0x%06X" % a)
 
     def w8(self, a: int, v: int) -> None:
         a &= 0xFFFFFF
         v &= 0xFF
+        if NORAM_LO <= a <= NORAM_HI:
+            raise Trap("write to 0x%06X - no RAM there on the C167CR" % a)
         if LRAM_LO <= a <= LRAM_HI:
             self.lram[a - LRAM_LO] = v
             return
@@ -458,6 +479,10 @@ class Mem:
                 self.flash[off + 1] &= (v >> 8) & 0xFF
                 self.fl_programs += 1
                 self.fl_busy = 4
+                # DATA# POLLING: while the program runs, DQ7 reads as the
+                # COMPLEMENT of the data's bit 7 (AM29F800B, "DQ7: Data#
+                # Polling"), so a busy read never equals the word written.
+                self.fl_prog_dq7 = (~v) & 0x80
             return
 
     def r16(self, a):
@@ -471,6 +496,8 @@ class Mem:
         # was discarded. The boot died on a RET with an empty stack, which is
         # about as far from the cause as a symptom can get.
         aa = a & 0xFFFFFF
+        if NORAM_LO <= aa <= NORAM_HI:
+            raise Trap("write to 0x%06X - no RAM there on the C167CR" % aa)
         special = (LRAM_LO <= aa <= LRAM_HI or IRAM_LO <= aa <= IRAM_HI
                    or ESFR_LO <= aa <= ESFR_HI or SFR_LO <= aa <= SFR_HI
                    or XRAM_LO <= aa <= XRAM_HI or ASIC_LO <= aa <= ASIC_HI)

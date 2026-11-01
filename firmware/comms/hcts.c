@@ -16,26 +16,6 @@
 #include "hcserial711.h"   /* the ME7.1.1 PEC receive / interrupt transmit */
 #endif
 
-/* V45 is an observation-only Bosch build.  The hooks are compiled out for
- * every other target, so the shared transport's normal protocol remains
- * byte-for-byte and timing-for-timing unchanged there. */
-#ifdef TGT_BURN_RESET_FORENSICS
-#include "hcburnforensics.h"
-#define BF_HCTS_INIT(b,w)       hc_bf_hcts_init((b),(w))
-#define BF_B_RECEIVED()         hc_bf_b_received()
-#define BF_REPLY_ARMED()        hc_bf_reply_armed()
-#define BF_RESPONSE_SELECTED(c) hc_bf_response_selected(c)
-#define BF_TX_ENTERED()         hc_bf_response_tx_entered()
-#define BF_TX_COMPLETED()       hc_bf_response_completed()
-#else
-#define BF_HCTS_INIT(b,w)       ((void)0)
-#define BF_B_RECEIVED()         ((void)0)
-#define BF_REPLY_ARMED()        ((void)0)
-#define BF_RESPONSE_SELECTED(c) ((void)0)
-#define BF_TX_ENTERED()         ((void)0)
-#define BF_TX_COMPLETED()       ((void)0)
-#endif
-
 #define PAGE_SIZE      HC_CFG_SIZE  /* must match pageSize in the .ini */
 #ifndef TGT_OCH_READ_SIZE
 #define TGT_OCH_READ_SIZE TGT_OCH_SIZE
@@ -1066,7 +1046,6 @@ static void handle(unsigned char *p, unsigned int n)
         /* The staging snapshot keys itself to this generation.  Advance it
            before the target records the request, otherwise the first staging
            pass needlessly discards and restarts a perfectly good snapshot. */
-        BF_B_RECEIVED();
         cfg_burns++;
         burn_code = hcts_cfg_burn();
         if (deferred_response == 0u) {
@@ -1083,10 +1062,7 @@ static void handle(unsigned char *p, unsigned int n)
                this changes who decides, not what goes out - and when the
                protocol one day has somewhere to put a refusal, one line in
                the target is where it goes. */
-            BF_RESPONSE_SELECTED(burn_code);
-            BF_TX_ENTERED();
             hcts_send_response(burn_code, no_data, 0);
-            BF_TX_COMPLETED();
         }
         return;
     case '!':
@@ -1169,8 +1145,15 @@ static unsigned char ts_plain_cmd;
  * and a deferred Burn reply blocks it). A switch drops the ring and the
  * half-parsed frame: they were received at the wrong rate. The rate is
  * published (hcts_link_state) so a log says which one a session ran at. */
-static const unsigned char link_bg[3] = { TGT_S0BG, TGT_S0BG_ALT,
-                                          TGT_S0BG_ALT2 };
+#ifndef TGT_LINK_RATES
+#define TGT_LINK_RATES 3u
+#endif
+/* 2026-10-24: a 24 MHz board has two rates (no 115200), a 40 MHz one three */
+static const unsigned char link_bg[TGT_LINK_RATES] = { TGT_S0BG, TGT_S0BG_ALT
+#if TGT_LINK_RATES > 2u
+                                          , TGT_S0BG_ALT2
+#endif
+                                          };
 #define LINK_BAD_LOCKED 3u
 static unsigned char link_bad;
 
@@ -1234,7 +1217,7 @@ static unsigned char link_bad_seen(void)
     if (hc_link_locked && link_bad < LINK_BAD_LOCKED) {
         return 0u;
     }
-    link_set((unsigned char)((hc_link_rate + 1u) % 3u));
+    link_set((unsigned char)((hc_link_rate + 1u) % TGT_LINK_RATES));
     hc_link_locked = 0u;
     link_bad = 0u;
     link_hold = 2u;         /* and drop the rest of it */
@@ -1264,8 +1247,13 @@ void hcts_link_force(unsigned char bg, unsigned char locked)
     unsigned char i;
     unsigned int w;
 
-    for (i = 0u; i < 3u && link_bg[i] != bg; i++) {
+    for (i = 0u; i < TGT_LINK_RATES && link_bg[i] != bg; i++) {
     }
+#if TGT_LINK_RATES < 3u
+    if (i >= TGT_LINK_RATES) {
+        i = 3u;             /* "outside the table" reads 3 on every board */
+    }
+#endif
     hc_link_rate = i;
     w = S0CON;
     S0CON = (unsigned int)(w & ~0x8000u);
@@ -1329,17 +1317,25 @@ unsigned char hcts_link_evid(void)
 void hcts_defer_response(void)
 {
     deferred_response = 1u;
-    BF_REPLY_ARMED();
 }
 
 void hcts_finish_deferred_response(unsigned char code)
 {
     if (deferred_response != 0u) {
         deferred_response = 0u;
-        BF_RESPONSE_SELECTED(code);
-        BF_TX_ENTERED();
+        if (ts_pending == 0 && ts_st != 0u) {
+            /* a request half received: its rest would be eaten as our echo
+               and our echo parsed as a request (the V56 class) - drop it,
+               counted; the host retries */
+#ifdef TGT_RX_PEC
+            hc_pecrx_flush();
+#endif
+            hc_rx_tail = hc_rx_head;
+            ts_st = 0;
+            ts_i = 0;
+            rx_resync++;
+        }
         hcts_send_response(code, no_data, 0u);
-        BF_TX_COMPLETED();
     }
 }
 
@@ -1493,8 +1489,15 @@ void hcts_poll(void)
      * gets answered - after the Burn's own reply, in order. Everything past
      * that cannot be served at all and must not be left where the echo
      * accounting will find it. Dropping it is the honest outcome: the host
-     * will retry, and rx_resync says it happened. */
-    if (deferred_response != 0u) {
+     * will retry, and rx_resync says it happened.
+     *
+     * ONLY ONCE A REQUEST IS PARKED (2026-10-30). Flushing while one is still
+     * arriving threw away its tail (bytes PEC had stored since the last tick
+     * never reached the ring, and rx_resync did not count them): the parser
+     * waited for bytes that were gone and the request was never answered -
+     * me711_burn_session_proof, red since the PEC receive. Until a request
+     * is parked the loop above takes every byte that reaches the ring. */
+    if (deferred_response != 0u && ts_pending != 0) {
         hcts_rx_pump();
 #ifdef TGT_RX_PEC
         hc_pecrx_flush();
@@ -1582,9 +1585,6 @@ void hcts_service(void)
 /* --------------------------------------------------------------- bring-up */
 void hcts_init(void)
 {
-    /* Snapshot BEFORE these volatile counters are reset.  On V45 this proves
-       whether a B command reached cfg_burns before startup/reinitialization. */
-    BF_HCTS_INIT(cfg_burns, cfg_writes);
     S0BG  = TGT_S0BG;    /* see hctarget.h */
 #ifdef TGT_S0BG_ALT
     hc_link_rate = 0u;     /* boots at the proven default, hunts on evidence */

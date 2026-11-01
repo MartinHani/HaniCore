@@ -108,6 +108,16 @@ def find_restore(img, lo, hi):
     writes = []
     for fo in range(lo, hi - 3):
         op = img[fo]
+        if op == 0x0A and img[fo + 2] == IE_BIT and img[fo + 3] == IE_BIT \
+                and img[fo + 1] >= 0x80:
+            # 2026-10-30 (firmware-stability 07): BFLDL <xxIC>, #40H, #40H -
+            # bit-protected, behind JNB <saved>.6; an EXTR #1 before it names
+            # an ESFR. Bit offset >= 0x80 = a bit-addressable (E)SFR word.
+            esfr = img[fo - 2] == 0xD1
+            addr = (0xF100 if esfr else 0xFF00) + 2 * (img[fo + 1] - 0x80)
+            if addr in IC_ADDR:
+                writes.append((fo, IC_ADDR[addr], "BFLDL"))
+            continue
         if op not in (0xF6, 0x74):
             continue
         imm = img[fo + 2] | (img[fo + 3] << 8)
@@ -129,6 +139,20 @@ def find_restore(img, lo, hi):
         raise SystemExit("restore cluster too small (%d writes)" % len(best))
 
     w0 = best[0][0]
+    if best[0][2] == "BFLDL":
+        # MOV R4,[R0+#n] ; JNB R4.6,+n ; [EXTR #1] ; BFLDL <ic>,#40H,#40H
+        def load_of(fo):
+            ld = fo - (10 if img[fo - 2] == 0xD1 else 8)
+            return ld if (img[ld] == 0xD4 and img[ld + 4] == 0x9A) else None
+        if load_of(w0) is None:
+            raise SystemExit("cannot identify the load that feeds %06X" % w0)
+        pairs = []
+        for fo, name, kind in best:
+            ld = load_of(fo)
+            slot = (img[ld + 2] | (img[ld + 3] << 8)) if (
+                ld is not None and img[ld + 1] == 0x40) else None
+            pairs.append((name, slot, kind))
+        return load_of(w0), best[-1][0] + 4, pairs
     # what feeds R4: V50 is MOV R4,[R0+#n]; AND R4,#40H; OR <ic>,R4
     #                V49 is MOV R4,[R0+#n];               MOV <ic>,R4
     if img[w0 - 8] == 0xD4 and img[w0 - 4] == 0x66:
@@ -289,8 +313,8 @@ def main():
     # the instruction forms actually executed
     forms50 = sorted({k for _n, _s, k in p50})
     forms49 = sorted({k for _n, _s, k in p49})
-    check("V50 restores with OR only; V49 used MOV",
-          forms50 == ["OR"] and forms49 == ["MOV"],
+    check("V50 restores with OR (or bit-protected BFLDL) only; V49 used MOV",
+          forms50 in (["OR"], ["BFLDL"]) and forms49 == ["MOV"],
           "V50 %s / V49 %s" % (forms50, forms49))
 
     print("")

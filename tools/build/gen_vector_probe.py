@@ -75,7 +75,7 @@ CLAIMED_BOSCH = {
     0x30: "CC16INT - hc_cc16_isr in hctrig_me711.c (knock window MF)",
     0x39: "CC25INT - deadline terminal ISR (V102)",
     0x3A: "CC26INT - hc_plan_isr in hcsched_dry.c (software-triggered planner)",
-    0x02: "NMI - hc_v02 in hcnmi_v49.a66 (retained first-event snapshot)",
+    0x02: "NMI - hc_nmi_isr in hcmain_me711.c (trap and time into the reset log)",
     0x3E: "T8INT  - hc_tick_isr in hcmain_me711.c (the 1 ms system tick)",
     0x47: "S0TBINT - hc_s0tb_isr in comms/hcserial711.c (reply transmit)",
     0x18: "CC8INT - hc_cc8_isr in hctrig_me711.c  (NWDG1 cam capture)",

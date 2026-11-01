@@ -367,8 +367,16 @@ static unsigned char rot_valid;
 
 static void publish_angle(void)
 {
-    unsigned int rot = trg_engine_angle_x10(slot_angle_x10(slot), 0u,
-                                            g_offset_x10);
+    /* trg_engine_angle_x10(slot_angle_x10(slot), 0, g_offset_x10) without
+       the two calls (2026-10-24: per tooth, ~15 instructions of the 2.7T's
+       24 MHz crank ISR). slot < N, so the physical angle is already below
+       3600 and the function's reduction loop never runs. */
+    int r = (int)(unsigned int)((((unsigned long)slot * g_ang_num) + 64uL) >> 7)
+            + g_offset_x10;
+    unsigned int rot;
+    if (r >= 3600) r -= 3600;
+    else if (r < 0) r += 3600;
+    rot = (unsigned int)r;
 
     if (rot_valid && rot < last_rot) {
         trg_phase ^= 1u;
@@ -385,12 +393,11 @@ static void slot_advance(void)
 }
 
 /* cand is longer than neighbour by at least the configured ratio.
-   Both products are 16x16 widening multiplies; nothing here divides. */
-static unsigned int longer(unsigned int cand, unsigned int neighbour)
-{
-    return (unsigned int)(((unsigned long)cand * 10u)
-                          > ((unsigned long)neighbour * g_ratio_x10));
-}
+   Both products are 16x16 widening multiplies; nothing here divides.
+   A MACRO (2026-10-28): as a function it was 2.1 % of the 2.7T's CPU at
+   8500 rpm - two or three calls a tooth, each spilling registers. */
+#define longer(cand, neighbour) \
+    ((((unsigned long)(cand) * 10u) > ((unsigned long)(neighbour) * g_ratio_x10)) ? 1u : 0u)
 
 /* A STALL IS NOT A SYNC LOSS, and until V77 it was counted as one.
  *
@@ -438,9 +445,12 @@ static void lose_sync(unsigned int reason)
 static void trigger_hw(unsigned int on)
 {
     if (on) {
-        /* Claim T1/CCM only when real capture is explicitly selected. V27
-           started T1 and programmed CC8/9/15 even with triggerSource=off,
-           the only live peripheral delta from the physically stable V26.
+        /* Program CC8/9/15 only when real capture is explicitly selected.
+           V27 programmed them even with triggerSource=off, the only live
+           peripheral delta from the physically stable V26. T1 itself runs
+           from boot (TGT_T01CON, 2026-10-28) and is never written here: it
+           is also the executor's clock and the ME7.5 DC monitor's, so a
+           restart or a stop would move both under work in flight.
 
            AND THE CAM CAPTURES ARE ONLY ARMED WHEN A CAM IS CONFIGURED. With
            no sensor connected a floating input generates captures; that is
@@ -448,8 +458,6 @@ static void trigger_hw(unsigned int on)
            to NWDG1/NWDG2 exactly as it applies to KWDG. Until V55 both cam
            channels were armed unconditionally whenever the crank was. */
         CC15IC = 0; CC8IC = 0; CC9IC = 0;
-        T1 = 0;
-        T01CON = (unsigned int)((T01CON & 0x00FFu) | TGT_T1CON_RUNNING);
         /* EACH CHANNEL IS ARMED FOR THE ROLE ITS CONFIGURED CAVITY GAVE IT,
            and a channel no cavity claimed is left disarmed with its CCMOD
            cleared. Bit 3 of each nibble selects T1; the low three bits are
@@ -481,7 +489,6 @@ static void trigger_hw(unsigned int on)
         CC15IC = 0; CC8IC = 0; CC9IC = 0;
         CCM3 = (unsigned int)(CCM3 & 0x0FFFu);
         CCM2 = (unsigned int)(CCM2 & 0xFF00u);
-        T01CON = (unsigned int)(T01CON & 0x00FFu);
         hc_hal_trig_disarm();
     }
     source_live = on;
@@ -629,19 +636,22 @@ static unsigned long geometry_read(void)
 
     max_rpm = cfg_u16(CFG_REV_MAX);
     if (max_rpm < 1000u) max_rpm = 7500u;
+    if (max_rpm > TGT_RPM_CPU_MAX) max_rpm = TGT_RPM_CPU_MAX;   /* hctarget.h */
     /* One whole tooth period at the declared ceiling. An edge closer than
        that to the last VALID one cannot be a tooth of this wheel. 75e6 is
        1.25 MHz x 60 s, so this is ticks-per-tooth at max_rpm - the same
        number V54 computed, except that it now follows the configured tooth
        count instead of assuming sixty of them. */
-    min_edge_ticks = (unsigned int)(75000000uL
+    min_edge_ticks = (unsigned int)(((unsigned long)TGT_TICKS_PER_MS_X10 * 6000uL)
                                     / ((unsigned long)g_teeth
                                        * (unsigned long)max_rpm));
-    if (min_edge_ticks < 40u) min_edge_ticks = 40u;
+    if (min_edge_ticks < US_TO_TICKS(32u)) min_edge_ticks = US_TO_TICKS(32u);
 
     stall_limit = (unsigned long)cfg_u8(CFG_TRIG_TIMEOUT_MS)
                 * (TGT_TICKS_PER_MS_X10 / 10uL);
-    if (stall_limit < 62500uL) stall_limit = 250000uL;
+    /* below 50 ms, 200 ms (in T1 ticks on either clock) */
+    if (stall_limit < 50uL * (TGT_TICKS_PER_MS_X10 / 10uL))
+        stall_limit = 200uL * (TGT_TICKS_PER_MS_X10 / 10uL);
 
     trg_cfg_tooth_x10 = slot_angle_x10(1u);
     trg_cfg_angle_x10 = (g_offset_x10 > 1800) ? (int)(g_offset_x10 - 3600)
@@ -1150,14 +1160,18 @@ static void cam_edge(unsigned int bank, unsigned int stamp)
     }
 }
 
-static void isr_done(unsigned int entry)
-{
-    unsigned int took = (unsigned int)(T1 - entry);
-    trg_isr_ticks = took;
-    if (took > trg_isr_max) trg_isr_max = took;
-    if (trg_tooth_dt) trg_isr_headroom = (took < trg_tooth_dt)
-        ? (unsigned int)(trg_tooth_dt - took) : 0u;
-}
+/* The ISR's own cost: the maximum on every tooth, the last duration and the
+   headroom (telemetry only, OCH 252/256) on every 8th (2026-10-28: 1.8 % of
+   the 2.7T's CPU at 8500 rpm as a per-tooth call). A macro: no call. */
+#define isr_done(entry) do { \
+    unsigned int took_ = (unsigned int)(T1 - (entry)); \
+    if (took_ > trg_isr_max) trg_isr_max = took_; \
+    if (!(trg_teeth_seen & 7u)) { \
+        trg_isr_ticks = took_; \
+        if (trg_tooth_dt) trg_isr_headroom = (took_ < trg_tooth_dt) \
+            ? (unsigned int)(trg_tooth_dt - took_) : 0u; \
+    } \
+} while (0)
 
 /* THE THREE ISRs DISPATCH ON THE ROLE THEIR CAVITY GAVE THEM.
  *
@@ -1552,7 +1566,9 @@ void trg_service(void)
     {
         unsigned long period;
         HC_ATOMIC_COPY(period, trg_crank_period);
-        if (period) trg_rpm = (unsigned int)(75000000uL / period);
+        /* T1 ticks per minute: 75e6 at 1.25 MHz, 45e6 at 0.75 MHz */
+        if (period) trg_rpm = (unsigned int)(((unsigned long)TGT_TICKS_PER_MS_X10
+                                              * 6000uL) / period);
     }
     /* ---- ONLY A CAM THE CONFIGURATION SAYS EXISTS CAN BE MISSING ---------
      *

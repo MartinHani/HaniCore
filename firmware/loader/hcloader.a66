@@ -1,0 +1,401 @@
+$MOD167
+$CASE
+$SEGMENTED
+$INCLUDE (REG167.INC)
+;===============================================================================
+; hcloader.a66 - the HaniCore update loader (SA5, 0x820200..0x82FFFF).
+;
+; .scratch/firmware-update/spec.md: the APP (SA6..SA9) is replaced by an
+; update; a new image is first written into STAGING (SA15..SA18) by the
+; running app, which seals it only after checking it. This loader, the one
+; fixed piece of code besides the boot region, decides on every reset:
+;
+;   APP valid, no request        -> jump to the app's ?C_STARTUP (< 1 ms)
+;   request or APP not valid,
+;     STAGING sealed             -> copy STAGING to APP, verify, seal, SRST
+;   APP not valid, nothing staged-> stop (recovery over K-line: P2b)
+;
+; IT RUNS BEFORE EINIT and never executes it: RSTOUT stays low from the reset
+; (SRST included) until EINIT, which holds the supervisor ASIC in reset - no
+; frame to answer, no supervisor code here (spec section 8; the P0 bench test
+; - start_me711.a66 section 3b - is what proves it on a board).
+;
+; THE WATCHDOG: DISWDT is executed, but start_me711.a66 notes it may not
+; stop the watchdog on every boot path - so every wait loop also SRVWDTs.
+;
+; THE COPY RUNS FROM SRAM. The AM29F800 is single-bank: while a sector is
+; being erased or a word programmed, EVERY read of the device returns status,
+; including instruction fetches. So the whole erase / program / verify /
+; seal sequence is copied to the battery SRAM (0x386000, the app's own
+; relocated-writer area - free before the app runs) and entered with JMPS. It
+; ends in SRST and never returns into flash. It is position independent: only
+; relative jumps, every flash/SRAM access with an explicit segment.
+;
+; POWER CUT ANYWHERE: the APP seal is programmed LAST, so a cut leaves either
+; the old valid app (before the first erase) or an app with no seal - and an
+; unsealed app with a sealed STAGING is copied again on the next boot. The
+; request word is cleared only after the seal.
+;
+; THE IMAGE HEADER, 32 bytes at segment offset 0x0200 of the first app sector
+; (APP 0x830200, STAGING 0x8C0200), all words little-endian:
+;   +0  0x4348 'HC'       +2  0x5041 'AP'      +4  board code (BOARD_*)
+;   +6  entry offset      +8  entry segment    +10/+12 image length in bytes
+;                                                 from the sector start (u32)
+;   +14/+16 CRC-32 (the app checks it before sealing STAGING)
+;   +18/+20 build id      +22..+29 reserved (0xFFFF)
+;   +30 SEAL 0x5AA5       - programmed last; the copy never copies it
+; The update request: battery SRAM 0x386904 = 0x5055 'UP', 0x386906 = 0x5444
+; 'DT' (TGT_RAM_SPARE_B; the app writes it, then SRST).
+;===============================================================================
+
+APP_SEG     EQU     083H        ; SA6..SA9   0x830000..0x86FFFF
+APP_END     EQU     087H
+STG_SEG     EQU     08CH        ; SA15..SA18 0x8C0000..0x8FFFFF
+HDR         EQU     0200H       ; header offset in the first sector
+H_M0        EQU     HDR+0
+H_M1        EQU     HDR+2
+H_BOARD     EQU     HDR+4
+H_EOFF      EQU     HDR+6
+H_ESEG      EQU     HDR+8
+H_LEN0      EQU     HDR+10
+H_LEN1      EQU     HDR+12
+H_SEAL      EQU     HDR+30
+MAGIC0      EQU     04348H
+MAGIC1      EQU     05041H
+SEAL        EQU     05AA5H
+RAM_PAG     EQU     0E1H        ; 0x384000 page: offsets below are inside it
+REQ0        EQU     02904H      ; 0x386904
+REQ1        EQU     02906H
+REQ_M0      EQU     05055H
+REQ_M1      EQU     05444H
+RUN_SEG     EQU     038H        ; the copy runs at 0x386000
+RUN_OFF     EQU     06000H
+
+$IF (BOARD_DC)
+BOARD       EQU     4
+$ELSEIF (BOARD_C4)
+BOARD       EQU     2
+$ELSEIF (BOARD_4F)
+BOARD       EQU     3
+$ELSE
+BOARD       EQU     1           ; Porsche ME7.1.1
+$ENDIF
+
+NAME    HCLOADER
+?PR?HCLOADER SECTION CODE WORD 'LCODE'
+PUBLIC  HCL_ENTRY
+
+HCL_ENTRY       PROC    FAR
+        SRVWDT                  ; the reset's watchdog is running
+        ; The external SRAM (CS1, 32 KB at 0x380000), exactly as the app's
+        ; startup sets it - it repeats this itself, still before EINIT.
+        MOV     BUSCON0,#04AEH
+        MOV     ADDRSEL1,#3803H
+        MOV     BUSCON1,#040DH
+
+        ; ---- the request --------------------------------------------------
+        MOV     R13,#REQ0
+        EXTP    #RAM_PAG,#1
+        MOV     R12,[R13]
+        MOV     R1,#0                   ; R1 = 1: an update was requested
+        CMP     R12,#REQ_M0
+        JMPR    cc_NE,HCL_APP
+        MOV     R13,#REQ1
+        EXTP    #RAM_PAG,#1
+        MOV     R12,[R13]
+        CMP     R12,#REQ_M1
+        JMPR    cc_NE,HCL_APP
+        MOV     R1,#1
+
+        ; ---- is the APP valid? (R2 = 1) -------------------------------------
+HCL_APP:
+        MOV     R10,#APP_SEG
+        CALLR   HCL_HDR_OK
+        MOV     R2,R3
+        CMP     R1,#0
+        JMPR    cc_NE,HCL_STG
+        CMP     R2,#0
+        JMPR    cc_NE,HCL_GO
+
+        ; ---- STAGING sealed and sane? ---------------------------------------
+HCL_STG:
+        MOV     R10,#STG_SEG
+        CALLR   HCL_HDR_OK
+        CMP     R3,#0
+        JMPR    cc_NE,HCL_COPY
+        ; nothing to copy: drop a stale request, run the app if it is valid
+        MOV     R12,#0
+        MOV     R13,#REQ0
+        EXTP    #RAM_PAG,#1
+        MOV     [R13],R12
+        CMP     R2,#0
+        JMPR    cc_NE,HCL_GO
+        ; no valid app and nothing staged: stop here (P2b - K-line recovery)
+        DISWDT
+HCL_DEAD:
+        SRVWDT                          ; DISWDT may not hold on every board
+        JMPR    cc_UC,HCL_DEAD
+
+        ; ---- run the app --------------------------------------------------
+HCL_GO:
+        MOV     R13,#H_ESEG
+        EXTS    #APP_SEG,#1
+        MOV     R12,[R13]
+        MOV     R13,#H_EOFF
+        EXTS    #APP_SEG,#1
+        MOV     R11,[R13]
+        PUSH    R12                     ; CSP
+        PUSH    R11                     ; IP
+        RETS
+
+        ; ---- the copy: relocate the SRAM routine and enter it ---------------
+HCL_COPY:
+        DISWDT
+        MOV     R4,#SOF HCL_RAM
+        MOV     R6,#RUN_OFF
+        MOV     R5,#(HCL_RAM_END - HCL_RAM + 2) / 2
+HCL_RELOC:
+        EXTS    #SEG HCL_RAM,#1
+        MOV     R12,[R4+]
+        EXTP    #RAM_PAG,#1
+        MOV     [R6],R12
+        ADD     R6,#2
+        SUB     R5,#1
+        JMPR    cc_NZ,HCL_RELOC
+        JMPS    RUN_SEG,RUN_OFF
+HCL_ENTRY       ENDP
+
+;-------------------------------------------------------------------------------
+; HCL_HDR_OK: R10 = segment of an image's first sector. R3 = 1 if its header
+; carries both magic words, THIS board's code, the seal and a length that
+; fits four sectors; else 0. Uses R12, R13 only (and R3).
+;-------------------------------------------------------------------------------
+HCL_HDR_OK      PROC    NEAR
+        MOV     R3,#0
+        MOV     R13,#H_M0
+        EXTS    R10,#1
+        MOV     R12,[R13]
+        CMP     R12,#MAGIC0
+        JMPR    cc_NE,HCL_HDR_NO
+        MOV     R13,#H_M1
+        EXTS    R10,#1
+        MOV     R12,[R13]
+        CMP     R12,#MAGIC1
+        JMPR    cc_NE,HCL_HDR_NO
+        MOV     R13,#H_BOARD
+        EXTS    R10,#1
+        MOV     R12,[R13]
+        CMP     R12,#BOARD
+        JMPR    cc_NE,HCL_HDR_NO
+        MOV     R13,#H_SEAL
+        EXTS    R10,#1
+        MOV     R12,[R13]
+        CMP     R12,#SEAL
+        JMPR    cc_NE,HCL_HDR_NO
+        MOV     R13,#H_LEN1             ; length <= 0x40000, > the header
+        EXTS    R10,#1
+        MOV     R12,[R13]
+        CMP     R12,#4
+        JMPR    cc_UGT,HCL_HDR_NO
+        MOV     R13,#H_LEN0
+        EXTS    R10,#1
+        MOV     R11,[R13]
+        CMP     R12,#4
+        JMPR    cc_NE,HCL_HDR_LEN
+        CMP     R11,#0
+        JMPR    cc_NE,HCL_HDR_NO
+HCL_HDR_LEN:
+        CMP     R12,#0
+        JMPR    cc_NE,HCL_HDR_YES
+        CMP     R11,#HDR+32
+        JMPR    cc_ULT,HCL_HDR_NO
+HCL_HDR_YES:
+        MOV     R3,#1
+HCL_HDR_NO:
+        RET
+HCL_HDR_OK      ENDP
+
+;===============================================================================
+; THE SRAM ROUTINE (copied to 0x386000 and entered there; never returns).
+; R10 = destination segment, R11 = source segment, R6 = offset in segment,
+; R8/R9 = bytes left (u32). Ends in SRST in every path: success (request
+; cleared, APP sealed) or failure (left as it is - the next boot sees an
+; unsealed APP and a sealed STAGING, and copies again).
+;===============================================================================
+HCL_RAMP        PROC    FAR
+HCL_RAM:
+        ; ---- erase SA6..SA9 -------------------------------------------------
+        MOV     R10,#APP_SEG
+HCL_ER:
+        MOV     R4,#0AAAH
+        MOV     R7,#0554H
+        MOV     R5,#00AAH
+        EXTS    #080H,#1
+        MOV     [R4],R5
+        MOV     R5,#0055H
+        EXTS    #080H,#1
+        MOV     [R7],R5
+        MOV     R5,#0080H
+        EXTS    #080H,#1
+        MOV     [R4],R5
+        MOV     R5,#00AAH
+        EXTS    #080H,#1
+        MOV     [R4],R5
+        MOV     R5,#0055H
+        EXTS    #080H,#1
+        MOV     [R7],R5
+        MOV     R6,#0
+        MOV     R5,#0030H
+        EXTS    R10,#1
+        MOV     [R6],R5
+HCL_ERW:                                ; erased = the word reads 0xFFFF
+        SRVWDT
+        EXTS    R10,#1
+        MOV     R12,[R6]
+        CMP     R12,#0FFFFH
+        JMPR    cc_EQ,HCL_ERD
+        JB      R12.5,HCL_ERT           ; DQ5: the part's own time limit
+        JMPR    cc_UC,HCL_ERW
+HCL_ERT:
+        EXTS    R10,#1
+        MOV     R12,[R6]
+        CMP     R12,#0FFFFH
+        JMPR    cc_EQ,HCL_ERD
+        SRST                            ; erase failed: the next boot retries
+HCL_ERD:
+        ADD     R10,#1
+        CMP     R10,#APP_END
+        JMPR    cc_ULT,HCL_ER
+
+        ; ---- program every word but the seal -------------------------------
+        MOV     R10,#APP_SEG
+        MOV     R11,#STG_SEG
+        MOV     R6,#0
+        MOV     R13,#H_LEN0
+        EXTS    R11,#1
+        MOV     R8,[R13]
+        MOV     R13,#H_LEN1
+        EXTS    R11,#1
+        MOV     R9,[R13]
+HCL_PG:
+        SRVWDT
+        EXTS    R11,#1
+        MOV     R12,[R6]
+        CMP     R12,#0FFFFH
+        JMPR    cc_EQ,HCL_PGN           ; erased already
+        CMP     R10,#APP_SEG
+        JMPR    cc_NE,HCL_PGW
+        CMP     R6,#H_SEAL
+        JMPR    cc_EQ,HCL_PGN           ; the seal goes last
+HCL_PGW:
+        MOV     R5,#00AAH
+        EXTS    #080H,#1
+        MOV     [R4],R5
+        MOV     R5,#0055H
+        EXTS    #080H,#1
+        MOV     [R7],R5
+        MOV     R5,#00A0H
+        EXTS    #080H,#1
+        MOV     [R4],R5
+        EXTS    R10,#1
+        MOV     [R6],R12
+        MOV     R3,#0                   ; bounded: 65536 polls
+HCL_PGP:
+        EXTS    R10,#1
+        MOV     R5,[R6]
+        CMP     R5,R12
+        JMPR    cc_EQ,HCL_PGN
+        SUB     R3,#1
+        JMPR    cc_NZ,HCL_PGP
+        JMPR    cc_UC,HCL_FAIL
+HCL_PGN:
+        ADD     R6,#2
+        JMPR    cc_NZ,HCL_PGC
+        ADD     R10,#1                  ; next 64 KB
+        ADD     R11,#1
+HCL_PGC:
+        SUB     R8,#2
+        SUBC    R9,#0
+        MOV     R5,R8
+        OR      R5,R9
+        JMPR    cc_NZ,HCL_PG
+
+        ; ---- verify: APP == STAGING over the length, the seal excepted ------
+        MOV     R10,#APP_SEG
+        MOV     R11,#STG_SEG
+        MOV     R6,#0
+        MOV     R13,#H_LEN0
+        EXTS    R11,#1
+        MOV     R8,[R13]
+        MOV     R13,#H_LEN1
+        EXTS    R11,#1
+        MOV     R9,[R13]
+HCL_VF:
+        SRVWDT
+        CMP     R10,#APP_SEG
+        JMPR    cc_NE,HCL_VFW
+        CMP     R6,#H_SEAL
+        JMPR    cc_EQ,HCL_VFN
+HCL_VFW:
+        EXTS    R11,#1
+        MOV     R12,[R6]
+        EXTS    R10,#1
+        MOV     R5,[R6]
+        CMP     R5,R12
+        JMPR    cc_NE,HCL_FAIL
+HCL_VFN:
+        ADD     R6,#2
+        JMPR    cc_NZ,HCL_VFC
+        ADD     R10,#1
+        ADD     R11,#1
+HCL_VFC:
+        SUB     R8,#2
+        SUBC    R9,#0
+        MOV     R5,R8
+        OR      R5,R9
+        JMPR    cc_NZ,HCL_VF
+
+        ; ---- the seal, last; then the request goes -------------------------
+        MOV     R12,#SEAL
+        MOV     R6,#H_SEAL
+        MOV     R5,#00AAH
+        EXTS    #080H,#1
+        MOV     [R4],R5
+        MOV     R5,#0055H
+        EXTS    #080H,#1
+        MOV     [R7],R5
+        MOV     R5,#00A0H
+        EXTS    #080H,#1
+        MOV     [R4],R5
+        EXTS    #APP_SEG,#1
+        MOV     [R6],R12
+        MOV     R3,#0
+HCL_SLP:
+        EXTS    #APP_SEG,#1
+        MOV     R5,[R6]
+        CMP     R5,R12
+        JMPR    cc_EQ,HCL_SLD
+        SUB     R3,#1
+        JMPR    cc_NZ,HCL_SLP
+        JMPR    cc_UC,HCL_FAIL
+HCL_SLD:
+        MOV     R12,#0
+        MOV     R13,#REQ0
+        EXTP    #RAM_PAG,#1
+        MOV     [R13],R12
+        ; THE CLEAR MUST REACH THE SRAM BEFORE THE SRST (2.7T bench,
+        ; 2026-10-29: an SRST straight after an SRAM write lost the write) -
+        ; read it back until it holds; else every boot would copy again
+HCL_RB:
+        EXTP    #RAM_PAG,#1
+        MOV     R5,[R13]
+        CMP     R5,R12
+        JMPR    cc_NE,HCL_RB
+HCL_FAIL:
+        SRST
+HCL_RAM_END:
+        NOP
+HCL_RAMP        ENDP
+
+?PR?HCLOADER ENDS
+        END

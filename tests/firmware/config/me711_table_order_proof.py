@@ -53,7 +53,7 @@ T1_PER_MS = int(re.search(
 CONTROL_STEM = "HaniCore_ME711_v96_wideband"
 # the CURRENT generated file. V98r2: this named the V97 one, and passed
 # only while no table offset had moved.
-INI = ROOT / "tunerstudio/hanicore_me711.ini"
+INI = ROOT / "tuning/hanicore_me711.ini"
 CHECKS = FAILS = 0
 
 

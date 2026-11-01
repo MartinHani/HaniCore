@@ -503,15 +503,6 @@ unsigned int  hc_nvm_fail_exp(void);
 unsigned int  hc_nvm_fail_got(void);
 unsigned int  hc_nvm_fail_got2(void);
 unsigned int  hc_nvm_prog_flags(void);
-/* V45 retained forensic trace.  Values are in hcburnforensics' separate
-   38:68A0 record, never in the RAM-probe block: 0 idle, 1 B parsed,
-   2 request accepted, 3 snapshot, 4 target selected, 5 COMMITTING,
-   6 writer prepared, 7 immediately before writer, 8 writer returned,
-   9 progress, 10 retry, 11 DONE verified, 12 TS_OK pending,
-   13 terminal TX entered, 14 terminal TX completed. */
-unsigned int  hc_nvm_commit_stage(void);
-unsigned int  hc_nvm_commit_last_stage(void);
-unsigned int  hc_nvm_commit_fail_stage(void);
 
 /* ------------------------------------------------- the reclaim, published --
  * V53. The store is reclaimed by erasing a sector, and that has never run on

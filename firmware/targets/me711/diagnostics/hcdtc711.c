@@ -28,6 +28,7 @@
 #include "hcengine.h"
 #include "hc_dbw.h"
 #include "hcasic.h"
+#include "hcasicstart.h"   /* the live runtime-frame timeout count (P0606) */
 #include "hccel.h"
 /* the lamp policy state, external SRAM (the far XRAM is full) */
 #define CEL (*(hccel_t huge *)(TGT_EXTRAM_BASE + TGT_RAM_CEL))
@@ -178,7 +179,7 @@ void far hc_dtc_service(unsigned int now_ms)
     if (!have_last) {                          /* events count from here */
         last_sync = trg_synclost;
         last_cycle = trg_cycle_lost;
-        last_asic = asic_timeouts;
+        last_asic = hc_asic_run_timeout;
         have_last = 1u;
     }
 
@@ -206,7 +207,7 @@ void far hc_dtc_service(unsigned int now_ms)
     SETF(P_O2_1, hc_io_wb_fault(0u) != 0u);
     SETF(P_O2_2, hc_io_wb_fault(1u) != 0u);
     SETF(P_COIL, hc_ign_ovd_latch != 0u);
-    SETF(P_ASIC, asic_timeouts != last_asic);
+    SETF(P_ASIC, hc_asic_run_timeout != last_asic);
     SETF(P_CONFIG, hc_cfg_validation != 0u);
     SETF(P_HOT, hc_limp.cut & HCLIMP_CLT);
     SETF(P_ETB_LIMP, hc_limp.cut & HCLIMP_ETB);
@@ -218,7 +219,7 @@ void far hc_dtc_service(unsigned int now_ms)
 #undef SETF
     last_sync = trg_synclost;
     last_cycle = trg_cycle_lost;
-    last_asic = asic_timeouts;
+    last_asic = hc_asic_run_timeout;
 
     ff[0] = trg_rpm;
     ff[1] = eng_clt_dc;

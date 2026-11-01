@@ -64,8 +64,7 @@ REC_WORDS = REC_LEN // 2
 # The persistence test byte the operator card uses (Diagnostics -> Calibration
 # storage -> "Persistence test byte (P3)"), read out of the shipped .ini rather
 # than typed here, so a moved field fails the gate instead of testing nothing.
-INI = ROOT / ("tunerstudio/hanicore_me711_%s.ini"
-              % PI.STEM.replace("HaniCore_ME711_", ""))
+INI = PI.INI
 
 # Output-channel offsets for the NVM block, likewise read from the .ini.
 OCH_NAMES = ("nvmState", "nvmError", "nvmSource", "nvmGeneration",

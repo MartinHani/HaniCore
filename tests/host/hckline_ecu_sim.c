@@ -295,7 +295,7 @@ int main(void)
 {
     char line[2048], cmd[16], arg[2048];
     long v;
-    strcpy((char *)sig, "rusEFI HaniCore ME711 F26F2BF7");
+    strcpy((char *)sig, "HaniCore ME711 F26F2BF7");
     hckline_default_cfg(&kw_cfg);
     kw_cfg.sig = sig;
     kw_cfg.sig_len = (unsigned char)strlen((const char *)sig);

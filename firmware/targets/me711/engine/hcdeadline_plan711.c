@@ -50,8 +50,8 @@ void far hc_plan_collect_f(void)
 {
     unsigned char p,next,work=0u;
     unsigned int angle;
-    while(work++<8u-1u && hc_plan_generation==hc_dl_generation) {
-        p=hc_plan_cap_tail;next=(unsigned char)((p+1u)&(8u-1u));
+    while(work++<TGT_PLAN_CAP_N-1u && hc_plan_generation==hc_dl_generation) {
+        p=hc_plan_cap_tail;next=(unsigned char)((p+1u)&(TGT_PLAN_CAP_N-1u));
         if(p==hc_plan_cap_head || next==hc_plan_cap_head) break;
         angle=hc_plan_cap_angle[p];
         hc_plan_cap_tail=next;
@@ -59,21 +59,93 @@ void far hc_plan_collect_f(void)
     }
 }
 
-/* floor(0.8 * ticks), with two native divisions and bounded quotients. */
+/* COINCIDING ANCHORS ARE ONE EVENT (2026-10-24, geometry_refresh() in
+   hcsched_dry.c, cold: once per plan rebuild). Wasted COP and
+   semi-sequential place a cylinder and its partner 360 degrees on at the SAME
+   angle; as two anchors they cost two walks and two publications, which the
+   queue then merged by searching for the identical pulse - and the two
+   sparks stayed two nodes. One entry with both outputs' bits is the same
+   electrical event. A sequential twin (HC_SLOT_TWIN) is never merged: it is
+   dropped on its own once the cycle is known (the queue's exact-pulse merge
+   still joins it with the coinciding primary until then). The merged entry
+   keeps the slot of the cylinder whose own stroke it is (not
+   HC_SLOT_REPEAT): its knock retard and telemetry. */
+static unsigned char slot_bits(unsigned char s)
+{
+    s = (unsigned char)(s & HC_SLOT_MASK & ~HC_SLOT_REPEAT);
+    if (s == 0u) return 255u;                 /* HC_PLAN_SLOT_ALL */
+    return (unsigned char)((s <= 8u) ? (1u << (s - 1u)) : 0u);
+}
+
+void far hc_plan_merge_f(unsigned int *ang, unsigned char *slot,
+                         unsigned char *msk, unsigned char *n)
+{
+    unsigned char i, j;
+    for (i = 0u; i < *n; i++) msk[i] = slot_bits(slot[i]);
+    for (i = 0u; (unsigned char)(i + 1u) < *n; ) {
+        if (ang[i + 1u] != ang[i]) { i++; continue; }
+        if ((slot[i] | slot[i + 1u]) & HC_SLOT_TWIN) {
+            hc_plan_coincide = 1u; i++; continue;
+        }
+        msk[i] |= msk[i + 1u];
+        if (slot[i] & HC_SLOT_REPEAT) slot[i] = slot[i + 1u];
+        for (j = (unsigned char)(i + 1u); (unsigned char)(j + 1u) < *n; j++) {
+            ang[j] = ang[j + 1u]; slot[j] = slot[j + 1u]; msk[j] = msk[j + 1u];
+        }
+        (*n)--;
+    }
+    for (i = 0u; i < *n; i++) slot[i] = (unsigned char)(slot[i] & ~HC_SLOT_REPEAT);
+}
+
+/* Paired/batch/fallback outputs may fire more than once per engine cycle.
+   Clip each injector against its shortest configured interval - the
+   shortest distance between two anchors that drive it - not an assumed 720
+   degree period. Anchors are inside the cycle already. */
+void far hc_plan_spans_f(unsigned char n)
+{
+    unsigned char i, j, k, ob;
+    unsigned int span, a, b, delta;
+    for (i = 0u; i < 8u; i++) {
+        ob = (unsigned char)(1u << i);
+        span = hc_plan_cycle;
+        for (j = 0u; j < n; j++) if (hc_plan_inj_masks[j] & ob) {
+            for (k = 0u; k < n; k++) if (k != j && (hc_plan_inj_masks[k] & ob)) {
+                a = hc_plan_inj_anchors[k]; b = hc_plan_inj_anchors[j];
+                delta = (a >= b) ? (unsigned int)(a - b)
+                                 : (unsigned int)(a + hc_plan_cycle - b);
+                if (delta && delta < span) span = delta;
+            }
+        }
+        HC_DL_WIDTH.next_angle[i] = span;
+    }
+}
+
+/* Capture ticks -> us with two native divisions and bounded quotients:
+   floor(0.8 * ticks) at 1.25 MHz; floor(4/3 * ticks) = ticks + floor(ticks/3)
+   at 0.75 MHz (the 2.7T - until 2026-10-25 it used the 0.8, so every width
+   this returns read 40 % short there). */
 unsigned long far hc_deadline_ticks_us_f(unsigned long w)
 {
     unsigned int hi,qh,ql;
+#if TGT_TICKS_PER_MS_X10 == 12500UL
     w+=4uL;hi=(unsigned int)(w>>16);qh=hi/5u;
     ql=(unsigned int)((((unsigned long)(unsigned int)(hi-qh*5u))<<16
                       |(unsigned int)w)/(unsigned int)5u);
     return w-4uL-(((unsigned long)qh<<16)|ql);
+#elif TGT_TICKS_PER_MS_X10 == 7500UL
+    hi=(unsigned int)(w>>16);qh=hi/3u;
+    ql=(unsigned int)((((unsigned long)(unsigned int)(hi-qh*3u))<<16
+                      |(unsigned int)w)/(unsigned int)3u);
+    return w+(((unsigned long)qh<<16)|ql);
+#else
+#error "hc_deadline_ticks_us_f: no conversion for this capture clock"
+#endif
 }
 
 /* Live advance/dwell/phase changes apply only to an uncommitted event with
    enough publication lead. A new offset may not jump the next cursor behind
    the crank or inside its commit horizon. Keep its prior phase for this
    event, then apply the change to a later one. No deadline is retimed. */
-static const unsigned char plan_slot_mask[16]={255u,1u,2u,4u,8u,16u,32u,64u,128u,0u,0u,0u,0u,0u,0u,0u};
 unsigned int HC_COLD hc_deadline_plan_offset(unsigned int kind, unsigned int proposed)
 {
     unsigned int huge *p=(unsigned int huge *)(TGT_EXTRAM_BASE+TGT_RAM_PLANOFF);
@@ -81,8 +153,7 @@ unsigned int HC_COLD hc_deadline_plan_offset(unsigned int kind, unsigned int pro
     if(p[kind] != proposed) {
         /* An EOI change cannot move the next start across an owned pulse. */
         if(kind==2u) {
-            unsigned char slot=(unsigned char)(hc_plan_inj_slots[hc_plan_cursors[kind]]&15u);
-            if(hc_dl_reserved_inj & plan_slot_mask[slot]) return p[kind];
+            if(hc_dl_reserved_inj & hc_plan_inj_masks[hc_plan_cursors[kind]]) return p[kind];
         }
         cycle=hc_plan_cycle;
         anchor=(kind<2u?hc_plan_ign_anchors:hc_plan_inj_anchors)[hc_plan_cursors[kind]];
@@ -216,7 +287,10 @@ void HC_COLD hc_deadline_abort_history(void)
    being serviced. Bit 1: CC25 is not configured to run (mode, IE, level) -
    the class of fault that would leave a coil or injector on while every
    other part of the firmware, the watchdog service included, carries on. */
-#define HC_DL_OVERDUE 3125uL     /* 2.5 ms; dispatch latency is < 0.2 ms */
+/* 2.5 ms in THIS board's ticks (2026-10-26: it was 3125uL, the 1.25 MHz count,
+   so the 2.7T found a stalled executor 4.2 ms late, holding coils 7 ms -
+   me711_runtime_fault_proof X2); dispatch latency is < 0.2 ms */
+#define HC_DL_OVERDUE ((unsigned long)US_TO_TICKS(2500u))
 unsigned char HC_COLD hc_deadline_health(void)
 {
     unsigned int ps;
@@ -252,11 +326,11 @@ unsigned char HC_COLD hc_deadline_flash_admit(unsigned int guard_ticks)
 static unsigned char packed(unsigned char type,unsigned char mask)
 {
     unsigned char b=1u;
-    if(mask==255u && type<=HC_DL_MAXDWELL) {
-        unsigned char i,physical=0u,index=(type==HC_DL_OPEN || type==HC_DL_CLOSE)?8u:0u;
-        for(i=0;i<8u;i++) physical|=hc_hal_actuator_route[index+i];
-        if(physical==255u) return (unsigned char)(type|0xf0u);
-    }
+    /* EVERY LANE (batch injection, an all-coil group): CC25 takes the
+       routed lanes from the route table itself. Until 2026-10-24 only a board
+       with all eight lanes routed got this tag; the 2.7T's six injectors
+       went through the per-lane loop, ~600 instructions at ILVL 13. */
+    if(mask==255u && type<=HC_DL_MAXDWELL) return (unsigned char)(type|0xf0u);
     if(mask && !(mask&(mask-1u))) {
         while(!(mask&1u)) { mask>>=1; b++; }
         return (unsigned char)(type|(b<<4));
@@ -265,9 +339,19 @@ static unsigned char packed(unsigned char type,unsigned char mask)
 }
 unsigned long HC_COLD hc_deadline_inj_request(unsigned char mask,unsigned int fuel,unsigned int dead,unsigned long period)
 {
+    /* us -> capture ticks: x 1.25 (Porsche), x 0.75 (2.7T). Until 2026-10-25
+       the 2.7T used the 1.25 too: every injector pulse 1.67 x too long,
+       found by me711_sequential_proof made board-aware. */
+#if TGT_TICKS_PER_MS_X10 == 12500UL
     unsigned long requested=(unsigned long)fuel+dead,duration=requested+(requested>>2);
-    unsigned char b,bits,clipped;
-    unsigned int ps;
+#elif TGT_TICKS_PER_MS_X10 == 7500UL
+    unsigned long requested=(unsigned long)fuel+dead,duration=requested-(requested>>2);
+#else
+#error "hc_deadline_inj_request: no conversion for this capture clock"
+#endif
+    unsigned char bits,clipped;
+    unsigned int ps,req16,fl;
+    hc_dl_inj_t huge *q=&D.inj[0];
     if(period<=HC_DL_OFF_TICKS*2u) {
         clipped=(unsigned char)(duration!=0uL);duration=0uL;
     } else {
@@ -275,11 +359,14 @@ unsigned long HC_COLD hc_deadline_inj_request(unsigned char mask,unsigned int fu
         clipped=(unsigned char)(duration>period);
         if(clipped) duration=period;
     }
-    for(b=0u,bits=mask;bits;b++,bits>>=1) if(bits&1u) {
+    /* computed once, written per lane through one pointer (2026-10-24:
+       the indexed huge accesses were ~120 instructions a lane) */
+    req16=requested>65535uL?65535u:(unsigned int)requested;
+    fl=(unsigned int)((clipped?2u:0u)|(requested>65535uL?16u:0u));
+    for(bits=mask;bits;q++,bits>>=1) if(bits&1u) {
         LOCK(ps);
-        D.inj[b].fuel_us=fuel; D.inj[b].dead_us=dead;
-        D.inj[b].requested_us=requested>65535uL?65535u:(unsigned int)requested;
-        D.inj[b].flags=(unsigned int)((D.inj[b].flags&13u)|(clipped?2u:0u)|(requested>65535uL?16u:0u));
+        q->fuel_us=fuel; q->dead_us=dead; q->requested_us=req16;
+        q->flags=(unsigned int)((q->flags&13u)|fl);
         UNLOCK(ps);
     }
     if(clipped) INC(D.clipped);
@@ -290,14 +377,15 @@ unsigned int HC_COLD hc_deadline_inj_admitted(unsigned char mask,unsigned int id
     unsigned char b,bits;
     unsigned int ps,scheduled;
     unsigned long width=hc_deadline_ticks_us_f(duration);
+    hc_dl_inj_t huge *q=&D.inj[0];
     scheduled=width>65535uL?65535u:(unsigned int)width;
-    for(b=0u,bits=mask;bits;b++,bits>>=1) if(bits&1u) {
+    for(b=0u,bits=mask;bits;b++,q++,bits>>=1) if(bits&1u) {
         LOCK(ps);
         if(id && generation==hc_dl_generation) {
-            D.inj[b].scheduled_us=scheduled;
-            HC_DL_WIDTH.accepted[b]=width; D.inj[b].flags&=(unsigned int)~32u;
+            q->scheduled_us=scheduled;
+            HC_DL_WIDTH.accepted[b]=width; q->flags&=(unsigned int)~32u;
             HC_DL_WIDTH.accepted_ticket[b]=id;
-        } else D.inj[b].flags|=32u;
+        } else q->flags|=32u;
         UNLOCK(ps);
     }
     return id && generation==hc_dl_generation ? scheduled : 0u;
@@ -332,16 +420,15 @@ void HC_COLD hc_deadline_publish_diag(void)
         diag_put((unsigned int)(1464u+8u*b),(unsigned int)d);
     }
 }
-static unsigned char before(unsigned long a, unsigned char at,
-                             unsigned long b, unsigned char bt)
-{
-    long delta = (long)(a - b);
-    at &= 15u; bt &= 15u;
-    if (delta != 0) return (unsigned char)(delta < 0);
-    /* OFF before ON at equal time; FIFO within the same edge class. */
-    return (unsigned char)(((at == HC_DL_SPARK || at >= HC_DL_CLOSE) ? 0u : 1u)
-        < ((bt == HC_DL_SPARK || bt >= HC_DL_CLOSE) ? 0u : 1u));
-}
+/* Queue order: earlier time first; OFF before ON at equal time; FIFO within
+   the same edge class. INLINE (2026-10-24): it was a far call per queue node,
+   ~30 instructions a node and a quarter of the planner level on the 2.7T at
+   24 MHz; the new event's class is now computed once per walk. `d` is the
+   caller's long scratch. Same order as the function it replaces. */
+#define DL_ON_CLASS(t) \
+    (((((t) & 15u) == HC_DL_SPARK) || (((t) & 15u) >= HC_DL_CLOSE)) ? 0u : 1u)
+#define DL_BEFORE(d, a, acls, b, bt) \
+    (((d) = (long)((a) - (b))) != 0L ? ((d) < 0L) : ((acls) < DL_ON_CLASS(bt)))
 
 /* Task only. Prepare payload/position unlocked, then commit one pointer pair.
    Crank cancellation/compare dispatch increments hc_dl_revision before returning.
@@ -350,8 +437,9 @@ static unsigned char insert(unsigned int generation, unsigned long when,
     unsigned char type, unsigned char mask, unsigned int id)
 {
     unsigned char retry, i, p, prev, walked;
-    unsigned char tag=packed(type,mask);
+    unsigned char tag=packed(type,mask), cls=DL_ON_CLASS(type);
     unsigned int rev, ps;
+    long d;
     for (retry = 0; retry < 4u; retry++) {
         rev = hc_dl_revision;
         if (generation != hc_dl_generation || generation == 0xFFFFu) return 0u;
@@ -360,7 +448,8 @@ static unsigned char insert(unsigned int generation, unsigned long when,
         prev = HC_DL_NONE;
         p = hc_dl_q_head;
         walked = 0u;
-        while (p < HC_DL_N && walked++ < HC_DL_N && !before(when, type, hc_dl_q_time[p], hc_dl_q_type[p])) {
+        while (p < HC_DL_N && walked++ < HC_DL_N
+               && !DL_BEFORE(d, when, cls, hc_dl_q_time[p], hc_dl_q_type[p])) {
             prev = p;
             p = hc_dl_q_next[p];
             if (rev != hc_dl_revision) break;
@@ -393,7 +482,9 @@ static unsigned char insert_pair(unsigned int generation, unsigned long start,
     unsigned char retry, i, j, p, prev, sp, sn, ep, en, seen, walked;
     unsigned char ending = (unsigned char)(type == HC_DL_DWELL ? HC_DL_MAXDWELL : HC_DL_CLOSE);
     unsigned char start_tag=packed(type,mask),end_tag=packed(ending,mask);
+    unsigned char scls=DL_ON_CLASS(type), ecls=DL_ON_CLASS(ending);
     unsigned int rev, ps;
+    long d;
     for (retry = 0; retry < 4u; retry++) {
         rev = hc_dl_revision;
         if (generation != hc_dl_generation || generation == 0xFFFFu) return 0u;
@@ -402,10 +493,16 @@ static unsigned char insert_pair(unsigned int generation, unsigned long start,
         if (j >= HC_DL_N) return 0u;
         p = hc_dl_q_head; prev = HC_DL_NONE; seen = walked = 0u;
         while (p < HC_DL_N && walked++ < HC_DL_N) {
-            if (!seen && before(start, type, hc_dl_q_time[p], hc_dl_q_type[p])) {
-                sp = prev; sn = p; seen = 1u;
-            }
-            if (before(end, ending, hc_dl_q_time[p], hc_dl_q_type[p])) break;
+            /* Before the start's place is found the end cannot come first:
+               end > start (duration > 0), so a node the start does not
+               precede the end does not precede either - one test per node
+               there, not two (2026-10-24). */
+            if (!seen) {
+                if (DL_BEFORE(d, start, scls, hc_dl_q_time[p], hc_dl_q_type[p])) {
+                    sp = prev; sn = p; seen = 1u;
+                    if (DL_BEFORE(d, end, ecls, hc_dl_q_time[p], hc_dl_q_type[p])) break;
+                }
+            } else if (DL_BEFORE(d, end, ecls, hc_dl_q_time[p], hc_dl_q_type[p])) break;
             prev = p; p = hc_dl_q_next[p];
             if (rev != hc_dl_revision) break;
         }
@@ -442,6 +539,8 @@ static unsigned int merge_pair(unsigned int generation, unsigned long start,
     unsigned char ending = type == HC_DL_DWELL ? HC_DL_MAXDWELL : HC_DL_CLOSE;
     unsigned int rev = hc_dl_revision, ps, id;
     for (p = hc_dl_q_head; p < HC_DL_N && walked++ < HC_DL_N; p = hc_dl_q_next[p]) {
+        /* time-ordered: past the pulse's end nothing can match (2026-10-24) */
+        if ((long)(hc_dl_q_time[p] - end) > 0L) break;
         if ((hc_dl_q_type[p]&15u) == type && hc_dl_q_time[p] == start) first = p;
         if ((hc_dl_q_type[p]&15u) == ending && hc_dl_q_time[p] == end) {
             if (first != HC_DL_NONE && hc_dl_q_id[p] == hc_dl_q_id[first]) { last = p; break; }
@@ -528,8 +627,11 @@ unsigned int hc_deadline_publish(unsigned int generation, unsigned int stamp,
             /* Real overlap during acceleration shifts the uncommitted start,
                never its predecessor's CLOSE. Each flag update is bounded. */
             INC(D.clipped);
-            for(i=0u,bits=mask;bits;i++,bits>>=1) if(bits&1u) {
-                LOCK(ps);D.inj[i].flags|=64u;UNLOCK(ps);
+            {
+                hc_dl_inj_t huge *q=&D.inj[0];
+                for(bits=mask;bits;q++,bits>>=1) if(bits&1u) {
+                    LOCK(ps);q->flags|=64u;UNLOCK(ps);
+                }
             }
         }
         LOCK(ps);n=hc_deadline_now_f();
@@ -542,16 +644,31 @@ unsigned int hc_deadline_publish(unsigned int generation, unsigned int stamp,
         D.reason = HC_DL_LATE; INC(D.suppressed); UNLOCK(ps); return 0u;
     }
     if (type == HC_DL_OPEN) {
-        for (i=0,bits=mask;bits;i++,bits>>=1) if ((bits&1u)
-            && (D.inj[i].flags & 8u) && (long)(when - D.inj[i].legal_time) < 0) {
-            D.reason = HC_DL_OVERLAP; INC(D.suppressed); UNLOCK(ps); return 0u;
+        /* A lane whose last CLOSE already executed keeps its 100 us OFF
+           reserve: the start moves to the latest legal time - the same
+           policy as future_fits() while that CLOSE is still queued - and is
+           refused only beyond the publication horizon (2026-10-25: it was
+           refused outright, one lost injection in a high-duty transient). */
+        hc_dl_inj_t huge *q=&D.inj[0];
+        requested=when;
+        for (bits=mask;bits;q++,bits>>=1) if ((bits&1u)
+            && (q->flags & 8u) && (long)(q->legal_time - requested) > 0)
+            requested=q->legal_time;
+        if (requested != when) {
+            if ((long)(requested - when) > (long)HC_PLAN_HORIZON_TICKS) {
+                D.reason = HC_DL_OVERLAP; INC(D.suppressed); UNLOCK(ps); return 0u;
+            }
+            when=requested; INC(D.clipped);
         }
     }
     if (opening) {
         hc_dl_token++; if (hc_dl_token == 0u) hc_dl_token++;
         id = hc_dl_token;
         if (type == HC_DL_DWELL) hc_dl_reserved_ign |= mask; else hc_dl_reserved_inj |= mask;
-        for (i=0,bits=mask;bits;i++,bits>>=1) if(bits&1u) hc_dl_owner[(type == HC_DL_DWELL ? 0u : 8u) + i] = id;
+        {
+            unsigned int *o = &hc_dl_owner[type == HC_DL_DWELL ? 0u : 8u];
+            for (bits=mask;bits;o++,bits>>=1) if(bits&1u) *o = id;
+        }
     } else {
         /* OFF carries its own publication identity, never a live-hc_dl_owner lookup. */
         id = (unsigned int)duration;
@@ -559,7 +676,10 @@ unsigned int hc_deadline_publish(unsigned int generation, unsigned int stamp,
     }
     UNLOCK(ps);
     if (opening) {
-        unsigned int merged = merge_pair(generation, when, when + duration, type, mask);
+        /* a plan with all anchors distinct never publishes one pulse twice
+           (hcsched_dry.c hc_plan_coincide) */
+        unsigned int merged = hc_plan_coincide
+            ? merge_pair(generation, when, when + duration, type, mask) : 0u;
         if (merged) { id = merged; goto admitted; }
         if (!insert_pair(generation, when, when + duration, type, mask, id)) goto refused;
     } else if (!insert(generation, when, type, mask, id)) goto refused;
@@ -578,6 +698,212 @@ refused:
     D.reason = HC_DL_FULL; INC(D.rejected);
     UNLOCK(ps);
     return 0u;
+}
+
+
+/* ===================== COLD PLANNER ROUTINES, FAR (2026-10-24) ==========
+   Moved verbatim from hcsched_dry.c to give NCODE room for the 2.7T's hot
+   path: they run at a resync, a cam phase decision, a configuration change
+   or once in ~2 hours (the epoch rebase), always on the planner level, and
+   read the planner's state through the names hcsched_dry.c uses. */
+#define PLAN_N 16u
+#define EV_NONE 0u
+#define K_DWELL   0u
+#define K_SPARK   1u
+#define K_INJ_ON  2u
+#define K_INJ_OFF 3u
+#define PLANBUF     ((unsigned char huge *)(TGT_EXTRAM_BASE + TGT_RAM_SCHEDPLAN))
+#define plan_epoch  ((unsigned long huge *)PLANBUF)
+#define plan_type   (PLANBUF + 4u * PLAN_N)
+#define plan_slot   (PLANBUF + 5u * PLAN_N)
+#define SCHED_LOCK(p)   HC_ATOMIC_ENTER(p)
+#define SCHED_UNLOCK(p) HC_ATOMIC_EXIT(p)
+#define DRY_EPOCH_WRAP  (7200uL * 500000uL)
+#define angle_epoch   hc_plan_epoch
+#define angle_valid   hc_plan_angle_valid
+#define ig_n          hc_plan_ig_n
+#define in_n          hc_plan_in_n
+#define ig_mask       hc_plan_ign_masks
+#define cursors_valid hc_plan_cursors_valid
+#define epoch_rebase  hc_plan_epoch_rebase_f
+#define seed_cursors  hc_plan_seed_f
+#define remap_cursors_360 hc_plan_remap360_f
+#define SUB_FAST(dst, a, b, cyc)                                        \
+    do {                                                                \
+        unsigned int _a = (a), _b = (b);                                \
+        if (_a >= (cyc)) _a = (unsigned int)((cyc) - 1u);                \
+        if (_b >= (cyc)) _b = (unsigned int)((cyc) - 1u);                \
+        (dst) = (_a >= _b) ? (unsigned int)(_a - _b)                     \
+                           : (unsigned int)(_a + (cyc) - _b);            \
+    } while (0)
+
+void far epoch_rebase(void)
+{
+    unsigned int i;
+
+    for (i = 0; i < PLAN_N; i++) {
+        if (plan_type[i] != EV_NONE && plan_epoch[i] < angle_epoch) {
+            plan_type[i] = EV_NONE;
+            if (dry_sched_pending) dry_sched_pending--;
+            if (dry_sched_missed != 0xFFFFu) dry_sched_missed++;
+        }
+    }
+    angle_epoch -= DRY_EPOCH_WRAP;
+    for (i = 0; i < PLAN_N; i++) {
+        if (plan_type[i] != EV_NONE) {
+            plan_epoch[i] -= DRY_EPOCH_WRAP;
+        }
+    }
+    if (dry_sched_rebases != 0xFFFFu) dry_sched_rebases++;
+}
+
+unsigned int HC_COLD hc_drysched_schedule_after(unsigned int angle_x10,
+                                        unsigned char type,
+                                        unsigned char slot)
+{
+    unsigned int i, ps, generation = hc_dl_generation;
+    if (!angle_valid || angle_x10 > 7200u || type == EV_NONE) return 0u;
+    for (i = 0; i < PLAN_N; i++) if (plan_type[i] == EV_NONE) {
+        SCHED_LOCK(ps);
+        if (generation != hc_dl_generation || !angle_valid || plan_type[i] != EV_NONE) {
+            SCHED_UNLOCK(ps); return 0u;
+        }
+        plan_epoch[i] = angle_epoch + (unsigned long)angle_x10;
+        plan_slot[i] = slot;
+        plan_type[i] = type;
+        if (dry_sched_pending != 0xFFFFu) dry_sched_pending++;
+        SCHED_UNLOCK(ps);
+        return 1u;
+    }
+    if (dry_sched_missed != 0xFFFFu) dry_sched_missed++;
+    return 0u;
+}
+
+void far seed_cursors(unsigned int angle, unsigned int off_dw,
+                         unsigned int off_sp, unsigned int off_is,
+                         unsigned int off_ie)
+{
+    unsigned char k, i, best;
+    unsigned int want, d, bestd;
+    unsigned int *ang;
+    unsigned char n;
+
+    for (k = 0u; k < 4u; k++) {
+        if (k < K_INJ_ON) {
+            ang = hc_plan_ign_anchors;
+            n = ig_n;
+        } else {
+            ang = hc_plan_inj_anchors;
+            n = in_n;
+        }
+        hc_plan_cursors[k] = 0u;
+        if (n == 0u) {
+            continue;
+        }
+        switch (k) {
+        case K_DWELL:   want = off_dw; break;
+        case K_SPARK:   want = off_sp; break;
+        case K_INJ_ON:  want = off_is; break;
+        default:        want = off_ie; break;
+        }
+        ((unsigned int huge *)(TGT_EXTRAM_BASE+TGT_RAM_PLANOFF))[k]=want;
+        want = (unsigned int)(angle + want);
+        if (want >= hc_plan_cycle) {
+            want = (unsigned int)(want - hc_plan_cycle);
+        }
+        best = 0u;
+        bestd = 0xFFFFu;
+        for (i = 0u; i < n; i++) {
+            unsigned int a_i = ang[i];
+            SUB_FAST(d, a_i, want, hc_plan_cycle);
+            if (d < bestd) {
+                bestd = d;
+                best = i;
+            }
+        }
+        /* STEP PAST ANY ANCHOR THE NEXT TOOTH HAS ALREADY PASSED, and until
+         * V69 this only stepped past one that was BEHIND.
+         *
+         * An anchor `bestd` ahead of `want` sits at engine angle
+         * `angle + bestd`, so anything with `bestd < w_window` falls inside
+         * THE SEEDING TOOTH'S OWN WINDOW - and this tooth deliberately
+         * schedules nothing ("this tooth establishes the cursors"). One tooth
+         * later `want` has moved a whole window and that anchor is in the
+         * past, so walk_kind() issued it through the CATCH-UP branch with
+         * delta forced to 0.
+         *
+         * MEASURED, 6 cylinders at 12000 rpm: THREE of the four kinds landed
+         * inside the first window - dwell 37 ahead, injection start 0 ahead,
+         * injection end 5 ahead - so the tooth after seeding staged three
+         * events and executed all three at once. That burst is the whole
+         * difference between the worst tooth of a revolution and the steady
+         * one: 1364 against 780, and it is what me711_plan_cost_proof fails
+         * on. bench measurements.
+         *
+         * THE SAFETY DIRECTION IS THE RIGHT WAY ROUND, and that is why this is
+         * allowed to skip an event at all. off_dw > off_sp, so dwell A always
+         * precedes spark A in angle. If spark A is close enough to be skipped,
+         * dwell A is further in the past and is skipped too. If dwell A is
+         * skipped, spark A is a whole dwell_angle ahead - 216 crank degrees at
+         * this operating point - and is KEPT. So "dwell kept, spark skipped",
+         * the pairing that leaves a coil charging with nothing to end it, is
+         * unreachable; the reachable case is a spark on a coil that was never
+         * charged, which is no spark and no harm.
+         *
+         * Bounded by n. Anchors are `cycle / cylinders` apart - 600 tenths at
+         * twelve cylinders - so more than one inside a window needs a wheel
+         * coarser than any this decoder accepts, but a seeding path that could
+         * loop is not worth the argument. */
+        for (i = 0u; i < n; i++) {
+            if (bestd >= hc_plan_ahead
+                && bestd < (unsigned int)(hc_plan_cycle - w_window)) {
+                break;                  /* more than a window ahead: keep it */
+            }
+            best = (unsigned char)(best + 1u);
+            if (best >= n) {
+                best = 0u;
+            }
+            SUB_FAST(bestd, ang[best], want, hc_plan_cycle);
+        }
+        hc_plan_cursors[k] = best;
+    }
+    cursors_valid = 1u;
+}
+
+void far remap_cursors_360(void)
+{
+    unsigned char k, j, n;
+    unsigned int *ang;
+    unsigned char *msk;
+    unsigned int want;
+
+    if (!cursors_valid || hc_plan_cycle != 7200u) {
+        return;
+    }
+    for (k = 0u; k < 4u; k++) {
+        if (k < K_INJ_ON) { ang = hc_plan_ign_anchors; msk = ig_mask; n = ig_n; }
+        else              { ang = hc_plan_inj_anchors; msk = hc_plan_inj_masks; n = in_n; }
+        if (n == 0u) {
+            continue;
+        }
+        want = (unsigned int)(ang[hc_plan_cursors[k]] + 3600u);
+        if (want >= 7200u) want = (unsigned int)(want - 7200u);
+        /* a sequential plan HAS the twin now (the same slot with
+           HC_SLOT_TWIN), so it remaps like a wasted one: the event 360 on is
+           the same cylinder's other stroke. Only its role changes. A merged
+           wasted / semi-sequential anchor's twin drives the same outputs
+           (its primary cylinder is the partner) - compare the outputs. */
+        for (j = 0u; j < n; j++) {
+            if (ang[j] == want && msk[j] == msk[hc_plan_cursors[k]]) {
+                break;
+            }
+        }
+        if (j >= n) {
+            cursors_valid = 0u;          /* no twin: re-seed on this tooth */
+            return;
+        }
+        hc_plan_cursors[k] = j;
+    }
 }
 
 
@@ -608,7 +934,12 @@ unsigned char HC_COLD hc_drysched_prime(unsigned int t8)
     unsigned int gen, id, us, dead;
     if (!t8 || hc_prime_on || hc_dl_count || trg_rpm || trg_state != TRG_NO_SIGNAL) return 0u;
     gen = hc_dl_generation;
+    /* t8 = capture ticks / 8: 6.4 us at 1.25 MHz, 10.67 us at 0.75 MHz */
+#if TGT_TICKS_PER_MS_X10 == 12500UL
     us=(unsigned int)(((unsigned long)t8*32u)/5u);
+#else
+    us=(unsigned int)(((unsigned long)t8*32u)/3u);
+#endif
     dead=eng_deadtime_us>us?us:eng_deadtime_us;
     (void)hc_deadline_inj_request(255u,(unsigned int)(us-dead),dead,HC_DL_MAX_AHEAD);
     hc_prime_on = 1u;

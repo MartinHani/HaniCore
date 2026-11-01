@@ -17,6 +17,16 @@
 #define HC_ASIC_ST_RUNTIME_WAIT  7u
 
 void hc_asic_start_init(void);
+/* THE ME7.5 DC's 68HC05 MONITOR, started at the top of boot (bench
+   2026-11-01: without a first answer ~90 ms after reset it resets the CPU,
+   and this firmware's boot takes longer than that). Until
+   hc_asic_start_init() has run, hc_asic_start_service() serves only the
+   monitor (hc_asic_mon_service(), called by hc_asic_isr() while hc_asic_up
+   is 0); hc_asic_mon_on tells the 1 ms tick to request it. DC only. */
+void hc_asic_mon_early(void);
+void hc_asic_mon_service(void);
+extern unsigned char hc_asic_mon_on;
+extern unsigned char hc_asic_up;
 
 /* Drive the handshake. Call from the 1 ms tick; it does at most one state
    transition per call and never blocks. */

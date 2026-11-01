@@ -54,7 +54,9 @@ DESC_C = ROOT / "firmware/generated/hc_pin_desc_bosch_me711.c"
 FIELDS = {"pinFuelPump": "CFG_U_PIN_FUEL_PUMP", "pinMainRelay": "CFG_U_PIN_MAIN_RELAY",
           "pinBoost": "CFG_U_PIN_BOOST", "pinTacho": "CFG_U_PIN_TACHO",
           "pinCam1Sol": "CFG_U_PIN_CAM1_SOL", "pinCam2Sol": "CFG_U_PIN_CAM2_SOL",
-          "pinMil": "CFG_U_PIN_MIL"}
+          "pinMil": "CFG_U_PIN_MIL",
+          "pinIdleValve": "CFG_U_PIN_IDLE_VALVE",
+          "pinIdleValve2": "CFG_U_PIN_IDLE_VALVE2"}
 FAILS = 0
 MAIN_RELAY_HW = int(PinCap.MAIN_RELAY_HW)
 
@@ -145,16 +147,18 @@ def executed_checks():
                "pinMainRelay": [T.CAP["RELAY_OUT"], MAIN_RELAY_HW],
                "pinBoost": [T.CAP["PWM_OUT"]], "pinTacho": [T.CAP["LOW_SIDE"]],
                "pinCam1Sol": [T.CAP["PWM_OUT"]], "pinCam2Sol": [T.CAP["PWM_OUT"]],
-               "pinMil": [T.CAP["LOW_SIDE"]]}
+               "pinMil": [T.CAP["LOW_SIDE"]],
+               "pinIdleValve": [T.CAP["PWM_OUT"]],
+               "pinIdleValve2": [T.CAP["PWM_OUT"]]}
         diff = {}
         for ts, slot in FIELDS.items():
             got = {c for c in range(1, 122)
                    if (r.callb("hc_hal_out_bindable", off(slot), c) & 0xFF)
                    and any(r.callb("hc_pin_can", c, need) & 0xFF
                            for need in cap[ts])}
-            if got != GC._OUT_BIND_CAVITIES[ts]:
-                diff[ts] = (sorted(got), sorted(GC._OUT_BIND_CAVITIES[ts]))
-        ck("EXECUTED bindable AND capable == _OUT_BIND_CAVITIES (7 x 121)",
+            if got != GC.out_bind_cavities()[ts]:
+                diff[ts] = (sorted(got), sorted(GC.out_bind_cavities()[ts]))
+        ck("EXECUTED bindable AND capable == _OUT_BIND_CAVITIES (9 x 121)",
            not diff, "%s" % (diff or "all agree"))
 
     def val(pins):
@@ -164,31 +168,54 @@ def executed_checks():
         return rr("hc_validate", T.VAL["HC_VAL_SRC_ACTIVE"])
 
     CAP = T.VAL["HC_VAL_FAULT_PIN_CAP"]
-    for label, pins in (
-            ("tacho on 18 (CJ120 CS P8.2)", {"CFG_U_PIN_TACHO": 18}),
-            ("tacho on 22 (CJ120 CS P8.1)", {"CFG_U_PIN_TACHO": 22}),
-            ("fuel pump on 18", {"CFG_U_PIN_FUEL_PUMP": 18}),
-            ("main relay on 22", {"CFG_U_PIN_MAIN_RELAY": 22}),
-            ("boost on 81 (P2.10, no PWM path)", {"CFG_U_PIN_BOOST": 81}),
-            ("boost on 37 (P2.13, no PWM path)", {"CFG_U_PIN_BOOST": 37}),
-            ("cam solenoid 1 on 104", {"CFG_U_PIN_CAM1_SOL": 104}),
-            ("fuel pump on 46 (NOT_ON_MAIN_CPU)", {"CFG_U_PIN_FUEL_PUMP": 46}),
-            ("IAT on 85 (NOT_ON_MAIN_CPU)", {"CFG_U_PIN_IAT": 85})):
+    import hc_board
+    common = (("fuel pump on 18", {"CFG_U_PIN_FUEL_PUMP": 18}),
+              ("main relay on 22", {"CFG_U_PIN_MAIN_RELAY": 22}),
+              ("boost on 81 (P2.10, no PWM path)", {"CFG_U_PIN_BOOST": 81}),
+              ("boost on 37 (P2.13, no PWM path)", {"CFG_U_PIN_BOOST": 37}),
+              ("fuel pump on 46 (NOT_ON_MAIN_CPU)", {"CFG_U_PIN_FUEL_PUMP": 46}))
+    if hc_board.IS_DC:
+        # the ME7.5 DC (its own descriptor): no 120, no cavity-23 relay
+        # stage; the cam valve 115 through the CC650's N205 bit
+        board = (("cam solenoid 1 on 120 (not on this board)", {"CFG_U_PIN_CAM1_SOL": 120}),
+                 ("idle valve on 115 (on/off bit, no PWM unit)",
+                  {"CFG_U_IDLE_ACTUATOR": 1, "CFG_U_PIN_IDLE_VALVE": 115}),
+                 ("main relay on 23 (no relay stage on this board)",
+                  {"CFG_U_PIN_MAIN_RELAY": 23, "CFG_MAIN_RELAY_MODE": 2}))
+        own = ({"CFG_U_PIN_FUEL_PUMP": 65, "CFG_U_PIN_BOOST": 104,
+                "CFG_U_PIN_CAM1_SOL": 115, "CFG_U_PIN_TACHO": 37},
+               "pump 65, boost 104, cam valve 115 (CC650), tacho 37")
+    elif hc_board.IS_C4:
+        # the C4 board: 120 is not assigned, 26 only bridged to TANS 85,
+        # cavity 23 carries no relay stage (run-on is internal)
+        board = (("cam solenoid 1 on 120 (not assigned here)", {"CFG_U_PIN_CAM1_SOL": 120}),
+                 ("IAT on 26 (bridged to 85, no capability)", {"CFG_U_PIN_IAT": 26}),
+                 ("main relay on 23 (no relay stage on this board)",
+                  {"CFG_U_PIN_MAIN_RELAY": 23, "CFG_MAIN_RELAY_MODE": 2}))
+        own = ({"CFG_U_PIN_FUEL_PUMP": 65, "CFG_U_PIN_BOOST": 104,
+                "CFG_U_PIN_CAM1_SOL": 115, "CFG_U_PIN_IAT": 85},
+               "pump 65, boost 104, cam valve 115, IAT 85")
+    else:
+        board = (("tacho on 18 (CJ120 CS P8.2)", {"CFG_U_PIN_TACHO": 18}),
+                 ("tacho on 22 (CJ120 CS P8.1)", {"CFG_U_PIN_TACHO": 22}),
+                 ("cam solenoid 1 on 104", {"CFG_U_PIN_CAM1_SOL": 104}),
+                 ("IAT on 85 (NOT_ON_MAIN_CPU)", {"CFG_U_PIN_IAT": 85}))
+        # mainRelayMode AUTO (2), as on the car page: cavity 23 is the CJ910's
+        # hardware stage and honours AUTO only, so the board default's mode
+        # would be refused for a reason that has nothing to do with binding
+        own = ({"CFG_U_PIN_FUEL_PUMP": 65, "CFG_U_PIN_BOOST": 104,
+                "CFG_U_PIN_MAIN_RELAY": 23, "CFG_MAIN_RELAY_MODE": 2,
+                "CFG_U_PIN_IAT": 26}, "pump 65, boost 104, MR 23, IAT 26")
+    for label, pins in common + board:
         rc = val(pins)
         ck("refused: %s" % label, bool(rc & CAP), "rc 0x%04X" % rc)
-    # mainRelayMode AUTO (2), as on the car page: cavity 23 is the CJ910's
-    # hardware stage and honours AUTO only, so the board default's mode would
-    # be refused for a reason that has nothing to do with binding
-    rc = val({"CFG_U_PIN_FUEL_PUMP": 65, "CFG_U_PIN_BOOST": 104,
-              "CFG_U_PIN_MAIN_RELAY": 23, "CFG_MAIN_RELAY_MODE": 2,
-              "CFG_U_PIN_IAT": 26})
-    ck("accepted: the car's own routes (pump 65, boost 104, MR 23, IAT 26)",
+    rc = val(own[0])
+    ck("accepted: the car's own routes (%s)" % own[1],
        not (rc & CAP), "rc 0x%04X" % rc)
 
 
 def ini_checks():
-    ini = ROOT / "tunerstudio" / ("hanicore_%s.ini" % PI.STEM.lower()
-                                         .replace("hanicore_", ""))
+    ini = PI.INI
     if not ini.exists():
         ck("the image's generated .ini exists", False, str(ini))
         return
@@ -201,7 +228,7 @@ def ini_checks():
         labels = [s.strip().strip('"') for s in m.group(1).split('",')]
         offered = {i for i, s in enumerate(labels) if s not in ("INVALID", "NONE")}
         ck(".ini: %s offers exactly the bindable cavities" % ts,
-           offered == GC._OUT_BIND_CAVITIES[ts],
+           offered == GC.out_bind_cavities()[ts],
            "offered %s" % sorted(offered))
 
 

@@ -17,7 +17,7 @@ KINDS (= the directory under tests/):
   host         SFR-free firmware cores compiled and run on a host C compiler
   unit         tool-level tests and pytest suites (no firmware image needed)
   simulator    tests of the C167 simulator itself (c167sim)
-  tunerstudio  the generated .ini against the firmware and TunerStudio's rules
+  tuning  the generated .ini against the firmware and TunerStudio's rules
   firmware     the LINKED IMAGE: executed in c167sim, or its map/bytes read
                (subdirectory = subsystem tag: build, asic, comms, config,
                persistence, trigger, engine, dbw, outputs)
@@ -33,7 +33,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 TESTS = ROOT / "tests"
-KINDS = ("host", "unit", "simulator", "tunerstudio", "firmware", "history", "physical")
+KINDS = ("host", "unit", "simulator", "tuning", "firmware", "history", "physical")
 
 
 @dataclass(frozen=True)
@@ -56,7 +56,7 @@ class Gate:
 # ---------------------------------------------------------------- overrides
 # FAST: a few seconds to about a minute each, so `run_gates.py fast` finishes
 # in minutes. Every host, unit and simulator test is fast by kind; these are
-# the firmware / tunerstudio gates that also qualify (measured 2026-10-06).
+# the firmware / tuning gates that also qualify (measured 2026-10-06).
 FAST = {
     "me711_dbw_warm_binding_proof", "me711_serial_crc_proof",
     "me711_far_boundary_proof", "near_ram_hazard_proof", "me711_keil_shift_scan",
@@ -76,6 +76,9 @@ FAST = {
     "ts_ini_command_shape_proof", "ts_ini_dead_knob_proof", "ts_ini_scaling_proof",
     "ts_dash_proof", "ts_signature_layout_proof", "ts_pin_dropdown_agreement_proof",
     "ts_ini_tracer_proof",
+    # 2026-10-31: the per-board output and cam-valve gates - two of them were
+    # red on the 2.7T / ME7.5 for weeks because no board's set ran them
+    "me711_output_binding_proof", "me711_vvt_proof", "me711_idle_valve_proof",
 }
 
 # TIER 1: the milestone check of the TunerStudio interface against the image
@@ -94,7 +97,8 @@ TIER1 = [
 # directory; these add the gates that matter to a subsystem from elsewhere.
 EXTRA_TAGS = {
     "dbw": {"me711_tps_diagnostic_proof", "me711_tps_lifecycle_proof", "me711_etb_bias_host_test",
-            "me711_etb_characterization_analyze_test", "me711_idle_proof", "me711_bench_output_proof",
+            "me711_etb_characterization_analyze_test", "me711_idle_proof",
+            "me711_idle_valve_proof", "me711_bench_output_proof",
             "me711_sensor_plausibility_proof"},
     "config": {"me711_generated_sources_current_proof", "me711_build_integrity_proof",
                "me711_identity_proof", "ts_signature_layout_proof", "ts_pin_dropdown_agreement_proof",
@@ -106,8 +110,8 @@ EXTRA_TAGS = {
     "trigger": {"test_hccam_host", "me711_cam_fault_proof", "me711_cam_pattern_proof"},
     "engine": {"test_hctrans_host", "test_hcidle_host", "test_hcldr_host", "test_hcvvt_host",
                "test_hcknock_host", "test_hclimp_host", "test_hcdtc_host", "test_hccel_host"},
-    "comms": {"test_hckline_host", "test_hcpecrx_host", "me711_kwp_connect_test", "ts_kline_bridge_test",
-              "test_plugin_auto", "me711_ts_query_collision_proof", "test_ts_commands"},
+    "comms": {"test_hckline_host", "test_hcpecrx_host", "me711_kwp_connect_test",
+              "me711_ts_query_collision_proof", "test_ts_commands"},
     "runtime": {"me711_runtime_stress_proof", "me711_runtime_fault_proof",
                 "me711_kline_mixed_proof", "me711_dbw_readiness_proof",
                 "me711_deadline_proof", "me711_cc25_stack_proof",
@@ -131,8 +135,22 @@ TIMEOUTS = {
     "me711_runtime_stress_proof": 14400, # three complete transport matrices
     "me711_runtime_fault_proof": 7200,
     "me711_kline_mixed_proof": 5400,
+    # measured alone 2026-10-25: 3165 s and 2319 s (the default is 1800)
+    "me711_etb_autocal_proof": 5400,
+    "me711_tacho_proof": 3600,
     "me711_dbw_readiness_proof": 7200,
 }
+
+# Gates that REWRITE a shared generated file (the .ini set) while they run:
+# with run_gates.py -j they run alone, before the parallel pool, so no other
+# gate reads a half-written file.
+EXCLUSIVE = {"test_ts_commands", "test_och_contract",
+             # they edit a config source / generated file and restore it, or
+             # run the generator or the build over the shared tree
+             "me711_build_integrity_proof", "me711_generated_sources_current_proof",
+             "ts_ini_tracer_proof", "me711_switch_input_proof",
+             "me711_table_order_proof", "me711_dbw_control_proof",
+             "me711_etb_bias_host_test"}
 
 # A gate whose question no longer applies SKIPS - on a LEVEL read from the
 # tree at run time (tests/run_gates.py CONDITIONS), never a remembered list.
@@ -140,16 +158,29 @@ SKIP_IF = {
     "me711_sched_epoch_proof": "planner_absent",
     "me711_trigger_test": "planner_absent",
     "me711_trigger_adversarial_test": "planner_absent",
-    "me711_plan_cost_proof": "planner_on_own_level",
     "test_plan_cost_gate": "planner_on_own_level",
-    "me711_bootsum_coverage_proof": "owned_boot",
+    "me711_bootsum_coverage_proof": "porsche_oem_boot_absent",
+    "me711_owned_boot_proof": "c4_donor_boot",
+    # their SUBJECT is the AWT preset, which the C4 image does not carry
+    "me711_table_order_proof": "awt_preset_absent",
+    "me711_awt_first_start_page_proof": "awt_preset_absent",
+    "me711_preset_apply_proof": "awt_preset_absent",
+    "me711_engine_control_proof": "awt_preset_absent",
+    "me711_alphan_start_proof": "awt_preset_absent",
+    "me711_sensor_fallback_proof": "awt_preset_absent",
+    "me711_sensor_plausibility_proof": "awt_preset_absent",
+    "me711_cj120_preempt_proof": "no_cj120",
+    "me711_wideband_ssc_bound_proof": "no_cj120",
     "me711_dbw_control_proof": "dbw_absent",
-    "me711_burn_forensics_proof": "diag_absent",
-    "me711_forensics_retention_proof": "diag_absent",
-    "me711_asicdump_coherence": "diag_absent",
     "me711_build_integrity_proof": "image_frozen",
     "me711_heartbeat_gap_proof": "heartbeat_retired",
     "me711_rx_drain_rearm_proof": "rx_pec",
+    # 2026-10-29: the ME7.5 DC's own gate, and the S5500 gates it has no
+    # subject for (the DC talks to a CC650 bus ASIC, not an S5500)
+    "me75_dc_runtime_proof": "not_dc_board",
+    "me71_c4_umkom_proof": "dc_board",
+    "me711_asic_retry_raster_proof": "dc_board",
+    "me711_burn_raster_proof": "dc_board",
     # They read the OEM binaries, the A2L, the rusEFI .ini corpus or the
     # frozen release .ini files themselves.
     "me711_runtime_handshake_proof": "local_corpus_absent",
@@ -166,14 +197,11 @@ SKIP_IF = {
 # frozen release notes use the old names.
 FORMERLY = {
     "me711_dbw_v97_proof": "me711_dbw_audit_proof",
-    "me711_v12_salvage_proof": "me711_asicdump_salvage_proof",
     "me711_v27_adversarial_test": "me711_trigger_adversarial_test",
     "me711_v40_resetless_proof": "me711_burn_resetless_proof",
     "me711_v40_session_proof": "me711_burn_two_in_session_proof",
     "me711_v48_live_burn_proof": "me711_live_burn_proof",
-    "me711_v49_forensics_proof": "me711_burn_forensics_proof",
     "me711_v49_nmi_execution_proof": "me711_nmi_handler_proof",
-    "me711_v49_retention_proof": "me711_forensics_retention_proof",
     "me711_v50_ir_preserve_proof": "me711_burn_ir_preserve_proof",
     "me711_v50_request_preservation_proof": "me711_burn_request_preservation_proof",
     "me711_v51_admission_proof": "me711_flash_admission_proof",
@@ -187,8 +215,6 @@ FORMERLY = {
     "me711_v102_migration_proof": "me711_page_migration_proof",
     "me711_v102_planning_proof": "me711_planner_geometry_proof",
     "me711_v102_stack_proof": "me711_cc25_stack_proof",
-    "me711_v75_relay_pump_bench": "me711_bench_session",
-    "me711_v49_forensic_capture": "me711_burn_forensics_capture",
 }
 
 
@@ -224,7 +250,7 @@ def check() -> int:
         for n in sorted(table - names):
             print("[FAIL] %s names %s, which is not a gate under tests/" % (label, n))
             bad += 1
-    for n in sorted(set(FORMERLY.values()) - names - {"me711_bench_session", "me711_burn_forensics_capture"}):
+    for n in sorted(set(FORMERLY.values()) - names):
         print("[FAIL] FORMERLY maps to %s, which is not a gate under tests/" % n)
         bad += 1
     if not bad:

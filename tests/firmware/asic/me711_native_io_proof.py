@@ -35,7 +35,16 @@ import me711_image as PI                 # noqa: E402
 
 P3, DP3 = 0xFFC4, 0xFFC6
 FAILS = 0
+import hc_board                         # noqa: E402
 IDLE = [0x00FF, 0x0000, 0x3DCF, 0x0069, 0x6301, 0x00F0, 0x7FEF]
+# the Audi 2.7T C4 board (2026-10-24, hcio711.c): the OEM seed computed from
+# 4B0907551F the same way, NLEN_AS 1 and the pre-cat heater gates CLEAR. It
+# has no ASIC N75 stage (the N75 is the main CPU's POUT1): HC_IO_LDR's slot
+# drives the cam valve NWS, ASIC P2.11 = word 55 (index 3) bit 11, active LOW
+N75_W, N75_B, N75_NAME = 6, 0x0004, "N75"
+if hc_board.IS_C4:
+    IDLE = [0x00FF, 0x0000, 0x31CF, 0xFFF9, 0x6301, 0x0010, 0x1061]
+    N75_W, N75_B, N75_NAME = 3, 0x0800, "cam valve NWS (C4)"
 LDR, TEV, LSH2VK, LSH1HK, LSH1VK = 0, 1, 2, 3, 5
 HOLD, RELEASED, TIMEOUT, OFF = 1, 2, 3, 4
 
@@ -74,17 +83,17 @@ def main() -> int:
         on = 0
         for _ in range(n):
             r("hc_io_frame")
-            if not (r("hc_io_word", 6) & 0x0004):
+            if not (r("hc_io_word", N75_W) & N75_B):
                 on += 1
         return on
     r("hc_io_duty", LDR, 0)
-    check("B  N75 at 0 %: never ON", frames(20) == 0)
+    check("B  %s at 0 %%: never ON" % N75_NAME, frames(20) == 0)
     r("hc_io_duty", LDR, 500)
     n = frames(20)
-    check("B  N75 at 50 %: exactly 10 of 20 frames ON (bit 2 CLEAR)", n == 10,
+    check("B  %s at 50 %%: exactly 10 of 20 frames ON (bit CLEAR)" % N75_NAME, n == 10,
           "%d/20" % n)
     r("hc_io_duty", LDR, 1000)
-    check("B  N75 at 100 %: every frame ON", frames(20) == 20)
+    check("B  %s at 100 %%: every frame ON" % N75_NAME, frames(20) == 20)
     r("hc_io_duty", LDR, 0)
     # A pre-cat heater drives only while the wideband lifecycle permits it
     # (key on, CJ120 verified and settled, fresh battery and ASIC samples,
@@ -166,8 +175,11 @@ def main() -> int:
     # -------------------------------------------------------------- bench
     check("F  a post-cat heater bench pulse is REFUSED",
           (0xFF & r("hc_io_test_start", LSH1HK, 500, 0)) == 0)
-    # the bench heater pulse needs the key on (KL15 status, P6.2)
+    # the bench heater pulse needs the key on (KL15 status, P6.2; on the C4
+    # board TGT_KL15_ON() reads main ADC channel 12 >= 400 counts)
     r.m.sfr[0xFFCC] = r.m.sfr.get(0xFFCC, 0) | (1 << 2)
+    if hc_board.IS_C4:
+        r.m.w16((T.sym("adc_raw") & 0xFFFF) + 2 * 12, 900)
     tick = T.sym("hc_tick_ms") & 0xFFFF
     r.m.w16(tick, 10000)
     okh = (0xFF & r("hc_io_test_start", LSH1VK, 200, 0)) == 1
@@ -188,9 +200,9 @@ def main() -> int:
     for step in range(0, 4000, 10):
         r("hc_io_test_service", ms + step)
         r("hc_io_frame")
-        if not (r("hc_io_word", 6) & 0x0004):
+        if not (r("hc_io_word", N75_W) & N75_B):
             on_frames += 1
-    check("F  N75 bench: 3 x 200 ms ON = 60 frames of 10 ms",
+    check("F  %s bench: 3 x 200 ms ON = 60 frames of 10 ms" % N75_NAME,
           ok and 57 <= on_frames <= 63, "%d frames" % on_frames)
 
     # ------------------------------------------ G: the refused-apply unblock
@@ -208,8 +220,13 @@ def main() -> int:
     b2 = g("hc_hal_main_relay_bound") & 0xFF
     check("G  pin 23 with mode OFF is refused (bound stays 0)", b1 == 0,
           "bound=%d" % b1)
-    check("G  ...and a LIVE mode=AUTO write unblocks it: bound = 2", b2 == 2,
-          "bound=%d" % b2)
+    if hc_board.IS_C4:
+        # no cavity 23 relay stage on the C4 (KL15 on 3, internal run-on)
+        check("G  C4: cavity 23 stays unbound with mode AUTO too", b2 == 0,
+              "bound=%d" % b2)
+    else:
+        check("G  ...and a LIVE mode=AUTO write unblocks it: bound = 2", b2 == 2,
+              "bound=%d" % b2)
 
     # --------------------------------- H (V81): the ASIC's PWM words 59..66
     # The ASIC loads PP0..3 / PW0..3 from these every frame; 0 there is FULL

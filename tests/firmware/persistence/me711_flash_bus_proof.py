@@ -601,7 +601,7 @@ def _och_offset(name):
     survived only because nothing moved them; the whole V60 campaign exists
     because a hand-copied offset drifted eight bytes and nobody could see it.
     """
-    ini = ROOT / "tunerstudio/hanicore_me711.ini"
+    ini = ROOT / "tuning/hanicore_me711.ini"
     body = ini.read_text(errors="replace").split("[OutputChannels]", 1)[1]
     m = re.search(r"^\s*%s\s*=\s*scalar,\s*U16,\s*(\d+)" % name, body, re.M)
     if not m:

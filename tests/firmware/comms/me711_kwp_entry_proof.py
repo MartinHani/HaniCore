@@ -45,9 +45,14 @@ import me711_heartbeat_gap_proof as HB   # noqa: E402
 import me711_image as PI                 # noqa: E402
 
 S0BG, S0CON, P3 = 0xFEB4, 0xFFB0, 0xFFC4
-BG_RATE = {0x15: 57600, 0x0A: 115200, 0x09: 124800, 0x77: 10400}
+import hc_board  # noqa: E402
+# S0BG -> nominal rate, per board (hctarget.h; no 115200 on the 24 MHz C4)
+BG_RATE = ({0x0C: 57600, 0x05: 124800, 0x47: 10400} if hc_board.IS_C4
+           else {0x15: 57600, 0x0A: 115200, 0x09: 124800, 0x77: 10400})
 FAILS = 0
-SIG = b"rusEFI HaniCore ME711 "
+# the board's own signature prefix (hctarget.h TGT_SIGNATURE)
+SIG = re.search(r'TGT_SIGNATURE\s+"(HaniCore \S+ )',
+                hc_board.target_text()).group(1).encode()
 
 
 def check(name, ok, detail=""):
@@ -79,8 +84,12 @@ def envelopes(tx: bytes):
 
 class Tester:
     def __init__(self):
+        # the C4 board runs at its REAL instruction rate (8 per timer tick):
+        # the rig's default 2 is a 4x handicap, and at 6 MIPS that alone
+        # pushed a 4 ms reply past this gate's 30 ms window (2026-10-26)
         self.rig = HB.Rig(PI.image(), HB.ENTRY_CURRENT, HB.TICK_CURRENT,
-                          echo=True)
+                          echo=True,
+                          steps_per_tick=HB.STEPS_PER_TICK if hc_board.IS_C4 else None)
         self.ms = int(HB.TPMS / 10 * self.rig.steps_per_tick)  # steps / ms
         self.level = 1
         # P3.11 IS AN INPUT PIN: a read returns the PIN, whatever the output

@@ -878,7 +878,7 @@ static unsigned char sweep_guard(unsigned int rpm, unsigned char armed)
     unsigned int a, b, ms, x, y;
     unsigned char ok1, ok2;
     if (rpm || trg_state != TRG_NO_SIGNAL) return ETB_WHY_TURNING;
-    if (!(P6 & (1u << TGT_KL15STAT_PORT_BIT)) || !armed
+    if (!TGT_KL15_ON() || !armed
         || !hc_hal_out_class_live(HC_OUT_THR_EN) || !hc_hal_outputs_live())
         return ETB_WHY_NOTLIVE;
     if (!hc_hal_ain_ok(HC_AIN_TPS1) || !hc_hal_ain_ok(HC_AIN_TPS2))

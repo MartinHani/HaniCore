@@ -34,10 +34,9 @@ import me711_vehicle_capture as V      # noqa: E402
 # V1.2: the CURRENT image's .ini - the session checks need its channels
 # (toothCorrections, cycleSync*, toothLogState).
 import me711_image as _PI    # noqa: E402
-INI = ROOT / "tunerstudio" / ("hanicore_me711_%s.ini"
-                                    % _PI.STEM.split("HaniCore_ME711_", 1)[1])
+INI = _PI.INI  # both boards: <stem>.ini (hanicore_me711_v102_dev / hanicore_me71_27t_v102_dev)
 # V87: run the same cases against another image's .ini / version text, e.g.
-#   set HC_CAPTURE_INI=tunerstudio\history\hanicore_me711_v87_preset_apply.ini
+#   set HC_CAPTURE_INI=tuning\history\hanicore_me711_v87_preset_apply.ini
 #   set HC_CAPTURE_VER=HaniCore V87 PRESET APPLY / Bosch ME7.1.1
 if os.environ.get("HC_CAPTURE_INI"):
     INI = Path(os.environ["HC_CAPTURE_INI"])

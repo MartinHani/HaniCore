@@ -191,133 +191,13 @@ ENGINE_PRESETS: list[Preset] = [
                                                  "defaults stay in force.",
            }),
 
-    Preset(2, "BOSCH_ME711", "Porsche V8 donor - incomplete, refused",
-           "BOSCH_ME711",
-           values={
-               "cylinders": Value(8, V,
-                                  S_HCTARGET711 + " TGT_N_INJ = TGT_N_IGN = 8, "
-                                  "and the port map's EV1..EV8 / ZDG1..ZDG8"),
-               "strokes": Value(4, V, "four-stroke spark-ignition V8"),
-               # Crank trigger - all four numbers are A2L-declared or recovered
-               # from exact OEM ME7.1.1 machine code.
-               "syTeeth": Value(60, V, S_TRIGEV + " - the A1104F A2L declares "
-                                       "SY_TEETH = 60"),
-               "syGap": Value(2, V, S_TRIGEV + " - the A1104F A2L declares "
-                                    "SY_GAP = 2"),
-               "trigEdge": Value(0, V, S_TRIGEV + " - OEM ME7.1.1 CCM3[15:12]=A, "
-                                       "CC15IC=007A: negative edge, capture T1"),
-               "trigGapRatioX10": Value(20, V,
-                                        S_TRIGEV + " - exact OEM ME7.1.1 code at "
-                                        "85:8766 recognises the gap as "
-                                        "gap > 2 * previous1 AND gap > 2 * "
-                                        "previous2, i.e. a ratio of 2.0"),
-               "trigDecoder": Value(3, V,
-                                    "TRIGDEC_BOSCH_ME711: the recovered "
-                                    "two-history rule, not the generic "
-                                    "missing-tooth rule"),
-               "camEnable": Value(1, V, S_TRIGEV + " - NWDG on CC8 and NWDG2 on "
-                                        "CC9 are both captured"),
-               "syncMode": Value(1, V,
-                                 "SYNC_CRANK_ONLY. " + S_TRIGEV + " is explicit: "
-                                 "the four recovered cam falling edges repeat "
-                                 "every 180 deg and are invariant under a 360 "
-                                 "deg shift, so cycleSync is deliberately never "
-                                 "asserted. Claiming cam cycle sync here would "
-                                 "be the fabrication this file exists to stop."),
-               # Position sensor pins
-               "pinCrank": Value(82, P,
-                                 S_CONN + " pin 82 = DZG+_S, and " + S_PORTMAP +
-                                 " MAIN P2.15/CC15 = KWDG. " + S_TRIGEV +
-                                 " rates the connector cavity PROBABLE until "
-                                 "continuity is measured on a Bosch board."),
-               "pinCam1": Value(86, P, S_CONN + " pin 86 = PHA1_S; " + S_PORTMAP +
-                                      " MAIN P2.8/CC8 = NWDG. Cavity PROBABLE "
-                                      "per " + S_TRIGEV),
-               "pinCam2": Value(87, P, S_CONN + " pin 87 = PHA2_S; " + S_PORTMAP +
-                                      " MAIN P2.9/CC9 = NWDG2. Cavity PROBABLE"),
-               # Analog inputs that are genuinely on the MAIN CPU here
-               "pinTps1": Value(92, P, S_CONN + " pin 92 = IP1_S; " + S_PORTMAP +
-                                      " MAIN AN1 = IP1S = Istwertpoti 1 (EGAS)"),
-               "pinTps2": Value(84, P, S_CONN + " pin 84 = IP2_S; " + S_PORTMAP +
-                                      " MAIN AN3 = IP2S"),
-               "pinApp1": Value(35, P, S_CONN + " pin 35 = SP1_S; " + S_PORTMAP +
-                                      " MAIN AN8 = SPS1/DKG"),
-               "pinApp2": Value(34, P, S_CONN + " pin 34 = SP2_S; " + S_PORTMAP +
-                                      " MAIN AN9 = SPS2"),
-               "stoichAfrX100": Value(1470, V, "gasoline stoichiometry"),
-               # Two banks exist on a V8 and both lambda channels are wired,
-               # but WHICH cylinder is on WHICH bank is a firing-order question
-               # - see the gaps.
-               "lambda1Source": Value(0, V,
-                                      "disabled. The LSU controller path is not "
-                                      "implemented on this target."),
-               "lambda2Source": Value(0, V, "disabled, same reason."),
-               # V100: no sensor is claimed by the board default, so the
-               # heater policy is OFF - a board default must not drive a
-               # heater into a cavity whose sensor nobody has declared.
-               "lambdaHeatPolicy": Value(0, V, "LAMBDA_HEAT_OFF - this board "
-                                         "default claims no lambda sensor"),
-           },
-           gaps={
-               "injPin / ignPin": "THE BLOCKING GAP. Bosch's connector sheet "
-                                  "gives EV1..EV8 on pins 96/97/88/89/112/113/"
-                                  "24/23 and ZUE1..ZUE8 on 102/103/94/95/110/"
-                                  "111/8/7, and the port map gives their CAPCOM "
-                                  "channels - but EVn and ZUEn are FIRING-ORDER "
-                                  "indices, not cylinder numbers "
-                                  "(docs/PINOUT.md). The target vehicle "
-                                  "M48 firing order is not stated anywhere in "
-                                  "this repository, and a search of the A1104F "
-                                  "A2L found no firing-order table. Without it "
-                                  "the cylinder-to-pin map cannot be written "
-                                  "down, and writing it down wrong fires fuel "
-                                  "and spark into the wrong holes.",
-               "tdcCylDegX10": "Same reason. An evenly spaced 0/90/180/.../630 "
-                               "is only correct if the cylinder numbering "
-                               "happens to follow the firing order, which on a "
-                               "cross-plane V8 it does not.",
-               "cylBank": "Same reason: bank membership follows the physical "
-                          "block, and the repository does not state the "
-                          "target vehicle's cylinder numbering.",
-               "pinClt / pinIat": "NOT on the main CPU. TMOT is ASIC AN0 and "
-                                  "TANS is ASIC AN1 "
-                                  "(docs/PINOUT.md); they reach "
-                                  "the CPU only inside the SSC frame, whose "
-                                  "analog word positions are still unproven. "
-                                  "hc_hal_ain_ok() reports them unavailable and "
-                                  "that is the honest state.",
-               "pinMap": "Connector pin 101 is SRD_S on one ME7.1.1 variant and "
-                         "TAGR_S on the other - Bosch's own port map says the "
-                         "two ME7.1.1 columns DIFFER on AN14. Not resolvable "
-                         "from the tree.",
-               "pinBoost": "The boost valve LDR is the PERIPHERAL ASIC's "
-                           "P7.2/POUT2 on this ECU, not a main-CPU pin. There "
-                           "is no HaniCore write path to it.",
-               "pinMainRelay": "The PORSCHE OEM supply has no main-CPU main "
-                               "relay - KL30 feeds the ECU, KL15 enables the "
-                               "CJ910, and the CJ910's own HR pin is "
-                               "NC_4000_16. That is a fact about the DONOR, "
-                               "not about HaniCore. CAVITY 21 IS NOT THE "
-                               "CANDIDATE - this note used to say it was, and "
-                               "_PORSCHE_TRUTH settles 21 as KL15, a power "
-                               "input, from three agreeing sources. The "
-                               "routable RELAY_OUT cavities on this board are "
-                               "4, 5, 46 and 65, and 65 is the fuel pump. "
-                               "Which of the rest may carry an external main "
-                               "relay is an installation measurement nobody "
-                               "has taken. docs/firmware/design/ME711_POWER_AND_RELAY.md 4b.",
-               "displacementCc": "not stated in the repository.",
-               "revMax / revLimit": "no Bosch-specific figure in the tree; the "
-                                    "firmware default stands until a tuner sets "
-                                    "one.",
-           }),
-
     # ======================================================================
     # THE BOARD DEFAULT - ROUTING AND BOARD FACTS, AND NO ENGINE AT ALL
     # ======================================================================
     #
-    # WHY THIS IS SEPARATE FROM PRESET 2, which is the thing that had to be
-    # learned. Preset 2 is the V8 DONOR ENGINE and it legitimately declares
+    # WHY THIS IS SEPARATE FROM AN ENGINE PRESET, which is the thing that had
+    # to be learned. Preset 2 was the V8 DONOR ENGINE (removed 2026-10-31,
+    # owner) and it legitimately declares
     # cylinders = 8; it also, legitimately, CANNOT declare tdcCylDegX10,
     # because the M48 firing order is in no document in this repository and
     # the project rules forbid inventing one. Seeding preset 2 into a fresh
@@ -456,7 +336,7 @@ ENGINE_PRESETS: list[Preset] = [
     # the hardware target is fixed (operator, 2026-09-26). "(AWT)" because the
     # routing below is the AWT harness after its connector adaptation (IAT
     # 85 -> 26, relay drive 21 -> 23) and the firing-order tables are awt_*.
-    Preset(3, "VAG_18T_ME711", "VAG 1.8T DBW (AWT)",
+    Preset(3, "VAG_18T_ME711", "VAG 1.8T DBW",
            "BOSCH_ME711",
            values={
                # THE FIRST REAL ENGINE. A VW/Audi 1.8T in a Porsche ME7.1.1
@@ -1464,6 +1344,434 @@ ENGINE_PRESETS: list[Preset] = [
            }),
 ]
 
+
+
+# --------------------------------------------------------------------------
+# THE AUDI 2.7T ME7.1 "C4" BOARD (2026-10-24, docs/firmware/design/
+# ME71_27T_PORT_PLAN.md). Its connector is tools/config_source/data/
+# me71_c4_connector.csv (Bosch SSB column 140, BOM 345;02 V6T) and its port
+# map me71_c4_iomap.csv (me7_port.xls "ME7.1 C4" columns) - the board the
+# owner's 4B0907551F / 0261206378 is.
+# --------------------------------------------------------------------------
+S_C4CONN = ("tools/config_source/data/me71_c4_connector.csv <- Bosch "
+            "Vari_ME75X.xls SSB column 140 (ME7.1 V6 2,7l 5V T, BOM 345;02)")
+S_C4PORT = ("tools/config_source/data/me71_c4_iomap.csv <- Bosch me7_port.xls "
+            "column 'Belegung ME7.1 (VW) fuer C3 und C4 Muster'")
+S_C4BOM = ("reference/schematics/ME71/Stuecklisten.xls sheet '345;02 V6T': "
+           "R1120 2.61k / R1121 38.3k / R1122 10k, no R1123/R1124/T1120 - "
+           "TMOT has NO switched pull-up on this board")
+S_27T = ("EXACT ENGINE-FAMILY BINARY reference/ME7Sum/bins/8D0907551M-0002.bin "
+         "(stock Audi S4 B5 2.7T, ME7.1/5/6005.01) via "
+         "tools/calibration/me71_27t_base_calibration.py: ")
+S_551F = ("EXACT TARGET BINARY reference/ME7Sum/bins/4B0907551F.bin (the "
+          "owner's test ECU): ")
+# the 2.7T's own intake-air curve [551F 0x1918F = 551M 0x19305, 20 points,
+# byte-identical]; 0 / 1020 (the rails) and 36 / 56 (the densest) dropped.
+# The board's TMOT input has the same front end (S_C4BOM); 551F carries no
+# other word or byte NTC curve, so until 2026-10-31 it was the coolant curve
+# too - superseded by the stock G62 coolant curve below (_DC_CLT_*).
+_C4_NTC_AX = [32, 48, 72, 92, 116, 148, 192, 244, 308, 432, 572, 664, 744,
+              816, 864, 900]
+_C4_NTC_VAL = [11402, 11200, 10998, 10900, 10802, 10698, 10600, 10502, 10398,
+               10248, 10098, 10000, 9902, 9798, 9700, 9602]
+_C4_NTC_SRC = (S_551F + "IAT byte curve 0x1918F (raw >> 2 axis, x0.75-48 C), "
+               "143..-48 C, resampled 20 -> 16")
+
+# THE VAG G62 COOLANT CURVE (2026-10-31). The 1.8T and the 2.7T use the same
+# coolant and intake-air sensors (owner), on the same 2.61 k / 38.3 k front
+# end (S_C4BOM R1120/R1121; the DC fit: 2.63 k / 38.3 k within 4 counts). The
+# 2.7T binary carries one NTC curve - its IAT's - and until now the 2.7T's
+# coolant read that: up to 4.9 C off the stock coolant curve. The DC's own
+# TMOTELI is that coolant curve:
+_DC_CLT_AX = [28, 36, 52, 68, 88, 112, 148, 188, 312, 392, 676, 760, 828, 876,
+              904, 920]
+_DC_CLT_VAL = [11432, 11298, 11102, 10998, 10900, 10802, 10698, 10600, 10398,
+               10300, 10000, 9902, 9798, 9700, 9602, 9520]
+_DC_CLT_SRC = (S_BIN + "TMOTELI 0x81D3FA (axis 10-bit counts, value high byte "
+               "x0.75-48 C), 143..-48 C, resampled 20 -> 16 (<= 0.6 C)")
+_DC_IAT_SRC = (S_BIN + "TANSELI 0x8194E8 (byte axis x4 = the CC650 reg 0x1E "
+               "read, x0.75-48 C) = the 2.7T curve within 0.05 C")
+
+_C27_VE = [
+    59, 31, 21, 16, 13, 11, 9, 8, 7, 7, 6, 5, 5, 5, 4, 4,
+    169, 89, 61, 46, 38, 32, 28, 24, 22, 19, 17, 15, 14, 13, 12, 12,
+    281, 148, 101, 77, 63, 53, 46, 41, 36, 32, 28, 26, 24, 22, 20, 19,
+    402, 211, 144, 110, 89, 75, 65, 57, 51, 45, 40, 37, 34, 32, 30, 28,
+    529, 284, 194, 149, 120, 100, 86, 76, 68, 61, 55, 50, 47, 43, 40, 38,
+    663, 392, 269, 207, 167, 139, 119, 104, 93, 84, 77, 70, 65, 60, 56, 53,
+    752, 507, 354, 274, 222, 185, 159, 139, 124, 111, 101, 93, 86, 79, 74, 70,
+    847, 685, 534, 416, 340, 287, 248, 218, 194, 173, 156, 143, 132, 122, 114, 107,
+    893, 800, 687, 561, 462, 394, 345, 306, 275, 246, 223, 204, 187, 174, 162, 152,
+    914, 863, 791, 682, 584, 507, 445, 399, 362, 327, 299, 272, 249, 231, 215, 202,
+    923, 891, 855, 788, 718, 658, 600, 542, 492, 453, 422, 384, 353, 327, 306, 287,
+    930, 914, 911, 885, 845, 806, 765, 714, 668, 630, 593, 550, 513, 478, 447, 419,
+    935, 933, 945, 933, 905, 878, 851, 815, 782, 755, 726, 683, 645, 612, 581, 551,
+    939, 947, 973, 973, 959, 946, 937, 920, 908, 900, 890, 850, 812, 788, 767, 746,
+    942, 951, 981, 986, 977, 973, 973, 968, 970, 974, 976, 938, 900, 884, 872, 860,
+    942, 953, 984, 992, 986, 985, 990, 990, 998, 1009, 1020, 985, 950, 940, 935, 931,
+]
+_C27_IGN = [
+    92, 98, 100, 98, 98, 104, 104, 120, 125, 123, 122, 122, 122, 122, 122, 122,
+    92, 98, 100, 98, 98, 104, 104, 119, 124, 122, 122, 120, 122, 122, 122, 122,
+    90, 96, 99, 98, 98, 103, 103, 116, 120, 119, 118, 116, 121, 121, 122, 122,
+    81, 89, 94, 97, 97, 97, 97, 107, 114, 114, 109, 108, 116, 118, 118, 120,
+    74, 82, 87, 91, 93, 93, 95, 102, 108, 110, 105, 105, 112, 112, 115, 116,
+    69, 75, 80, 84, 87, 88, 92, 97, 102, 106, 101, 103, 106, 106, 109, 110,
+    61, 66, 70, 77, 81, 84, 88, 93, 96, 99, 98, 97, 97, 98, 102, 106,
+    48, 54, 60, 69, 76, 80, 83, 89, 91, 91, 92, 89, 86, 87, 96, 101,
+    33, 43, 53, 61, 67, 70, 72, 79, 81, 83, 82, 78, 78, 79, 85, 92,
+    25, 39, 46, 53, 58, 61, 64, 70, 69, 73, 71, 69, 69, 72, 77, 84,
+    12, 23, 28, 35, 43, 48, 51, 54, 56, 57, 60, 60, 59, 63, 69, 74,
+    10, 17, 20, 24, 28, 37, 45, 48, 52, 52, 54, 56, 56, 58, 58, 61,
+    10, 11, 14, 15, 19, 26, 36, 38, 41, 41, 43, 45, 44, 44, 45, 47,
+    10, 10, 11, 11, 12, 17, 25, 27, 30, 31, 31, 32, 31, 31, 32, 37,
+    10, 10, 10, 10, 10, 10, 18, 19, 22, 24, 24, 24, 22, 22, 24, 31,
+    10, 10, 10, 10, 10, 10, 14, 15, 18, 19, 20, 20, 18, 18, 20, 27,
+]
+
+ENGINE_PRESETS.append(Preset(
+    5, "VAG_ME71_C4_BOARD", "Board defaults - routing only, no engine",
+    "VAG_ME71_C4", board_default=True,
+    values={
+        "pinCrank": Value(82, P, S_C4CONN + " 82 = DZG+_S; " + S_C4PORT +
+                          " CC15IO = NBM (the Porsche's crank pin)"),
+        "pinCam1": Value(86, P, S_C4CONN + " 86 = PHA1_S; " + S_C4PORT +
+                         " CC8IO = NWDG"),
+        "pinCam2": Value(87, P, S_C4CONN + " 87 = PHA2_S; " + S_C4PORT +
+                         " CC9IO = NWDG2"),
+        "syncMode": Value(1, V, "SYNC_CRANK_ONLY - runnable with no cam wired"),
+        "pinTps1": Value(92, P, S_C4CONN + " 92 = IP1_S; AN1 = IP1S"),
+        "pinTps2": Value(84, P, S_C4CONN + " 84 = IP2_S; AN3 = IP2S"),
+        "pinApp1": Value(35, P, S_C4CONN + " 35 = SP1_S; AN8 = SPS1"),
+        "pinApp2": Value(34, P, S_C4CONN + " 34 = SP2_S; AN9 = SPS2"),
+        "pinFuelPump": Value(65, P, S_C4CONN + " 65 = EKPR; " + S_C4PORT +
+                             " MAIN pin 89 A20 = P4.4 = EKP"),
+        "pinClt": Value(93, P, S_C4CONN + " 93 = TMOT_S; ASIC AN0 = TMOT"),
+        "pinIat": Value(85, P, S_C4CONN + " 85 = TAN_S (26 is bridged to it "
+                        "on this board); ASIC AN1 = TANS"),
+        "cltSensAx": Value(_DC_CLT_AX, P, _DC_CLT_SRC + "; the same G62 "
+                          "and front end as the 2.7T (owner; " + S_C4BOM + ")"),
+        "cltSensVal": Value(_DC_CLT_VAL, P, _DC_CLT_SRC + "; the same G62 "
+                           "and front end as the 2.7T (owner; " + S_C4BOM + ")"),
+        "iatSensAx": Value(_C4_NTC_AX, P, _C4_NTC_SRC),
+        "iatSensVal": Value(_C4_NTC_VAL, P, _C4_NTC_SRC),
+        "s5500WindowBase": Value(4, P, "the ME7.1 frame carries the ME7.1.1 "
+                                 "window at the same words (ME71_27T_PORT_PLAN "
+                                 "S5500 section); measured on the Porsche only"),
+        "pinMil": Value(47, P, S_C4CONN + " 47 = MIL_S; ASIC P1L.2 (hcio711.c)"),
+        "celEnable": Value(0, V, "off on the bare board"),
+        "celTestEnable": Value(1, V, "project decision: ON 3 s, OFF 1 s"),
+        "celTestOnMs": Value(3000, V, "project decision: 3.0 s"),
+        "celTestGapMs": Value(1000, V, "project decision: 1.0 s"),
+    },
+    gaps={
+        "pinMainRelay": "NO MAIN-RELAY DRIVE ON THIS BOARD. Cavity 3 is KL15 "
+            "and the ECU keeps itself alive internally ('Nachlauf intern'); "
+            "cavities 21/23 are not drawn on SSB column 140.",
+        "pinMap": "101 is the board's pressure input (Lade- oder "
+            "Saugrohrdrucksensor) - an engine choice, set by the engine "
+            "preset.",
+        "lambda": "No CJ120 on this board (BOM 345;02): an external 0-5 V "
+            "wideband controller is the only lambda source.",
+    }))
+
+
+def _awt_values():
+    return dict([p for p in ENGINE_PRESETS if p.key == "VAG_18T_ME711"][0].values)
+
+
+def _c27_values():
+    """The AWT preset's universal choices (the same 5-valve 81 x 86.4 mm
+    cylinder, Bosch DV-E5 throttle, VAG pedal and K-line) with every
+    engine- and board-specific value replaced."""
+    v = _awt_values()
+    for k in ("pinMainRelay", "mainRelayModeCfg",           # no relay drive
+              "pedal1Min", "pedal1Max", "pedal2Min", "pedal2Max",
+              "tps1Min", "tps1Max", "tps2Min", "tps2Max",    # the AWT car's
+              "lambdaHeatPolicy", "camPhaseMode", "camPhaseLevel",
+              "camPhaseAngleX10", "camPhaseConfirm", "camToothTol",
+              "cam1Pattern", "cam2Pattern", "idleBaseVal"):
+        v.pop(k, None)
+    E = S_27T
+    v.update({
+        "cylinders": Value(6, V, "Audi 2.7T biturbo V6"),
+        "firingOrder": Value(27, V, "FO_1_4_3_6_2_5 - rusEFI "
+                             "setHellen121Vag_v6_cyl (reference/rusefi "
+                             "firmware/config/engines/vw.cpp)"),
+        "tdcCylDegX10": Value([0, 4800, 2400, 1200, 6000, 3600], V,
+                              "1-4-3-6-2-5 every 120 deg: cylinder n at 120 x "
+                              "its firing position"),
+        "cylBank": Value([1, 1, 1, 2, 2, 2], P, "VAG V6: cylinders 1-3 bank 1, "
+                         "4-6 bank 2"),
+        # Bosch numbers EVn / ZUEn by FIRING position - PHYSICAL on the AWT
+        # (EV2 = cylinder 3 ran sequential on the car, 2026-10-11): EV1..EV6
+        # = cylinders 1/4/3/6/2/5.
+        "injChannel": Value([0, 4, 2, 1, 5, 3], P,
+                            "board channels in FIRING order, as awt_chan[]"),
+        "ignChannel": Value([0, 4, 2, 1, 5, 3], P,
+                            "board channels in FIRING order, as awt_chan[]"),
+        "injPin": Value([96, 112, 88, 97, 113, 89], P,
+                        S_C4CONN + " EV1..EV6 = 96/97/88/89/112/113 in firing "
+                        "order 1-4-3-6-2-5 -> cylinders 1..6 (the AWT's "
+                        "physically proven EVn-by-firing-position rule)"),
+        "ignPin": Value([102, 110, 94, 103, 111, 95], P,
+                        S_C4CONN + " ZUE1..ZUE6 = 102/103/94/95/110/111 "
+                        "('Zuendendstufe extern': coils with their own "
+                        "stage) in firing order -> cylinders 1..6"),
+        "pinCam2": Value(87, P, S_C4CONN + " 87 = PHA2_S (rusEFI hellen121vag "
+                         "V6: cam 2 on 87); unused while camEnable is 0"),
+        "camEnable": Value(0, V, "FIRST START CRANK-ONLY: the 2.7T cam wheel "
+                           "has not been captured - see gaps"),
+        "syncMode": Value(1, V, "SYNC_CRANK_ONLY: semi-sequential fuel and "
+                          "wasted COP need no cam"),
+        # BATCH, not semi-sequential (2026-10-24, measured): one bank event
+        # twice a cycle instead of twelve per-cylinder events. At 24 MHz the
+        # six-cylinder planner is the CPU's largest consumer (stress rig,
+        # 4500 rpm, TunerStudio at 57600: main loop 7.7 % batch vs 1.1 %
+        # semi-sequential). Same fuel per cycle, two half pulses either way.
+        "injStrategy": Value(0, V, "INJ_BATCH - crank sync is enough; the "
+                             "lighter plan at 24 MHz (see the comment)"),
+        "ignStrategy": Value(1, V, "IGN_WASTED_COP - crank sync is enough"),
+        "trigAngleX10": Value(-780, P,
+                              "8D0907551M 0x0006C4 MOVB RL4,#72 -> 0x8982 is "
+                              "the AWT's 'MOVB grundwert,#72' (4B0906018DC "
+                              "0x2222E) instruction for instruction: TDC 72 deg "
+                              "after the gap-confirming tooth = tooth #1 at "
+                              "-78.0, the AWT chain "
+                              "(docs/firmware/design/ME711_CRANK_REFERENCE.md "
+                              "S5). Confirm with a timing light"),
+        "pinIat": Value(85, P, S_C4CONN + " 85 = TAN_S, the 2.7T harness's IAT"),
+        "cltSensAx": Value(_DC_CLT_AX, P, _DC_CLT_SRC + "; the same G62 "
+                          "and front end as the 2.7T (owner; " + S_C4BOM + ")"),
+        "cltSensVal": Value(_DC_CLT_VAL, P, _DC_CLT_SRC + "; the same G62 "
+                           "and front end as the 2.7T (owner; " + S_C4BOM + ")"),
+        "iatSensAx": Value(_C4_NTC_AX, P, _C4_NTC_SRC),
+        "iatSensVal": Value(_C4_NTC_VAL, P, _C4_NTC_SRC),
+        "lambda1Source": Value(2, V, "LAMBDA_EXTERNAL_ANALOG - no CJ120 on "
+                               "this board; 0 V = 0.680, 5 V = 1.360 "
+                               "(hcio711.c lam_ext)"),
+        "pinLambda1": Value(100, P, S_C4CONN + " 100 = AGRPOT_S, the EGR "
+                            "position input (AN11, 0..5 V): free on a 2.7T, "
+                            "which has no EGR"),
+        "lambda1Bank": Value(1, V, "the sensor in bank 1 (cylinders 1-3)"),
+        "lambda1CylMask": Value(7, V, "cylinders 1..3"),
+        "lambda2Source": Value(0, V, "one external controller"),
+        "stftEnable": Value(0, V, "OFF for remote first starts: an external "
+                            "controller's scale is the tester's wiring"),
+        "displacementCc": Value(2671, V, "81.0 x 86.4 mm x 6 (the AWT's "
+                                "cylinder); 8D0907551M KUMSRL raw 134 -> "
+                                "2.70 L within byte quantisation"),
+        "injFlowCcMin": Value(308, P, E + "KRKTE raw 880 vs the AWT's 945 at "
+                              "213.4 g/min for the same cylinder -> 229.2 "
+                              "g/min -> 308 cc/min at 3 bar"),
+        "deadtimeVal": Value([2000, 1676, 1030, 807, 754, 707, 656, 608], P,
+                             E + "TVUB 2.000/1.008/0.800/0.704/0.608 ms at "
+                             "7.04/10.07/12.04/14.08/17.88 V on the dwell axis"),
+        "dwellBattAx": Value([598, 803, 1000, 1197, 1302, 1401, 1598, 1795], P,
+                             E + "KFSZT voltage axis 5.98..17.95 V"),
+        "dwellBattVal": Value([1000, 770, 370, 230, 200, 180, 150, 130], P,
+                              E + "KFSZT 480 rpm column 12.5(->10.0)/7.7/3.7/"
+                              "2.3/2.0/1.8/1.5/1.3 ms"),
+        "veTable": Value(_C27_VE, P, E + "0.1 % counts: the stock throttle "
+                         "model KFMSNWDK / KLAF / KFURL / KFPRG / KUMSRL solved "
+                         "at 1013 hPa 20 C (FR BGMSZS/BGSRM), MSLG 3.0 kg/h "
+                         "(X505P, PROBABLE) - on the AWT's rpm x throttle axes"),
+        "ignRpmAx": Value([500, 800, 1000, 1250, 1500, 1750, 2000, 2500, 3000,
+                           3500, 4000, 4500, 5000, 5500, 6000, 6800], V,
+                          "the AWT preset's ignition rpm grid"),
+        "ignLoadAx": Value([100, 150, 200, 270, 350, 450, 550, 650, 800, 1000,
+                            1200, 1400, 1600, 1800, 2000, 2200], V,
+                           "rl %, 0.1 %: the stock KFZW range 9.75..191 % + "
+                           "200/220"),
+        "ignMap": Value(_C27_IGN, P, E + "min(KFZW, KFZW2) on rl (ignLoadMode "
+                        "3), -2 deg above 100 % rl, held + -3 deg by 220 % "
+                        "past the stock axis, bounded -15..45 deg"),
+        # THE 24 MHz CPU BUDGET, not the engine's (stress rig, batch fuel,
+        # TunerStudio polling at 57600; ME71_27T_PORT_PLAN.md section 16,
+        # 2026-10-25): after the scheduler rework every runtime budget holds
+        # to 6000 rpm (throttle control step <= 17 ms, watchdog <= 16 ms,
+        # budgets 20 / 20); at 6500 they are 21.0 / 20.6 ms and at 6800
+        # 23-25 / 20 ms. Stock NMAX is 6800 (8D0907551M). Until 2026-10-25
+        # this was 4000 (the CPU before the rework).
+        "revLimit": Value(6000, V, "the 24 MHz CPU budget (stock "
+                          + E + "NMAX 6800 rpm)"),
+        "knockMode": Value(0, V, "OFF: the knock path is unverified on this "
+                           "board and the windows are another engine's"),
+        "celEnable": Value(0, V, "the C4 lamp bit (ASIC P1L.2) is unmeasured"),
+    })
+    return v
+
+
+ENGINE_PRESETS.append(Preset(
+    6, "AUDI_27T_ME71", "Audi 2.7T biturbo V6", "VAG_ME71_C4",
+    values=_c27_values(),
+    gaps={
+        "cam / sequential": "The 2.7T's cam wheels (86 / 87) are not "
+            "captured. The preset starts crank-only (semi-sequential, wasted "
+            "COP), which needs no cam. A tooth log (TunerStudio composite "
+            "logger) decides the cam pattern before syncMode 2.",
+        "pedal / TPS endpoints": "measured on each car - Grab / AutoCal ETB.",
+        "idle base": "the AWT's measured throttle floor is not carried; the "
+            "board default and the idle PI start the idle.",
+        "MAF": "the 2.7T's HFM (29) is not used: alpha-N x the pressure "
+            "before the throttle (101), as the AWT.",
+        "injector part": "KRKTE fixes the flow class only; A6 2.7T and S4 "
+            "variants must check their own image's KRKTE.",
+    }))
+
+
+# THE ME7.5 DC BOARD DEFAULT (2026-10-31). Until now the DC had none: a fresh
+# DC page had no crank, sensor or curve set up, unlike every other board.
+# Routes from the DC's own connector (hw_descriptors._ME75_ROWS, rebuilt from
+# the DC reverse engineering .scratch/me75-reverse/IO_MAP.md). Curves:
+#   IAT - the DC's TANSELI (S_BIN 0x8194E8, 20 bytes, axis x4, x0.75-48 C)
+#         equals the 2.7T's to 0.05 C at every 2.7T point: the same VAG G42
+#         sensor and front end (owner: the 2.7T uses the 1.8T's sensors), so
+#         it IS _C4_NTC.
+#   CLT - the DC's own TMOTELI (S_BIN 0x81D3FA, 20 words, value high byte
+#         x0.75-48 C; TMELIPU1 0x81D44C is identical, so the switched pull-up
+#         need not be driven). It differs from the 2.7T's by up to 4.9 C (its
+#         own AN10 input stage), so it is not shared. Resampled 20 -> 16 by
+#         dropping 44 / 484 / 580 / 244 counts: every stock point within 0.6 C.
+S_DCMAP = "hw_descriptors._ME75_ROWS (DC I/O map)"
+
+ENGINE_PRESETS.append(Preset(
+    7, "ME75_DC_BOARD", "Board defaults - routing only, no engine",
+    "ME75_4B0906018DC", board_default=True,
+    values={
+        "pinCrank": Value(82, V, S_DCMAP + ": 82 = G28+, P2.15/CC15"),
+        "pinCam1": Value(86, V, S_DCMAP + ": 86 = G40, P2.8/CC8"),
+        "syncMode": Value(1, V, "SYNC_CRANK_ONLY - runnable with no cam wired"),
+        "pinTps1": Value(92, V, S_DCMAP + ": 92 = throttle 1, AN1"),
+        "pinTps2": Value(84, V, S_DCMAP + ": 84 = throttle 2, AN3"),
+        "pinApp1": Value(35, V, S_DCMAP + ": 35 = pedal 1, AN8"),
+        "pinApp2": Value(34, V, S_DCMAP + ": 34 = pedal 2, AN9"),
+        "pinFuelPump": Value(65, V, S_DCMAP + ": 65 = fuel pump relay, P3.7"),
+        "pinClt": Value(93, V, S_DCMAP + ": 93 = G62, AN10"),
+        "pinIat": Value(85, V, S_DCMAP + ": 85 = G42, CC650 reg 0x1E (the "
+                        "window's IAT tag, hcasicstart_dc.inc)"),
+        "cltSensAx": Value(_DC_CLT_AX, V, _DC_CLT_SRC),
+        "cltSensVal": Value(_DC_CLT_VAL, V, _DC_CLT_SRC),
+        "iatSensAx": Value(_C4_NTC_AX, V, _DC_IAT_SRC),
+        "iatSensVal": Value(_C4_NTC_VAL, V, _DC_IAT_SRC),
+        "s5500WindowBase": Value(4, V, "hcasicstart_dc.inc window_fill writes "
+                                 "the CC650 bytes at this base, as the C4"),
+        "pinMil": Value(47, V, S_DCMAP + ": 47 = MIL, CC650 reg 0x3A bit 3"),
+        "celEnable": Value(0, V, "off on the bare board"),
+        "celTestEnable": Value(1, V, "project decision: ON 3 s, OFF 1 s"),
+        "celTestOnMs": Value(3000, V, "project decision: 3.0 s"),
+        "celTestGapMs": Value(1000, V, "project decision: 1.0 s"),
+    },
+    gaps={
+        "pinMainRelay": "The DC's main relay (21) is the CJ910-class stage "
+            "behind KL15 with run-on through the CC650 (reg 0x44 bit 2) - "
+            "not a CPU-driven route.",
+        "pinMap": "101 is the board's pressure input (G31) - an engine "
+            "choice, set by the engine preset.",
+        "lambda": "The CJ110 wideband is the engine preset's choice.",
+    }))
+
+# THE ENGINE TUNES ON EVERY BOARD (owner, 2026-10-31): the 1.8T on all four
+# ECUs, the 2.7T on its own and on the Porsche / 4F. An engine tune keeps its
+# ENGINE values; what is the BOARD's - the input stage a sensor curve was
+# measured through, the lambda hardware, the relay stage, the CPU budget - is
+# that board's, taken from the board's own native tune. Injector and coil
+# cavities are the same numbers on all three connectors (EV1..EV6 = 96 / 97 /
+# 88 / 89 / 112 / 113, ZUE1..ZUE6 = 102 / 103 / 94 / 95 / 110 / 111: Porsche
+# port map, 2.7T SSB column 140, DC I/O map). Endpoints a car measured (pedal,
+# TPS) never travel: Grab / AutoCal ETB on the car.
+_CAR_MEASURED = ("pedal1Min", "pedal1Max", "pedal2Min", "pedal2Max",
+                 "tps1Min", "tps1Max", "tps2Min", "tps2Max")
+_BOARD_ONLY = ("pinMainRelay", "mainRelayModeCfg", "pinLambda1",
+               "lambdaHeatPolicy", "pinVbat")
+
+
+def _on_board(engine, board):
+    v = dict(engine)
+    for k in _CAR_MEASURED + _BOARD_ONLY:
+        v.pop(k, None)
+    v.update(board)
+    return v
+
+
+def _values_of(key):
+    return dict([p for p in ENGINE_PRESETS if p.key == key][0].values)
+
+
+_A, _C, _D = (_values_of("VAG_18T_ME711"), _values_of("AUDI_27T_ME71"),
+              _values_of("ME75_DC_BOARD"))
+_SENSE = ("pinIat", "cltSensAx", "cltSensVal", "iatSensAx", "iatSensVal")
+# the Porsche board: as the 1.8T runs on it (on-board CJ120, the CJ910 relay
+# stage on 23, IAT moved to 26 in the harness, the FET-on coolant curve)
+_PORSCHE_BOARD = {k: _A[k] for k in _SENSE + (
+    "lambda1Source", "lambdaHeatPolicy", "lambda2Source", "pinMainRelay",
+    "mainRelayModeCfg", "celEnable")}
+# the 24 MHz boards: the 2.7T's own choices for its CPU (batch + wasted COP,
+# 6000 rpm - measured with six cylinders; four cost less, not measured)
+_CPU24 = {k: _C[k] for k in ("injStrategy", "ignStrategy", "revLimit")}
+_C4_BOARD = dict({k: _C[k] for k in _SENSE + (
+    "lambda1Source", "pinLambda1", "lambda2Source", "stftEnable",
+    "celEnable", "knockMode")}, **_CPU24)
+_DC_BOARD = dict({k: _D[k] for k in _SENSE}, **_CPU24)
+_DC_BOARD.update({
+    "pinVbat": [p for p in ENGINE_PRESETS if p.ident == 1][0].values["pinVbat"],
+    "lambda1Source": Value(1, V, "LAMBDA_INTERNAL_LSU = the DC's CJ110 "
+                           "(hcio711.c TGT_HAS_CJ110)"),
+    "lambdaHeatPolicy": _A["lambdaHeatPolicy"],
+    "lambda2Source": Value(0, V, "one wideband on this board"),
+    "stftEnable": Value(0, V, "OFF: the CJ110 path has never read a sensor "
+                        "on an ECU"),
+    "celEnable": Value(0, V, "the DC lamp (CC650 reg 0x3A bit 3) is "
+                       "unmeasured"),
+    "knockMode": Value(0, V, "OFF: the DC knock path (CC650 band) is "
+                       "unverified"),
+})
+
+# the 1.8T on the ME7.5: replaces the archived pin-and-trigger set preset 1
+# carried (2026-08), with the tune that has run the car
+for _p in ENGINE_PRESETS:
+    if _p.ident == 1:
+        _p.name = "VAG 1.8T DBW"
+        _p.values = _on_board(_A, _DC_BOARD)
+        _p.gaps = {"bench": "The ME7.5 image has never run on an ECU. The "
+                   "1.8T's values are the car-run Porsche-board tune; the "
+                   "sensor curves, lambda (CJ110) and the 24 MHz CPU choices "
+                   "are this board's."}
+
+ENGINE_PRESETS.append(Preset(
+    9, "VAG_18T_ME71_C4", "VAG 1.8T DBW", "VAG_ME71_C4",
+    values=_on_board(_A, _C4_BOARD),
+    gaps={"lambda": "No CJ120 on this board: an external 0-5 V controller "
+                    "on 100 (the 1.8T's G39 needs one).",
+          "harness": "A 1.8T harness on the 2.7T ECU: check KL15 / relay "
+                     "cavities against the 2.7T connector before power."}))
+
+_P27 = _on_board(_C, _PORSCHE_BOARD)
+_P27.update({
+    "revLimit": Value(6800, P, S_27T + "NMAX 6800 rpm: the Porsche's 40 MHz "
+                      "CPU has the budget the 24 MHz 2.7T board lacks"),
+    "injStrategy": Value(1, V, "INJ_SEMI_SEQ - crank sync is enough; batch "
+                         "was the 24 MHz board's CPU choice"),
+})
+ENGINE_PRESETS.append(Preset(
+    8, "AUDI_27T_ME711", "Audi 2.7T biturbo V6", "BOSCH_ME711",
+    values=_P27,
+    gaps=dict([p for p in ENGINE_PRESETS if p.ident == 6][0].gaps,
+              harness="The 2.7T loom on the Porsche ECU: the same power "
+                      "terminal moves as the AWT (KL15 3->21, feed 121->3, "
+                      "relay drive 21->23) and IAT 85->26 - "
+                      "docs/hardware/AWT_HARNESS_ADAPTATION.md.")))
+
+# EVERY BASE TUNE LEAVES THE ELECTRONIC THROTTLE OFF (owner, 2026-10-31). A
+# preset never arms a motor: until now the board defaults and the Porsche /
+# ME7.5 presets did not write dbwEnable at all, so APPLY kept whatever the
+# page held. The tuner enables DBW after AutoCal on the car's own body.
+_DBW_OFF = Value(0, V, "owner 2026-10-31: a base tune never enables the "
+                       "electronic throttle - enable it after AutoCal")
+for _p in ENGINE_PRESETS:
+    if _p.ident != 0:                    # CUSTOM populates nothing by design
+        _p.values.setdefault("dbwEnable", _DBW_OFF)
+        assert _p.values["dbwEnable"].value == 0, _p.key
 
 # --------------------------------------------------------------------------
 # Component presets.

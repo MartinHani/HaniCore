@@ -32,7 +32,7 @@ import hcpaths  # noqa: F401,E402  (puts every tools/ and tests/ module on sys.p
 import ts_ini  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
-HANI_INI = ROOT / "tunerstudio/history/hanicore_me711_v97_dev.ini"
+HANI_INI = ROOT / "tuning/history/hanicore_me711_v97_dev.ini"
 
 # (regex, category, recommended wording). Word-bounded, case-sensitive where
 # the abbreviation is.

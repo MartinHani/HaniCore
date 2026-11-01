@@ -21,7 +21,7 @@
  */
 #include "hccam.h"
 
-hccam_t hccam_bank[2];
+hccam_t HCCAM_MEM hccam_bank[2];
 static hccam_t s_check;          /* hccam_check()'s scratch */
 
 static const unsigned int P_QS[]  = { 0u, 800u, 2600u, 5400u };
@@ -54,7 +54,7 @@ static unsigned int add_half(unsigned int a)
 }
 
 unsigned char HCCAM_FAR hccam_pattern_teeth(unsigned char pattern, unsigned char equal_n,
-                                  unsigned int *rel)
+                                  unsigned int HCCAM_MEM *rel)
 {
     const unsigned int *t = 0;
     unsigned char n = 0u, i;
@@ -80,7 +80,7 @@ unsigned char HCCAM_FAR hccam_pattern_teeth(unsigned char pattern, unsigned char
 }
 
 /* the window of k spacings ending at tooth i equals the one ending at j */
-static unsigned char same_window(const hccam_t *c, unsigned char i,
+static unsigned char same_window(const hccam_t HCCAM_MEM *c, unsigned char i,
                                  unsigned char j, unsigned char k)
 {
     unsigned char m, a, b;
@@ -94,14 +94,25 @@ static unsigned char same_window(const hccam_t *c, unsigned char i,
     return 1u;
 }
 
-unsigned char HCCAM_FAR hccam_init(hccam_t *c, const hccam_cfg_t *cfg)
+unsigned char HCCAM_FAR hccam_init(hccam_t HCCAM_MEM *c, const hccam_cfg_t *cfg)
 {
     unsigned int i;
-    unsigned char *p = (unsigned char *)c;
+    unsigned char HCCAM_MEM *p = (unsigned char HCCAM_MEM *)c;
     unsigned char a, b, k, uniq, n, hit;
 
     for (i = 0u; i < sizeof(*c); i++) p[i] = 0u;   /* no ?C_INIT on target */
+#ifdef HCCAM_MEM_FAR
+    {   /* a byte copy: a FAR struct assignment calls Keil's near ?C_WCPYFN,
+           which far code must never reach (it returns to the wrong segment) */
+        const unsigned char *s = (const unsigned char *)cfg;
+        unsigned char HCCAM_MEM *d = (unsigned char HCCAM_MEM *)&c->cfg;
+        for (i = 0u; i < sizeof(*cfg); i++) {
+            d[i] = s[i];
+        }
+    }
+#else
     c->cfg = *cfg;
+#endif
     c->tooth = 0xFFu;
     n = hccam_pattern_teeth(cfg->pattern, cfg->equal_n, c->rel);
     if (n == 0u || cfg->confirm == 0u || cfg->errlimit == 0u) {
@@ -158,7 +169,7 @@ unsigned char HCCAM_FAR hccam_init(hccam_t *c, const hccam_cfg_t *cfg)
     return 1u;
 }
 
-void HCCAM_FAR hccam_reset(hccam_t *c)
+void HCCAM_FAR hccam_reset(hccam_t HCCAM_MEM *c)
 {
     c->hn = 0u;
     c->est = 0u;
@@ -169,7 +180,7 @@ void HCCAM_FAR hccam_reset(hccam_t *c)
     c->cls = HCCAM_C_NONE;
 }
 
-static unsigned char pattern_error(hccam_t *c, unsigned char cls,
+static unsigned char pattern_error(hccam_t HCCAM_MEM *c, unsigned char cls,
                                    unsigned char cycle_known)
 {
     c->cls = cls;
@@ -195,7 +206,7 @@ typedef struct {
 
 static int iabs(int v) { return v < 0 ? -v : v; }
 
-static void judge(const hccam_t *c, const unsigned int *win, judge_t *j)
+static void judge(const hccam_t HCCAM_MEM *c, const unsigned int *win, judge_t *j)
 {
     unsigned char i, m;
     unsigned int e, d;
@@ -233,7 +244,7 @@ static void judge(const hccam_t *c, const unsigned int *win, judge_t *j)
     }
 }
 
-unsigned char HCCAM_FAR hccam_edge(hccam_t *c, unsigned int a, unsigned char crank_ok,
+unsigned char HCCAM_FAR hccam_edge(hccam_t HCCAM_MEM *c, unsigned int a, unsigned char crank_ok,
                          unsigned char cycle_known)
 {
     unsigned char i, n_same, n_other, t_same, t_other, act = 0u;

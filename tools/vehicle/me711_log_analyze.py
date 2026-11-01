@@ -878,6 +878,13 @@ def analyse_session(folder: Path, log: Log) -> dict:
 
 # ============================================= V100: by subject, by config ==
 TICKS_PER_MS = 1250.0      # TGT_TICKS_PER_MS_X10 12500 -> 0.8 us a tick
+TICKS_PER_MS_C4 = 750.0    # the 2.7T ME7.1 C4 at 24 MHz (7500)
+
+
+def ticks_per_ms(log):
+    """T7 ticks a millisecond for the board this log came from."""
+    sig = str((log.meta.get("identity") or {}).get("signature") or "")
+    return TICKS_PER_MS_C4 if "ME71C4" in sig else TICKS_PER_MS
 LAT_BOUND_MS = 1.0         # the project rules: the documented polled bound
 LAT_V99_MS = 2.11          # the worst the V99 car sessions measured (B2)
 IDLE_PW_NORM_MS = 3.5      # CARTEST_ANALYSIS B6: a 1.8T idle norm 2.5..3.5
@@ -952,10 +959,11 @@ def analyse_v100(folder: Path, log) -> tuple:
     ex, late = log.span("schedulerExecuted"), log.span("schedulerLate")
     miss, canc = log.span("schedulerMissed"), log.span("schedulerCancelled")
     lat = [v for v in log.col("schedulerMaxLatency") if v is not None]
+    tpm = ticks_per_ms(log)
     sch = {"executed": _delta(ex), "late": _delta(late),
            "missed": _delta(miss), "cancelled": _delta(canc),
            "max_latency_ticks": max(lat) if lat else None,
-           "max_latency_ms": round(max(lat) / TICKS_PER_MS, 3) if lat else None,
+           "max_latency_ms": round(max(lat) / tpm, 3) if lat else None,
            "overdwell": _delta(log.span("schedOverdwell")),
            "spark_skips": _delta(log.span("sparkSkips")),
            "capture_overflow": _delta(log.span("schedulerCaptureOverflow")),
@@ -987,7 +995,7 @@ def analyse_v100(folder: Path, log) -> tuple:
     for b, d in bands.items():
         d["late_per_executed"] = (round(d["late"] / d["executed"], 5)
                                   if d["executed"] else None)
-        d["max_latency_ms"] = round(d["max_latency_ticks"] / TICKS_PER_MS, 3)
+        d["max_latency_ms"] = round(d["max_latency_ticks"] / tpm, 3)
     sch["by_rpm_band"] = {str(k): bands[k] for k in sorted(bands)}
     S["scheduler"] = sch
     if sch["max_latency_ms"]:
@@ -1487,6 +1495,50 @@ def analyse_v100(folder: Path, log) -> tuple:
                        wv(a, "rpm"), wv(a, "asic_csum_err"),
                        wv(a, "asic_timeouts"), wv(a, "s5500_gap_max_ms"),
                        wv(a, "umkom_mismatch"), wv(a, "main_pass_max_T"))))
+
+    # ---- S5500 BAD REPLIES (2026-10-28, stability issue 02): each rejected
+    # reply as the ECU kept it. Window words that differ from the last good
+    # slow-block reading by ONE bit look like line noise; whole wrong words
+    # or a shifted frame look like a software/PEC problem.
+    bad_file = folder / "asic_bad_frames.jsonl"
+    if bad_file.exists():
+        slow_rows = _csv(folder / "slow.csv") or []
+        caps = []
+        for line in bad_file.read_text().splitlines():
+            try:
+                c = json.loads(line)
+            except ValueError:
+                continue
+            frame, t = c.get("frame") or [], num(c.get("_t")) or 0.0
+            ref = None
+            for r in slow_rows:
+                if (num(r.get("t")) or 0.0) <= t:
+                    ref = r
+            one_bit, other = [], []
+            base = int(num(ref.get("s5500Base")) or 4) if ref else 4
+            for i in range(16):
+                good = num(ref.get("s5500w%02d" % i)) if ref else None
+                if good is None or base + i >= len(frame):
+                    continue
+                x = int(good) ^ frame[base + i]
+                if x and (x & (x - 1)) == 0:
+                    one_bit.append(base + i)
+                elif x:
+                    other.append(base + i)
+            caps.append({"t": t, "captures": c.get("captures"),
+                         "rpm": c.get("rpm"), "calc": c.get("calc"),
+                         "recv": c.get("recv"),
+                         "sum_xor": (c.get("calc") or 0) ^ (c.get("recv") or 0),
+                         "one_bit_words": one_bit, "changed_words": other})
+            F.setdefault("s5500_bad_reply", []).append(dict(
+                t=t, text="S5500 reply #%s rejected at %s rpm: sum %04X "
+                "vs received %04X (xor %04X); frame words one bit off the "
+                "last good reading: %s; otherwise changed: %s"
+                % (c.get("captures"), c.get("rpm"), c.get("calc") or 0,
+                   c.get("recv") or 0,
+                   ((c.get("calc") or 0) ^ (c.get("recv") or 0)),
+                   one_bit or "none", other or "none")))
+        S["s5500_bad_replies"] = caps
 
     # ---- BURN: completed and failed flash writes
     com, err = log.col("nvmCommits"), log.col("nvmError")

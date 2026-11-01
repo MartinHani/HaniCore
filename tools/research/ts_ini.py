@@ -2,7 +2,7 @@
 """
 ts_ini.py - a small, dependency-free TunerStudio .ini reader for research tools.
 
-It is NOT the project's contract checker (tests/tunerstudio/ts_ini_ui_contract.py and
+It is NOT the project's contract checker (tests/tuning/ts_ini_ui_contract.py and
 friends are). It exists so tools/research/* can inventory and compare two
 .ini files - rusEFI's generated Proteus file and HaniCore's generated file -
 mechanically and reproducibly.

@@ -72,7 +72,8 @@ import hcpaths  # noqa: F401,E402  (puts every tools/ and tests/ module on sys.p
 import me711_trigger_test as T                                   # noqa: E402
 
 FAIL = 0
-TICKS_PER_S = 1_250_000
+import me711_heartbeat_gap_proof as HB                            # noqa: E402
+TICKS_PER_S = HB.TPMS * 100       # the board's T1: 1.25 MHz, 0.75 MHz on the 2.7T
 
 
 def check(name, ok, detail=""):

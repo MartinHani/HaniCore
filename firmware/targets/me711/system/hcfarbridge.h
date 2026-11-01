@@ -79,7 +79,6 @@
 #define hc_dbw_faults                 hc_dbw_faults_f
 /* hcsched_dry.c (V97: hcknock711.c arms its window from the last tooth) */
 #define hc_drysched_snap              hc_drysched_snap_f
-#define hc_lf_export_byte             hc_lf_export_byte_f
 /* hcts.c (V94: hckwp_me711.c transmits and sets the rate) */
 #define hcts_tx                       hcts_tx_f
 #define hcts_tx_end                   hcts_tx_end_f
@@ -103,8 +102,6 @@
 #define asic_frame_word asic_frame_word_f
 #define asic_isolate asic_isolate_f
 #define eng_lambda_x1000 eng_lambda_x1000_f
-#define hc_bf_u16 hc_bf_u16_f
-#define hc_bf_u8 hc_bf_u8_f
 #define hc_cfg_persist_class hc_cfg_persist_class_f
 #define hc_dbw_app1_x10 hc_dbw_app1_x10_f
 #define hc_dbw_app2_x10 hc_dbw_app2_x10_f
@@ -123,9 +120,6 @@
 #define hc_hal_s5500_window hc_hal_s5500_window_f
 #define hc_nvm_attempts hc_nvm_attempts_f
 #define hc_nvm_cells_total hc_nvm_cells_total_f
-#define hc_nvm_commit_fail_stage hc_nvm_commit_fail_stage_f
-#define hc_nvm_commit_last_stage hc_nvm_commit_last_stage_f
-#define hc_nvm_commit_stage hc_nvm_commit_stage_f
 #define hc_nvm_commits hc_nvm_commits_f
 #define hc_nvm_erase_fails hc_nvm_erase_fails_f
 #define hc_nvm_erase_ms hc_nvm_erase_ms_f
@@ -186,4 +180,9 @@
 #define hcts_service hcts_service_f
 #define hcts_rx_pump hcts_rx_pump_f
 #define hc_tlog_byte hc_tlog_byte_f
+/* hcnvm.c: the one NCODE flash step the FCODE updater driver (hcdiag711.c)
+   calls. Unconditional - this header is included before HC_UPDATER is defined
+   (hc_board.h), and the macro is inert in a release build (nothing references
+   hc_nvm_stage_op there). */
+#define hc_nvm_stage_op hc_nvm_stage_op_f
 #endif

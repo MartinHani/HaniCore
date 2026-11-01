@@ -92,6 +92,9 @@ if "--control" in sys.argv:
     raise SystemExit(0 if ok else 1)
 
 import me711_trigger_test as PT          # noqa: E402
+# the board's capture clock (1.25 MHz Porsche, 0.75 MHz 2.7T), from hctarget.h
+import me711_heartbeat_gap_proof as _HB
+TICKS_PER_S = _HB.TPMS * 100
 import me711_trigger_scheduler_proof as V      # noqa: E402
 
 TI_US = 12000          # the cylinder's open time per CYCLE
@@ -119,7 +122,7 @@ class SeqRig(V.Rig):
         super().__init__(PT, sync_mode=sync_mode, cam_level=True,
                          phase_x=phase_x)
         if rpm:
-            self.p = round(1_250_000 / rpm)     # T1 ticks per tooth
+            self.p = round(TICKS_PER_S / rpm)   # T1 ticks per tooth
         self.ti = ti
         h = V.gen_h()
         u = 0x380000 + 12
@@ -194,7 +197,7 @@ class SeqRig(V.Rig):
                     on[b] = (clock, ph)
                 if prev & m and not ij & m and b in on:
                     c0, p0 = on.pop(b)
-                    out[b].append((p0, ph, (clock - c0) / 1.25))
+                    out[b].append((p0, ph, (clock - c0) / (TICKS_PER_S / 1e6)))
             prev = ij
         return out
 

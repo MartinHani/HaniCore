@@ -234,10 +234,15 @@ def main() -> int:
               "the reproducible build is %s" % (base_hash[:16], first[:16]))
 
     # ---------- 4. the preset change is IN the binary ----------------------
-    mode3, rc3 = applied_sync_mode(3)
-    mode4, rc4 = applied_sync_mode(4)
-    want3 = source_sync_mode(3)
-    check("applying the 1.8T preset writes the config source's syncMode",
+    # the board's own engine preset and board default: the AWT (3) and the
+    # ME7.1.1 board default (4) on the Porsche image; the Audi 2.7T (6) and
+    # the C4 board default (5) on the C4 image (the other board's are absent)
+    import hc_board
+    eng, bd = (6, 5) if hc_board.IS_C4 else (3, 4)
+    mode3, rc3 = applied_sync_mode(eng)
+    mode4, rc4 = applied_sync_mode(bd)
+    want3 = source_sync_mode(eng)
+    check("applying the board's engine preset (%d) writes the config source's syncMode" % eng,
           mode3 == want3,
           "the firmware's own preset table put syncMode = %s into the ACTIVE "
           "page; the source says %d (1 = SYNC_CRANK_ONLY, 2 = SYNC_CAM1_CYCLE)"
@@ -246,7 +251,7 @@ def main() -> int:
           rc3 == 0,
           "rc 0x%04X - a refused page can never arm an output (12M/3)" % rc3)
     check("the board default is unaffected and still applies clean",
-          mode4 == source_sync_mode(4) and rc4 == 0,
+          mode4 == source_sync_mode(bd) and rc4 == 0,
           "board default syncMode = %s, rc 0x%04X" % (mode4, rc4))
 
     # ---------- 4b. the MANIFEST records the config pipeline ---------------

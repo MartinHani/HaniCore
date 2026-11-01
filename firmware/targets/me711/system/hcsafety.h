@@ -1,5 +1,6 @@
 #ifndef HCSAFETY_H
 #define HCSAFETY_H
+#include "hctarget.h"          /* the stack addresses below are per board */
 #define HC_INHIBIT_BENCH_SAFE 0x0001u
 #define HC_INHIBIT_NO_CYCLE   0x0002u
 #define HC_INHIBIT_ASIC       0x0004u
@@ -65,6 +66,7 @@
  * HC_STK_MARGIN_PCT of each stack unused, and the guard band must never be
  * touched. Both high-water marks are published (OCH 730 user, runtime health
  * block system), measured on the ECU by the same pattern scan. */
+#if !TGT_BOARD_VAG_ME71_C4
 #define HC_STK_BOT      0xF380u
 #define HC_STK_TOP      0xF580u
 #define HC_STK_SIZE     (HC_STK_TOP - HC_STK_BOT)
@@ -72,6 +74,23 @@
 #define HC_STK_GUARD_HI 0xF380u
 #define HC_SSTK_BOT     0xF586u            /* STKOV                        */
 #define HC_SSTK_TOP     0xF800u            /* STKUN                        */
+#else
+/* THE 2.7T's C167CR HAS NO RAM AT 0xF200-0xF5FF (2026-10-26). Its IRAM is
+ * 0xF600-0xFDFF [C167CR UM V3.1 3.x, "The C167CR provides 2 KByte of IRAM";
+ * BOM Stuecklisten.xls SAK-C167CR-4RM; BSL id 0xC5 vs the Porsche C167CS's
+ * 0xD5; the stock 4B0907551F keeps its system stack in 0xF614-0xF700]. The
+ * Porsche layout put the user stack there and the first image never ran.
+ * Here: the user stack is the top of the on-chip XRAM (0xE600-0xE7FF, the
+ * UM's own suggestion for user stacks), its guard band under it, and the
+ * system stack keeps its 634 bytes at the bottom of the IRAM. */
+#define HC_STK_BOT      0xE600u
+#define HC_STK_TOP      0xE800u
+#define HC_STK_SIZE     (HC_STK_TOP - HC_STK_BOT)
+#define HC_STK_GUARD_LO 0xE5E0u
+#define HC_STK_GUARD_HI 0xE600u
+#define HC_SSTK_BOT     0xF606u            /* STKOV                        */
+#define HC_SSTK_TOP     0xF880u            /* STKUN                        */
+#endif
 #define HC_STK_MARGIN_PCT 40u
 /* The top 64 bytes are LIVE when hc_stack_prime() runs - it is called from
    main(), which is itself a frame - so they are never written. That bounds

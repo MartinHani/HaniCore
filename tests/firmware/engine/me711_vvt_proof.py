@@ -71,6 +71,13 @@ def off(name):
     return int(re.search(r"#define\s+%s\s+(\d+)u?\b" % name, GEN).group(1))
 
 
+import hc_board  # noqa: E402
+# POUT0 / POUT1's cavities (hctarget.h TGT_POUT*_CAV): 115 / 120 on the
+# Porsche, 114 (AGR) / 104 (N75) on the C4 board
+P0, P1 = (114, 104) if hc_board.IS_C4 else (115, 120)
+# PWM counts per second, fCPU / 64: 625 000 at 40 MHz, 375 000 at 24 MHz
+CPS = 375000 if hc_board.IS_C4 else 625000
+
 def check(name, ok, detail=""):
     global FAIL
     print(f"  [{'PASS' if ok else 'FAIL'}] {name:<66} {detail}")
@@ -103,8 +110,8 @@ class Rig:
             self.pg16("CFG_U_VVT_LOAD_AX", 200 * i, i)
         self.target(0, 0)
         self.target(1, 0)
-        self.pg8("CFG_U_PIN_CAM1_SOL", 115)
-        self.pg8("CFG_U_PIN_CAM2_SOL", 120)
+        self.pg8("CFG_U_PIN_CAM1_SOL", P0)
+        self.pg8("CFG_U_PIN_CAM2_SOL", P1)
         self.ram16("trg_rpm", 2000)
         self.ram16("eng_clt_dc", 10900)                # 90 C
         self.ram16("eng_rl_x10", 500)
@@ -134,7 +141,10 @@ class Rig:
         self.x.m.w16(T.sym(name) & 0xFFFF, v & 0xFFFF)
 
     def cam_state(self, b, cls, dev_x10):
-        a = (self.cam_base + CAM_SIZE * b) & 0xFFFF
+        # NOT masked to 16 bits: on the C4 branch (2.7T, ME7.5) hccam_bank is
+        # far, in external SRAM (0x38xxxx) - masked, the rig wrote the cam
+        # state somewhere else and V3/V6 failed there (2026-10-31)
+        a = self.cam_base + CAM_SIZE * b
         self.x.m.w8(a + CAM_CLS, cls)
         self.x.m.w16(a + CAM_DEV, dev_x10 & 0xFFFF)
 
@@ -188,27 +198,28 @@ def main() -> int:
           and c0["state"] & S_OFF and c1["state"] & S_OFF,
           "cam1 %s cam2 %s" % (c0, c1))
 
-    print("\n-- V2 switch, cam 1 -> 115 --")
+    print("\n-- V2 switch, cam 1 -> %d --" % P0)
     r = Rig()
     r.pg8("CFG_U_VVT_MODE", 1, 0)
     r.target(0, 100)
     r.run(200, fresh=(False, False))            # SWITCH needs no position
     u0 = r.unit(0)
-    check("V2: target > 0 -> ON duty on POUT0 (115) at 250 Hz",
-          u0["run"] and u0["pin"] and u0["pp"] == 2499 and u0["pw"] == 1750
+    check("V2: target > 0 -> ON duty on POUT0 (%d) at 250 Hz" % P0,
+          u0["run"] and u0["pin"] and u0["pp"] == CPS // 250 - 1 and u0["pw"] == CPS // 250 * 700 // 1000
           and r.cam(0)["duty"] == 700 and r.cam(0)["state"] & S_SWITCH,
           "unit0 %s, cam1 %s" % (u0, r.cam(0)))
-    check("V2: cam 2's unit (120) untouched", r.released(1), str(r.unit(1)))
+    check("V2: cam 2's unit (%d) untouched" % P1, r.released(1), str(r.unit(1)))
     r.pg16("CFG_U_VVT_FREQ_HZ", 100)
     r.run(40, fresh=(False, False))
-    check("V2: the page frequency reaches the period (100 Hz -> PP0 6249)",
-          r.unit(0)["pp"] == 6249 and r.unit(0)["pw"] == 4375, str(r.unit(0)))
+    check("V2: the page frequency reaches the period (100 Hz -> PP0 %d)" % (CPS // 100 - 1),
+          r.unit(0)["pp"] == CPS // 100 - 1
+          and r.unit(0)["pw"] == CPS // 100 * 700 // 1000, str(r.unit(0)))
     r.target(0, 0)
     r.run(40, fresh=(False, False))
     check("V2: target 0 -> duty 0, POUT0 released", r.released(0)
           and r.cam(0)["duty"] == 0, str(r.unit(0)))
 
-    print("\n-- V3 closed loop, cam 2 -> 120 --")
+    print("\n-- V3 closed loop, cam 2 -> %d --" % P1)
     r = Rig()
     r.pg8("CFG_U_VVT_MODE", 2, 1)
     r.target(1, 200)                            # 20.0 deg advance
@@ -219,9 +230,9 @@ def main() -> int:
     check("V3: target 20.0, position 10.0, error +10.0 at OCH",
           c["target"] == 200 and c["pos"] == 100 and c["err"] == 100
           and c["state"] & S_CLOSED, str(c))
-    check("V3: advance wanted -> duty up, on POUT1 (120), within min..max",
+    check("V3: advance wanted -> duty up, on POUT1 (%d), within min..max" % P1,
           u1["run"] and u1["pin"] and 100 <= c["duty"] <= 900
-          and u1["pw"] == c["duty"] * 2500 // 1000, "duty %d, unit1 %s"
+          and u1["pw"] == c["duty"] * (CPS // 250) // 1000, "duty %d, unit1 %s"
           % (c["duty"], u1))
     d_adv = c["duty"]
     check("V3: cam 1 (Off) stays released - the cams are independent",
@@ -313,10 +324,10 @@ def main() -> int:
     r.target(0, 100)
     r.run(100)
     ran = r.unit(0)["run"]
-    r.pg8("CFG_U_PIN_CAM1_SOL", 120)
+    r.pg8("CFG_U_PIN_CAM1_SOL", P1)
     r.pg8("CFG_U_PIN_CAM2_SOL", 255)
     r.run(100)
-    check("V9: cam 1 moved 115 -> 120: POUT1 runs, POUT0 released",
+    check("V9: cam 1 moved %d -> %d: POUT1 runs, POUT0 released" % (P0, P1),
           ran and r.unit(1)["run"] and r.released(0),
           "unit0 %s unit1 %s" % (r.unit(0), r.unit(1)))
 

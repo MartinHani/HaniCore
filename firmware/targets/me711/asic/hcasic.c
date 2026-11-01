@@ -15,7 +15,6 @@
  */
 #include <reg167.h>
 #include "hctarget.h"
-#include "hcliveforensics.h"
 #include "hcts.h"
 #include "hcasic.h"
 #include "hcnvm.h"
@@ -42,27 +41,6 @@ sbit ASIC_MRST_DIR = DP3 ^ 8;
 sbit ASIC_MTSR_DIR = DP3 ^ 9;
 sbit ASIC_SCLK_DIR = DP3 ^ 13;
 
-unsigned char asic_state;
-unsigned char asic_alive;
-unsigned char asic_last_class;
-unsigned int  asic_tx_count;
-unsigned int  asic_rx_count;
-unsigned int  asic_start_count;
-unsigned int  asic_run_count;
-unsigned int  asic_csum_ok;
-unsigned int  asic_csum_err;
-unsigned int  asic_class_err;
-unsigned int  asic_timeouts;
-unsigned int  asic_ssc_err;
-unsigned int  asic_last_csum;
-unsigned int  asic_want_csum;
-
-/* The accepted snapshot. A frame is only copied here once its checksum and its
-   reply class have both passed, so nothing downstream can read half a frame or
-   a rejected one. THIS is the double buffer: FRAME is the PEC's, this is
-   HaniCore's, and the copy is the acceptance. */
-static unsigned int volatile far *const RXSNAP =
-    (unsigned int volatile far *)(TGT_EXTRAM_BASE + TGT_RAM_ASICLOG);
 
 static unsigned char in_flight;      /* words expected back, 0 = nothing     */
 unsigned char asic_err_latched;      /* an SSC error needs a full re-init    */
@@ -94,45 +72,11 @@ unsigned char hc_ssc_done;           /* set by the RX ISR, cleared by reader */
    The number below is unchanged; only the reasoning is now correct. */
 unsigned int  hc_ssc_xfer_ticks;
 unsigned int  hc_ssc_start_t7;
-static unsigned int  flight_start;   /* T7 when it was started               */
-static unsigned char fail_run;       /* consecutive failures                 */
-static unsigned int  ms_since;       /* ms since the last exchange started   */
-
-/* How long a frame may take before it is written off. 118 words at the SSC's
-   own rate is well under a millisecond; 20 ms is two orders of margin and it
-   is short enough that a dead ASIC costs nothing visible in the main loop. */
-#define ASIC_FLIGHT_MS      20u
-/* How often a runtime frame goes out. The OEM schedules its runtime service
-   from a task table whose tick length this repo cannot yet convert into
-   milliseconds, so this is HaniCore's own choice and it is deliberately slow:
-   10 ms is fast enough to prove the link is alive and slow enough that a
-   misunderstanding of the protocol cannot flood the ASIC. */
-#define ASIC_RUN_PERIOD_MS  10u
-/* After this many consecutive failures the link latches out. It keeps trying
-   the STARTUP frame after that, but it never claims to be running. */
-#define ASIC_FAIL_LIMIT     8u
 
 static void asic_clear_diag(void)
 {
-    asic_state = ASIC_OFF;
-    asic_alive = 0;
-    asic_last_class = 0;
-    asic_tx_count = 0;
-    asic_rx_count = 0;
-    asic_start_count = 0;
-    asic_run_count = 0;
-    asic_csum_ok = 0;
-    asic_csum_err = 0;
-    asic_class_err = 0;
-    asic_timeouts = 0;
-    asic_ssc_err = 0;
-    asic_last_csum = 0;
-    asic_want_csum = 0;
     in_flight = 0;
-    fail_run = 0;
-    ms_since = 0;
 }
-
 /* RESETDIAG_V1 intentionally does not attempt an ASIC handshake. OEM copies
    a dedicated 96-word initialization block before the first exchange; the
    former HaniCore image substituted a runtime-style zero frame whose fields
@@ -153,28 +97,6 @@ void asic_isolate(void)
     ASIC_MTSR_DIR = 0;
     ASIC_SCLK_DIR = 0;
 }
-
-/* ======================================================================== *
- * EVERYTHING BELOW IS COMPILED OUT WHILE THE LINK IS ISOLATED.
- *
- * Not #if-ed for tidiness. RESETDIAG_V1 exists to answer one question - is
- * the ~420 ms reset the on-chip watchdog? - and it cannot answer it while a
- * second candidate is in the image. Leaving this code linked but unreachable
- * would be nearly as good and not quite: a routine that programs PEC source
- * and destination pointers and sets SSCEN is exactly the kind of thing that
- * must be ABSENT rather than merely not called, and
- * tools/me711_wdt_audit.py checks the final BIN for precisely those
- * register writes. If they are in the image, the audit fails and the build
- * does not ship.
- *
- * The startup frame itself is a second reason. OEM ME7.1.1 does not begin with the
- * 118-word runtime frame this module sends: 0x8BE73A builds and transfers a
- * 96-word STARTUP image first and only schedules runtime traffic after it is
- * accepted. Until that startup frame is recovered well enough to know that
- * every word of it is inert, transmitting anything to a processor that can
- * reset this CPU - and drive output stages - is not a bench-safe act.
- * ======================================================================== */
-#if !TGT_ASIC_ISOLATED
 
 /* ------------------------------------------------------------- checksum ---
  * A wrapping 16-bit additive word sum over words 0..n-2, compared against word
@@ -206,11 +128,6 @@ unsigned int hc_asic_frame_sum(unsigned char n)
     return s;
 }
 
-/* RXSNAP is HaniCore's own accepted-frame copy, not part of the exchange, so
-   clearing it on every re-init is harmless and keeps stale frames from being
-   read back as current. */
-/* (RXSNAP is cleared inline in asic_init - see below.) */
-
 /* Clear the exchange buffer. Called ONCE per session, from the SSC_INIT
    transition - never from a mid-session re-init, because words 1..3 hold the
    supervision handshake and must survive one. This is what keeps a warm reset
@@ -230,8 +147,6 @@ void asic_frame_clear(void)
  * [OEM ME7.1.1 0x82325E is called with R12 = 0x461F, R13 = 0x0013, R14 = 2.] */
 void asic_init(void)
 {
-    unsigned char i;
-
     asic_clear_diag();
 
     /* THE FRAME BUFFER IS NOT CLEARED HERE ANY MORE.
@@ -248,14 +163,7 @@ void asic_init(void)
      * and nothing else; it never goes near the frame buffer. This now matches.
      *
      * Clearing at boot is still required, and hcasicstart does it once at the
-     * SSC_INIT transition via asic_frame_clear().
-     *
-     * RXSNAP is HaniCore's own accepted-frame copy and takes no part in the
-     * exchange, so clearing it on every re-init is harmless and stops a stale
-     * frame being read back as current. */
-    for (i = 0; i < TGT_ASIC_WORDS_RUN; i++) {
-        RXSNAP[i] = 0;
-    }
+     * SSC_INIT transition via asic_frame_clear(). */
 
     /* Deselect, and KEEP IT DRIVEN. Earlier images returned the select to an
        INPUT between frames on the theory that a floating line is "quieter"
@@ -285,8 +193,6 @@ void asic_init(void)
     SSCTIC = 0;
     SSCRIC = 0;
     SSCEIC = 0;
-
-    asic_state = ASIC_IDLE;
 }
 
 /* Start one exchange of n words. Returns 0 if it could not be started, which
@@ -404,13 +310,11 @@ unsigned char asic_start_transfer(unsigned char n)
        write: `in_flight` read 118 in 600 of 600 samples with hc_ssc_rx_vec at
        119, i.e. the ISR had run 119 times and cleared nothing. */
     in_flight = n;
-    flight_start = T7;
     hc_ssc_start_t7 = T7;
 
     SSCRIC = HC_IC(TGT_ILVL_ASIC, 0);
     SSCTIC = (unsigned int)(HC_IC(TGT_ILVL_ASIC_TX, 0) | 0x0080u);
 
-    asic_tx_count++;
     return 1;
 }
 
@@ -450,24 +354,13 @@ void hc_ssc_tx_isr(void) interrupt TGT_TRAP_SSCTINT
    set a flag and let the TASK level parse. No parsing in here. */
 void hc_ssc_rx_isr(void) interrupt TGT_TRAP_SSCRINT
 {
-    unsigned int lf_done_t7;
-
     SSCRIC &= (unsigned int)~0x0040u;    /* BCLR SSCRIE */
     hc_ssc_rx_vec++;
     if (!ASIC_CS_LATCH) {
-        lf_done_t7 = (unsigned int)T7;
-        hc_ssc_xfer_ticks = (unsigned int)(lf_done_t7 - hc_ssc_start_t7);
+        hc_ssc_xfer_ticks = (unsigned int)((unsigned int)T7 - hc_ssc_start_t7);
         ASIC_CS_LATCH = 1;               /* deselect, once */
         hc_ssc_done = 1;
         in_flight = 0;
-        /* Preserve the hardware completion time, but keep all external-RAM
-           forensic stores after the timing-critical chip-select release. */
-        if (hc_lf_fast_active != 0u) {
-            HC_LF_WORD(LF_SSC_ISR_T7) = lf_done_t7;
-            HC_LF_WORD(LF_SSC_ISR_COUNT)++;
-            HC_LF_WORD(LF_SSC_ISR_PEC) =
-                (unsigned int)(((PECC0 & 0xFFu) << 8) | (PECC4 & 0xFFu));
-        }
     }
 }
 
@@ -490,9 +383,7 @@ void hc_ssc_err_isr(void) interrupt TGT_TRAP_SSCEINT
 
 /* The PEC count fields, read live. A block that stalls half-way leaves its
    remaining count here, which turns "it did not finish" into a number. */
-/* The RAW PEC buffer, accepted or not. asic_rx_word() deliberately returns
-   only ACCEPTED frames; the dump needs what actually arrived, because the
-   whole point is to look at a reply that failed validation. */
+/* The RAW PEC buffer word i. */
 unsigned int asic_frame_word(unsigned char i)
 {
     return (i < (unsigned char)TGT_ASIC_WORDS_RUN) ? FRAME[i] : 0u;
@@ -527,244 +418,3 @@ void asic_abort_transfer(void)
     in_flight = 0;
 }
 
-/* Did PEC4 finish? Its count field reaching zero is the completion condition;
-   reading it is cheaper and more honest than trusting an interrupt flag we
-   would also have to clear. */
-static unsigned char asic_done(void)
-{
-    return (unsigned char)((PECC4 & 0x00FFu) == 0u);
-}
-
-/* ------------------------------------------------------- frame acceptance -
- * Both tests, in the order that costs least: the checksum first because it is
- * arithmetic on data already in RAM, then the reply class.
- *
- * [OEM ME7.1.1 parser 0x8BE4E8 accepts reply class byte 0x1E or 0x2E.] The class
- * lives in the low byte of word 0 in the reply; word 0 going OUT is 0xBAA5. */
-static unsigned char asic_accept(unsigned char n)
-{
-    unsigned int got;
-    unsigned char cls;
-    unsigned char i;
-
-    got = hc_asic_frame_sum(n);
-    asic_last_csum = got;
-    asic_want_csum = FRAME[n - 1u];
-    if (got != asic_want_csum) {
-        asic_csum_err++;
-        return 0;
-    }
-    asic_csum_ok++;
-
-    cls = (unsigned char)(FRAME[0] & 0x00FFu);
-    asic_last_class = cls;
-    if (cls != TGT_ASIC_REPLY_A && cls != TGT_ASIC_REPLY_B) {
-        asic_class_err++;
-        return 0;
-    }
-
-    /* Only now is the frame allowed to exist outside the PEC's buffer. */
-    for (i = 0; i < n; i++) {
-        RXSNAP[i] = FRAME[i];
-    }
-    asic_rx_count++;
-    asic_alive = 1;
-    return 1;
-}
-
-unsigned int asic_rx_word(unsigned char i)
-{
-    if (i >= TGT_ASIC_WORDS_RUN) {
-        return 0;
-    }
-    return RXSNAP[i];
-}
-
-/* ------------------------------------------------------------ the frames -
- * SAFE CONTENTS, and "safe" here means one specific thing: every word that
- * this repo has not PROVEN to be inert is left at zero, and the only words
- * written are the two the protocol demands - the header and the checksum.
- *
- * That is a deliberate refusal to guess. generated/me711_asic_runtime_frame.csv
- * shows the frame is a fixed mailbox region plus a typed extension area, and
- * the OEM packer fills words 4..70 from a pointer table at 0x816E80. Those
- * pointers are into OEM RAM that no longer exists in a HaniCore image, so
- * copying the SHAPE would mean transmitting whatever happens to be at those
- * addresses - which is exactly how an actuator command gets sent by accident.
- *
- * A frame of zeros plus a valid header and checksum is the one payload that
- * can be reasoned about. If the ASIC rejects it, that is a fact worth having
- * and it costs nothing but a counter. */
-static void asic_build(unsigned char n)
-{
-    unsigned char i;
-
-    for (i = 0; i < n; i++) {
-        FRAME[i] = 0;
-    }
-    FRAME[0] = TGT_ASIC_HEADER;          /* 0xBAA5 [OEM ME7.1.1 0x8BE2B6]          */
-    FRAME[n - 1u] = hc_asic_frame_sum(n);
-}
-
-/* ------------------------------------------------------------ the raster -*/
-#endif /* !TGT_ASIC_ISOLATED */
-
-#if TGT_ASIC_ISOLATED
-/* Isolated: there is no accepted frame. Returning zero is better than
-   returning whatever happens to be in a snapshot that was never written -
-   the telemetry publishes these words, and a stale value read as live data is
-   how somebody ends up believing an ASIC answered. The bounds test is kept so
-   the isolated and connected versions behave the same way at the edge. */
-unsigned int asic_rx_word(unsigned char i)
-{
-    if (i >= TGT_ASIC_WORDS_RUN) {
-        return 0;
-    }
-    return 0;
-}
-#endif /* TGT_ASIC_ISOLATED */
-
-/* ============================== the P6.4 chip-select stimulus is GONE ======
- *
- * RESETDIAG_V2 pulsed P6.4 as an active-low chip select on even boots and the
- * hardware answered: BOTH halves reset at PT=0x0134, same RAW=0x001C, same
- * TR=0x0002. The stimulus provably ran - its pulse counter advanced only on
- * even boots - and it changed nothing.
- *
- * That result means ONLY that a bare chip-select pulse does not satisfy the
- * reset source. It does NOT rule out the ASIC. But it does mean this code has
- * no further experimental value, and a safety build should not carry an unused
- * routine that drives an ASIC-facing pin. Deleted rather than left dead: V2 is
- * archived at the maintainer's hardware-session record and the code is
- * in git history.
- *
- * In RESETDIAG_V3, P6.4 is an INPUT in both halves and nothing drives it.
- */
-
-void asic_tick(void)
-{
-    if (ms_since < 60000u) {
-        ms_since++;
-    }
-}
-
-/* ------------------------------------------------------- the state machine
- * Non-blocking throughout. It is called from the main loop and it never waits
- * for anything: an exchange either has finished, has timed out, or is still in
- * flight, and all three return immediately. That is what keeps the K-line
- * alive when the ASIC is not. */
-void asic_service(void)
-{
-#if TGT_ASIC_ISOLATED
-    /* ISOLATED. There is no state machine, no SSC and no frame in this build;
-       every diagnostic counter stays at zero and asic_state stays ASIC_OFF, so
-       the reset test has exactly one variable in it. */
-    return;
-#else
-
-    unsigned char n;
-
-    /* SUPERSEDED - this machine no longer drives exchanges.
-     *
-     * hcasicstart.c owns the link. It implements the OEM sequence properly:
-     * startup #1 -> startup #2 -> the 118-word runtime dialogue, with the
-     * clean BSET/BCLR select edge, the 63.2 us arming delay, and immediate
-     * phase advance on success. This function is the older, simpler machine
-     * it replaced, and both were still being called from the main loop.
-     *
-     * That went unnoticed because both built the same bytes - a header, zeros
-     * and a checksum - so whichever one transmitted, the ASIC saw the same
-     * frame and every hardware result up to V10 stands unchanged.
-     *
-     * It stops being harmless with V11. The runtime handshake lives in words
-     * 1..3, which must be carried back from the ASIC's previous reply, and
-     * asic_build() below zeroes the buffer from index 0. With both machines
-     * running, the echo survived only every third runtime frame and the FIRST
-     * one went out as zeros - caught by tools/me711_echo_proof.py, which
-     * executes the image and reads what actually reaches the wire.
-     *
-     * The counters, the transport, the ISRs and asic_accept() all stay - they
-     * are shared with hcasicstart.c. Only this state machine stands down. */
-    return;
-
-    /* Kept for reference and for the isolated-build path; unreachable. */
-    /*lint -unreachable */
-    if (asic_state == ASIC_OFF) {
-        return;
-    }
-
-    /* --- something is in flight ------------------------------------------ */
-    if (in_flight) {
-        n = in_flight;
-
-        if (asic_done()) {
-            asic_abort_transfer();
-            /* The SSC's own error bits, latched into telemetry rather than
-               acted on: a parity or baud error tells the bench something a
-               checksum failure does not. */
-            asic_ssc_err |= (unsigned int)(SSCCON & 0x0F00u);
-
-            if (asic_accept(n)) {
-                fail_run = 0;
-                if (n == TGT_ASIC_WORDS_START) {
-                    asic_start_count++;
-                    asic_state = ASIC_START_OK;
-                } else {
-                    asic_run_count++;
-                    asic_state = ASIC_RUN_OK;
-                }
-            } else {
-                if (fail_run < 255u) {
-                    fail_run++;
-                }
-                asic_state = (unsigned char)((fail_run >= ASIC_FAIL_LIMIT)
-                                             ? ASIC_FAULT : ASIC_IDLE);
-            }
-            return;
-        }
-
-        if ((unsigned int)(T7 - flight_start)
-            > (unsigned int)US_TO_TICKS(ASIC_FLIGHT_MS * 1000u)) {
-            asic_abort_transfer();
-            asic_timeouts++;
-            asic_alive = 0;
-            if (fail_run < 255u) {
-                fail_run++;
-            }
-            asic_state = (unsigned char)((fail_run >= ASIC_FAIL_LIMIT)
-                                         ? ASIC_FAULT : ASIC_IDLE);
-        }
-        return;
-    }
-
-    /* --- nothing in flight: decide what to send next --------------------- */
-    if (ms_since < ASIC_RUN_PERIOD_MS) {
-        return;
-    }
-
-    switch (asic_state) {
-    case ASIC_IDLE:
-    case ASIC_FAULT:
-        /* Always the STARTUP frame from here. A latched fault keeps trying
-           this and only this: it may not claim the link is running, but
-           refusing to retry would mean a bench that has just plugged the ASIC
-           in never recovers without a power cycle. */
-        asic_build(TGT_ASIC_WORDS_START);
-        if (asic_start_transfer(TGT_ASIC_WORDS_START)) {
-            ms_since = 0;
-            asic_state = ASIC_START_TX;
-        }
-        return;
-    case ASIC_START_OK:
-    case ASIC_RUN_OK:
-        asic_build(TGT_ASIC_WORDS_RUN);
-        if (asic_start_transfer(TGT_ASIC_WORDS_RUN)) {
-            ms_since = 0;
-            asic_state = ASIC_RUN_TX;
-        }
-        return;
-    default:
-        return;
-    }
-#endif /* TGT_ASIC_ISOLATED */
-}

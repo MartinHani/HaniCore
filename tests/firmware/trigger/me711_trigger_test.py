@@ -9,6 +9,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "tools" / "lib"))
 import hcpaths  # noqa: F401,E402  (puts every tools/ and tests/ module on sys.path)
+import me711_heartbeat_gap_proof as _HB  # noqa: E402
+TPS = _HB.TPMS * 100     # T1 ticks per second of THIS board (1.25 / 0.75 MHz)
 import c167sim as S  # noqa: E402
 import me711_image as PI
 import me711_dpp as _dpp  # noqa: E402
@@ -80,7 +82,7 @@ class Call:
         # DPP1 WAS A LITERAL, AND IT WAS THE V52 CONST PAGE.
         # tools/lib/me711_dpp.py reads it from the map, as the startup does.
         _dpp.apply(self.m)
-        self.m.sfr[0xFE10] = 0xFC00
+        self.m.sfr[0xFE10] = PI.main_regbank()   # 0xFD00 on the 2.7T
         # R0 is Keil's software-stack pointer, and it grows DOWN from the top of
         # ?C_USERSTACK. THE SIZE IS READ FROM THE STARTUP SOURCE, not assumed.
         #
@@ -108,7 +110,7 @@ class Call:
         # of another commit may have another stack (me711_image.user_stack_top)
         self.stack_top = PI.user_stack_top()
         _assert_stack_clear(self.stack_top)
-        self.m.w16(0xFC00, self.stack_top)
+        self.m.w16(self.m.sfr[0xFE10], self.stack_top)
         self.max_steps = 0
 
     def call(self, fn, *args):
@@ -245,6 +247,36 @@ def describe_cam(call, refs=4, ref_x10=1220, window_x10=90, sync_mode=1):
     call.call("trg_test_geometry")
 
 
+def live_executor(call, sync=None):
+    """Make a described engine's events EXECUTE on a bare Call rig.
+
+    Since the deadline executor an event runs at its CC25 compare, and only
+    with three things a function-call rig does not get by itself:
+      * routed outputs - an event with no cavity executes with an empty
+        physical mask and is counted SUPPRESSED, not executed (the Porsche
+        V8's EV1..8 / ZUE1..8 here);
+      * the executor's clock - Call.enable_deadlines(): hc_hal_init(), and T1
+        advanced through Call.set_t1() runs every compare that falls due;
+      * the main loop's permissions - no hc_safety_service() runs here.
+    Call after describe_engine() (the routes are resolved at hc_hal_init()).
+    `sync`: for a rig that calls the planner directly instead of feeding the
+    decoder - the executor RE-CHECKS trg_state itself (a charge or opening
+    below TRG_SYNC_CRANK is refused at its compare), so the decoder has to
+    hold the sync level the rig hands hc_drysched_service().
+    """
+    for slot, cavs in (("CFG_U_PIN_INJ", (96, 97, 88, 89, 112, 113, 24, 19)),
+                       ("CFG_U_PIN_IGN", (102, 103, 94, 95, 110, 111, 8, 7))):
+        o = _uni(call, slot)
+        for i, v in enumerate(cavs + (255,) * 4):
+            call.m.w8(UNI_BASE + o + i, v)
+    call.enable_deadlines()
+    for n, v in (("hc_ignition_allowed", 1), ("hc_injection_allowed", 1),
+                 ("hc_cfg_validation", 0)):
+        call.m.w16(sym(n) & 0xFFFF, v)
+    if sync is not None:
+        call.m.w8(sym("trg_state") & 0xFFFF, sync)
+
+
 def describe_engine(call, cylinders=8, strokes=4, teeth=60, gap=2,
                     soi_x10=3600, tdc=None, cam_refs=4, cam_ref_x10=1220,
                     cam_window_x10=90, cam_sync_mode=1):
@@ -327,20 +359,48 @@ class Engine:
         describe_engine(self.x, cylinders=self.CYLINDERS, strokes=self.STROKES,
                         cam_sync_mode=cam_sync_mode)
         self.x.call("trg_init")
+        live_executor(self.x)
+        self.model()
         self.t = start & 0xFFFF
         self.edge(self.t, service=False)
 
     def service(self, t=None):
         if t is not None:
             self.x.set_t1(t)
+        self.model()
         self.x.call("trg_service")
 
     def edge(self, t, service=True):
         self.t = t & 0xFFFF
         self.x.set_t1(self.t)
         self.x.call("trg_test_crank_edge", self.t)
+        self.plan()
         if service:
             self.service()
+
+    def model(self):
+        """What the main loop's engine model would hold (10 deg, 3 ms dwell,
+        4 ms pulse) and its permissions - this rig runs neither hc_engine nor
+        hc_safety_service, and the planner plans nothing without them."""
+        for n, v in (("eng_adv_x10", 100), ("eng_dwell_x100", 300),
+                     ("eng_ti_base_us", 4000), ("eng_deadtime_us", 0),
+                     ("hc_ignition_allowed", 1), ("hc_injection_allowed", 1),
+                     ("hc_cfg_validation", 0)):
+            self.x.m.w16(sym(n) & 0xFFFF, v)
+
+    def plan(self):
+        """THE PLANNER IS AN INTERRUPT LEVEL since 2026-10-06 (CC26, requested
+        by the crank ISR; hcsched_dry.c hc_plan_isr). This function-call rig
+        executes no interrupts, so the capture ring filled (overflow, the
+        executor quiesced) and nothing was ever planned - "scheduler executes"
+        read 0 at every speed. Run it the way the CPU would, right after the
+        edge that requested it (as me711_trigger_scheduler_proof does); the
+        CC25 executor then runs in Call.advance_deadlines()."""
+        ic = self.x.m.r16(0xF174)                      # CC26IC
+        if ic & 0x80:
+            self.x.m.w16(0xF174, ic & ~0x80)
+            self.x.call("hc_drysched_service", self.t,
+                        self.x.u8("trg_state"))
 
     def wait_edge(self, ticks, slices=6):
         old = self.t
@@ -356,7 +416,7 @@ class Engine:
 
 def stable_case(rpm, start=1000):
     e = Engine(start)
-    p = round(1_250_000 / rpm)
+    p = round(TPS / rpm)
     for _ in range(4):
         e.rev(p)
     got = e.x.u16("trg_rpm")
@@ -551,7 +611,7 @@ def main():
     # Burn on the bench once the crank actually turned.
     missing = Engine(cam_sync_mode=4)
     for _ in range(9):
-        missing.rev(round(1_250_000 / 800))
+        missing.rev(round(TPS / 800))
     check("missing dual cams become explicit faults",
           (missing.x.u16("trg_cam_error") & 12) == 12,
           f"mask=0x{missing.x.u16('trg_cam_error'):04X}")
@@ -564,7 +624,7 @@ def main():
           stall.x.u8("trg_state") == 0 and stall.x.u16("trg_loss_reason") == 1)
 
     accel = Engine()
-    periods = [round(1_250_000 / r) for r in (150, 250, 400, 800, 1200, 2000, 3500, 6000)]
+    periods = [round(TPS / r) for r in (150, 250, 400, 800, 1200, 2000, 3500, 6000)]
     last = periods[0]
     for p in periods:
         # Change speed across the revolution.  The old test jumped as much as

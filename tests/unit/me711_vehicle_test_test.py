@@ -67,8 +67,7 @@ import me711_vehicle_test as VT        # noqa: E402
 # (tools/lib/me711_image.py). It was hardcoded to the V99 name, so a version
 # bump left this suite testing the channel map of a stale .ini.
 import me711_image as IMG                # noqa: E402
-INI = hcpaths.TUNERSTUDIO / ("hanicore_%s.ini" % IMG.STEM.replace(
-    "HaniCore_ME711_", "me711_").lower())
+INI = IMG.INI  # both boards: <stem>.ini (hanicore_me711_v102_dev / hanicore_me71_27t_v102_dev)
 CHECKS = FAILS = 0
 
 

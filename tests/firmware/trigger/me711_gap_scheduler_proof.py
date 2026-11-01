@@ -56,7 +56,9 @@ CONTROL_STEM = "HaniCore_ME711_v89_alphan_awt"   # the image the car ran
 RPMS = (150, 200, 300)
 OFFSETS = (0, 2680)
 ADV_X10, DWELL_X100, TI_US = 100, 500, 7200
-TICKS_PER_MS = 1250.0
+# the board's capture clock (1250 ticks/ms Porsche, 750 on the 2.7T)
+import me711_heartbeat_gap_proof as _HB
+TICKS_PER_MS = _HB.TPMS / 10.0
 CHECKS = FAILS = 0
 
 
@@ -212,7 +214,7 @@ def analyse(k, p, offset_x10):
 
 def run_case(PT, rpm, offset_x10, revs=6):
     k = Crank(PT, offset_x10)
-    p = round(1_250_000 / rpm)
+    p = round(TICKS_PER_MS * 1000.0 / rpm)
     for _ in range(revs):
         k.rev(p)
     return k, p
@@ -225,7 +227,7 @@ def overdwell(PT):
         r=D.Rig();r.call('hc_hal_out_group',IGN1(),1,1)
         assert not (r.call('hc_hal_out_mask_ign')&1), 'ordinary HAL ON bypassed ownership'
         r.publish(1,1,1000,3200);r.run(6000)
-        released=int((r.pulse_lengths('ign')[0]*0.8+999)//1000)
+        released=int((r.pulse_lengths('ign')[0]*1000.0/TICKS_PER_MS+999)//1000)
         for _ in range(2):r.publish(1,1,1000,3200);r.run(6000)
         r.publish(1,1,1000,3200);r.run(2000)
         refused=not(r.dirs()[0]&1)

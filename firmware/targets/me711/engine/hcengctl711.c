@@ -282,15 +282,25 @@ static unsigned int grab_pair(unsigned char ch1, unsigned char ch2,
 {
     unsigned int r1;
     unsigned int r2;
+    /* A CABLE THROTTLE HAS ONE TRACK (2026-10-31): with DBW disabled a
+       missing second track is grabbed as absent, track 1 alone. With DBW
+       enabled both stay mandatory - one track cannot detect its own
+       failure, and the validator refuses DBW without both. */
+    unsigned char one = (unsigned char)(!hc_hal_ain_ok(ch2)
+                                        && hc_cal_u8(CAL_DBW_ENABLE) == 0u);
 
-    if (!hc_hal_ain_ok(ch1) || !hc_hal_ain_ok(ch2)) {
+    if (!hc_hal_ain_ok(ch1) || (!one && !hc_hal_ain_ok(ch2))) {
         return ENG_GRAB_NOCHANNEL;
     }
     r1 = hc_hal_ain(ch1);
-    r2 = hc_hal_ain(ch2);
+    r2 = one ? ADC_PLAUS_LO : hc_hal_ain(ch2);
     if (r1 < ADC_PLAUS_LO || r1 > ADC_PLAUS_HI
         || r2 < ADC_PLAUS_LO || r2 > ADC_PLAUS_HI) {
         return ENG_GRAB_RAIL;
+    }
+    if (one) {
+        hc_cal_set_u16(slot1, r1);
+        return ENG_GRAB_PASS;
     }
 
     /* THE SPAN IS CHECKED BEFORE ANYTHING IS WRITTEN, against whatever the
@@ -721,10 +731,18 @@ static void stft_update(unsigned int rpm, unsigned int load_x10)
                                             && lam[b] <= lmax);
         /* Lifecycle-qualified lambda remains valid at steady conditions. */
         unsigned char ok = inr;
+        /* a NARROWBAND sensor knows only rich/lean of 1.00: trim only at a
+           stoichiometric target, hold otherwise (Speeduino's narrowband
+           closed loop has the same limit) */
+        unsigned char nbhold = (unsigned char)(
+            (b ? hc_cal_u8(CFG_U_LAM2_SRC) : hc_cal_u8(CFG_U_LAM1_SRC))
+                == HC_LAMBDA_NARROWBAND
+            && (E.lambda_x1000 < 980u || E.lambda_x1000 > 1020u));
         if (lam[b] != 0u && !inr && st == EC_STFT_ACTIVE) {
             st = EC_STFT_LAMBDA;
         }
-        stft_bank(b, lam[b], (unsigned char)(learn && ok), E.stft_region);
+        stft_bank(b, lam[b], (unsigned char)(learn && ok && !nbhold),
+                  E.stft_region);
         E.stft_pm[b] = (int)(E.stft_acc[b] / 16);
     }
     if (lam[0] == 0u && lam[1] == 0u) {
@@ -1172,8 +1190,13 @@ void far hc_ec_prime_service(void)
     }
     E.prime_ms = E.ms;
     E.prime_st = PRIME_ACTIVE;
-    /* T1 ticks / 8 (6.4 us): us x 1.25 / 8 = us x 5 / 32 */
+    /* T1 ticks / 8 (6.4 us): us x 1.25 / 8 = us x 5 / 32; the 2.7T's
+       0.75 MHz: us x 3 / 32 (it used the 5 until 2026-10-25) */
+#if TGT_TICKS_PER_MS_X10 == 12500UL
     hc_drysched_prime(DIV32U((unsigned long)us * 5u, 32u));
+#else
+    hc_drysched_prime(DIV32U((unsigned long)us * 3u, 32u));
+#endif
 }
 
 /* The largest knock retard any cylinder carries, 0.1 deg - knock alone:

@@ -51,18 +51,173 @@ import hcpaths as HCP  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 TARGET_DIR = ROOT / "firmware/targets/me711"
-BUILD_DIR = TARGET_DIR / "build"
+
+# ===========================================================================
+# THE BOARD (2026-10-24). One target family, two boards: the default is the
+# Porsche ME7.1.1 and builds exactly as before; --board vag_me71_c4 builds
+# the Audi 2.7T ME7.1 C4 into its own build directory and its own stem
+# (the maintainer's design notes).
+#
+# THE 2.7T BOOT REGION IS THE ECU'S OWN. Its CPU boots from a mask ROM
+# (ROMEN set, flash 0x0000-0x7FFF is never executed), so the first 128 KiB
+# come from a read of the ECU (--boot-from, default the corpus copy of the
+# owner's 4B0907551F) and only the ROMSYS entry and the three records are
+# recomputed - the contract me71_c4_boot_proof executes against the 05.12
+# mask-ROM code (an ME7 boot-sector read), which accepts the stock 2.7T images.
+# ===========================================================================
+BOARDS = {
+    "porsche_me711": {
+        "bld": "build", "pindesc": "hc_pin_desc_bosch_me711",
+        "stem": None,                       # me711_image.STEM
+        "ini": "hanicore_me711.ini",
+        "target": "Bosch ME7.1.1/44F (0261207696 / 1037371766)",
+        "boot": "owned",
+    },
+    "vag_me71_c4": {
+        "bld": "build_me71c4", "pindesc": "hc_pin_desc_vag_me71_c4",
+        "stem": "HaniCore_ME71_27T_v102_dev",
+        "ini": "hanicore_me71_27t.ini",
+        "target": "Bosch ME7.1 C4, Audi 2.7T (0261206xxx/0261207xxx, 24 MHz)",
+        "boot": "donor",
+        "donor": ROOT / "reference/ME7Sum/bins/4B0907551F.bin",
+        "header": b"\xDC\x5B",          # ROMSYS +4: the 05.xx mask-ROM family
+        # the 64-byte ROMSYS header at 0x8000 the own boot region keeps (its
+        # sum words are recomputed); checked against the donor when present
+        "romsys_header": bytes.fromhex(
+            "52898700DC5B0000200000003800000010B78100FFFF8F00FA00FFFFFFFFFFFF"
+            "008081008E81810000FC80008EFD800000008100FEFF810015C600003C54B200"),
+        "first_level": ROOT / "bins/oem/CPU.BIN",
+    },
+    # 2026-10-27: the Audi 4F 4.2 V8 ME7.1.1 (0261208363 / 1037377030).
+    # Same 40 MHz C167CS, S5500 link and frames as the Porsche (startup frame
+    # identical, decoded from 0x8D33FE..; runtime 0xBAA5, words as the
+    # Porsche's) - the PORSCHE CODE on the 4F's own boot region (ROMSYS
+    # variant 0x5B00, mask ROM; a tester's stock read in bins/4f_v8/). First
+    # images: every output enabled, as on the Porsche. Plan:
+    # the maintainer's design notes.
+    "audi_4f_v8": {
+        "bld": "build_4f", "pindesc": "hc_pin_desc_bosch_me711",
+        "stem": "HaniCore_ME711_4F_v102_dev",
+        "ini": "hanicore_me711.ini",
+        "target": "Bosch ME7.1.1, Audi 4F 4.2 V8 (0261208363 / 1037377030)",
+        "boot": "donor",
+        "donor": ROOT / "bins/4f_v8/4F0910560.bin",
+        "header": b"\x00\x5B",          # ROMSYS +4: the 0x5B00 family
+        "romsys_header": bytes.fromhex(
+            "DC798E00005B0000200000003800000094F28100FFFF8F00FA0000000000FFFF"
+            "008081008E81810000FC80008EFD800000008100FEFF81009FB60000AD5D7400"),
+        # the 4F's mask ROM is not available; the 05.12 model stands in for
+        # the informational trap map only (INFERENCE) - the bench decides
+        "first_level": ROOT / "bins/oem/CPU.BIN",
+    },
+    # 2026-10-28: the VAG 1.8T ME7.5 "DC" (4B0906018DC / 0261207636, 24 MHz
+    # C167CR, bootrom 05.12, ROMSYS 0x5BDC like the 2.7T) - built ON the 2.7T
+    # branch (TGT_BOARD_VAG_ME71_C4) with TGT_BOARD_VAG_ME75_DC swapping the
+    # S5500 path for the CC650 bus ASIC + the 68HC05 monitor. Hardware and
+    # evidence: .scratch/me75-reverse/ (PORT_SPEC.md, IO_MAP.md).
+    "vag_me75_dc": {
+        "bld": "build_me75dc", "pindesc": "hc_pin_desc_me75_4b0906018dc",
+        "stem": "HaniCore_ME75_DC_v102_dev",
+        "ini": "hanicore_me75_dc.ini",
+        "target": "Bosch ME7.5, VAG 1.8T DC (4B0906018DC / 0261207636, 24 MHz)",
+        "boot": "donor",
+        "donor": ROOT / "reference/ME7Sum/bins/4B0906018DC.bin",
+        "header": b"\xDC\x5B",          # ROMSYS +4: the 05.xx mask-ROM family
+        "romsys_header": bytes.fromhex(
+            "066C8900DC5B00002000000038000000F8BE8100FFFF8F00FA0000000000FFFF"
+            "008081008E81810000FC80008EFD800000008100FEFF8100C9A8000039379F00"),
+        "first_level": ROOT / "bins/oem/CPU.BIN",
+    },
+}
+
+
+def _arg(name, default=None):
+    if name in sys.argv:
+        i = sys.argv.index(name)
+        if i + 1 >= len(sys.argv):
+            raise SystemExit(f"{name} needs a value")
+        return sys.argv[i + 1]
+    return default
+
+
+# The board defaults to HANICORE_BOARD, as every tool and gate does
+# (tools/lib/hc_board.py). 2026-10-25: it defaulted to the Porsche while the
+# OUTPUT NAME followed HANICORE_BOARD, so a gate that reran the build under the
+# 2.7T environment (me711_build_integrity_proof) wrote a PORSCHE image over
+# HaniCore_ME71_27T_v102_dev.bin - and every 2.7T gate after it tested the
+# Porsche. A --board that contradicts HANICORE_BOARD is refused for the same
+# reason: the image name and the code would describe different boards.
+_ENV_BOARD = __import__("os").environ.get("HANICORE_BOARD")
+BOARD_NAME = _arg("--board", _ENV_BOARD or "porsche_me711")
+if _ENV_BOARD and BOARD_NAME != _ENV_BOARD:
+    raise SystemExit(f"--board {BOARD_NAME} contradicts HANICORE_BOARD={_ENV_BOARD}: "
+                     "the image name follows HANICORE_BOARD - set one, or both alike")
+if BOARD_NAME not in BOARDS:
+    raise SystemExit(f"--board {BOARD_NAME!r}: one of {', '.join(BOARDS)}")
+BOARD = BOARDS[BOARD_NAME]
+IS_DC = BOARD_NAME == "vag_me75_dc"
+# the DC builds on the 2.7T branch: every IS_C4 path applies to it as well
+IS_C4 = BOARD_NAME in ("vag_me71_c4", "vag_me75_dc")
+IS_4F = BOARD_NAME == "audi_4f_v8"
+DONOR_BOOT = BOARD["boot"] == "donor"
+OWN_BLD = BOARD["bld"] != "build"          # a board with its own build dir
+if _arg("--boot-from"):
+    BOARD["donor"] = Path(_arg("--boot-from")).resolve()
+BUILD_DIR = TARGET_DIR / BOARD["bld"]
 CONTRACT = TARGET_DIR / "boot_contract/me711_boot_contract.bin"
 CONTRACT_SHA = "4FBBEA186A86FC137F3BF7867343F79063EA077DCFB5E1FB5DBE04147BE1F203"
 
+
+def board_text(path: Path) -> str:
+    """`path` with the INACTIVE branch of every `#if !TGT_BOARD_VAG_ME71_C4 /
+    #else / #endif` (or `#if TGT_BOARD_VAG_ME71_C4`) removed, so the regexes
+    below read the selected board's values. Other conditionals are kept."""
+    out, stack = [], []          # stack: (is_board_cond, active)
+    for line in path.read_text(errors="replace").splitlines(keepends=True):
+        s = line.strip()
+        m = re.match(r"#\s*if\s+(!?)\s*TGT_BOARD_VAG_ME71_C4\b", s)
+        if m:
+            stack.append((True, (m.group(1) == "!") != IS_C4))
+            continue
+        # the ME7.5 DC's overrides (end of hctarget.h): its own block, and an
+        # active #undef drops the earlier #define so the regexes read the DC
+        m = re.match(r"#\s*if\s+(!?)\s*TGT_BOARD_VAG_ME75_DC\b", s)
+        if m:
+            stack.append((True, (m.group(1) == "!") != IS_DC))
+            continue
+        # the 4F's `#ifdef TGT_BOARD_AUDI_4F` block (2026-10-29): as an
+        # ordinary conditional it was ACTIVE on every board, and its #undef
+        # gave the Porsche and 2.7T manifests the 4F's version text
+        if re.match(r"#\s*(ifdef|if\s+defined\s*\(?)\s*TGT_BOARD_AUDI_4F\b", s):
+            stack.append((True, IS_4F))
+            continue
+        if re.match(r"#\s*(ifndef|if\s+!\s*defined\s*\(?)\s*TGT_BOARD_AUDI_4F\b", s):
+            stack.append((True, not IS_4F))
+            continue
+        m = re.match(r"#\s*undef\s+(\w+)", s)
+        if m and all(a for b, a in stack if b):
+            pat = re.compile(r"\s*#\s*define\s+%s\b" % m.group(1))
+            out = [x for x in out if not pat.match(x)]
+            continue
+        if re.match(r"#\s*if", s):
+            stack.append((False, True))
+        elif re.match(r"#\s*else\b", s) and stack and stack[-1][0]:
+            stack[-1] = (True, not stack[-1][1])
+            continue
+        elif re.match(r"#\s*endif\b", s) and stack:
+            if stack.pop()[0]:
+                continue
+        if all(a for b, a in stack if b):
+            out.append(line)
+    return "".join(out)
+
+
+TGT_TEXT = board_text(TARGET_DIR / "hctarget.h")
 # Read straight out of the board file, so the manifest reports what the image
 # actually contains rather than what somebody typed here last.
 WDTCON_SERVICE = int(re.search(
-    r"#define\s+TGT_WDTCON_SERVICE\s+(0x[0-9A-Fa-f]+)",
-    (ROOT / "firmware/targets/me711/hctarget.h").read_text(errors="replace")).group(1), 16)
-OCH_SIZE = int(re.search(
-    r"#define\s+TGT_OCH_SIZE\s+(\d+)",
-    (TARGET_DIR / "hctarget.h").read_text(errors="replace")).group(1))
+    r"#define\s+TGT_WDTCON_SERVICE\s+(0x[0-9A-Fa-f]+)", TGT_TEXT).group(1), 16)
+OCH_SIZE = int(re.search(r"#define\s+TGT_OCH_SIZE\s+(\d+)", TGT_TEXT).group(1))
 STEM = "hani_me711"
 
 # EVERY OUTPUT PATH FROM ONE NAME, and that name lives in me711_image.py, which
@@ -84,11 +239,41 @@ import me711_owned_boot as OWNED                               # noqa: E402
 # rebuilds the earlier configuration with the extracted OEM boot block
 # (me711_boot_contract.py, local only) as a side image `<stem>_oemboot`, for
 # comparison with results obtained before that date.
-OWNED_BOOT = "--oem-boot" not in sys.argv
-if not OWNED_BOOT and not (TARGET_DIR / "boot_contract/me711_boot_contract.bin").exists():
+OWNED_BOOT = "--oem-boot" not in sys.argv and BOARD["boot"] == "owned"
+if (not OWNED_BOOT and not DONOR_BOOT
+        and not (TARGET_DIR / "boot_contract/me711_boot_contract.bin").exists()):
     raise SystemExit("--oem-boot needs the extracted OEM boot block "
                      "(tools/build/me711_boot_contract.py, local only)")
-_OUT = ROOT / "bins/hanicore" / (_IMG.STEM + ("" if OWNED_BOOT else "_oemboot"))
+# A 05.xx mask-ROM board (2.7T, 4F, ME7.5 DC) runs on HaniCore's OWN boot
+# region - me711_owned_boot.compose() with the board read's 64-byte ROMSYS
+# header as the checking scheme's base, no Bosch byte otherwise (default since
+# 2026-10-29, bench-proven on the 2.7T). --bosch-boot rebuilds the earlier
+# configuration on the donor's boot region as a side image `<stem>_boschboot`.
+OWN_0512 = DONOR_BOOT and "--bosch-boot" not in sys.argv
+# --p0-test [srst] (2026-10-29): the firmware-update P0 bench test - the
+# startup waits ~60 s before EINIT (and with `srst` ends the wait in a
+# software reset), start_me711.a66 section 3b. A side image <stem>_p0test /
+# _p0srst on the board's normal boot region; never a release build.
+P0_TEST = "--p0-test" in sys.argv
+P0_SRST = P0_TEST and sys.argv[sys.argv.index("--p0-test") + 1:][:1] == ["srst"]
+# --updater (2026-10-30): the resident update loader owns SA5 and runs at
+# EVERY reset before EINIT; the app moves up to SA6 behind its own sealed
+# 32-byte header and OUTSIDE the boot checksum, so an app update never
+# touches the sum. The boot region's reset -> the loader (0x820200), the
+# first-level vectors -> the app's table at the start of SA6 (seg 0x83). A
+# side image <stem>_updater on the board's OWN boot region; never a release
+# build (the no-flag build is byte-for-byte unchanged). spec.md section 11.
+UPDATER = "--updater" in sys.argv
+if UPDATER and not (OWNED_BOOT or OWN_0512):
+    raise SystemExit("--updater needs HaniCore's own boot region (it clears "
+                     "ROMEN and owns the vector table); it is not built on a "
+                     "retained Bosch boot block")
+_SIDE = ("_boschboot" if DONOR_BOOT and not OWN_0512 else "") + (
+    ("_p0srst" if P0_SRST else "_p0test") if P0_TEST else "") + (
+    "_updater" if UPDATER else "")
+_STEM_OUT = ((BOARD["stem"] or _IMG.STEM) + _SIDE if (BOARD["stem"] or _SIDE)
+             else (_IMG.STEM + ("" if OWNED_BOOT else "_oemboot")))
+_OUT = ROOT / "bins/hanicore" / _STEM_OUT
 OUT_BIN = _OUT.with_suffix(".bin")
 OUT_HEX = _OUT.with_suffix(".hex")
 OUT_MAP = _OUT.with_suffix(".M66")
@@ -156,6 +341,29 @@ BOOTSUM_R2_LIMIT = 0x0086FFFF   # header+0x14  <- V53 moved this, and only this
 #                                 (0x85FFFF until 2026-10-15: SA9 is code now)
 CAL_SECTOR = None               # retired: the append-only store replaced it
 
+# --updater: the resident loader's SA5 image (built by tools/build/build_loader.py)
+# and the layout it needs. The app's vector table moves to the start of SA6
+# (seg 0x83), the loader fills SA5, and the boot checksum shrinks to SA0..SA5
+# so the app region is outside it (an app update never touches the sum - the
+# loader's per-boot header+seal check is the app's gate instead).
+LOADER_SA5 = 0x820000           # file 0x020000: the loader image base
+LOADER_ENTRY = 0x820200         # HCL_ENTRY (build_loader.py; the .json confirms)
+APP_VEC_SEG = 0x83              # first-level slots 1..127 -> seg83:N*4 (SA6)
+APP_HDR_OFF = CODE_SEG_LO + 0x0200   # the 32-byte image header (hcloader.a66 HDR)
+_APP_HDR = {                    # hcloader.a66: magic/seal/board word offsets
+    "M0": 0x4348, "M1": 0x5041, "SEAL": 0x5AA5,
+}
+_BOARD_CODE = {"porsche_me711": 1, "vag_me71_c4": 2,
+               "audi_4f_v8": 3, "vag_me75_dc": 4}
+LOADER_BIN = ROOT / "bins/hanicore" / ("HaniCore_loader_%s.bin" % BOARD_NAME)
+if UPDATER:
+    ISR_TABLE = CODE_SEG_LO     # the app table at the start of SA6, not SA5
+    BOOTSUM_R2_LIMIT = 0x0082FFFF   # sum = SA0..SA5 (boot + loader); app excluded
+    if not LOADER_BIN.exists():
+        raise SystemExit("--updater: %s is missing. Build it first:\n"
+                         "       py tools\\build\\build_loader.py --board %s"
+                         % (LOADER_BIN.relative_to(ROOT).as_posix(), BOARD_NAME))
+
 # The append-only calibration store: SA10..SA18, nine 64 KiB sectors,
 # seventy-two 8 KiB cells (SA9..SA18 until 2026-10-15). Wholly above BOOTSUM_R2_LIMIT, which is what makes a reclaim
 # erase an ordinary NVM event instead of a bootmode recovery.
@@ -169,8 +377,8 @@ NVM_HI = 0x0FFFFF
 DEFENSIVE_ZERO = (0x038004, 4)
 
 
-def run(cmd, cwd):
-    p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+def run(cmd, cwd, env=None):
+    p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, env=env)
     return p.returncode, (p.stdout or "") + (p.stderr or "")
 
 
@@ -194,10 +402,6 @@ def provenance_state():
     for name in ("gen_ts_ini_me711", "me711_trigger_test",
                  "me711_trigger_adversarial_test",
                  "check_hanicore_ts_ini_syntax",
-                 "me711_burn_forensics_capture",
-                 "me711_burn_forensics_proof",
-                 "me711_forensics_retention_proof",
-                 "me711_nmi_handler_proof",
                  "c167sim",
                  "me711_release"):
         selected.append(HCP.script(name))
@@ -441,7 +645,6 @@ LINK_WARNING_ALLOWED = re.compile(
     r"|hcbench\.obj\s*\(HCBENCH\)"
     # V93: the ETB calibration / autotune
     r"|hcdiag711\.obj\s*\(HCDIAG711\)"
-    r"|hcliveforensics\.obj\s*\(HCLIVEFORENSICS\)"
     r"|hcetbcal\.obj\s*\(HCETBCAL\)"
     r"|hcdbwmotor711\.obj\s*\(HCDBWMOTOR711\)"
     r"|hcfresh711\.obj\s*\(HCFRESH711\)"
@@ -499,7 +702,7 @@ LINK_WARNING_ALLOWED = re.compile(
 
 
 MEDIUM_MODULES = ("HCVEC_ME711", "HCIO711", "HC_VALIDATION",
-                  "HC_CONFIG_MANAGER", "HC_ROUTE", "HCBENCH", "HCETBCAL", "HCDIAG711", "HCLIVEFORENSICS", "HCDBWMOTOR711", "HCFRESH711", "HCDEFAULTS711", "HCPROFILE711", "HCRTMON711", "HCSERIAL711", "HCDEADLINE_PLAN711", "HCROUTES711", "HCLOAD711",
+                  "HC_CONFIG_MANAGER", "HC_ROUTE", "HCBENCH", "HCETBCAL", "HCDIAG711", "HCDBWMOTOR711", "HCFRESH711", "HCDEFAULTS711", "HCPROFILE711", "HCRTMON711", "HCSERIAL711", "HCDEADLINE_PLAN711", "HCROUTES711", "HCLOAD711",
                   "HCKLINE", "HCKWP_ME711", "HCWB", "HCCAM", "HCLDR",
                   "HCBOOST711", "HCIDLE", "HCIDLE711", "HCAUX711", "HCDTC",
                   "HCDTC711", "HCLIMP", "HCLIMP711", "HCFUELPUMP",
@@ -626,8 +829,88 @@ def write_build_id() -> str:
     for p in sorted(files, key=lambda q: q.relative_to(ROOT).as_posix()):
         h.update(p.relative_to(ROOT).as_posix().encode() + b"\0")
         h.update(p.read_bytes())
-    BUILD_ID = h.hexdigest()[:8].upper()
+    if BOARD_NAME != "porsche_me711":
+        h.update(b"board\0" + BOARD_NAME.encode())   # same sources, other image
+    if DONOR_BOOT and not OWN_0512:
+        # another startup (ROMEN kept) and another boot region: the ECU
+        # must be able to say it runs the side image, not the release build
+        h.update(b"bosch-boot\0")
+    if P0_TEST:
+        h.update(b"p0-srst" if P0_SRST else b"p0-test")
+    if UPDATER:
+        # a different layout AND the loader bytes: the id must move with both
+        h.update(b"updater\0")
+        h.update(Path(LOADER_BIN).read_bytes())
     BUILD_DIR.mkdir(exist_ok=True)
+    (BUILD_DIR / "hc_board.h").write_text(
+        "/* WRITTEN BY tools/build/build_hanicore_me711.py - do not edit. */\n"
+        + ("#define TGT_BOARD_VAG_ME71_C4 1\n#define TGT_BOARD_VAG_ME75_DC 1\n"
+           if IS_DC else
+           "#define TGT_BOARD_VAG_ME71_C4 1\n" if IS_C4 else
+           # the 4F: Porsche code, every output enabled as on the Porsche
+           "#define TGT_BOARD_AUDI_4F 1\n"
+           if IS_4F else
+           "/* board: porsche_me711 (the default) */\n")
+        # --updater: the store gives SA15..SA18 to staging (hctarget.h); the
+        # app-side staging writer + commit (P3) compile only under this. Always
+        # DEFINED (0 or 1) so `#if HC_UPDATER` never trips C166 C322 on an
+        # unknown identifier (which build_me711.bat makes fatal).
+        + ("#define HC_UPDATER %d\n" % (1 if UPDATER else 0)), encoding="ascii")
+    if OWN_BLD or UPDATER:
+        # the linker file, re-pointed at this board's objects (the Porsche
+        # builds in "build" itself, so only its --updater image needs a copy:
+        # until 2026-10-30 this ran only for the boards with their own build
+        # directory, every Porsche --updater image linked FCODE over the
+        # vector table + header below, and it never started on the bench)
+        lnp = (TARGET_DIR / "linker_me711.lnp").read_text(errors="replace")
+        lnp = lnp.replace('"build\\', '"%s\\' % BOARD["bld"]).replace(
+            "hc_pin_desc_bosch_me711.obj", BOARD["pindesc"] + ".obj")
+        if UPDATER:
+            # the app's vector table (0x830000-0x8301FF) and its 32-byte image
+            # header (0x830200-0x83021F) sit at the start of SA6; keep FCODE
+            # off them - 544 bytes out of FCODE's 64 KiB headroom.
+            assert lnp.count("FCODE  (0x830000-") == 1
+            lnp = lnp.replace("FCODE  (0x830000-", "FCODE  (0x830220-")
+    if IS_C4:
+        # THE 2.7T's C167CR HAS NO RAM AT 0xF200-0xF5FF (hcsafety.h,
+        # 2026-10-26): user stack at the top of the XRAM with its guard band
+        # and the runtime health record (0xE5A0) under it, the system stack
+        # at 0xF606-0xF87F (start_me711.a66), C data above it, and the
+        # objects marked HC_C4FAR (class FDATA0) in the external SRAM block
+        # hctarget.h TGT_RAM_C4FAR names (its first 128 bytes: the K-line
+        # transport state).
+        for old, new in (
+                ("NDATA  (0xF380-0xF57F)", "NDATA  (0xE600-0xE7FF)"),
+                ("NDATA0 (0xF200-0xF27F, 0xF800-0xFCDF, 0xFD00-0xFDFF)",
+                 "NDATA0 (0xF880-0xFCDF, 0xFD00-0xFDFF)"),
+                ("XNDATA0 (0xE000-0xE09F, 0xE200-0xE7FF)",
+                 "XNDATA0 (0xE000-0xE09F, 0xE1EC-0xE57F),\n"
+                 "  FDATA0 (0x382A80-0x382FFF)"),
+                ("?C_USERSTACK%NDATA (0xF380)", "?C_USERSTACK%NDATA (0xE600)\n)\n"
+                 "; the register banks share the bit-addressable 0xFD00-0xFDFF\n"
+                 "; with the planner's idata, so the C data gets 0xF880-0xFCDF\n"
+                 "REGBANK (0xFD00")):
+            assert lnp.count(old) == 1, old
+            lnp = lnp.replace(old, new)
+        lnp = lnp.replace("(0xF800-0xFCDF, 0xFD00-0xFDFF)",
+                          "(0xF880-0xFCDF, 0xFD00-0xFDFF)")
+        # start_me711.a66 clears the far block with literals (A166 cannot
+        # read hctarget.h): they must be the header's
+        asm = (TARGET_DIR / "system" / "start_me711.a66").read_text(errors="replace")
+        hdr = (TARGET_DIR / "hctarget.h").read_text(errors="replace")
+        far = int(re.search(r"#define TGT_RAM_C4FAR\s+0x([0-9A-F]+)uL", hdr).group(1), 16)
+        lim = int(re.search(r"#define TGT_RAM_C4FAR_LIMIT\s+0x([0-9A-F]+)uL", hdr).group(1), 16)
+        if ("MOV     R13,#0%04XH" % far not in asm
+                or "CMP     R13,#0%04XH" % (far + lim) not in asm):
+            raise SystemExit("start_me711.a66's far-block clear does not match "
+                             "hctarget.h TGT_RAM_C4FAR 0x%04X+0x%04X" % (far, lim))
+    if OWN_BLD or UPDATER:
+        (BUILD_DIR / "linker.lnp").write_text(lnp, encoding="latin-1")
+        # the per-build linker file is a compiled input too: two Porsche
+        # --updater images (FCODE over the header, then off it) once shared
+        # build id 16C93912 (2026-10-30)
+        h.update(b"lnp\0" + lnp.encode("latin-1"))
+    BUILD_ID = h.hexdigest()[:8].upper()
     (BUILD_DIR / "hc_build_id.h").write_text(
         "/* WRITTEN BY tools/build/build_hanicore_me711.py - do not edit.\n"
         "   SHA-256 (first 32 bits) over every compiled input. */\n"
@@ -646,8 +929,29 @@ def main() -> int:
     write_build_id()
 
     # ---- 1. compile and link -------------------------------------------
+    import os as _os
+    benv = dict(_os.environ, HC_BLD=BOARD["bld"], HC_PINDESC=BOARD["pindesc"],
+                HC_ASET=(",BOARD_C4,BOARD_DC" if IS_DC else ",BOARD_C4" if IS_C4
+                        else ",BOARD_4F" if IS_4F else "")
+                        # own boot region: the startup clears ROMEN, so every
+                        # vector is fetched from OUR table at flash 0
+                        + (",OWNBOOT_ROMEN0" if OWN_0512 else "")
+                        + (",P0_PREEINIT" if P0_TEST else "")
+                        + (",P0_SRST" if P0_SRST else ""),
+                # the 2.7T's C167CR: the K-line session is far (hckline.h
+                # HCKL_FAR), and the engine/HAL values live in the XRAM
+                # (hcsafety.h) - every macro empty for the Porsche
+                HC_KLDEF="DEFINE(HCKLINE_NO_115200, HCKL_FAR=far)" if IS_C4 else "",
+                HC_C4X="RENAMECLASS(NDATA0=XNDATA0)" if IS_C4 else "",
+                # ONE DEFINE per command line: C166 keeps only the LAST
+                # DEFINE directive (a second one dropped HC_FAR_BRIDGE and
+                # hckwp_me711.c called near code without its thunks)
+                HC_KWPDEF=("DEFINE(HC_FAR_BRIDGE, HCKLINE_NO_115200, HCKL_FAR=far)"
+                           if IS_C4 else "DEFINE(HC_FAR_BRIDGE)"),
+                HC_LNP=("%s\\linker.lnp" % BOARD["bld"]) if (OWN_BLD or UPDATER)
+                else "linker_me711.lnp")
     code, out = run(["cmd", "/c", str(TARGET_DIR / "build_me711.bat")],
-                    cwd=TARGET_DIR)
+                    cwd=TARGET_DIR, env=benv)
     tail = out.replace("\r\n", "\n").strip()[-1200:]
     print(tail)
     if code != 0:
@@ -664,7 +968,6 @@ def main() -> int:
     startup = map_symbol(map_file, "?C_STARTUP")
     main_addr = map_symbol(map_file, "main")
     asic_isolate_addr = map_symbol(map_file, "asic_isolate")
-    asic_service_addr = map_symbol(map_file, "asic_service")
     # V4 brings the ASIC link UP on purpose, so this check inverts. It used to
     # demand asic_init's ABSENCE while the link was isolated; now it demands
     # its PRESENCE, together with the startup state machine, so an image that
@@ -710,10 +1013,16 @@ def main() -> int:
     #
     # So the build refuses to emit an image whose block size disagrees with the
     # .ini it ships beside, and refuses one that misnames itself.
-    _tgt = (TARGET_DIR / "hctarget.h").read_text(errors="replace")
+    _tgt = TGT_TEXT
     _och = int(re.search(r"#define\s+TGT_OCH_SIZE\s+(\d+)", _tgt).group(1))
-    _ver = re.search(r'#define\s+TGT_VERSIONTXT\s+"([^"]*)"', _tgt).group(1)
-    _ini = ROOT / "tunerstudio/hanicore_me711.ini"
+    # the 4F overrides the text in an #ifdef after the Porsche's (hctarget.h)
+    _vers = re.findall(r'#define\s+TGT_VERSIONTXT\s+"([^"]*)"', _tgt)
+    _ver = _vers[-1] if IS_4F else _vers[0]
+    if len(_ver) + len(" build 01234567") > 63:
+        raise SystemExit(f"FATAL: TGT_VERSIONTXT {_ver!r} + the build suffix "
+                         "does not fit the 64-byte 'V' reply (hcts.c send_text, "
+                         "send_plain): the ECU would report a cut build id")
+    _ini = ROOT / "tuning" / BOARD["ini"]
     if _ini.exists():
         _m = re.search(r"^\s*ochBlockSize\s*=\s*(\d+)", _ini.read_text(
             errors="replace"), re.M)
@@ -724,7 +1033,7 @@ def main() -> int:
                 f"TunerStudio would ask for {int(_m.group(1)) - 256} bytes in "
                 f"the last chunk and receive {_och - 256}, then drop and "
                 f"reconnect forever - the V29 bench failure of 2026-09-02. "
-                "Regenerate it: py tools/tunerstudio/gen_ts_ini_me711.py")
+                "Regenerate it: py tools/tuning/gen_ts_ini_me711.py")
     # The identity has to name the build. V29 shipped saying "V28 TRIGGER COMM"
     # and a real hardware log recorded the wrong build against a real result.
     _want = re.search(r"[vV](\d+)", OUT_BIN.stem)
@@ -752,10 +1061,11 @@ def main() -> int:
     _lay = re.search(r"#define\s+HC_CFG_LAYOUT_ID\s+0x([0-9A-Fa-f]{8})uL",
                      (ROOT / "firmware/generated/hc_config_generated.h")
                      .read_text(errors="replace")).group(1).upper()
-    if not _sig.startswith("rusEFI "):
+    if not _sig.startswith("HaniCore "):
         raise SystemExit(
-            f"FATAL: TGT_SIGNATURE is {_sig!r}. TunerStudio identifies a "
-            "rusEFI-protocol controller by a signature that begins 'rusEFI '.")
+            f"FATAL: TGT_SIGNATURE is {_sig!r}. It must begin 'HaniCore ' "
+            "(no 'rusEFI ' prefix since 2026-10-30): the host tools and "
+            "LibreTune's project match key on it.")
     if _lay not in _sig.upper():
         raise SystemExit(
             f"FATAL: TGT_SIGNATURE is {_sig!r} but the calibration page's "
@@ -775,25 +1085,72 @@ def main() -> int:
     print(f"\n?C_STARTUP  0x{startup:06X}      main  0x{main_addr:06X}")
 
     # ---- 2. the boot region ---------------------------------------------
+    # --updater: reset -> the loader (0x820200), not the app; the first-level
+    # vectors -> the app's own table at seg 0x83 (SA6). The app's real
+    # ?C_STARTUP still goes into the SA6 image header for the loader to jump to.
+    boot_startup = LOADER_ENTRY if UPDATER else startup
+    vseg = APP_VEC_SEG if UPDATER else OWNED.VECTOR_SEG
     img = bytearray(b"\xFF" * IMAGE_SIZE)
     if OWNED_BOOT:
-        OWNED.compose(img, startup, BOOTSUM_R1_LIMIT, BOOTSUM_R2_START,
-                      BOOTSUM_R2_LIMIT)
+        OWNED.compose(img, boot_startup, BOOTSUM_R1_LIMIT, BOOTSUM_R2_START,
+                      BOOTSUM_R2_LIMIT, vector_seg=vseg)
         contract = bytes(img[0:CONTRACT_LEN])
         print("boot region: HaniCore's own (no OEM bytes)")
     else:
-        contract = CONTRACT.read_bytes()
-        got = hashlib.sha256(contract).hexdigest().upper()
-        if len(contract) != CONTRACT_LEN or got != CONTRACT_SHA:
-            raise SystemExit(f"boot contract mismatch: {len(contract)} bytes, "
-                             f"sha256 {got}")
-        print(f"boot contract: {len(contract)} bytes, sha256 OK")
+        if OWN_0512:
+            # THE OWN BOOT REGION NEEDS NO STOCK READ (2026-10-31): only the
+            # 64-byte ROMSYS header, carried in BOARDS; a donor present
+            # locally must agree with it byte for byte.
+            hdr64 = BOARD["romsys_header"]
+            if Path(BOARD["donor"]).exists():
+                d = Path(BOARD["donor"]).read_bytes()
+                if d[0x8000:0x8040] != hdr64:
+                    raise SystemExit(f"{Path(BOARD['donor']).name}: its ROMSYS "
+                                     "header differs from BOARDS['romsys_header']")
+            OWNED.compose(img, boot_startup, BOOTSUM_R1_LIMIT,
+                          BOOTSUM_R2_START, BOOTSUM_R2_LIMIT,
+                          mask_rom_header=hdr64, vector_seg=vseg)
+            contract = bytes(img[0:CONTRACT_LEN])
+            print("boot region: HaniCore's own on the 05.xx mask ROM (the "
+                  "board's ROMSYS header scheme, no other OEM byte)")
+        elif DONOR_BOOT:
+            donor = Path(BOARD["donor"]).read_bytes()
+            if len(donor) != IMAGE_SIZE:
+                raise SystemExit(f"--boot-from {BOARD['donor']}: {len(donor)} "
+                                 "bytes, a full 1 MiB ECU read is needed")
+            if donor[0x8004:0x8006] != BOARD["header"]:
+                raise SystemExit("--boot-from: ROMSYS header word +4 is 0x%04X, "
+                                 "not this board's 0x%04X mask-ROM family"
+                                 % (donor[0x8004] | donor[0x8005] << 8,
+                                    BOARD["header"][0] | BOARD["header"][1] << 8))
+            contract = donor[:CONTRACT_LEN]
+            print(f"boot region: the ECU's own, from {Path(BOARD['donor']).name}"
+                  f" (sha256 {hashlib.sha256(contract).hexdigest()[:16]})")
+        else:
+            contract = CONTRACT.read_bytes()
+            got = hashlib.sha256(contract).hexdigest().upper()
+            if len(contract) != CONTRACT_LEN or got != CONTRACT_SHA:
+                raise SystemExit(f"boot contract mismatch: {len(contract)} bytes, "
+                                 f"sha256 {got}")
+            print(f"boot contract: {len(contract)} bytes, sha256 OK")
         img[0:CONTRACT_LEN] = contract
 
     # ---- 3. blank everything the OEM application used to occupy ---------
     donor_app = IMAGE_SIZE - CONTRACT_LEN
     print(f"OEM application removed: {donor_app} bytes "
           f"(0x020000-0x0FFFFF) are 0xFF before the payload goes on")
+
+    # --updater: SA5 (0x020000-0x02FFFF) carries the resident loader. It is
+    # inside the shrunk boot checksum, so it is sampled and fixed like the
+    # boot block - the app (SA6..SA9) is what an update replaces, not this.
+    if UPDATER:
+        ldr = Path(LOADER_BIN).read_bytes()
+        if len(ldr) != 0x10000:
+            raise SystemExit(f"{LOADER_BIN.name}: {len(ldr)} bytes, expected "
+                             "a 64 KiB SA5 image")
+        img[LOADER_SA5 - 0x800000:LOADER_SA5 - 0x800000 + 0x10000] = ldr
+        print(f"loader embedded: SA5 0x020000-0x02FFFF from {LOADER_BIN.name} "
+              f"(entry 0x{LOADER_ENTRY:06X})")
 
     # ---- 4. the payload -------------------------------------------------
     records = parse_ihex(hex_file)
@@ -814,6 +1171,31 @@ def main() -> int:
         touched.append(off)
     lo, hi = min(touched), max(touched)
     print(f"payload:  0x{lo:06X}-0x{hi:06X}   {len(touched)} bytes")
+    if UPDATER:
+        # THE APP'S VECTOR TABLE AND HEADER ARE THE BUILD'S, NOT THE LINKER'S:
+        # 0x030000-0x03021F is written below, so a linked byte there would be
+        # overwritten - silently, the image still "built". It did, for every
+        # Porsche --updater image until 2026-10-30 (bench: it never started).
+        clash = [o for o in touched if CODE_SEG_LO <= o < APP_HDR_OFF + 32]
+        if clash:
+            raise SystemExit(
+                f"FATAL: --updater payload at file 0x{min(clash):06X}..0x{max(clash):06X} "
+                f"overlaps the app vector table + header 0x{CODE_SEG_LO:06X}-"
+                f"0x{APP_HDR_OFF + 31:06X} - keep FCODE off them in the linker file")
+    # EVERY LINKED CODE SECTION IS IN THE IMAGE (2026-10-25). SA9 joined
+    # FCODE on 2026-10-15 but the OH166 RANGE stayed at SA8, so the first
+    # section the linker placed in SA9 was dropped and the image ran into
+    # blank flash - no step of the build noticed.
+    have = set(touched)
+    map_text = (BUILD_DIR / f"{STEM}.M66").read_text(errors="replace")
+    for m in re.finditer(r"^([0-9A-F]{6})H\s+([0-9A-F]{6})H\s+[0-9A-F]{6}H\s+"
+                         r"CODE\b.*?(\S+)\s*$", map_text, re.M):
+        s_lo, s_hi = int(m.group(1), 16) - 0x800000, int(m.group(2), 16) - 0x800000
+        if CODE_SEG_LO <= s_lo <= CODE_SEG_HI and not all(
+                a in have for a in range(s_lo, s_hi + 1)):
+            raise SystemExit(f"FATAL: code section {m.group(3)} "
+                             f"(0x{s_lo:06X}-0x{s_hi:06X}) is not all in the "
+                             f"HEX payload - check the OH166 RANGE")
 
     # ---- 5. the vector table -------------------------------------------
     park_off = VECTAB_PARK_CPU - 0x800000
@@ -826,13 +1208,17 @@ def main() -> int:
 
     # A HaniCore handler on a trap the boot block keeps for itself is dead
     # code. Say so at build time rather than at bench time.
-    fl = first_level_map(contract)
+    # the own boot region clears ROMEN: the first level is this image's own table
+    fl = first_level_map(Path(BOARD["first_level"]).read_bytes()
+                         if DONOR_BOOT and not OWN_0512 else contract)
     unreachable = []
     for trap, seg, off in used:
         kind, tgt = fl.get(trap, ("?", None))
         if kind not in ("forwards", "conditional forwards"):
             unreachable.append((trap, kind, tgt, (seg << 16) | off))
-    unreach_csv = ROOT / "build/generated/bosch_me711_unreachable_traps.csv"
+    unreach_csv = ROOT / "build/generated" / (
+        "bosch_me711_unreachable_traps.csv" if not OWN_BLD
+        else BOARD_NAME + "_unreachable_traps.csv")
     if unreachable:
         print(f"\n  {len(unreachable)} traps the boot block keeps for itself - "
               f"a HaniCore handler on one of these can NEVER run:")
@@ -863,8 +1249,11 @@ def main() -> int:
           f"({(NVM_HI - NVM_LO + 1) // PAGE} cells), outside the page record")
 
     # ---- 8. the three bootrom records, COMPUTED ------------------------
-    entry_off = startup & 0xFFFF
-    entry_seg = (startup >> 16) & 0xFF
+    # --updater: the mask ROM / prologue jumps to the LOADER, not the app. The
+    # app's real ?C_STARTUP goes into the SA6 image header (section 8b) and the
+    # loader reads it from there after it decides there is nothing to update.
+    entry_off = boot_startup & 0xFFFF
+    entry_seg = (boot_startup >> 16) & 0xFF
     put16(img, HEADER + 0, entry_off)
     put16(img, HEADER + 2, entry_seg)
     # THE COVERAGE FIELDS GO IN BEFORE THE SUM IS TAKEN, because the sum is
@@ -879,9 +1268,19 @@ def main() -> int:
     if any(NVM_LO <= b <= NVM_HI for b in pages):
         raise SystemExit("FATAL: the boot page record still samples the "
                          "persistence store - an erase there would brick the ECU")
-    for b in range(CODE_SEG_LO, CODE_SEG_HI + 1, PAGE):
-        if b not in pages:
-            raise SystemExit(f"FATAL: code page 0x{b:06X} is not boot-checksummed")
+    # --updater puts the app OUTSIDE the sum on purpose (an app update must not
+    # change it); the loader's per-boot header+seal check is the app's gate.
+    # The loader itself (SA5) IS inside the sum and IS checked here.
+    if UPDATER:
+        for b in range(LOADER_SA5 - 0x800000, LOADER_SA5 - 0x800000 + 0x10000,
+                        PAGE):
+            if b not in pages:
+                raise SystemExit(f"FATAL: loader page 0x{b:06X} is not "
+                                 "boot-checksummed")
+    else:
+        for b in range(CODE_SEG_LO, CODE_SEG_HI + 1, PAGE):
+            if b not in pages:
+                raise SystemExit(f"FATAL: code page 0x{b:06X} is not boot-checksummed")
     put32(img, HEADER + 0x38, startup_sum(img))
     put32(img, HEADER + 0x3C, program_page_sum(img))
     print(f"boot page record: {len(pages)} pages, "
@@ -889,7 +1288,7 @@ def main() -> int:
           f"persistence store EXCLUDED")
     print(f"\nROMSYS header, HaniCore's:")
     print(f"  entry              0x{entry_seg:02X}:{entry_off:04X}"
-          f"  = ?C_STARTUP at 0x{startup:06X}")
+          f"  = {'LOADER' if UPDATER else '?C_STARTUP'} at 0x{boot_startup:06X}")
     print(f"  @0x008038 startup  0x{startup_sum(img):08X}")
     print(f"  @0x00803C pages    0x{program_page_sum(img):08X}")
     # The parameter-page record is anchored inside the retained window and its
@@ -904,6 +1303,45 @@ def main() -> int:
           f"{'OK' if pp_have == pp_want else '** MISMATCH **'}")
     if pp_have != pp_want:
         raise SystemExit("FATAL: the parameter-page record no longer matches")
+
+    # ---- 8b. the app image header (--updater) --------------------------
+    # 32 bytes at 0x030200 (CPU 0x830200), the layout hcloader.a66 HDR reads on
+    # every boot. It is written LAST of the app region so neither the payload
+    # nor the relocated vector table can overwrite it, and it is outside the
+    # boot sum (section 8) so it is the app's own gate, not the boot block's.
+    #   +0 0x4348  +2 0x5041  +4 board  +6/+8 ?C_STARTUP off/seg
+    #   +10/+12 length (u32 from 0x030000)  +14/+16 CRC-32  +18/+20 build id
+    #   +22..+29 reserved 0xFFFF  +30 seal 0x5AA5 (the loader copies all but this)
+    if UPDATER:
+        import binascii
+        app_hi = max(touched)                       # top of the linked app code
+        app_len = (app_hi - CODE_SEG_LO + 2) & ~1   # cover table+header+code
+        if not (APP_HDR_OFF + 32 <= CODE_SEG_LO + app_len <= CODE_SEG_LO + 0x40000):
+            raise SystemExit(f"FATAL: --updater app length 0x{app_len:X} is not "
+                             "within (header, 4 sectors]")
+        h = APP_HDR_OFF
+        img[h:h + 32] = b"\xFF" * 32
+        put16(img, h + 0, _APP_HDR["M0"])
+        put16(img, h + 2, _APP_HDR["M1"])
+        put16(img, h + 4, _BOARD_CODE[BOARD_NAME])
+        put16(img, h + 6, startup & 0xFFFF)         # the APP's real entry
+        put16(img, h + 8, (startup >> 16) & 0xFF)
+        put32(img, h + 10, app_len)
+        # CRC-32 over the app region EXCLUDING its own 32-byte header - the
+        # header carries the crc/seal/build-id fields that are written AFTER
+        # this, so a CRC over them could never be recomputed from the final
+        # image. The header's own integrity is the magic+board+seal the loader
+        # checks; the CRC protects the payload (vector table + code). The app
+        # verifier (P3) and the host tool (hc_update.py) compute it the same.
+        crc = binascii.crc32(
+            bytes(img[CODE_SEG_LO:h]) + bytes(img[h + 32:CODE_SEG_LO + app_len])
+        ) & 0xFFFFFFFF
+        put32(img, h + 14, crc)
+        put32(img, h + 18, int(BUILD_ID, 16))
+        put16(img, h + 30, _APP_HDR["SEAL"])
+        print(f"app header @0x{APP_HDR_OFF:06X}: 'HCAP' board {_BOARD_CODE[BOARD_NAME]}, "
+              f"entry 0x{(startup >> 16) & 0xFF:02X}:{startup & 0xFFFF:04X}, "
+              f"len 0x{app_len:X}, crc 0x{crc:08X}, sealed")
 
     # ---- 9. emit --------------------------------------------------------
     # A build once overwrote the working copy of a hardware-tested image
@@ -1021,7 +1459,7 @@ def main() -> int:
          "SA9..SA18, eighty 8 KiB append-only cells. ABOVE the bootrom page "
          "record: erasable at runtime, an interrupted erase is recoverable"),
     ]
-    with FLASH_MAP.open("w", newline="") as f:
+    with (FLASH_MAP if not OWN_BLD else BUILD_DIR / FLASH_MAP.name).open("w", newline="") as f:
         f.write("cpu_start,cpu_end,file_offset,size,section,owner,purpose\n")
         for r in rows:
             f.write(",".join(str(x) for x in r[:4])
@@ -1047,19 +1485,16 @@ def main() -> int:
         ("0x382400", 0x100, "hcconfig.c", "battery-backed RESETDIAG_V1 log: "
          "boot count, reset flags, stage/marker, tick/loop, vector, watchdog "
          "and ASIC post-mortem", "far", "-"),
-        ("0x382500", 0x300, "hcasic.c", "the accepted-frame snapshot; written "
-         "only after checksum AND reply class pass", "far", "-"),
-        ("0x386900", 0x158, "hcliveforensics.c/hcnmi_v49.a66",
-         "V49 frozen first-Burn writer, supervision and NMI record", "far", "-"),
     ]
-    with RAM_MAP.open("w", newline="") as f:
+    with (RAM_MAP if not OWN_BLD else BUILD_DIR / RAM_MAP.name).open("w", newline="") as f:
         f.write("address,size,owner,purpose,near_far,pec_interrupt\n")
         for a, s, o, p, nf, pi in ram_rows:
             f.write(f"{a},{s},{o},\"{p}\",{nf},\"{pi}\"\n")
     print(f"wrote {RAM_MAP}")
 
     OUT_MANIFEST.write_text(json.dumps({
-        "target": "Bosch ME7.1.1/44F (0261207696 / 1037371766)",
+        "target": BOARD["target"],
+        "board": BOARD_NAME,
         # DERIVED FROM THE STEM, NEVER TYPED - and this line was typed until
         # V61. me711_image.py maps STEM -> build name in one table and every
         # other output path already comes from it, so a literal here is a
@@ -1068,7 +1503,8 @@ def main() -> int:
         # its own manifest, and the "not typed" print at the end of main()
         # faithfully read it back, so the build announced the wrong identity
         # through the one line that exists to stop that.
-        "build": _IMG.EXPECTED_BUILD,
+        "build": ("V102_ME75_DC_DEV" if IS_DC else "V102_ME71_27T_DEV" if IS_C4 else "V102_ME711_4F_DEV"
+                  if IS_4F else _IMG.EXPECTED_BUILD),
         # READ FROM hctarget.h, NEVER RETYPED. This line held the literal
         # "HaniCore V28 TRIGGER COMM" while the header had moved on, and TWO
         # gates - validate_me711_image and me711_boot_test - take the string
@@ -1120,11 +1556,11 @@ def main() -> int:
                    "ZERO bytes from reset until a host request arrives; the "
                    "persistent battery-backed reset log they used to narrate "
                    "(hc_rst_progress/hc_rst_stage/hc_rst_marker) is untouched. "
-                   "(2) tools/tunerstudio/gen_ts_ini_me711.py's .ini was missing "
+                   "(2) tools/tuning/gen_ts_ini_me711.py's .ini was missing "
                    "'messageEnvelopeFormat = msEnvelope_1.0' entirely and used "
                    "a CAN-multiplexing pageIdentifier template "
                    "('\\$tsCanId\\x50') where the known-working ME7.5 "
-                   "reference ini (tunerstudio/hanicore_dc_0512.ini) "
+                   "reference ini (tuning/hanicore_dc_0512.ini) "
                    "uses a plain 2-byte '\\x00\\x00' - the .ini now matches "
                    "that reference's protocol block, which is the divergence "
                    "that explains TunerStudio looping F/Q every ~4 s instead "
@@ -1166,14 +1602,25 @@ def main() -> int:
         "linked_payload_hex_sha256": hashlib.sha256(OUT_PAYLOAD.read_bytes()).hexdigest().upper(),
         "programmer_hex": str(OUT_HEX.relative_to(ROOT)),
         "programmer_hex_sha256": hashlib.sha256(OUT_HEX.read_bytes()).hexdigest().upper(),
-        "boot_region": "hanicore_owned" if OWNED_BOOT else "oem_boot_contract",
+        "boot_region": ("hanicore_owned" if OWNED_BOOT
+                        else "hanicore_owned_maskrom" if OWN_0512
+                        else "oem_boot_contract"),
         "boot_contract_sha256": None if OWNED_BOOT else CONTRACT_SHA,
         "boot_contract_bytes": CONTRACT_LEN,
+        "updater": ({
+            "loader_bin": LOADER_BIN.relative_to(ROOT).as_posix(),
+            "loader_sha256": hashlib.sha256(Path(LOADER_BIN).read_bytes()).hexdigest().upper(),
+            "loader_sa5_cpu": LOADER_SA5,
+            "loader_entry_cpu": LOADER_ENTRY,
+            "boot_entry_cpu": boot_startup,
+            "app_header_file": APP_HDR_OFF,
+            "app_vector_seg": APP_VEC_SEG,
+            "bootsum_r2_limit": BOOTSUM_R2_LIMIT,
+        } if UPDATER else None),
         "entry_cpu": startup,
         "main_cpu": main_addr,
         "asic_isolate_cpu": asic_isolate_addr,
         "asic_init_cpu": asic_init_addr,      # None: compiled out while isolated
-        "asic_service_cpu": asic_service_addr,
         "asic_start_service_cpu": asic_start_addr,
         "payload_file_range": [lo, hi],
         "vector_table_file": ISR_TABLE,
@@ -1386,11 +1833,25 @@ def main() -> int:
     # Resource gates consume the matching image, map and manifest together.
     # Link success alone does not establish room for future features or every
     # interrupt nesting path. Keep the same reserves as the fast suite.
+    # me711_far_boundary_proof since 2026-10-26: a far struct copy compiled
+    # to Keil's near ?C_WCPYFN and a lost DEFINE(HC_FAR_BRIDGE) both linked
+    # cleanly and crashed the 2.7T boot in the simulator
     for gate in ("me711_resource_budget_proof.py", "near_ram_hazard_proof.py",
-                 "me711_stack_budget_proof.py"):
+                 "me711_stack_budget_proof.py", "me711_far_boundary_proof.py"):
+        import os as _os
         result = subprocess.run(
             [sys.executable, str(ROOT / "tests/firmware/build" / gate)],
-            cwd=ROOT, capture_output=True, text=True)
+            cwd=ROOT, capture_output=True, text=True,
+            # the board too: with only --board given, a gate fell back to the
+            # Porsche (hc_board reads HANICORE_BOARD) and judged the wrong
+            # guard band
+            # and the image this build wrote: until 2026-10-31 only a board
+            # with its own build directory passed it, so the Porsche
+            # --updater build judged the RELEASE image's map (and failed on
+            # a fresh clone, where that map did not exist yet)
+            env=dict(_os.environ, HANICORE_BOARD=BOARD_NAME,
+                     **({"HANICORE_ME711_STEM": _STEM_OUT}
+                        if OWN_BLD or _STEM_OUT != _IMG.STEM else {})))
         print(result.stdout.strip())
         if result.returncode:
             raise RuntimeError("Linked resource/stack gate failed: " + gate

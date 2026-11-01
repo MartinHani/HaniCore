@@ -106,17 +106,51 @@ EXTRN   ?C_PAGEDPP2:DATA16
         ; forces the normal-boot mode byte only when ROMEN is clear).
         ; XPEN is set in both values, which is what makes the XRAM at 0xE000
         ; - where the ASIC frame buffer lives - exist at all.
+$IF (OWNBOOT_ROMEN0)
+        ; HaniCore's OWN boot region on a 05.xx mask-ROM board (default since
+        ; 2026-10-29; not in --bosch-boot builds): the mask ROM handed over with
+        ; ROMEN set, so its fixed vector table - which keeps 14 traps (T4..T6,
+        ; CRINT, S0R/S0E, CC24 ...) for its own loader - was the CPU's first
+        ; level. Clearing ROMEN maps flash 0x000000 (CS0) into segment 0, where
+        ; this image's own 128 slots forward every trap to seg82:N*4. The
+        ; ROMEN-clear value below is the board's own (the stock software's
+        ; ROMEN-clear branch). Before EINIT, while nothing has been vectored.
+        JMPR    cc_UC,HC_SYSCON_LO
+$ELSE
         JNB     ROMEN,HC_SYSCON_LO
+$ENDIF
+$IF (BOARD_C4)
+        ; Audi 2.7T ME7.1 C4: the OEM's own value, CSCFG = 0
+        ; [EXACT TARGET BINARY 4B0907551F 0x078962]
+        MOV     SYSCON,#0E604H
+$ELSE
         MOV     SYSCON,#0E644H
+$ENDIF
         JMPR    cc_UC,HC_SYSCON_DONE
 HC_SYSCON_LO:
+$IF (BOARD_C4)
+        MOV     SYSCON,#0E204H  ; [4B0907551F 0x078968]
+$ELSE
         MOV     SYSCON,#0E244H
+$ENDIF
 HC_SYSCON_DONE:
 
         MOV     ADDRSEL1,#3803H
         MOV     BUSCON1,#040DH
+$IF (BOARD_DC)
+        ; VAG 1.8T ME7.5 DC: CS2 = the CC650 bus ASIC, 4 KB at 0x480000,
+        ; 8-bit demultiplexed, 1 wait state, lengthened ALE
+        ; [EXACT TARGET BINARY 4B0906018DC 0x00DBF0 / 0x00DBF4]
+        MOV     ADDRSEL2,#4800H
+        MOV     BUSCON2,#064EH
+$ELSE
         MOV     ADDRSEL2,#1007H
+$IF (BOARD_C4)
+        MOV     BUSCON2,#04AEH  ; [4B0907551F 0x078978]
+$ELSE
         MOV     BUSCON2,#05AEH
+$ENDIF
+$ENDIF
         MOV     ADDRSEL3,#0000H
         MOV     BUSCON3,#0000H
         MOV     ADDRSEL4,#0000H
@@ -165,6 +199,7 @@ HC_SYSCON_DONE:
         ; command bytes 0x48/0x56/0x6C are the CJ120's IDENT/INIT_REG1 set.
         ; Left as inputs they float on the bus exactly as P6.3/P6.4 did.
         ; Deselected, driven, like the OEM. Latch (above) before direction.
+        ; The 4F drives the same two chip selects ([BIN 4F 0x8E754E]).
         MOV     DP8,#0006H      ; P8.1, P8.2 OUT HIGH; EV4..EV8 stay inputs
 
         ; P6: CS0/CS1 belong to the external bus unit, which drives them
@@ -191,10 +226,35 @@ HC_SYSCON_DONE:
         ; OUTPUTS, i.e. both devices explicitly DESELECTED, before anything
         ; touches the bus. This reproduces exactly that, latch before direction.
         MOV     DP6,#0000H
+$IF (BOARD_C4)
+        ; P6.3 IS VPROGEN ON THE 2.7T C4 BOARD, NOT AN EEPROM SELECT
+        ; (me7_port.xls FR "ME7.1": CS3 = VPROGEN, CS-EEPR is P4.7). The
+        ; OEM drives it LOW as an output [4B0907551F 0x078CD0/0x078CD4:
+        ; P6 = 0x0090, DP6 = 0x007F]; so does this.
+        BCLR    P6.3
+$ELSE
         BSET    P6.3            ; CS_EEPR  deasserted
+$ENDIF
+$IF (BOARD_DC)
+        ; the DC has no S5500 select: the OEM drives P6.0..P6.6 LOW
+        ; [4B0906018DC 0x096FCA/0x096FCE: P6 = 0x0080, DP6 = 0x007F]
+        BCLR    P6.4
+$ELSE
         BSET    P6.4            ; CS-ASIC  deasserted
+$ENDIF
         BSET    DP6.3           ; ... and now actually driven
         BSET    DP6.4
+$IF (BOARD_C4)
+        ; P4.7 IS THE EEPROM SELECT ON THE C4 BOARD (CS-EEPR, me7_port.xls FR
+        ; "ME7.1"). The ST95040 shares MRST/MTSR/SCLK with the S5500 exactly as
+        ; on the Porsche, so it is DESELECTED and DRIVEN before the first frame,
+        ; latch before direction, as the OEM does [EXACT TARGET BINARY
+        ; 4B0907551F 0x078CC2/0x078CC6: P4 = 0x00F0, DP4 = 0x00DF]. Until
+        ; 2026-10-26 nothing drove it: the select floated through every frame
+        ; (the V6-class shared-SPI hazard the comment above describes).
+        BSET    P4.7            ; CS_EEPR  deasserted
+        BSET    DP4.7           ; ... and driven
+$ENDIF
 
         ; P3: the K-line and the SSC. TXD0 idles HIGH - a K-line at rest is
         ; recessive, and driving it low would look like a break condition to
@@ -202,6 +262,21 @@ HC_SYSCON_DONE:
         MOV     DP3,#0000H
         MOV     P3,#0400H       ; P3.10 = TXD0 latch high
         BSET    DP3.10          ; ... now make it an output
+$IF (BOARD_DC)
+        ; ME7.5 DC: P3.5 = FPW, the 68HC05 monitor's disable line - HIGH stops
+        ; it; the OEM holds it LOW as an output from reset [4B0906018DC
+        ; 0x096FB4/0x096FB8: P3 = 0x2FC1, DP3 = 0x35E0]. P3.12 = NLEN_FR, LOW
+        ; as an output (the hold itself is the CC650's reg 0x44 bit 2)
+        ; [0x070316: BCLR P3.12, BSET DP3.12 for calibration 0x819540 = 0x14].
+        ; P3.6 / P3.7 (secondary-air valve, pump relay) latch HIGH = off;
+        ; their directions stay inputs until the HAL drives them.
+        BCLR    P3.5
+        BSET    DP3.5
+        BCLR    P3.12
+        BSET    DP3.12
+        BSET    P3.6
+        BSET    P3.7
+$ENDIF
 
 ;-------------------------------------------------------------------------------
 ; 2b. RESETDIAG_V3: NLEN_FR (P3.12) on the NLEN half of the A/B.
@@ -228,8 +303,12 @@ HC_SYSCON_DONE:
 ; is simply asserted, unconditionally and before EINIT, because that is what
 ; the OEM does and correct platform state costs nothing to keep.
 ;-------------------------------------------------------------------------------
+$IF (BOARD_DC)
+        ; ME7.5 DC: NLEN_FR stays LOW (set above), as the OEM keeps it
+$ELSE
         BSET    P3.12           ; latch HIGH   ... exactly the OEM order
         BSET    DP3.12          ; ... then drive it
+$ENDIF
 
         MOV     R12,#00B01H
         DB      0F6H,0FCH,0AEH,0FFH ; MOV WDTCON,R12, exact OEM encoding
@@ -256,9 +335,49 @@ HC_SYSCON_DONE:
 ; application itself keeps variables at 0xF230/0xF238/0xF23C, seg88:160E,
 ; 88:F6A4, 89:4FC0; the sibling ME7.1.1 A2L declares SY_C167CS = 1).
 ;-------------------------------------------------------------------------------
+$IF (BOARD_C4)
+        ; THE 2.7T's C167CR HAS NO RAM BELOW 0xF600 (hcsafety.h): the system
+        ; stack keeps its 634 bytes at the bottom of the IRAM (0xF606-0xF87F,
+        ; the OEM's own STKOV region), the C data starts at 0xF880 and the user
+        ; stack is the top of the XRAM (linker: ?C_USERSTACK at 0xE600).
+        MOV     STKOV,#0F606H
+        MOV     STKUN,#0F880H
+        MOV     SP,#0F880H
+
+        ; AND NOTHING IN RAM IS ZERO HERE. The C167CR's mask ROM keeps its own
+        ; work bytes in the XRAM (0xE240.. and 0xE6C0.., the ROMSYS header it
+        ; checked - the 05.12 model in c167sim leaves 33 of them) where
+        ; HaniCore's cold data lives, and start_me711 never runs ?C_INIT. So
+        ; clear the XRAM, the IRAM above the system stack (the register bank
+        ; the ROM left us in is at 0xF740, below it) and the 2.7T's far data
+        ; in the external SRAM (hctarget.h TGT_RAM_C4FAR), word by word.
+        MOV     R12,#0
+        MOV     R13,#0E000H
+HC_CLR_XRAM:
+        MOV     [R13],R12       ; 0xE000-0xE7FF
+        ADD     R13,#2
+        CMP     R13,#0E800H
+        JMPR    cc_ULT,HC_CLR_XRAM
+        MOV     R13,#0F880H
+HC_CLR_IRAM:
+        MOV     [R13],R12       ; 0xF880-0xFDFF (PEC pointers included)
+        ADD     R13,#2
+        CMP     R13,#0FE00H
+        JMPR    cc_ULT,HC_CLR_IRAM
+        ; MUST MATCH hctarget.h TGT_RAM_C4FAR / _LIMIT (A166 cannot read a C
+        ; header; build_hanicore_me711.py compares the two)
+        MOV     R13,#02A00H
+HC_CLR_FAR:
+        EXTP    #0E0H,#1        ; page 0xE0 = 0x380000, the external SRAM
+        MOV     [R13],R12
+        ADD     R13,#2
+        CMP     R13,#03000H     ; 0x2A00 + 0x0600
+        JMPR    cc_ULT,HC_CLR_FAR
+$ELSE
         MOV     STKOV,#0F586H
         MOV     STKUN,#0F800H
         MOV     SP,#0F800H
+$ENDIF
 
         MOV     DPP0,#?C_PAGEDPP0
         MOV     DPP1,#?C_PAGEDPP1
@@ -269,6 +388,85 @@ HC_SYSCON_DONE:
         MOV     R0,#DPP2:?C_USERSTKTOP
 
         MOV     PSW,#0000H      ; ILVL 0, and interrupts still globally off
+
+$IF (P0_PREEINIT)
+;-------------------------------------------------------------------------------
+; 3b. P0 BENCH TEST ONLY (build_hanicore_me711.py --p0-test [srst], side image
+; <stem>_p0test / _p0srst; never in a release build). The firmware-update
+; loader is to run BEFORE EINIT, on the inference that RSTOUT - low from any
+; reset, SRST included, until EINIT (C167CR UM) - holds the supervisor
+; (S5500) in reset meanwhile (.scratch/firmware-update/spec.md section 8).
+; This proves it: DISWDT, ~60 s polled on T3 with interrupts off, then the
+; normal boot. Pass = one boot in the boot history, no supervisor reset during
+; the wait, a normal link afterwards. With P0_SRST the wait ends in SRST and a
+; marker in battery SRAM (TGT_RAM_SPARE_B, 0x386900 = 'P0') makes the second
+; boot skip it: pass = a clean restart, the S5500 startup succeeds first try.
+; The watchdog stays disabled for the rest of this test image's run.
+;-------------------------------------------------------------------------------
+        DISWDT
+$IF (P0_SRST)
+        MOV     R13,#02900H     ; 0x386900 = page 0xE1 + 0x2900
+        EXTP    #0E1H,#1
+        MOV     R12,[R13]
+        CMP     R12,#05030H
+        JMPR    cc_NE,HC_P0_WAIT
+        MOV     R12,#05031H     ; the boot after the SRST: 0x5031 = the
+        EXTP    #0E1H,#1        ; witness wait is running
+        MOV     [R13],R12
+        ; THE WITNESS (bench 2026-10-29): this boot waits ~20 s more (7 T3
+        ; overflows), so the first answer comes ~78 s after power-on only if
+        ; the SRST and this second boot really happened (~58 s: no SRST;
+        ; none: the boot after the SRST hangs). The raw reset flags of the
+        ; C167CR do not show a software reset, and 0x386900 is not readable
+        ; over the link.
+        MOV     R11,#7
+        JMPR    cc_UC,HC_P0_TIMED
+HC_P0_WAIT:
+$ENDIF
+$IF (BOARD_C4)
+        MOV     R11,#21         ; 21 x 65536 x 1024 / 24 MHz = 58.7 s
+$ELSE
+        MOV     R11,#36         ; 36 x 65536 x 1024 / 40 MHz = 60.4 s
+$ENDIF
+HC_P0_TIMED:
+        MOV     T3,#00000H
+        BCLR    T3IR
+        MOV     T3CON,#00047H   ; T3I = 7 (fCPU / 1024), timer mode, run, up
+HC_P0_SPIN:
+        SRVWDT                  ; DISWDT may not hold here (header note)
+        JNB     T3IR,HC_P0_SPIN
+        BCLR    T3IR
+        SUB     R11,#1
+        JMPR    cc_NZ,HC_P0_SPIN
+        MOV     T3CON,#00000H
+        BCLR    T3IR
+$IF (P0_SRST)
+        MOV     R13,#02900H     ; the witness wait ends here too: 0x5031 ->
+        EXTP    #0E1H,#1        ; clear, go on; anything else -> SRST
+        MOV     R12,[R13]
+        CMP     R12,#05031H
+        JMPR    cc_NE,HC_P0_RST
+        MOV     R12,#00000H
+        EXTP    #0E1H,#1
+        MOV     [R13],R12
+        JMPR    cc_UC,HC_P0_DONE
+HC_P0_RST:
+        MOV     R12,#05030H
+        EXTP    #0E1H,#1
+        MOV     [R13],R12
+        ; THE WRITE MUST BE IN THE SRAM BEFORE THE SRST (bench 2026-10-29: an
+        ; SRST straight after this write lost it - every boot waited again).
+        ; Read it back until it holds the value: a read of the same external
+        ; address cannot complete before the write has.
+HC_P0_RB:
+        EXTP    #0E1H,#1
+        MOV     R11,[R13]
+        CMP     R11,R12
+        JMPR    cc_NE,HC_P0_RB
+        SRST
+$ENDIF
+HC_P0_DONE:
+$ENDIF
 
         MOV     R12,#00B01H
         DB      0F6H,0FCH,0AEH,0FFH ; MOV WDTCON,R12, exact OEM encoding

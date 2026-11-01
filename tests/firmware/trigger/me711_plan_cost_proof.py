@@ -86,13 +86,25 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "tools" / "lib"))
 import hcpaths  # noqa: F401,E402  (puts every tools/ and tests/ module on sys.path)
 
+import re                             # noqa: E402
+
+import hc_board                       # noqa: E402
+import me711_heartbeat_gap_proof as HB  # noqa: E402  (TPMS: this board's T1)
 import me711_image as PI              # noqa: E402
 import me711_trigger_test as PT       # noqa: E402
 
 # The part's measured throughput, from the same figure me711_ts_gap_proof.py
 # uses when it converts instructions to milliseconds (11260 instructions =
-# 1.13 ms). Not a datasheet number: a ratio this repo already established.
-MIPS = 10.0
+# 1.13 ms). Not a datasheet number: a ratio this repo already established -
+# at the Porsche's 40 MHz. The 2.7T's C167 runs at 24 MHz (hctarget.h
+# TGT_FCPU_HZ) with the same instruction timing, so it retires 24/40 of it
+# (INFERENCE from the clock; c167sim runs it at 6 MIPS for that reason).
+_FCPU = int(re.search(r"#define\s+TGT_FCPU_HZ\s+(\d+)",
+                      hc_board.board_text(hc_board.HCTARGET)).group(1))
+MIPS = 10.0 * _FCPU / 40_000_000
+# the planner's staging horizon in T1 ticks (hctarget.h, per board)
+HORIZON_TICKS = int(re.search(r"#define\s+HC_PLAN_HORIZON_TICKS\s+(\d+)",
+                              hc_board.board_text(hc_board.HCTARGET)).group(1))
 
 # The speed the scheduler must fit at, and the margin demanded there. 7500 rpm
 # is the configuration's own CFG_REV_MAX default for this engine; 25 % is the
@@ -122,7 +134,10 @@ MIPS = 10.0
 # are exactly the things that happen while an engine is running. The 75 %
 # share is the margin, and it is unchanged from when the target was 7500:
 # what moved is the speed, not the discipline.
-TARGET_RPM = 12000
+# THE 2.7T (2026-10-25): its engine revs to ~6800 and its CPU is 24 MHz, so
+# 12000 rpm headroom is not its question - its own redline is. Same 75 %
+# share, same instruction counts; only the tooth it must fit changes.
+TARGET_RPM = 6800 if hc_board.IS_C4 else 12000
 TARGET_TEETH = 60
 MAX_SHARE = 0.75
 
@@ -168,6 +183,17 @@ def allowance(rpm: int, teeth: int = TARGET_TEETH) -> float:
     A report that needs the reader to do the arithmetic is a report that will
     eventually be quoted without it."""
     return budget(rpm, teeth) * MAX_SHARE
+
+
+def measure_all(cylinders: int, rpm: int, teeth: int = TARGET_TEETH):
+    """(worst tooth, worst steady tooth, total over the revolution)"""
+    worst = steady = total = 0
+    for k, used in _revolution(cylinders, rpm, teeth):
+        worst = max(worst, used)
+        total += used
+        if k > 1:
+            steady = max(steady, used)
+    return worst, steady, total
 
 
 def measure_both(cylinders: int, rpm: int, teeth: int = TARGET_TEETH):
@@ -238,7 +264,7 @@ def planning_fixture(cylinders, teeth=TARGET_TEETH):
 
 def _revolution(cylinders: int, rpm: int, teeth: int = TARGET_TEETH):
     """Yield (tooth index, instructions) for one revolution of clean teeth."""
-    dt = round(1_250_000 / rpm)
+    dt = round(HB.TPMS * 100 / rpm)               # T1 ticks per 60-x tooth
     c = planning_fixture(cylinders, teeth)
     step = 3600 // teeth
     c.set_t1(1000)
@@ -260,6 +286,53 @@ def rows_at(rpm: int):
 
 def rows_both_at(rpm: int):
     return [(cyl,) + measure_both(cyl, rpm) for cyl in (4, 6, 8, 12)]
+
+
+def rows_all_at(rpm: int):
+    return [(cyl,) + measure_all(cyl, rpm) for cyl in (4, 6, 8, 12)]
+
+
+# ======================================= WHAT THE PLANNER COSTS SINCE 2026-10-06
+#
+# The three checks above price ONE TOOTH, and kept doing so after the planner
+# moved to its own interrupt level (CC26, ILVL 9) and became a RATE-LIMITED
+# WALK: it now runs once per HC_PLAN_PERIOD_TICKS (or a slow tooth), covers
+# every tooth since, and the teeth between cost only the capture. "Worst
+# tooth" is therefore the cost of one walk, compared against one tooth period
+# - a quantity the architecture no longer has. They stay as the honest
+# per-tooth figures for comparison with earlier runs (printed as INFO, no
+# longer the verdict); these two measure what the CPU and the executor
+# actually depend on, and are the verdict:
+#
+#  4. THE CPU SHARE. Everything the planner executes over a revolution,
+#     against every instruction the CPU retires in that revolution. The rest
+#     is the executor, the crank ISR, the S5500 frame and the main loop;
+#     me711_runtime_stress_proof measures those together in real time.
+#  5. THE WALK FITS ITS HORIZON. One walk publishes every edge due within
+#     HC_PLAN_HORIZON_TICKS; a walk longer than half of it would publish edges
+#     after their time. (Preemption by the crank ISR and CC25 is not in this
+#     number - stress measures the request latency with it.)
+WALK_SHARE = 0.50
+CPU_SHARE = 0.50
+
+
+def verdict_walk(rows_all, rpm: int = TARGET_RPM):
+    """checks 4 and 5 over (cylinders, worst, steady, total) rows"""
+    rev = 60.0 / rpm * 1e6 * MIPS
+    share = max(t for _c, _w, _s, t in rows_all) / rev
+    hz = HORIZON_TICKS * 10000.0 / HB.TPMS * MIPS      # horizon in instructions
+    walk = max(w for _c, w, _s, _t in rows_all)
+    return [
+        ("the planner takes <= %d%% of the CPU per revolution at %d rpm"
+         % (CPU_SHARE * 100, rpm), share <= CPU_SHARE,
+         "%.0f%% (%s instructions of %.0f)"
+         % (share * 100, "/".join("%dc %d" % (c, t) for c, _w, _s, t in rows_all),
+            rev)),
+        ("one walk fits half its %.1f ms horizon" % (hz / MIPS / 1000.0),
+         walk <= hz * WALK_SHARE,
+         "longest walk %d instructions = %.0f us, %.0f%% of the horizon"
+         % (walk, walk / MIPS, walk * 100.0 / hz)),
+    ]
 
 
 def verdict(rows, rpm: int = TARGET_RPM):
@@ -334,7 +407,8 @@ def main() -> int:
               % (rpm, tooth_us(rpm), budget(rpm), allowance(rpm)))
     print("")
 
-    both = rows_both_at(TARGET_RPM)
+    full = rows_all_at(TARGET_RPM)
+    both = [(c, w, st) for c, w, st, _t in full]
     rows = [(c, w) for c, w, _s in both]
     a = allowance(TARGET_RPM)
     print("  --- worst hc_drysched_service(), one revolution of clean teeth ---")
@@ -356,19 +430,32 @@ def main() -> int:
              int(TARGET_RPM * a / ws)))
     print("")
 
+    # 2026-10-25: checks 1-3 price ONE TOOTH, a quantity the planner has not
+    # had since it became a rate-limited walk on its own level (2026-10-06;
+    # the gate runner skipped this gate since then). They are printed for
+    # comparison with every earlier run; the verdict is checks 4-5.
     for name, ok, detail in verdict(rows):
+        print("  [INFO] %-54s %s" % (name + (" - would pass" if ok else ""), detail))
+    for name, ok, detail in verdict_walk(full):
         check(name, ok, detail)
+    # checks 4/5 CAN FAIL: the same rows with the planner 2x slower per
+    # revolution and one walk 4x longer than it is must both go red
+    slow = [(c, 4 * w, st, 2 * t) for c, w, st, t in full]
+    check("the walk checks fail on a planner 2x/4x slower (control)",
+          not any(ok for _n, ok, _d in verdict_walk(slow)),
+          "; ".join("%s" % ok for _n, ok, _d in verdict_walk(slow)))
 
     print("\n%d/%d checks pass" % (CHECKS - FAILS, CHECKS))
     if FAILS:
-        print("PLAN COST FAILS - the tooth path no longer fits the tooth. "
+        print("PLAN COST FAILS - the planner no longer fits its horizon or "
+              "its CPU share. "
               "Read the header: the fix is never to make the scheduler less "
               "configurable, it is to move configuration work to the apply "
               "boundary.")
         return 1
-    print("PLAN COST PROOF PASSES - the tooth path fits the tooth at %d rpm "
-          "on a %d-tooth wheel, for 4 to 12 cylinders."
-          % (TARGET_RPM, TARGET_TEETH))
+    print("PLAN COST PROOF PASSES - at %d rpm on a %d-tooth wheel the "
+          "planner's walks fit their horizon and its CPU share, for 4 to 12 "
+          "cylinders." % (TARGET_RPM, TARGET_TEETH))
     return 0
 
 

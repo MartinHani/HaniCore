@@ -16,14 +16,27 @@ def main():
     import me711_image as PI
     image=(a.image or PI.image()).read_bytes()
     call=image.index(bytes.fromhex('DA380060'))
-    pattern=bytes.fromhex('D1A066BEBFFF66B0BFFF66B9BFFF')
-    start=image.rfind(pattern, max(0,call-1024),call)
+    # Two linked forms (hcnvm.c HCNV_IE_OFF/BACK): the release word AND/OR, and
+    # the updater image's bit-protected BFLDL (a word read-modify-write can
+    # lose a request flag the hardware sets mid-instruction). Same offsets:
+    # EXTR, then T8IC, CC16IC, CC25IC at +2/+6/+10 either way.
+    word=bytes.fromhex('D1A066BEBFFF66B0BFFF66B9BFFF')
+    bfld=bytes.fromhex('D1B00ABE40000AB040000AB94000')
+    start=image.rfind(word, max(0,call-1024),call)
+    is_bfld=start<0
+    if is_bfld:
+        start=image.rfind(bfld, max(0,call-1024),call)
     assert start>=0,'linked T8/CC16/CC25 interrupt masks absent'
     assert image.find(bytes.fromhex('BF88'),start,call)>=0,'writer IEN boundary missing'
     for ic in (0xF160,0xF172):
         # Linked OR must restore only the saved enable bit after the writer.
         operand=ic.to_bytes(2,'little')
-        assert bytes.fromhex('66F4400074F4')+operand in image[call:call+800]
+        if is_bfld:
+            # JNB <saved>.6, skip; EXTR #1; BFLDL <ic>, #40h, #40h
+            bitoff=bytes([0x80+(ic-0xF100)//2])
+            assert bytes.fromhex('D1800A')+bitoff+bytes.fromhex('4040') in image[call:call+800]
+        else:
+            assert bytes.fromhex('66F4400074F4')+operand in image[call:call+800]
     for initial in (0xF4,0xB4,0x74,0x34):
         m=S.Mem(image);c=S.CPU(m,0,0)
         m.w16(0xFE10,0xFC00);m.w16(0xFE12,0xF700);m.w16(0xFF10,0)
@@ -50,8 +63,11 @@ def main():
     # sequence from the masks to the CALLS and look.
     # (CC7/8/9/15 are masked before `start`, the anchor above, and are
     # checked by the persistence forensics gates.)
+    # 2026-10-28: and the tick's body (CC28IC 0xF178 per reg167.h,
+    # software-requested by T8 since the millisecond moved to level 12).
     flash_backed = {0xF160: 'CC16', 0xF172: 'CC25', 0xF174: 'CC26 planner',
-                    0xF176: 'CC27 S5500 exchange', 0xF19C: 'S0TB reply'}
+                    0xF176: 'CC27 S5500 exchange', 0xF19C: 'S0TB reply',
+                    0xF178: 'CC28 tick body'}
     m=S.Mem(image);c=S.CPU(m,0,0)
     m.w16(0xFE10,0xFC00);m.w16(0xFE12,0xF700);m.w16(0xFF10,0)
     for ic in flash_backed: m.w16(ic,0xF4)

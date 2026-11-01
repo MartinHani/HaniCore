@@ -36,6 +36,12 @@ def env(payload: bytes) -> bytes:
     return bytes([0, len(payload)]) + payload + crc.to_bytes(4, "big")
 
 
+# the board's runnable engine preset: the AWT (3) on the Porsche image, the
+# Audi 2.7T (6) on the C4 image - both put CLT on 93, which REFUSED needs
+import hc_board  # noqa: E402
+PRESET = 6 if hc_board.IS_C4 else 3
+
+
 def run(pre: list[bytes], expect: int, label: str) -> bool:
     gen = (ROOT / "firmware/generated/hc_config_generated.h").read_text()
     sel = int(re.search(r"#define\s+CFG_U_ENGINE_PRESET\s+(\d+)u",
@@ -48,7 +54,7 @@ def run(pre: list[bytes], expect: int, label: str) -> bool:
     base = len(rig.entries)
     t0 = rig.cpu.steps
     at = t0 + 50_000
-    for frame in pre + [b"W" + sel.to_bytes(2, "big") + b"", b"!E"]:
+    for frame in pre + [b"W" + sel.to_bytes(2, "big") + bytes([PRESET]), b"!E"]:
         rig.queue_rx(at, env(frame))
         at += 400_000
     rig.run(at - t0 + 2_600_000)
@@ -72,19 +78,22 @@ def boot_poison() -> bool:
     preset and a garbage verdict, boot the whole image, and require that the
     boot cleared them and applied NOTHING."""
     gen = (ROOT / "firmware/generated/hc_config_generated.h").read_text()
-    clt = int(re.search(r"#define\s+CFG_U_PIN_CLT\s+(\d+)u", gen).group(1))
+    disp = int(re.search(r"#define\s+CFG_U_DISPLACEMENT_CC\s+(\d+)u", gen).group(1))
     rig = HB.Rig(PI.image(), HB.ENTRY_CURRENT, HB.TICK_CURRENT, echo=True)
     m = rig.mem
-    for k, v in ((764, 0xFF), (765, 0x03), (772, 0x01), (773, 0x03),
+    for k, v in ((764, 0xFF), (765, 0x03), (772, 0x01), (773, PRESET),
                  (770, 0x00), (771, 0x01)):
         m.w8(OCH + k, v)
     rig.run(4_000_000)
     w = lambda k: (m.r8(OCH + k) << 8) | m.r8(OCH + k + 1)   # noqa: E731
-    des_clt = m.r8(0x385000 + clt)
-    ok = w(764) == 0 and w(772) == 0 and w(770) == 0 and des_clt != 93
-    print("BOOT      poisoned 772=0x0103 764=0xFF03 -> verdict 0x%04X pending "
-          "0x%04X refresh %d, DESIRED pinClt %d  %s"
-          % (w(764), w(772), w(770), des_clt, "PASS" if ok else "FAIL"))
+    # the preset's own displacement (AWT 1781 / 2.7T 2671 cc) - a value the
+    # board default does not carry (CLT 93 it may: the C4 default routes it)
+    des_disp = (m.r8(0x385000 + disp) << 8) | m.r8(0x385000 + disp + 1)
+    ok = (w(764) == 0 and w(772) == 0 and w(770) == 0
+          and des_disp != {3: 1781, 6: 2671}[PRESET])
+    print("BOOT      poisoned 772=0x01%02X 764=0xFF03 -> verdict 0x%04X pending "
+          "0x%04X refresh %d, DESIRED displacement %d  %s"
+          % (PRESET, w(764), w(772), w(770), des_disp, "PASS" if ok else "FAIL"))
     return ok
 
 
@@ -93,10 +102,10 @@ def main() -> int:
     oil = int(re.search(r"#define\s+CFG_U_PIN_OIL_PRESS\s+(\d+)u",
                         gen).group(1))
     print("image %s   limit %.1f ms" % (PI.image().name, LIMIT_MS))
-    a = run([], 0x0301, "APPLIED")
+    a = run([], (PRESET << 8) | 0x01, "APPLIED")
     # oil pressure on cavity 93 first: the preset's CLT = 93 then conflicts,
     # so the whole transaction is refused and every staged byte rolled back.
-    b = run([b"W" + oil.to_bytes(2, "big") + b"]"], 0x0305, "REFUSED")
+    b = run([b"W" + oil.to_bytes(2, "big") + b"]"], (PRESET << 8) | 0x05, "REFUSED")
     c = boot_poison()
     print("RESULT: %s" % ("PASS" if a and b and c else "FAIL"))
     return 0 if a and b and c else 1

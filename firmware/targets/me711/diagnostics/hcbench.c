@@ -51,10 +51,10 @@
 #include "hcfarinline.h"   /* AFTER hcconfig.h: call-free page reads */
 #endif
 
-unsigned int hcb_state, hcb_mode, hcb_channel, hcb_refuse, hcb_abort;
-unsigned int hcb_pulses, hcb_requests, hcb_runs, hcb_port, hcb_bit;
-unsigned int hcb_width_us, hcb_width_ms, hcb_conn_pin;
-unsigned int hcb_tps_start, hcb_tps_now, hcb_sf_level;
+unsigned int HC_C4FAR hcb_state, hcb_mode, hcb_channel, hcb_refuse, hcb_abort;
+unsigned int HC_C4FAR hcb_pulses, hcb_requests, hcb_runs, hcb_port, hcb_bit;
+unsigned int HC_C4FAR hcb_width_us, hcb_width_ms, hcb_conn_pin;
+unsigned int HC_C4FAR hcb_tps_start, hcb_tps_now, hcb_sf_level;
 
 /* ---------------------------------------------------------- the bounds --
  *
@@ -126,8 +126,8 @@ unsigned int hcb_tps_start, hcb_tps_now, hcb_sf_level;
    The CJ220 releases SF when DI goes inactive; two millisecond ticks is far
    longer than that and far shorter than any pulse this mode can command. */
 #define HCB_DBW_SF_SETTLE_MS  2u
-static unsigned int  dbw_arm_ms;
-static unsigned char dbw_arm_seen;
+static unsigned int HC_C4FAR dbw_arm_ms;
+static unsigned char HC_C4FAR dbw_arm_seen;
 
 /* The supervision link must have completed this many runtime exchanges before
    anything is driven. Four is the same threshold hcasicstart.c's own state
@@ -242,7 +242,7 @@ sbit EV8  = P8 ^ 3;  sbit EV8D = DP8 ^ 3;
 static unsigned char relay_port_of(unsigned char cavity)
 {
     switch (cavity) {
-    case TGT_EKP_CONN_PIN: return 2u;
+    case TGT_EKP_CONN_PIN: return TGT_EKP_PORT_NO;
     default: return 0u;
     }
 }
@@ -264,7 +264,13 @@ static unsigned char relay_cavity(void)
 /* EKP, the fuel pump relay. P2.12 / CC12IO, CPU pin 61, "EKP-Ansteuerung",
    both ME7.1.1 columns - see hctarget.h. P2 also carries the eight coils and
    the two cam captures, which is exactly why this is a bit operation. */
+#if TGT_BOARD_VAG_ME75_DC
+sbit EKP  = P3 ^ TGT_EKP_PORT_BIT;   sbit EKPD = DP3 ^ TGT_EKP_PORT_BIT;
+#elif !TGT_BOARD_VAG_ME71_C4
 sbit EKP  = P2 ^ TGT_EKP_PORT_BIT;   sbit EKPD = DP2 ^ TGT_EKP_PORT_BIT;
+#else
+sbit EKP  = P4 ^ TGT_EKP_PORT_BIT;   sbit EKPD = DP4 ^ TGT_EKP_PORT_BIT;
+#endif
 /* THE STAGE IS ACTIVE-LOW (V76, measured - hctarget.h TGT_EKP_ACTIVE_HIGH).
    Until V76 this file wrote `EKP = on`, so a bench pulse left cavity 65 open
    and release()'s "pin low, then input" was the only thing that sank it. */
@@ -302,11 +308,14 @@ static void publish_pin(unsigned char mode, unsigned char ch)
     static const unsigned char inj_bit[8]  = { 6, 5, 4, 7, 6, 5, 4, 3 };
 
     hcb_conn_pin = 0u;
-    if (mode == HC_TEST_COIL) {
+    if (ch == 0u && (mode == HC_TEST_COIL || mode == HC_TEST_INJECTOR)) {
+        hcb_port = 0u;                       /* "all": no single pin */
+        hcb_bit = 0u;
+    } else if (mode == HC_TEST_COIL) {
         hcb_port = 2u;
         hcb_bit = (unsigned int)(ch - 1u);
     } else if (mode == HC_TEST_FUEL_PUMP) {
-        hcb_port = 2u;
+        hcb_port = TGT_EKP_PORT_NO;
         hcb_bit = TGT_EKP_PORT_BIT;
         hcb_conn_pin = TGT_EKP_CONN_PIN;
     } else if (mode == HC_TEST_MAIN_RELAY) {
@@ -317,7 +326,7 @@ static void publish_pin(unsigned char mode, unsigned char ch)
     } else if (mode == HC_TEST_VVT) {
         hcb_port = 7u;
         hcb_bit = (unsigned int)(ch - 1u);
-        hcb_conn_pin = (ch == 2u) ? 120u : 115u;
+        hcb_conn_pin = (ch == 2u) ? TGT_POUT1_CAV : TGT_POUT0_CAV;
     } else if (mode == HC_TEST_DBW) {
         /* The pin that carries the pulse is DVE1; the enable and the
            direction are reported through hcb_channel and the header, because
@@ -466,8 +475,8 @@ static unsigned char tps_pair_bad(void)
  * Here: a fixed 50 % at the OEM 250 Hz for each bounded burst, so a logic
  * analyzer on 115/120 answers frequency, polarity and duty in one capture.
  * Off = output disabled AND the pin released (CJ920 input bias = OFF). */
-#define VVT_PP      2499u        /* OEM 0x09C3                            */
-#define VVT_PW50    1250u
+#define VVT_PP      ((unsigned int)(TGT_PWM_SLOW_HZ / 250uL) - 1u) /* OEM 0x09C3 at 40 MHz */
+#define VVT_PW50    ((unsigned int)(TGT_PWM_SLOW_HZ / 500uL))
 static void vvt_pwm(unsigned char ch, unsigned char on)
 {
     unsigned int b = (ch == 2u) ? 0x0002u : 0x0001u;
@@ -491,7 +500,10 @@ static void vvt_pwm(unsigned char ch, unsigned char on)
 
 static void drive(unsigned char mode, unsigned char ch, unsigned char on)
 {
-    if (mode == HC_TEST_COIL) {
+    if (ch == 0u && (mode == HC_TEST_COIL || mode == HC_TEST_INJECTOR)) {
+        /* "all": every coil + injector pin, ON = low/output, OFF = released */
+        hc_deadline_bench_port_f(HC_DL_BENCH_ALL, 0u, on);
+    } else if (mode == HC_TEST_COIL) {
         switch (ch) {
         case 1: IGN0 = IGN_LEVEL(on); IGN0D = 1; break;
         case 2: IGN1 = IGN_LEVEL(on); IGN1D = 1; break;
@@ -654,7 +666,8 @@ static unsigned int why_not(unsigned char mode, unsigned char ch)
     switch (mode) {
     case HC_TEST_INJECTOR:
     case HC_TEST_COIL:
-        if (ch < 1u || ch > 8u) {
+        /* 0 = every coil AND every injector together (wiring checks) */
+        if (ch > 8u) {
             r |= HCB_R_CHANNEL;
         }
         break;
@@ -718,6 +731,13 @@ static unsigned int why_not(unsigned char mode, unsigned char ch)
         } else if (ch == 1u && hc_cal_u8(CFG_U_PIN_BOOST) != TGT_LDR_CAV) {
             r |= HCB_R_PIN;
         }
+#if TGT_BOARD_VAG_ME71_C4
+        /* the 2.7T's N75 is the main CPU's POUT1, not an ASIC bit; the
+           ASIC slot channel 1 would reach is the cam valve (ASIC P2.11) */
+        if (ch == 1u) {
+            r |= HCB_R_MODE;
+        }
+#endif
         break;
     case HC_TEST_VVT:
         /* 1 = cavity 115 (KNWS1, POUT0), 2 = cavity 120 (KNWS2, POUT1).
@@ -766,22 +786,22 @@ static unsigned int why_not(unsigned char mode, unsigned char ch)
 }
 
 /* --------------------------------------------------------- the run state */
-static unsigned char run_mode, run_ch;
+static unsigned char HC_C4FAR run_mode, run_ch;
 static unsigned int  run_t0;         /* tick_ms the run started             */
-static unsigned int  run_mark;       /* tick_ms of the last state change    */
-static unsigned int  run_pulses_max;
-static unsigned int  run_ticks;      /* the pulse width, in T7 counts       */
-static unsigned int  run_on_ms;      /* the pulse width, in ms - relay mode */
-static unsigned int  run_gap_ms;     /* between pulses, per mode            */
-static unsigned int  run_cap_ms;     /* the whole run may not outlive this  */
-static unsigned char run_ms_timed;   /* 1 = the ON time is timed on the tick */
-static unsigned char pin_high;
+static unsigned int HC_C4FAR run_mark;       /* tick_ms of the last state change    */
+static unsigned int HC_C4FAR run_pulses_max;
+static unsigned int HC_C4FAR run_ticks;      /* the pulse width, in T7 counts       */
+static unsigned int HC_C4FAR run_on_ms;      /* the pulse width, in ms - relay mode */
+static unsigned int HC_C4FAR run_gap_ms;     /* between pulses, per mode            */
+static unsigned int HC_C4FAR run_cap_ms;     /* the whole run may not outlive this  */
+static unsigned char HC_C4FAR run_ms_timed;   /* 1 = the ON time is timed on the tick */
+static unsigned char HC_C4FAR pin_high;
 /* The two pulse clocks. Declared here with the rest of the run state so
    hcbench_init() can write them explicitly - nothing in this image runs
    Keil's ?C_INIT, so a static that is not written in init() is whatever the
    last power cycle left behind. */
 static unsigned int  pulse_t7;
-static unsigned int  pulse_ms;
+static unsigned int HC_C4FAR pulse_ms;
 
 void hcbench_init(void)
 {
@@ -878,7 +898,7 @@ unsigned char hcbench_start(unsigned char mode, unsigned char ch)
         if (width < HCB_MIN_US) {
             width = HCB_MIN_US;
         }
-        if (mode == HC_TEST_COIL) {
+        if (mode == HC_TEST_COIL || ch == 0u) {   /* "all" drives coils */
             if (width > HCB_IGN_MAX_US) {
                 width = HCB_IGN_MAX_US;
             }
@@ -987,7 +1007,8 @@ static void pulse_end(unsigned int tick_ms)
     if (run_ms_timed) {
         done = (unsigned char)((unsigned int)(tick_ms - pulse_ms)
                                >= run_on_ms);
-    } else if (run_mode == HC_TEST_COIL || run_mode == HC_TEST_INJECTOR) {
+    } else if ((run_mode == HC_TEST_COIL || run_mode == HC_TEST_INJECTOR)
+               && run_ch != 0u) {
         done = (unsigned char)(HC_DL_DIAG.bench_done != 0u);
     } else {
         done = (unsigned char)((unsigned int)(T7 - pulse_t7) >= run_ticks);
@@ -1130,7 +1151,7 @@ void hcbench_service(unsigned int tick_ms)
         pulse_t7 = T7;
         pulse_ms = tick_ms;
         pin_high = 1u;
-        if (run_mode == HC_TEST_COIL || run_mode == HC_TEST_INJECTOR) {
+        if ((run_mode == HC_TEST_COIL || run_mode == HC_TEST_INJECTOR) && run_ch != 0u) {
             if (!hc_deadline_bench_start((unsigned char)(run_mode == HC_TEST_COIL ? HC_DL_BENCH_IGN : HC_DL_BENCH_INJ), run_ch, run_ticks)) hcbench_abort(HCB_A_TIMEOUT);
         } else drive(run_mode, run_ch, 1u);
     }

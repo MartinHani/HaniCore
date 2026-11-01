@@ -9,8 +9,15 @@
  * Until V97 nothing read CAL_IDLE_*: idle air was the pedal map at 0 %
  * pedal, floored by dbwMinX10. With idleEnable 0 (every preset) the floor
  * is 0 and hc_dbw.c behaves exactly as before.
+ *
+ * THE IDLE AIR VALVE (2026-10-31, cable throttle; rusEFI idle solenoid +
+ * secondary solenoid): with idleActuator 1/2 the same position is a valve
+ * duty on the main CPU's POUT0/POUT1 (the cavities hcvvt711.c uses), and
+ * "pedal released" is the TPS - the validator refuses a valve while DBW is
+ * enabled, so hc_dbw.c never applies this position to a throttle too.
  */
 #include "hcfarbridge.h"
+#include <reg167.h>
 #include "hctarget.h"
 #include "hcconfig.h"
 #include "hc_config_generated.h"
@@ -21,14 +28,24 @@
 #include "hcidle711.h"
 #include "hcengctl711.h"   /* anti-lag throttle add */
 #include "hcaux711.h"      /* fan, A/C (idle-up), outputs, oil pressure */
+#include "hcsafety.h"
+#include "hcbench.h"
 
 #define STEP_MS 20u
 #define PEDAL_DEFAULT_X10  20u   /* rusEFI idlePidDeactivationTpsThreshold 2 % */
 #define START_DEFAULT_MS 1000u
 #define IDLE_TRIM_MAX_X10 100u   /* +-10 % of throttle travel, whatever the page */
+#define VALVE_DEFAULT_HZ 200u    /* rusEFI idle.solenoidFrequency */
 
-/* the timing state lives in external SRAM: the far modules' XRAM is full */
-#define IGNIDLE (*(hcidle_timing_t huge *)(TGT_EXTRAM_BASE + TGT_RAM_IGNIDLE))
+/* the timing state and the valve's units live in external SRAM: the far
+   modules' XRAM is full */
+typedef struct {
+    hcidle_timing_t tim;
+    unsigned char   drv;         /* bit0 POUT0, bit1 POUT1: the valve drives it */
+} hc_idle711_t;
+typedef char hc_idle711_fits[(sizeof(hc_idle711_t) <= TGT_RAM_IGNIDLE_LIMIT) ? 1 : -1];
+#define IDLE711 (*(hc_idle711_t huge *)(TGT_EXTRAM_BASE + TGT_RAM_IGNIDLE))
+#define IGNIDLE IDLE711.tim
 
 hcidle_t     hc_idl;
 unsigned int hc_idle_floor_x10;
@@ -49,11 +66,88 @@ static unsigned int elapsed(unsigned int now_ms)
     return d;
 }
 
+/* ------------------------------------------------- the idle air valve -- */
+/* POUT0 / POUT1 exactly as hcvvt711.c drives them: fCPU/64, the stage ON
+   while PT < PW (the CJ920 inverts; latch 0); released = input, stage off.
+   A 3-wire valve's second coil runs on the other unit with the SAME period
+   and duty and its latch 1 - the pin is POUT XOR latch, so it is the exact
+   complement, both timers started together. Constant masks: every port
+   write is one bit instruction. */
+static void unit_off(unsigned char u)
+{
+    if (u) {
+        PWMCON1 &= (unsigned int)~0x0002u;   /* the pin is the latch again */
+        DP7 &= (unsigned int)~0x0002u;       /* released: stage OFF        */
+        P7 &= (unsigned int)~0x0002u;        /* latch back to 0            */
+        PWMCON0 &= (unsigned int)~0x0022u;   /* timer stopped              */
+    } else {
+        PWMCON1 &= (unsigned int)~0x0001u;
+        DP7 &= (unsigned int)~0x0001u;
+        P7 &= (unsigned int)~0x0001u;
+        PWMCON0 &= (unsigned int)~0x0011u;
+    }
+}
+
+static unsigned char unit_of(unsigned char cav)
+{
+    return (cav == TGT_POUT0_CAV) ? 0u : (cav == TGT_POUT1_CAV) ? 1u : 0xFFu;
+}
+
+static void valve_service(unsigned int duty_x10)
+{
+    unsigned char act = hc_cal_u8(CFG_U_IDLE_ACTUATOR);
+    unsigned char want = 0u, inv = 0u, u;
+    unsigned int f, pp, pw;
+
+    /* the ALWAYS set (page valid, S5500 link, key on - as the fuel pump and
+       hcaux711.c); a bench test owns the outputs while it runs */
+    if ((hc_safety_inhibits & HC_INHIBIT_ALWAYS) == 0u && hcb_state != HCB_RUNNING
+        && (act == 1u || act == 2u)) {
+        u = unit_of(hc_cal_u8(CFG_U_PIN_IDLE_VALVE));
+        if (u != 0xFFu) want = (unsigned char)(1u << u);
+        if (act == 2u) {
+            u = unit_of(hc_cal_u8(CFG_U_PIN_IDLE_VALVE2));
+            if (u != 0xFFu && !(want & (1u << u))) {
+                inv = (unsigned char)(1u << u);
+                want |= inv;
+            }
+        }
+    }
+    /* a change of units restarts both together (the 3-wire pair stays in
+       phase); nothing more owned is released */
+    if (want != IDLE711.drv) {
+        if (IDLE711.drv & 1u) unit_off(0u);
+        if (IDLE711.drv & 2u) unit_off(1u);
+        IDLE711.drv = 0u;
+    }
+    if (want == 0u) return;
+
+    f = (unsigned int)(hc_cal_u8(CFG_U_IDLE_VALVE_FREQ) * 10u);
+    if (f == 0u) f = VALVE_DEFAULT_HZ;
+    if (f < 20u) f = 20u;
+    if (f > 1000u) f = 1000u;
+    /* fCPU/64 counts per period: 3125 x 10 at 200 Hz / 40 MHz */
+    pp = (unsigned int)(((unsigned int)(TGT_PWM_SLOW_HZ / 10uL) / f) * 10u);
+    if (duty_x10 > 1000u) duty_x10 = 1000u;
+    pw = (unsigned int)((unsigned long)duty_x10 * pp / 1000u);
+    if (want & 1u) { PP0 = (unsigned int)(pp - 1u); PW0 = pw; }
+    if (want & 2u) { PP1 = (unsigned int)(pp - 1u); PW1 = pw; }
+    if (IDLE711.drv == 0u) {
+        if (want & 1u) { if (inv & 1u) P7 |= 0x0001u; else P7 &= (unsigned int)~0x0001u; PT0 = 0u; }
+        if (want & 2u) { if (inv & 2u) P7 |= 0x0002u; else P7 &= (unsigned int)~0x0002u; PT1 = 0u; }
+        PWMCON0 |= (unsigned int)(want | (want << 4));   /* run, fCPU/64 */
+        PWMCON1 |= (unsigned int)want;                   /* POUTx drives */
+        DP7 |= (unsigned int)want;
+        IDLE711.drv = want;
+    }
+}
+
 void far hc_idle_init(void)
 {
     hcidle_reset(&hc_idl);
     IGNIDLE.closed_ms = 0u;          /* ?C_INIT never runs; SRAM keeps junk */
     IGNIDLE.out_x10 = 0;
+    IDLE711.drv = 0u;                /* hc_hal_init() released every output */
     hc_idle_floor_x10 = 0u;
     hc_idle_target_rpm = 0u;
     acc_ms = 0u;
@@ -111,7 +205,10 @@ void far hc_idle_service(unsigned int now_ms)
     in.rpm = trg_rpm;
     in.target_rpm = hc_idle_target_rpm;
     in.base_x10 = hc_cal_curve16(CAL_IDLE_BASE_AX, CAL_IDLE_BASE_VAL, 8u, clt);
-    in.pedal_x10 = hc_dbw_pedal_x10();
+    /* a cable throttle has no pedal sensor: the TPS says released (as
+       hclimp711.c) */
+    in.pedal_x10 = (hc_cal_u8(CAL_DBW_ENABLE) != 0u) ? hc_dbw_pedal_x10()
+                                                     : eng_tps_x10;
     in.cranking = eng_cranking;
     hc_idle_floor_x10 = hcidle_step(&hc_idl, &c, &in, ms);
     /* anti-lag opens the throttle by its own amount (rusEFI
@@ -123,6 +220,7 @@ void far hc_idle_service(unsigned int now_ms)
     /* the A/C compressor's load (rusEFI acIdleExtraOffset), whether or not
        closed-loop idle is enabled */
     hc_idle_floor_x10 = (unsigned int)(hc_idle_floor_x10 + hc_aux_idle_up_x10());
+    valve_service(hc_idle_floor_x10);
 
     /* idle ignition timing, only while the loop above is CLOSED */
     {

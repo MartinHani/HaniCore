@@ -86,6 +86,9 @@ extern unsigned int dry_inj_start_angle, dry_inj_end_angle;
  * width can differ per event. */
 #define HC_SLOT_TWIN        0x80u
 #define HC_SLOT_MASK        0x7Fu     /* the slot without the twin flag */
+/* apply-time only: a cylinder's repeat 360 on that is NOT a sequential
+   twin (wasted COP, semi-sequential). hc_plan_merge_f() clears it. */
+#define HC_SLOT_REPEAT      0x40u
 extern unsigned char dry_seq_active;     /* 1: some cylinder is in true sequential */
 extern unsigned int  dry_seq_inj_mask;   /* bit per injector slot in sequential   */
 extern unsigned int  dry_seq_skips;      /* twin events dropped (ign + inj)       */

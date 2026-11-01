@@ -13,8 +13,8 @@
 #include "hcsafety.h"
 #include "hcpower.h"
 #include "hcnvm.h"
+#include "hcupd711.h"         /* hc_nvm_stage_op (NCODE), thunked for the updater */
 #include "hchal_me711.h"
-#include "hcburnforensics.h"
 #include "hcengine.h"
 #include "hcasic.h"
 #include "hctarget.h"
@@ -32,8 +32,6 @@
 #include "hcdeadline711.h"
 
 unsigned int far hc_hal_deadline_ports_f(unsigned char base, unsigned int mask, unsigned char physical, unsigned char on) { return hc_hal_deadline_ports(base, mask, physical, on); }
-
-unsigned char far hc_lf_export_byte_f(unsigned int off) { return hc_lf_export_byte(off); }
 
 unsigned char far hc_cal_u8_f(unsigned int off)            { return hc_cal_u8(off); }
 unsigned int  far hc_cal_u16_f(unsigned int off)           { return hc_cal_u16(off); }
@@ -145,10 +143,6 @@ void far asic_isolate_f(void) { asic_isolate(); }
 
 unsigned int far eng_lambda_x1000_f(void) { return eng_lambda_x1000(); }
 
-unsigned int far hc_bf_u16_f(unsigned int off) { return hc_bf_u16(off); }
-
-unsigned int far hc_bf_u8_f(unsigned int off) { return hc_bf_u8(off); }
-
 unsigned int far hc_cfg_persist_class_f(void) { return hc_cfg_persist_class(); }
 
 unsigned int far hc_dbw_app1_x10_f(void) { return hc_dbw_app1_x10(); }
@@ -184,12 +178,6 @@ void far hc_hal_s5500_window_f(unsigned char base) { hc_hal_s5500_window(base); 
 unsigned int far hc_nvm_attempts_f(void) { return hc_nvm_attempts(); }
 
 unsigned int far hc_nvm_cells_total_f(void) { return hc_nvm_cells_total(); }
-
-unsigned int far hc_nvm_commit_fail_stage_f(void) { return hc_nvm_commit_fail_stage(); }
-
-unsigned int far hc_nvm_commit_last_stage_f(void) { return hc_nvm_commit_last_stage(); }
-
-unsigned int far hc_nvm_commit_stage_f(void) { return hc_nvm_commit_stage(); }
 
 unsigned int far hc_nvm_commits_f(void) { return hc_nvm_commits(); }
 
@@ -313,3 +301,16 @@ void far hcts_service_f(void) { hcts_service(); }
 void far hcts_rx_pump_f(void) { hcts_rx_pump(); }
 
 unsigned char far hc_tlog_byte_f(unsigned int i) { return hc_tlog_byte(i); }
+
+#if HC_UPDATER
+/* The app-side OBD updater driver is FCODE (hcdiag711.c); its one NCODE flash
+   step lives in hcnvm.c and is reached through this thunk. */
+unsigned int far hc_nvm_stage_op_f(unsigned int op, unsigned int now_ms,
+                                   unsigned int rpm, unsigned char trig_turning,
+                                   unsigned char outputs_busy,
+                                   unsigned char page_stable)
+{
+    return hc_nvm_stage_op(op, now_ms, rpm, trig_turning, outputs_busy,
+                           page_stable);
+}
+#endif

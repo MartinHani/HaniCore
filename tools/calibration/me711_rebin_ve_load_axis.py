@@ -5,7 +5,7 @@ without inventing a tune. Read-only unless --out is given; never touches an
 ECU.
 
     py tools\calibration\me711_rebin_ve_load_axis.py --page <page.bin> \
-        --ini tunerstudio\history\hanicore_me711_v99_dev.ini \
+        --ini tuning\history\hanicore_me711_v99_dev.ini \
         [--axis 0,10,20,30,40,55,70,100,130,160,200,250,300,400,500,1000] \
         [--out <dir>]
 

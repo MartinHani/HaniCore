@@ -37,7 +37,7 @@ sys.path.insert(0, str(ROOT / "tools" / "lib"))
 import hcpaths as HCP  # noqa: E402
 
 TGT = ROOT / "firmware/targets/me711"
-HANI_INI = ROOT / "tunerstudio/history/hanicore_me711_v97_dev.ini"
+HANI_INI = ROOT / "tuning/history/hanicore_me711_v97_dev.ini"
 
 SUFFIX_SCALE = [  # (regex on identifier, implied scale)
     (r"_x1000\b|X1000\b", 0.001),

@@ -91,13 +91,23 @@ class Bench:
     def __init__(self, reversed_motor=False, stuck=False, strength=1.0,
                  tps2_dead=False, comp=0.0, noise=0, seed=1):
         r = self.r = T.boot()
-        AP.press_apply(r, 3)
+        AP.press_apply(r, T.ENGINE_PRESET)
         AP.service(r)
+        import hc_board
+        if hc_board.IS_C4:
+            # TEST-ONLY: THIS rig's track endpoints (the plant below). The
+            # AWT preset happens to carry these very values; the 2.7T preset
+            # leaves them to AutoCal / Grab on the car, as it must.
+            for name, v in (("CAL_TPS1_MIN", 102), ("CAL_TPS1_MAX", 954),
+                            ("CAL_TPS2_MIN", 919), ("CAL_TPS2_MAX", 71),
+                            ("CAL_PEDAL1_MIN", 150), ("CAL_PEDAL1_MAX", 849),
+                            ("CAL_PEDAL2_MIN", 75), ("CAL_PEDAL2_MAX", 424)):
+                AP.set_active(r, AP.off(name), v, 2)
         r("hc_hal_init", steps=5_000_000)
         r("hc_route_service", steps=5_000_000)
         r("hc_dbw_init", steps=2_000_000)
         r.m.w8(T.sym("hc_dbw_allowed") & 0xFFFF, 1)
-        r.m.sfr[0xFFCC] = r.m.sfr.get(0xFFCC, 0) | 4
+        T.key_on(r)
         r.m.sfr[P3] = r.m.sfr.get(P3, 0) | 0x8000 if isinstance(r.m.sfr, dict) \
             else (r.m.sfr[P3] | 0x8000)
         self.adc = T.sym("adc_raw") & 0xFFFF

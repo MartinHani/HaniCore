@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "tools" / "lib"))
 import hcpaths  # noqa: F401,E402
 import me711_image as I  # noqa: E402
 import me711_deadline_proof as D  # noqa: E402
+import me711_heartbeat_gap_proof as HB  # noqa: E402
 
 CC25 = 0x39
 T7, PSW, SP = 0xF050, 0xFF10, 0xFE12
@@ -106,8 +107,14 @@ def scenario(offset, control):
     coil = r.publish(1, 1, (close + offset) & 0xFFFF, 1000, absolute=True)
     assert coil, "fixture coil admission failed"
     r.run(close + 4000 - r.wall)
-    late_us = r.diag(14) * 0.8
-    width = r.m.r16(D.DIAG + 38 + 8)
+    # board clock (2026-10-26): the rig's width units are 0.8 us ticks x 5/4;
+    # the firmware reports the delivered width in ITS microseconds, 32-bit
+    # (HC_DL_WIDTH.delivered: on the 2.7T one timer wrap is 87 ms, past the
+    # 16-bit diag word); lateness is judged in ticks like the firmware (125)
+    late_ticks = r.diag(14)
+    late_us = late_ticks * 10000 / HB.TPMS
+    width = r.m.r16(0x3872b0) | (r.m.r16(0x3872b2) << 16)
+    want_us = (width_us * 5 // 4) * 10000 // HB.TPMS
     coil_edges = []
     previous = 0
     for _, t, ports in r.log:
@@ -115,8 +122,8 @@ def scenario(offset, control):
             coil_edges.append(t)
         previous = ports[0] & 1
     ok = (r.isr_max_steps <= 1600 and r.critical_max_steps <= 500
-          and late_us <= 100 and r.diag(13) == 0 and len(coil_edges) == 1
-          and abs(width - width_us) <= 100 and r.dirs() == (0, 0, 0))
+          and late_ticks <= 125 and r.diag(13) == 0 and len(coil_edges) == 1
+          and abs(width - want_us) <= 100 and r.dirs() == (0, 0, 0))
     return ok, dict(offset=offset, cc25_us=r.isr_max_steps / 10,
                     critical_us=r.critical_max_steps / 10, late_us=late_us,
                     injector_us=width, coil_edges=len(coil_edges),

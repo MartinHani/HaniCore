@@ -16,7 +16,7 @@ def main():
     r=T.boot(); AP.press_apply(r,3); AP.service(r)
     r('hc_hal_init', steps=5_000_000); r('hc_dbw_init')
     r('hc_route_service', steps=5_000_000)
-    r.m.sfr[0xFFCC] = r.m.sfr.get(0xFFCC,0) | 4
+    T.key_on(r)   # KL15 as this board reads it (P6.2, or AN12 on the C4)
     tick=T.sym('hc_tick_ms') & 0xffff
     adc=T.sym('adc_raw') & 0xffff
     def now(t): r.m.w16(tick,t & 0xffff)
@@ -84,7 +84,7 @@ def main():
             b.step()
             if not b.released(): break
         assert not b.released()
-        if keyoff: b.r.m.sfr[0xFFCC] &= ~4
+        if keyoff: T.key_on(b.r, False)
         b.r.m.w16(tick,(b.ms+101)&65535)
         # A yield runs freshness/safety only, without a new DBW control step.
         b.r('hc_fresh_service')
@@ -109,7 +109,7 @@ def main():
     assert r('hc_io_test_start',5,200,2000)&255==1
     r('hc_io_test_service',2000); r('hc_io_frame')
     assert r('hc_io_word',6)&0x8000
-    r.m.sfr[0xFFCC] &= ~4; r('hc_io_frame')
+    T.key_on(r, False); r('hc_io_frame')
     assert not (r('hc_io_word',6)&0x8000)
     print('PASS: heater frame refusal, positive bounded pulse, terminal expiry and raw-key release')
     # Inspect the real adapter's argument at the unmodified core entry. The
@@ -133,7 +133,7 @@ def main():
         finally:
             r.stack_top=top
     try:
-        r('hc_io_init'); r.m.sfr[0xFFCC] |= 4
+        r('hc_io_init'); T.key_on(r)
         cfg=T.d(T._tgt,'TGT_EXTRAM_BASE')+T.d(T._tgt,'TGT_RAM_CFG')+T.d(T._cfg,'HC_CFG_HDR_LEN')
         r.m.w8(cfg+T.d(T._gen,'CFG_U_LAM1_SRC'),1)
         r.m.w8(cfg+T.d(T._gen,'CFG_U_LAM_HEAT_POLICY'),2)

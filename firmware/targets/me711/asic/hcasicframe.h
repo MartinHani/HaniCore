@@ -11,8 +11,24 @@
 #define HC_ASICFRAME_WORDS       96u
 #define HC_ASICFRAME_CKSUM_WORD  95u     /* additive sum of words 0..94 */
 
-/* The header, fixed by the exchange and identical on every OEM startup. */
+/* The header, fixed by the exchange and identical on every OEM startup.
+   The 2.7T's S5500 takes a STARTUP frame only with low byte 0x5F (its IROM,
+   0x0019E4) and its OEM sends 0x005F [4B0907551F 0x871872]; the Porsche's
+   0x0055 was ignored there (2026-10-27 bench). hc_board.h is the build's
+   board file, on every target module's include path. */
+#ifdef __C166__
+#include "hc_board.h"
+#endif
+#ifdef TGT_BOARD_VAG_ME71_C4
+#if TGT_BOARD_VAG_ME71_C4
+#define HC_ASICFRAME_C4          1
+#endif
+#endif
+#ifdef HC_ASICFRAME_C4
+#define HC_ASICFRAME_HDR0        0x005Fu
+#else
 #define HC_ASICFRAME_HDR0        0x0055u
+#endif
 #define HC_ASICFRAME_HDR1        0x003Bu
 #define HC_ASICFRAME_HDR3        0x0020u
 

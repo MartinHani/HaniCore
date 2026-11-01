@@ -672,11 +672,27 @@ static unsigned int check_lambda(unsigned int n_cyl)
     unsigned int valid = (unsigned int)((n_cyl >= 16u)
                                         ? 0xFFFFu : ((1u << n_cyl) - 1u));
 
-    if (s1 > HC_LAMBDA_CAN) {
+    if (s1 > HC_LAMBDA_NARROWBAND) {
         bad(CFG_U_LAM1_SRC);
         f |= HC_VAL_FAULT_LAMBDA;
     }
-    if (s2 > HC_LAMBDA_CAN) {
+#if defined(TGT_HAS_CJ120) && !TGT_HAS_CJ120
+    /* a board with no on-board LSU controller cannot run the internal
+       source: its lambda would never become a measurement, silently. The
+       ME7.5 DC's one analog CJ110 IS lambda 1's internal source (hcio711.c
+       HEAT_SRC_OK; refused here until 2026-10-31) - bank 1 only. */
+#if !(defined(TGT_HAS_CJ110) && TGT_HAS_CJ110)
+    if (s1 == HC_LAMBDA_INTERNAL_LSU) {
+        bad(CFG_U_LAM1_SRC);
+        f |= HC_VAL_FAULT_LAMBDA;
+    }
+#endif
+    if (s2 == HC_LAMBDA_INTERNAL_LSU) {
+        bad(CFG_U_LAM2_SRC);
+        f |= HC_VAL_FAULT_LAMBDA;
+    }
+#endif
+    if (s2 > HC_LAMBDA_NARROWBAND) {
         bad(CFG_U_LAM2_SRC);
         f |= HC_VAL_FAULT_LAMBDA;
     }
@@ -1075,6 +1091,34 @@ unsigned int hc_validate(unsigned char src)
                 f |= HC_VAL_FAULT_PIN_CAP;
             }
             f |= claim(c, p, sw_off[i]);
+        }
+    }
+    /* THE IDLE AIR VALVE (hcidle711.c, 2026-10-31, cable throttle). Its pins
+       are read only when a valve is selected - the bytes were alignment pads
+       and hold 0 on an older page. One valve, one owner per pin; a 3-wire
+       valve needs two different pins. A valve and the electronic throttle
+       both moving the idle air is refused, not resolved. */
+    {
+        unsigned char act = rd8(CFG_U_IDLE_ACTUATOR);
+        if (act > 2u || (act != 0u && rd8(CAL_DBW_ENABLE) != 0u)) {
+            bad(CFG_U_IDLE_ACTUATOR);
+            f |= HC_VAL_FAULT_PIN_CAP;
+        }
+        if (act == 1u || act == 2u) {
+            unsigned char p1 = rd8(CFG_U_PIN_IDLE_VALVE);
+            unsigned char p2 = rd8(CFG_U_PIN_IDLE_VALVE2);
+            if (!hc_hal_out_bindable(CFG_U_PIN_IDLE_VALVE, p1)) {
+                bad(CFG_U_PIN_IDLE_VALVE);
+                f |= HC_VAL_FAULT_PIN_CAP;
+            }
+            f |= claim(c, p1, CFG_U_PIN_IDLE_VALVE);
+            if (act == 2u) {
+                if (p2 == p1 || !hc_hal_out_bindable(CFG_U_PIN_IDLE_VALVE2, p2)) {
+                    bad(CFG_U_PIN_IDLE_VALVE2);
+                    f |= HC_VAL_FAULT_PIN_CAP;
+                }
+                f |= claim(c, p2, CFG_U_PIN_IDLE_VALVE2);
+            }
         }
     }
 #if defined(TGT_AUX_CAV0)

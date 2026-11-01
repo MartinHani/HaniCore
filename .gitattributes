@@ -10,7 +10,6 @@
 # byte, so a Windows clone (core.autocrlf=true) must not convert these.
 firmware/generated/**                text eol=lf
 firmware/targets/me711/generated/**  text eol=lf
-tunerstudio/*.ini                    text eol=lf
-tunerstudio/*.dash                   text eol=lf
-tunerstudio/plugin/*.json            text eol=lf
+tuning/*.ini                    text eol=lf
+tuning/*.dash                   text eol=lf
 docs/PINOUT.md                       text eol=lf

@@ -283,7 +283,6 @@ def main():
     symbols = {
         "?C_STARTUP": "entry_cpu", "main": "main_cpu",
         "asic_isolate": "asic_isolate_cpu", "asic_init": "asic_init_cpu",
-        "asic_service": "asic_service_cpu",
         "hc_asic_start_service": "asic_start_service_cpu",
     }
     sym_bad = []
@@ -293,7 +292,7 @@ def main():
                 sym_bad.append((symbol, map_symbol(map_path, symbol), man.get(field)))
     check("M66 symbols equal the JSON lineage addresses",
           map_ok and not sym_bad,
-          "6/6 agree" if map_ok and not sym_bad else str(sym_bad[:2]))
+          "5/5 agree" if map_ok and not sym_bad else str(sym_bad[:2]))
 
     try:
         final_records = parse_ihex(programmer_hex) if programmer_ok else {}

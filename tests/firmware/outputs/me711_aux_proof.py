@@ -49,6 +49,10 @@ import me711_image as PI  # noqa: E402
 
 P2, P7, DP7 = 0xFFC0, 0xFFD0, 0xFFD2
 B115, B120 = 0x0001, 0x0002
+import hc_board  # noqa: E402
+# the aux cavities (hctarget.h TGT_AUX_CAV0/1): 115 / 120 on the Porsche,
+# 114 / 104 on the C4 board - the same port bits, P7.0 / P7.1 (POUT0/1)
+A0, A1 = (114, 104) if hc_board.IS_C4 else (115, 120)
 INHIBIT_KEYOFF = 0x0010
 ENG_CUT_LIMP = 0x0008
 ERR_CLT = 0x0001
@@ -57,6 +61,8 @@ CHECKS = FAILS = 0
 
 def check(name, ok, detail=""):
     global CHECKS, FAILS
+    if hc_board.IS_C4:   # the labels name the Porsche cavities
+        name = name.replace("115", "114").replace("120", "104")
     CHECKS += 1
     FAILS += 0 if ok else 1
     print("  [%s] %-64s %s" % ("PASS" if ok else "FAIL", name, detail))
@@ -68,11 +74,35 @@ class Aux:
         import me711_config_state_test as T
         import me711_alphan_start_proof as AS
         self.T, self.AS = T, AS
-        self.r = AS.setup()
+        self.r = AS.setup() if not hc_board.IS_C4 else self.setup_c4()
         self.now = 1000
         self.ms_lim = 0
         self.set(rpm=900, clt=85)
         self.w16("hc_safety_inhibits", 0)
+
+    def setup_c4(self):
+        """The C4 image carries the 2.7T preset (6), not the AWT: the same
+        steps as me711_alphan_start_proof.setup() on it (its fuel is real)."""
+        T, AS = self.T, self.AS
+        A = AS.A
+        r = T.boot()
+        r.publish_on_service = True
+        A.press_apply(r, 6)
+        A.service(r)
+        r("hc_hal_init", steps=5_000_000)
+        check("the 2.7T preset applied through '!E'", A.och(r, 764) == 0x0601,
+              "0x%04X" % A.och(r, 764))
+        for o in (AS.off("CAL_TPS1_MIN"), AS.off("CAL_TPS2_MIN")):
+            AS.w16page(r, o, AS.TPS_MIN)
+        for o in (AS.off("CAL_TPS1_MAX"), AS.off("CAL_TPS2_MAX")):
+            AS.w16page(r, o, AS.TPS_MAX)
+        r("hc_cfg_mgr_apply_now", 0)
+        fs = AS.u16a(r, AS.off("CFG_ADC_BATT_FS_DV"))
+        AS.adc(r, AS.BATT_CH, int(135 * 1023 / fs) if fs else 600)
+        r("hc_route_service")
+        r("hc_cal_set_u16", AS.off("CFG_U_DISPLACEMENT_CC"), 2671)
+        r("eng_init")
+        return r
 
     # ---- state ----------------------------------------------------------
     def a(self, name):
@@ -143,7 +173,7 @@ class Aux:
 
 def fan(x):
     print("\n--- F: cooling fan (pin 115) ---")
-    x.page("CFG_U_PIN_FAN", 115)
+    x.page("CFG_U_PIN_FAN", A0)
     def u16(n):
         o = x.AS.off(n)
         return (x.r.active(o) << 8) | x.r.active(o + 1)
@@ -183,7 +213,7 @@ def fan(x):
     x.run(60)
     check("F5 key-off (not permitted): released and HOLD; back after",
           held == ("off", True) and x.pin(B115) == "ON", str(held))
-    x.page("CFG_U_PIN_FAN", 120)
+    x.page("CFG_U_PIN_FAN", A1)
     x.run(60)
     check("F6 pin moved 115 -> 120: 115 released, 120 driven",
           x.pin(B115) == "off" and x.pin(B120) == "ON",
@@ -196,11 +226,11 @@ def fan(x):
 
 def aircon(x):
     print("\n--- A: A/C (request 87 to ground, relay 120, fan 115) ---")
-    x.page("CFG_U_PIN_FAN", 115)
+    x.page("CFG_U_PIN_FAN", A0)
     x.page("CFG_U_FAN_WITH_AC", 1)
     x.page("CFG_U_PIN_AC_REQ", 87)
     x.page("CFG_U_AC_REQ_ACTIVE", 1)
-    x.page("CFG_U_PIN_AC_CLUTCH", 120)
+    x.page("CFG_U_PIN_AC_CLUTCH", A1)
     p2 = x.r.m.sfr.get(P2, 0)
     x.r.m.sfr[P2] = p2 | 0x0200                       # released: no request
     x.set(rpm=900, clt=85, tps=5)
@@ -245,7 +275,7 @@ def aircon(x):
 
 def outputs(x):
     print("\n--- G: programmable output 1 on 120 ---")
-    x.page("CFG_U_GP1_PIN", 120)
+    x.page("CFG_U_GP1_PIN", A1)
     x.page("CFG_U_GP1_SRC_A", 1)            # rpm
     x.page("CFG_U_GP1_OP_A", 0)             # on above
     x.page16("CFG_U_GP1_THR_A", 3000)
@@ -374,10 +404,13 @@ def validator(x):
     base = val()
     # the AWT preset keeps its N205 route on 115 (cam 1 solenoid, VVT off):
     # 115 is taken, 120 is free
+    # on the C4 board the 2.7T preset routes the N75 (boost) to 104: 104 is
+    # taken, 114 is free
+    taken, free = (104, 114) if hc_board.IS_C4 else (115, 120)
     v9 = val(CFG_U_PIN_FAN=9)
-    v115 = val(CFG_U_PIN_FAN=115)
-    v120 = val(CFG_U_PIN_FAN=120)
-    two = val(CFG_U_PIN_AC_CLUTCH=120)
+    v115 = val(CFG_U_PIN_FAN=taken)
+    v120 = val(CFG_U_PIN_FAN=free)
+    two = val(CFG_U_PIN_AC_CLUTCH=free)
     val(CFG_U_PIN_AC_CLUTCH=255, CFG_U_PIN_FAN=255)
     req41 = val(CFG_U_PIN_AC_REQ=41)
     req87 = val(CFG_U_PIN_AC_REQ=87)

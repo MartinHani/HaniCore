@@ -70,7 +70,7 @@ def reply_ok(s, mark, n_och=32, wait_us=60_000):
 def main() -> int:
     print("=== rxResync counts abandoned frames only (simulator) ===")
     print("  image", RS.PI.image())
-    s = RS.Stress(RS.build_awt_page(dbw=False), ts=False)
+    s = RS.Stress(RS.build_board_page(dbw=False), ts=False)
     s.boot()
     s.run_us(50_000)
     r0 = s.r16("rx_resync")

@@ -49,8 +49,12 @@ def check(name, ok, detail=""):
     FAILS += not ok
 
 
+import me711_heartbeat_gap_proof as HB  # noqa: E402
+TPMIN = HB.TPMS * 6000   # T1 ticks per minute: 75e6, or 45e6 on the 2.7T (hctrig_me711.c)
+
+
 def rpm_of(period):
-    return (75000000 // period) & 0xFFFF
+    return (TPMIN // period) & 0xFFFF
 
 
 def fixture():

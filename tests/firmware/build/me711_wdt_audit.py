@@ -314,8 +314,12 @@ def main():
     cnt76 = [x for x in find_all(img, bytes([0xE7]), CODE_LO, CODE_HI)
              if x % 2 == 0 and img[x + 2] == 0x76 and img[x + 3] == 0x00
              and (img[x + 1] & 0xF0) == 0xF0]
-    check("J: the 96- and 118-word frame counts are both emitted",
-          bool(cnt60) and bool(cnt76),
+    import hc_board
+    # the C4 board's S5500 runs 96-word frames from start to runtime
+    # (hctarget.h TGT_ASIC_WORDS_RUN 0x60); the Porsche's runtime is 118
+    check("J: the board's frame word counts are emitted (%s)"
+          % ("96" if hc_board.IS_C4 else "96 and 118"),
+          bool(cnt60) and (bool(cnt76) or hc_board.IS_C4),
           f"{len(cnt60)} site(s) load #60h (96 words), "
           f"{len(cnt76)} load #76h (118 words)")
 
@@ -361,11 +365,15 @@ def main():
           if not fl3 and not fl4
           else f"DP6.3 floated at {[hex(0x800000+x) for x in fl3]}, "
                f"DP6.4 at {[hex(0x800000+x) for x in fl4]}")
-    drv3 = bitop(3, True, 0xE7)
-    hi3 = bitop(3, True, 0xE6)
-    check("   CS_EEPR is driven HIGH (the EEPROM is deselected)",
+    # CS_EEPR: P6.3 on the Porsche; P4.7 on the C4 board (where P6.3 is
+    # VPROGEN, driven LOW as the OEM does) - start_me711.a66
+    q, pb, db = (7, 0xE4, 0xE5) if hc_board.IS_C4 else (3, 0xE6, 0xE7)
+    drv3 = bitop(q, True, db)
+    hi3 = bitop(q, True, pb)
+    pn = "P4.7" if hc_board.IS_C4 else "P6.3"
+    check("   CS_EEPR (%s) is driven HIGH (the EEPROM is deselected)" % pn,
           bool(drv3) and bool(hi3),
-          f"BSET P6.3 at 0x{0x800000+hi3[0]:06X}, BSET DP6.3 at "
+          f"BSET {pn} at 0x{0x800000+hi3[0]:06X}, BSET D{pn} at "
           f"0x{0x800000+drv3[0]:06X}" if drv3 and hi3 else "MISSING")
 
     # The two CJ120 selects share the SSC with the S5500: [BIN seg8B:FF5E]

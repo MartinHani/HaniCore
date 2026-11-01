@@ -54,7 +54,7 @@ import me711_heartbeat_gap_proof as HB    # noqa: E402
 import me711_image as PI                  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
-INI = ROOT / "tunerstudio/hanicore_me711.ini"
+INI = ROOT / "tuning/hanicore_me711.ini"
 CFG_H = ROOT / "firmware/generated/hc_config_generated.h"
 # The legacy offsets live in hcconfig.h; the generated header only carries the
 # universal block and re-asserts the legacy ones with static asserts. Read both
@@ -153,8 +153,12 @@ def _sfr(n):
                          _REG167, re.M).group(1), 16)
 
 
+import hc_board  # noqa: E402
+# the C4 board drives its fuel pump on P4.4 (hctarget.h TGT_EKP_PORT_*):
+# its port is in the census there
 FORBIDDEN = {_sfr(n): n for n in ("P2", "DP2", "ODP2", "P7", "DP7", "ODP7",
-                                  "P8", "DP8", "ODP8")}
+                                  "P8", "DP8", "ODP8")
+             + (("P4", "DP4") if hc_board.IS_C4 else ())}
 
 HC_CFG = None
 
@@ -224,7 +228,8 @@ def run_case(img_path, arm, valid_page, send, steps=4_200_000):
     dp2 = rig.mem.r16(0xFFC2)
     dp7 = rig.mem.r16(0xFFD2)
     dp8 = rig.mem.r16(0xFFD6)
-    return after, st, rf, (dp2, dp7, dp8), rig
+    dp4 = rig.mem.r16(_sfr("DP4"))
+    return after, st, rf, (dp2, dp7, dp8, dp4), rig
 
 
 # EACH CASE RUNS IN ITS OWN PROCESS, and that is not fastidiousness.
@@ -327,6 +332,11 @@ def main() -> int:
         )
         seen_bindings = set()
         lo, hi = seg_range("?PR?HCBENCH")
+        # The pulse's edges are TIMED by the CC25 deadline executor: hcbench
+        # reserves a bench ticket (HC_DL_BENCH_*) and its ON/OFF writes run in
+        # hcdeadline711.c's port writer, at the compare. Those two sections
+        # and no other code may move a bench pin.
+        elo, ehi = seg_range("?PR?HCDEADLINE711")
         for command, ev, want_port, want_bit, allowed_ports in candidates:
           # V93: 13 M, WAS 9 M. Ten 50/950-ms-class pulses finish near 9 M
           # on V92; V93's main loop does a little more per pass (the far ETB
@@ -356,10 +366,11 @@ def main() -> int:
                 set(ports) <= allowed_ports,
                 "wrote %s" % ", ".join(ports))
             pcs = [w[0] for w in writes]
-            check("%s: every write is inside hcbench" % ev,
-                all(lo <= pc <= hi for pc in pcs),
-                "PCs 0x%06X..0x%06X, ?PR?HCBENCH is 0x%06X-0x%06X"
-                % (min(pcs), max(pcs), lo, hi))
+            check("%s: every write is inside hcbench or the executor" % ev,
+                all(lo <= pc <= hi or elo <= pc <= ehi for pc in pcs),
+                "PCs 0x%06X..0x%06X, ?PR?HCBENCH 0x%06X-0x%06X, "
+                "?PR?HCDEADLINE711 0x%06X-0x%06X"
+                % (min(pcs), max(pcs), lo, hi, elo, ehi))
 
           check("%s: the coil port is untouched" % ev,
               not any(nm in ("P2", "DP2", "ODP2") for _pc, nm in writes),

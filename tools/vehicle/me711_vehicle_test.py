@@ -179,6 +179,25 @@ import me711_vehicle_capture as VC        # noqa: E402  (Ini, pick_ini, ...)
 TOOL_VERSION = "2.0 (V100 multi-rate)"
 RATE_CODE = {10400: 0x01, 57600: 0x02, 124800: 0x03, 115200: 0x04}
 EXT_RING = 344 + 120 + 168        # the ring follows LF, tooth profile, boots
+# the first 344 bytes: the latest REJECTED S5500 reply (2026-10-28, issue 02,
+# hcasicstart.c TGT_RAM_ASICBAD): 16 header words + the frame
+EXT_ASICBAD, ASICBAD_BYTES = 0, 268
+ASICBAD_FIELDS = ("captures", "err_running", "err_stopped", "calc", "recv",
+                  "t7_start", "t7_seen", "ms", "rpm", "words", "frames_ok",
+                  "umkom_w1_last_good", "last_good_ms")
+# then (offset 268, 32 words) the main-loop pass profile (issue 03,
+# hcrtmon711.h TGT_RAM_PASSREC): worst pass in ms, its longest segment,
+# passes > 20 ms, each segment's worst (T7 ticks)
+EXT_PASSREC, PASSREC_BYTES = 268, 64
+PASS_SEGMENTS = ("tail", "top", "comms", "kwp", "hal_dbw_trigger",
+                 "eng_acquire", "eng_calculate", "yield1", "cfgmgr_preset_route",
+                 "bench_seed", "runon_safety_relay_pump", "idle_vvt",
+                 "limp_dtc_cel", "dbw", "lambda", "boost_iotest",
+                 "nvm_burn", "s5500win_och_publish", "knock",
+                 "poll_rstlog", "cfg_settle", "rtmon_stackscan")
+PASS_FIELDS = (("passes_gt20ms", "worst_pass_ms", "worst_pass_T",
+                "worst_seg", "worst_seg_T")
+               + tuple("seg_%s_T" % n for n in PASS_SEGMENTS))
 # 2026-10-11: THE RESET WITNESS follows the event ring (916 B) and the runtime
 # health record (64 B): 32 big-endian words live + 32 of the boot before
 # (hcrtmon711.c). Older images answer nothing there.
@@ -958,6 +977,16 @@ class Kline:
         if stage != "IDENTIFIED":
             return stage, why, r
         stage, why, used = self.gofast(link, rate, r)
+        # REFUSED (7F B1 ..): this ECU has no such rate - the 24 MHz 2.7T
+        # cannot make 115200. Same session, the next rate (2026-10-28):
+        # 57600 first - the logger runs with the engine running, and a faster
+        # link costs the 2.7T's throttle control its budget.
+        for alt in (57600, 124800):
+            if stage != "GOFAST FAILED" or "7fb1" not in why or alt == rate:
+                continue
+            self.s.say("KLINE: GOFAST %d refused by the ECU - trying %d"
+                       % (rate, alt))
+            stage, why, used = self.gofast(link, alt, r)
         if stage == "FALLBACK":
             self.s.say("KLINE: %s - logging at 10400 (slow)" % why)
             stage = "OK"
@@ -1274,6 +1303,43 @@ class Ecu:
         w = [(body[i] << 8) | body[i + 1] for i in range(0, 64, 2)]
         d = dict(zip(WT_FIELDS, w[:len(WT_FIELDS)]))
         return d if d.get("magic") == 0x5257 else None
+
+    def pass_profile(self):
+        """The main-loop pass profile (issue 03) or None (an older image)."""
+        try:
+            body, _err, _ = self.link.och(self.block + EXT_PASSREC,
+                                          PASSREC_BYTES)
+        except Exception:                 # a fake link in a unit test
+            return None
+        if body is None or len(body) != PASSREC_BYTES:
+            return None
+        w = [(body[i] << 8) | body[i + 1] for i in range(0, len(body), 2)]
+        if w[0] != 0x5052:
+            return None
+        vals = w[1:6] + w[10:10 + len(PASS_SEGMENTS)]
+        d = dict(zip(PASS_FIELDS, vals))
+        seg = d["worst_seg"]
+        d["worst_seg_name"] = (PASS_SEGMENTS[seg] if seg < len(PASS_SEGMENTS)
+                               else str(seg))
+        return d
+
+    def asic_bad(self):
+        """The latest S5500 reply that failed its checksum (issue 02), or
+        None (none yet / an older image). Read when the witness's checksum
+        error count moves."""
+        try:
+            body, _err, _ = self.link.och(self.block + EXT_ASICBAD,
+                                          ASICBAD_BYTES)
+        except Exception:                 # a fake link in a unit test
+            return None
+        if body is None or len(body) != ASICBAD_BYTES:
+            return None
+        w = [(body[i] << 8) | body[i + 1] for i in range(0, len(body), 2)]
+        if w[15] != 0x4241 or not w[0]:
+            return None
+        d = dict(zip(ASICBAD_FIELDS, w))
+        d["frame"] = w[16:16 + min(w[9], len(w) - 16)]
+        return d
 
     def reset_witness(self, tag):
         """What the ECU saw last before its previous reset (hcrtmon711.c):
@@ -2016,6 +2082,13 @@ class Runtime:
             return
         ro = int(ro)
         off, st = (ro >> 8) & 1, ro & 255
+        # the fast row carries runOn but not the store words: take those from
+        # the merged latest values (_keep ran first), or a key-off seen on a
+        # fast row never knows a Burn was pending
+        row = dict(row)
+        for k in ("nvmState", "nvmGeneration", "nvmCommits"):
+            if row.get(k) is None:
+                row[k] = self.latest.get(k)
         ko = self.ko
         if off and (ko is None or ko.get("done")):
             nst = int(row.get("nvmState") or 0) & 0xFF
@@ -2294,6 +2367,34 @@ class Runtime:
                           [s.t()] + [wl.get(k) for k in WT_FIELDS])
                     self.stats["witness_rows"] = \
                         self.stats.get("witness_rows", 0) + 1
+                    pp = e.pass_profile() if hasattr(e, "pass_profile") else None
+                    if pp:
+                        s.row("pass", ["t"] + list(PASS_FIELDS)
+                              + ["worst_seg_name"],
+                              [s.t()] + [pp.get(k) for k in PASS_FIELDS]
+                              + [pp["worst_seg_name"]])
+                        if pp["worst_pass_ms"] > getattr(self, "_pass_worst", 20):
+                            self._pass_worst = pp["worst_pass_ms"]
+                            s.say("MAIN LOOP: a %d ms pass, longest in it: %s "
+                                  "(%d T)" % (pp["worst_pass_ms"],
+                                              pp["worst_seg_name"],
+                                              pp["worst_seg_T"]))
+                    ce = wl.get("asic_csum_err")
+                    if ce != getattr(self, "_csum_seen", None) and \
+                            hasattr(e, "asic_bad"):
+                        self._csum_seen = ce
+                        bad = e.asic_bad()
+                        if bad and bad["captures"] != getattr(
+                                self, "_bad_seen", None):
+                            self._bad_seen = bad["captures"]
+                            bad["_t"] = s.t()
+                            with open(s.dir / "asic_bad_frames.jsonl", "a") as f:
+                                f.write(json.dumps(bad) + "\n")
+                            s.say("S5500 BAD REPLY #%d (%s, %d rpm): sum %04X "
+                                  "!= received %04X, %d words kept"
+                                  % (bad["captures"], "running" if bad["rpm"]
+                                     else "stopped", bad["rpm"], bad["calc"],
+                                     bad["recv"], len(bad["frame"])))
                 now = time.monotonic()
             if self.ring and now - t_ring >= self.rates["ring"]:
                 t_ring = now
@@ -3688,6 +3789,12 @@ class Guided:
 
 
 # ================================================================ main ====
+class _NoEcu(Exception):
+    """No link: end the session normally - folder closed, ZIP written (until
+    2026-10-27 a `return` here skipped the ZIP, the one file a tester whose
+    ECU never answered had to send back)."""
+
+
 def default_out() -> Path:
     base = ROOT.parent / "evidence"
     if not base.is_dir():
@@ -3877,7 +3984,7 @@ def run(a, open_port=None, stdin_q=None) -> int:
         sess.save_meta()
         if link is None:
             sess.say("No ECU connection - nothing else can run.")
-            return 2
+            raise _NoEcu()      # not return: the ZIP below is the product
         ecu = Ecu(link, sess, a.ini)
         sess.say("ECU: %s | %s | ini %s" % (ecu.version, ecu.sig,
                                             ecu.ini_path.name))
@@ -3967,6 +4074,8 @@ def run(a, open_port=None, stdin_q=None) -> int:
     except KeyboardInterrupt:
         sess.say("interrupted - everything recorded so far is kept")
         rc = 130
+    except _NoEcu:
+        rc = 2
     finally:
         try:
             if link is not None and "ecu" in locals():

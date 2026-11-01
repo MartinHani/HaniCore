@@ -38,6 +38,7 @@ sys.path.insert(0, str(ROOT / "tools" / "config_source"))
 import me711_heartbeat_gap_proof as HB    # noqa: E402
 import me711_image as PI                  # noqa: E402
 import hw_descriptors as HW               # noqa: E402
+import hc_board as HCB                    # noqa: E402
 from hanicore_config_schema import PinCap  # noqa: E402
 
 TGT = ROOT / "firmware/targets/me711"
@@ -87,7 +88,10 @@ def defn(path, name):
 # ------------------------------------------------ 1. the table vs the descriptor
 def parse_hal_table():
     """cavity -> (port, bit) as hcroutes711.c's hc_hal_port_of() states it."""
-    src = ROUTES_C.read_text(errors="replace")
+    # THIS BOARD's table: hcroutes711.c has `#if !TGT_BOARD_VAG_ME71_C4`
+    # rows (the fuel pump), and a whole-file regex let the C4's 65 -> P4.4
+    # overwrite the Porsche's 65 -> P2.12
+    src = HCB.board_text(ROUTES_C)
     body = src[src.index("hc_hal_port_of(unsigned char cav"):]
     body = body[:body.index("\n}")]
     out = {}
@@ -171,8 +175,9 @@ def main() -> int:
           not relay_only, "excluded: %s" % (relay_only or "none"))
     check("...and no PORT 5 cavity is offered as an output any more",
           not p5, "P5 is input-only on the C167; 4/5 are ASIC heater outputs")
+    ekp = (4, 4) if HCB.IS_C4 else (2, 12)
     check("the fuel pump IS in the table, because it has a real CPU path",
-          65 in hal and hal[65] == (2, 12), "cavity 65 -> P2.12/CC12IO")
+          65 in hal and hal[65] == ekp, "cavity 65 -> P%d.%d" % ekp)
 
     # --------------------------------------------------- 2. executed behaviour
     rig = HB.Rig(PI.image(), HB.ENTRY_CURRENT, HB.TICK_CURRENT, echo=False)
@@ -183,13 +188,15 @@ def main() -> int:
         addr = sym(name)
         saved = (cpu.csp, cpu.ip, cpu.m.sfr[0xFE12], cpu.ext)
         cpu.ext = None
+        sp0 = cpu.m.sfr[0xFE12]   # returned = SENTINEL AND the frame unwound:
+        # code at seg:0002 exists (0x860002, 2026-10-25)
         cpu.push(SENTINEL)
         cpu.csp = (addr >> 16) & 0xFF
         cpu.ip = addr & 0xFFFF
         for i, v in enumerate(args):
             cpu.sr(8 + i, v & 0xFFFF)
         for _ in range(400_000):
-            if (cpu.ip & 0xFFFF) == SENTINEL:
+            if (cpu.ip & 0xFFFF) == SENTINEL and cpu.m.sfr[0xFE12] >= sp0:
                 break
             cpu.step()
         else:
@@ -247,7 +254,23 @@ def main() -> int:
     HC_OUT_INJ1 = 8
 
     def drive(sem, on):
-        call("hc_hal_out", (sem, on))
+        """ON for a coil/injector the way CC25 does it: since the deadline
+        executor hc_hal_out() refuses engine ON outright (it takes a ticket
+        and an independent ending), so the old `hc_hal_out(sem, 1)` drove
+        nothing and every positive case here failed while the negative
+        controls passed for the wrong reason. hc_hal_out_group(OFF) resolves
+        the route cache exactly when hc_cfg_active_rev moved; the sealed
+        physical mask then goes to hc_hal_deadline_ports(), which is where
+        the page validation and the ignition/injection permission are
+        enforced - so the controls below test the real gate again."""
+        if sem >= 16 or not on:
+            call("hc_hal_out", (sem, on))
+            return
+        base = HC_OUT_IGN1 if sem < 8 else HC_OUT_INJ1
+        which = 1 << (sem & 7)
+        call("hc_hal_out_group", (base, which, 0))
+        physical = mem.r8((sym("hc_hal_actuator_route") & 0xFFFF) + sem)
+        call("hc_hal_deadline_ports", (base, which, physical, 1))
 
     # --- negative control A: not armed -----------------------------------
     set8(ARMED, 0)

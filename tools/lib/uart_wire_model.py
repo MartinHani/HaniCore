@@ -25,7 +25,8 @@ from __future__ import annotations
 
 import binascii
 
-FCPU = 40_000_000
+import hc_board as _HB  # noqa: E402  24 MHz on the 2.7T C4 board
+FCPU = 24_000_000 if _HB.IS_C4 else 40_000_000
 
 
 def ecu_baud(s0bg: int) -> float:
@@ -85,6 +86,8 @@ def envelope(p: bytes) -> bytes:
 
 
 def selftest() -> None:
+    if _HB.IS_C4:
+        return   # the asserted decodes are the Porsche ECU's bench record (40 MHz)
     v = envelope(b"V")
     got = receive(v, host_baud(115200), ecu_baud(0x15))
     assert [b for b, _ in got] == [0x18, 0xCF, 0x58, 0xFD], got

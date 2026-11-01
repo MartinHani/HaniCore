@@ -188,14 +188,26 @@ void HC_COLD hc_tl_service(unsigned int tick_ms)
     }
 }
 
-/* The extended output-channel window: the 344-byte live-Burn record, then
-   the 60-word profile (big-endian, as every channel). */
+/* The extended output-channel window: 344 bytes - the latest REJECTED S5500
+   reply (TGT_RAM_ASICBAD, hcasicstart.c, 2026-10-28; this was the V49
+   live-Burn record's place, so no later offset moved) - then the 60-word
+   profile (big-endian, as every channel). */
 unsigned char HC_COLD hc_och_ext_byte(unsigned int offset)
 {
     unsigned int w;
 
     if (offset < 344u) {
-        return hc_lf_export_byte(offset);
+        /* 0..267 the bad-reply capture, 268..331 the main-loop pass
+           profile (TGT_RAM_PASSREC, stability issue 03) */
+        if (offset < TGT_ASICBAD_EXPORT)
+            w = ((unsigned int volatile far *)(TGT_EXTRAM_BASE + TGT_RAM_ASICBAD))
+                    [offset >> 1];
+        else if (offset < TGT_ASICBAD_EXPORT + (unsigned int)TGT_RAM_PASSREC_LIMIT)
+            w = ((unsigned int volatile far *)(TGT_EXTRAM_BASE + TGT_RAM_PASSREC))
+                    [(offset - TGT_ASICBAD_EXPORT) >> 1];
+        else
+            return 0u;
+        return (unsigned char)((offset & 1u) ? (w & 0xFFu) : (w >> 8));
     }
     offset = (unsigned int)(offset - 344u);
     if (offset >= 2u * TL_BINS) {

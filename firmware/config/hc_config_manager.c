@@ -216,6 +216,13 @@ static void seed_universal_defaults(void)
     hc_cal_set_u8(CFG_U_PIN_MAPSWITCH, HC_PIN_NONE);
     hc_cal_set_u8(CFG_U_PIN_VSS, HC_PIN_NONE);
     hc_cal_set_u8(CFG_U_TEST_PIN, HC_PIN_NONE);
+    /* V97's lamp pin was never added here: it stayed 0 - a cavity no ECU has
+       - and only the Porsche/2.7T board presets (47) hid it. The ME7.5 DC has
+       no board preset, so its fresh page was REFUSED (0x1020) and could never
+       arm an output (2026-10-29). */
+    hc_cal_set_u8(CFG_U_PIN_MIL, HC_PIN_NONE);
+    hc_cal_set_u8(CFG_U_PIN_IDLE_VALVE, HC_PIN_NONE);
+    hc_cal_set_u8(CFG_U_PIN_IDLE_VALVE2, HC_PIN_NONE);
     for (i = 0u; i < HC_N_GENERIC_IO; i++) {
         hc_cal_set_u8((unsigned int)(CFG_U_PIN_GEN_AIN + i), HC_PIN_NONE);
         hc_cal_set_u8((unsigned int)(CFG_U_PIN_GEN_PWM + i), HC_PIN_NONE);

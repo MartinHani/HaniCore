@@ -23,61 +23,11 @@
 #include "hcrtmon711.h"       /* runtime health record            */
 #include "hcatomic.h"
 
-/* V47..V54 were persistence qualification images. They had no injector or
- * ignition backend, and their live-word admission was allowed to treat output
- * deadlines as absent only because those targets proved them absent. The ABI
- * and the OCH fields stayed; the planner did not.
- *
- * THE SWITCH IS NOW POSITIVE AND IT IS ITS OWN. Gating the engine runtime on
- * TGT_LIVE_BURN_HYBRID_QUAL tied it to the burn-forensics instrumentation,
- * which is unrelated and whose other branch has rotted (it still names
- * TGT_RAM_NVM_FORENSICS, a symbol that no longer exists). Defining
- * TGT_ENGINE_RUNTIME brings the scheduler back without touching one byte of
- * the qualified persistence path. */
 #if !defined(TGT_ENGINE_RUNTIME)
-unsigned int dry_sched_queued, dry_sched_executed, dry_sched_cancelled;
-unsigned int dry_sched_late, dry_sched_missed, dry_sched_max_latency;
-unsigned int dry_sched_next_angle, dry_sched_last_angle;
-unsigned int dry_sched_capture_overflow, dry_sched_catchup, dry_sched_rebases;
-unsigned int dry_sched_pending, dry_sched_status, dry_sched_need_sync;
-unsigned int dry_next_ign_slot, dry_next_inj_slot;
-unsigned int dry_spark_advance_x10, dry_dwell_x100, dry_inj_pulse_us;
-unsigned int dry_dwell_start_angle, dry_spark_angle, dry_inj_start_angle;
-unsigned int dry_inj_end_angle;
-unsigned int dry_sched_overdwell;
-unsigned int hc_ign_ovd_latch;
-unsigned char dry_seq_active;
-unsigned int dry_seq_inj_mask, dry_seq_skips, dry_seq_enters, dry_seq_leaves;
-unsigned int dry_inj_width_us, dry_inj_nofree;
-unsigned char hc_tl_inhibit, hc_tl_active;
-unsigned int hc_tl_state, hc_tl_revs, hc_tl_teeth;
-void hc_tl_request(unsigned char m, unsigned int t) { if (m || t) return; }
-void hc_tl_service(unsigned int t) { if (t) return; }
-unsigned char hc_och_ext_byte(unsigned int o) { return hc_lf_export_byte(o); }
+#error "the ME7.1.1 image always runs the planner"
+#endif
 
-void hc_drysched_init(void) { dry_sched_need_sync = TRG_SYNC_CRANK; }
-void hc_drysched_tooth(unsigned int a, unsigned int s, unsigned int d)
-{ if (a || s || d) return; }
-void hc_drysched_service(unsigned int n, unsigned int s) { if (n || s) return; }
-void hc_drysched_time_service(unsigned int n) { if (n) return; }
-void hc_drysched_overdwell_service(unsigned int n) { if (n) return; }
-void hc_drysched_snap(void) { HC_KN711.snap_valid = 0u; }
-void hc_drysched_cancel(unsigned int reason) { dry_sched_next_angle = reason; }
-void hc_drysched_abort(unsigned int reason) { dry_sched_next_angle = reason; }
-unsigned int hc_drysched_schedule_after(unsigned int a, unsigned char t,
-                                        unsigned char s)
-{ if (a || t || s) return 0u; return 0u; }
-void hc_drysched_test_set_epoch(unsigned int h, unsigned int l)
-{ if (h || l) return; }
-unsigned int hc_drysched_test_epoch_hi(void) { return 0u; }
-unsigned int hc_drysched_test_epoch_lo(void) { return 0u; }
-void hc_drysched_test_anchor(unsigned int a) { if (a) return; }
-void hc_drysched_test_advance(unsigned int a, unsigned int s, unsigned int d)
-{ if (a || s || d) return; }
-
-#else
-
-#define CAP_N  8u
+#define CAP_N  TGT_PLAN_CAP_N
 #define EV_N  16u
 #define PLAN_N 16u
 #define EV_NONE 0u
@@ -160,7 +110,8 @@ unsigned char dry_seq_active;
 unsigned int dry_seq_inj_mask, dry_seq_skips, dry_seq_enters, dry_seq_leaves;
 unsigned int dry_inj_width_us, dry_inj_nofree;
 
-unsigned int hc_plan_cap_angle[CAP_N], hc_plan_cap_stamp[CAP_N], cap_dt[CAP_N];
+unsigned int TGT_PLAN_CAP_MEM hc_plan_cap_angle[CAP_N], TGT_PLAN_CAP_MEM hc_plan_cap_stamp[CAP_N];
+static unsigned int TGT_PLAN_CAP_MEM cap_dt[CAP_N];
 volatile unsigned char hc_plan_cap_head, hc_plan_cap_tail;
 #define cap_angle hc_plan_cap_angle
 #define cap_stamp hc_plan_cap_stamp
@@ -177,8 +128,10 @@ static void publish_edge(unsigned int target, unsigned int stamp,
 #define plan_epoch  ((unsigned long huge *)PLANBUF)
 #define plan_type   (PLANBUF + 4u * PLAN_N)
 #define plan_slot   (PLANBUF + 5u * PLAN_N)
-/* PLANBUF + 6 * PLAN_N .. + 4 * CAP_N is unused: the ring holds T1 stamps. */
-#define ign_token   ((unsigned int huge *)(PLANBUF + 6u * PLAN_N + 4u * CAP_N))
+/* PLANBUF + 6 * PLAN_N .. + 32 is unused: the ring holds T1 stamps. The
+   offset is fixed (it was 4 * an 8-deep ring): HC_DL_WIDTH follows these
+   eight words in TGT_RAM_SCHEDPLAN, whatever TGT_PLAN_CAP_N is. */
+#define ign_token   ((unsigned int huge *)(PLANBUF + 6u * PLAN_N + 32u))
 #define SCHED_LOCK(p)   HC_ATOMIC_ENTER(p)   /* the one convention, hcatomic.h */
 #define SCHED_UNLOCK(p) HC_ATOMIC_EXIT(p)
 #define SCHED_SUPPRESS() do { unsigned int _sp; SCHED_LOCK(_sp); \
@@ -186,7 +139,8 @@ static void publish_edge(unsigned int target, unsigned int stamp,
 unsigned long hc_plan_epoch;
 #define angle_epoch hc_plan_epoch
 static unsigned int angle_last;
-static unsigned char angle_valid;
+unsigned char hc_plan_angle_valid;       /* shared with hcdeadline_plan711.c */
+#define angle_valid hc_plan_angle_valid
 /* set by advance_angle_epoch() when the step it measured was a whole
    half-cycle plus an ordinary tooth - the decoder moved the half (a cam
    phase decision), not the crank. plan_tooth() consumes it. */
@@ -305,26 +259,9 @@ static unsigned int sub720(unsigned int a, unsigned int b)
  * taking this comment's word for it.
  */
 #define DRY_EPOCH_WRAP  (7200uL * 500000uL)   /* 3 600 000 000 = 500 000 cycles */
+/* far, cold: hcdeadline_plan711.c (2026-10-24, NCODE) */
+#define epoch_rebase hc_plan_epoch_rebase_f
 
-static void epoch_rebase(void)
-{
-    unsigned int i;
-
-    for (i = 0; i < PLAN_N; i++) {
-        if (plan_type[i] != EV_NONE && plan_epoch[i] < angle_epoch) {
-            plan_type[i] = EV_NONE;
-            if (dry_sched_pending) dry_sched_pending--;
-            if (dry_sched_missed != 0xFFFFu) dry_sched_missed++;
-        }
-    }
-    angle_epoch -= DRY_EPOCH_WRAP;
-    for (i = 0; i < PLAN_N; i++) {
-        if (plan_type[i] != EV_NONE) {
-            plan_epoch[i] -= DRY_EPOCH_WRAP;
-        }
-    }
-    if (dry_sched_rebases != 0xFFFFu) dry_sched_rebases++;
-}
 
 /* Returns the step just taken, in 0.1 deg, or 0 if there is no previous tooth
    to measure from. plan_tooth() uses it as the staging WINDOW, which is what
@@ -373,27 +310,6 @@ unsigned int far advance_angle_epoch(unsigned int angle)
     return step;
 }
 
-unsigned int hc_drysched_schedule_after(unsigned int angle_x10,
-                                        unsigned char type,
-                                        unsigned char slot)
-{
-    unsigned int i, ps, generation = hc_dl_generation;
-    if (!angle_valid || angle_x10 > 7200u || type == EV_NONE) return 0u;
-    for (i = 0; i < PLAN_N; i++) if (plan_type[i] == EV_NONE) {
-        SCHED_LOCK(ps);
-        if (generation != hc_dl_generation || !angle_valid || plan_type[i] != EV_NONE) {
-            SCHED_UNLOCK(ps); return 0u;
-        }
-        plan_epoch[i] = angle_epoch + (unsigned long)angle_x10;
-        plan_slot[i] = slot;
-        plan_type[i] = type;
-        if (dry_sched_pending != 0xFFFFu) dry_sched_pending++;
-        SCHED_UNLOCK(ps);
-        return 1u;
-    }
-    if (dry_sched_missed != 0xFFFFu) dry_sched_missed++;
-    return 0u;
-}
 
 /* THE CALLER PASSES THE DELTA, and that is not a micro-optimisation.
  *
@@ -649,13 +565,36 @@ static unsigned char g_inj_eoi;
 
 unsigned int  hc_plan_ign_anchors[IGLIST_N];    /* ignition anchors, ASCENDING */
 static unsigned char ig_slot[IGLIST_N];
-static unsigned char ig_n;
+unsigned char hc_plan_ig_n;
+#define ig_n hc_plan_ig_n
 unsigned int  hc_plan_inj_anchors[INLIST_N];    /* injection anchors, ASCENDING */
 unsigned char hc_plan_inj_slots[INLIST_N];
-static unsigned char in_n;
+unsigned char hc_plan_in_n;
+#define in_n hc_plan_in_n
+/* THE OUTPUTS EACH ANCHOR DRIVES (2026-10-24). Wasted COP and
+   semi-sequential fire two cylinders' outputs at the SAME angle (a cylinder
+   and its partner 360 degrees on). They used to be two anchors, two walks
+   and two publications that the deadline queue then merged by searching for
+   an identical pulse - and the two sparks stayed two queue nodes. One anchor
+   with both bits is the same electrical event for half the planner work
+   (list_merge(), at apply time). The slot is the cylinder whose own stroke
+   it is (knock retard, telemetry); the mask is every output it drives. */
+unsigned char hc_plan_ign_masks[IGLIST_N];
+#define ig_mask hc_plan_ign_masks
+unsigned char hc_plan_inj_masks[INLIST_N];
+/* 1 = the queue's exact-pulse merge is needed: two anchors still share an
+   angle (a sequential plan's twins), or no plan exists yet (boot, the
+   deadline gates' direct publications). geometry_refresh() clears it for a
+   plan whose anchors are all distinct - the merge's whole-queue search per
+   opening could then never succeed. */
+unsigned char hc_plan_coincide;
+/* the event being staged drives these outputs (walk_kind -> publish_edge);
+   0 = derive them from the slot (the long-horizon path) */
+static unsigned char w_mask;
 
 unsigned char hc_plan_cursors[4];
-static unsigned char cursors_valid;
+unsigned char hc_plan_cursors_valid;
+#define cursors_valid hc_plan_cursors_valid
 
 /* An event that had to be issued immediately because the angle moved under
    the cursor - a large advance or dwell change between two teeth. Not an
@@ -687,6 +626,7 @@ static void list_insert(unsigned int *ang, unsigned char *slot,
     slot[i] = s;
     (*n)++;
 }
+
 
 static void geometry_refresh(void)
 {
@@ -834,8 +774,8 @@ static void geometry_refresh(void)
                 a = hc_plan_next_rev_x10(a, hc_plan_cycle);
             }
             list_insert(hc_plan_ign_anchors, ig_slot, &ig_n, (unsigned char)IGLIST_N, a,
-                        (unsigned char)(s | ((r && g_ign_seq) ? HC_SLOT_TWIN
-                                                             : 0u)));
+                        (unsigned char)(s | (r ? (g_ign_seq ? HC_SLOT_TWIN
+                                                            : HC_SLOT_REPEAT) : 0u)));
         }
     }
     for (i = 0u; i < g_inj_cyls; i++) {
@@ -849,25 +789,17 @@ static void geometry_refresh(void)
                 a = hc_plan_next_rev_x10(a, hc_plan_cycle);
             }
             list_insert(hc_plan_inj_anchors, hc_plan_inj_slots, &in_n, (unsigned char)INLIST_N, a,
-                        (unsigned char)(s | ((r && g_inj_seq) ? HC_SLOT_TWIN
-                                                             : 0u)));
+                        (unsigned char)(s | (r ? (g_inj_seq ? HC_SLOT_TWIN
+                                                            : HC_SLOT_REPEAT) : 0u)));
         }
     }
+    /* far, cold (hcdeadline_plan711.c): one anchor per coinciding event,
+       then each injector's shortest repeat interval for the width clip */
+    hc_plan_coincide = 0u;
+    hc_plan_merge_f(hc_plan_ign_anchors, ig_slot, ig_mask, &ig_n);
+    hc_plan_merge_f(hc_plan_inj_anchors, hc_plan_inj_slots, hc_plan_inj_masks, &in_n);
+    hc_plan_spans_f(in_n);
     HC_KN711.geom_n = (unsigned char)((g_ign_cyls > 8u) ? 8u : g_ign_cyls);
-    /* Cold configuration work, once per plan rebuild. Paired/batch/fallback
-       outputs may fire more than once per engine cycle. Clip against their
-       shortest actual configured interval, not an assumed 720 degree period. */
-    for (i=0;i<8u;i++) {
-        unsigned char j,k;
-        unsigned int span=hc_plan_cycle;
-        for(j=0;j<in_n;j++) if(!(hc_plan_inj_slots[j]&HC_SLOT_MASK) || (hc_plan_inj_slots[j]&HC_SLOT_MASK)==i+1u) {
-            for(k=0;k<in_n;k++) if(k!=j && (hc_plan_inj_slots[k]&HC_SLOT_MASK)==(hc_plan_inj_slots[j]&HC_SLOT_MASK)) {
-                unsigned int delta=hc_plan_sub_x10(hc_plan_inj_anchors[k],hc_plan_inj_anchors[j],hc_plan_cycle);
-                if(delta<span) span=delta;
-            }
-        }
-        HC_DL_WIDTH.next_angle[i]=span;
-    }
     g_valid = 1u;
 }
 
@@ -941,96 +873,11 @@ static unsigned long cvt_dwell_ticks, cvt_inj_ticks;
                            : (unsigned int)(_a + (cyc) - _b);            \
     } while (0)
 
-static void seed_cursors(unsigned int angle, unsigned int off_dw,
-                         unsigned int off_sp, unsigned int off_is,
-                         unsigned int off_ie)
-{
-    unsigned char k, i, best;
-    unsigned int want, d, bestd;
-    unsigned int *ang;
-    unsigned char n;
 
-    for (k = 0u; k < 4u; k++) {
-        if (k < K_INJ_ON) {
-            ang = hc_plan_ign_anchors;
-            n = ig_n;
-        } else {
-            ang = hc_plan_inj_anchors;
-            n = in_n;
-        }
-        hc_plan_cursors[k] = 0u;
-        if (n == 0u) {
-            continue;
-        }
-        switch (k) {
-        case K_DWELL:   want = off_dw; break;
-        case K_SPARK:   want = off_sp; break;
-        case K_INJ_ON:  want = off_is; break;
-        default:        want = off_ie; break;
-        }
-        ((unsigned int huge *)(TGT_EXTRAM_BASE+TGT_RAM_PLANOFF))[k]=want;
-        want = (unsigned int)(angle + want);
-        if (want >= hc_plan_cycle) {
-            want = (unsigned int)(want - hc_plan_cycle);
-        }
-        best = 0u;
-        bestd = 0xFFFFu;
-        for (i = 0u; i < n; i++) {
-            unsigned int a_i = ang[i];
-            SUB_FAST(d, a_i, want, hc_plan_cycle);
-            if (d < bestd) {
-                bestd = d;
-                best = i;
-            }
-        }
-        /* STEP PAST ANY ANCHOR THE NEXT TOOTH HAS ALREADY PASSED, and until
-         * V69 this only stepped past one that was BEHIND.
-         *
-         * An anchor `bestd` ahead of `want` sits at engine angle
-         * `angle + bestd`, so anything with `bestd < w_window` falls inside
-         * THE SEEDING TOOTH'S OWN WINDOW - and this tooth deliberately
-         * schedules nothing ("this tooth establishes the cursors"). One tooth
-         * later `want` has moved a whole window and that anchor is in the
-         * past, so walk_kind() issued it through the CATCH-UP branch with
-         * delta forced to 0.
-         *
-         * MEASURED, 6 cylinders at 12000 rpm: THREE of the four kinds landed
-         * inside the first window - dwell 37 ahead, injection start 0 ahead,
-         * injection end 5 ahead - so the tooth after seeding staged three
-         * events and executed all three at once. That burst is the whole
-         * difference between the worst tooth of a revolution and the steady
-         * one: 1364 against 780, and it is what me711_plan_cost_proof fails
-         * on. bench measurements.
-         *
-         * THE SAFETY DIRECTION IS THE RIGHT WAY ROUND, and that is why this is
-         * allowed to skip an event at all. off_dw > off_sp, so dwell A always
-         * precedes spark A in angle. If spark A is close enough to be skipped,
-         * dwell A is further in the past and is skipped too. If dwell A is
-         * skipped, spark A is a whole dwell_angle ahead - 216 crank degrees at
-         * this operating point - and is KEPT. So "dwell kept, spark skipped",
-         * the pairing that leaves a coil charging with nothing to end it, is
-         * unreachable; the reachable case is a spark on a coil that was never
-         * charged, which is no spark and no harm.
-         *
-         * Bounded by n. Anchors are `cycle / cylinders` apart - 600 tenths at
-         * twelve cylinders - so more than one inside a window needs a wheel
-         * coarser than any this decoder accepts, but a seeding path that could
-         * loop is not worth the argument. */
-        for (i = 0u; i < n; i++) {
-            if (bestd >= hc_plan_ahead
-                && bestd < (unsigned int)(hc_plan_cycle - w_window)) {
-                break;                  /* more than a window ahead: keep it */
-            }
-            best = (unsigned char)(best + 1u);
-            if (best >= n) {
-                best = 0u;
-            }
-            SUB_FAST(bestd, ang[best], want, hc_plan_cycle);
-        }
-        hc_plan_cursors[k] = best;
-    }
-    cursors_valid = 1u;
-}
+/* seed_cursors() and remap_cursors_360() are far and cold since 2026-10-24
+   (NCODE): hcdeadline_plan711.c, the same code. */
+#define seed_cursors hc_plan_seed_f
+#define remap_cursors_360 hc_plan_remap360_f
 
 /* Distance of the next cursor eligible for this publication window. A
    behind-angle catch-up ranks first; unavailable kinds rank last. */
@@ -1057,17 +904,19 @@ static void walk_kind(unsigned char k, unsigned int off, unsigned char type,
                       unsigned char emit)
 {
     unsigned int *ang;
-    unsigned char *slt;
+    unsigned char *slt, *msk;
     unsigned char n, c, guard;
     unsigned int want, d, target, a_c;
 
     if (k < K_INJ_ON) {
         ang = hc_plan_ign_anchors;
         slt = ig_slot;
+        msk = ig_mask;
         n = ig_n;
     } else {
         ang = hc_plan_inj_anchors;
         slt = hc_plan_inj_slots;
+        msk = hc_plan_inj_masks;
         n = in_n;
     }
     if (n == 0u) {
@@ -1089,7 +938,9 @@ static void walk_kind(unsigned char k, unsigned int off, unsigned char type,
             if (emit) {
                 SUB_FAST(target, a_c, off, hc_plan_cycle);
                 w_extra = (k < K_INJ_ON) ? KN_RET(slt[c] & HC_SLOT_MASK) : 0u;
+                w_mask = msk[c];
                 queue_event(target, d, type, slt[c]);
+                w_mask = 0u;
             }
         } else if (d >= (unsigned int)(hc_plan_cycle - w_window)) {
             /* THE ANCHOR IS BEHIND US, by less than one tooth. The offset
@@ -1100,7 +951,9 @@ static void walk_kind(unsigned char k, unsigned int off, unsigned char type,
             if (emit) {
                 SUB_FAST(target, a_c, off, hc_plan_cycle);
                 w_extra = (k < K_INJ_ON) ? KN_RET(slt[c] & HC_SLOT_MASK) : 0u;
+                w_mask = msk[c];
                 queue_event(target, 0u, type, slt[c]);
+                w_mask = 0u;
                 if (dry_sched_catchup != 0xFFFFu) dry_sched_catchup++;
             }
         } else {
@@ -1124,40 +977,6 @@ static void walk_kind(unsigned char k, unsigned int off, unsigned char type,
  * at the wrong cylinders - so the cursors are re-seeded, and
  * hc_drysched_service() has already cancelled whatever was pending when
  * the cycle was withdrawn. Runs only on the tooth after a phase decision. */
-static void remap_cursors_360(void)
-{
-    unsigned char k, j, n;
-    unsigned int *ang;
-    unsigned char *slt;
-    unsigned int want;
-
-    if (!cursors_valid || hc_plan_cycle != 7200u) {
-        return;
-    }
-    for (k = 0u; k < 4u; k++) {
-        if (k < K_INJ_ON) { ang = hc_plan_ign_anchors; slt = ig_slot; n = ig_n; }
-        else              { ang = hc_plan_inj_anchors; slt = hc_plan_inj_slots; n = in_n; }
-        if (n == 0u) {
-            continue;
-        }
-        want = (unsigned int)(ang[hc_plan_cursors[k]] + 3600u);
-        if (want >= 7200u) want = (unsigned int)(want - 7200u);
-        /* a sequential plan HAS the twin now (the same slot with
-           HC_SLOT_TWIN), so it remaps like a wasted one: the event 360 on is
-           the same cylinder's other stroke. Only its role changes. */
-        for (j = 0u; j < n; j++) {
-            if (ang[j] == want
-                && ((slt[j] ^ slt[hc_plan_cursors[k]]) & HC_SLOT_MASK) == 0u) {
-                break;
-            }
-        }
-        if (j >= n) {
-            cursors_valid = 0u;          /* no twin: re-seed on this tooth */
-            return;
-        }
-        hc_plan_cursors[k] = j;
-    }
-}
 
 /* A TOOTH THE PLANNER ONLY COUNTS. Every capture advances the
    angle epoch - its continuity is the reference for every staged event - but
@@ -1293,6 +1112,9 @@ static void plan_tooth(unsigned int angle, unsigned int stamp, unsigned int dt)
 #if TGT_TICKS_PER_MS_X10 == 12500UL
         /* 40 MHz capture clock: 12.5 ticks per 0.01 ms. */
         cvt_dwell_ticks = ((unsigned long)dry_dwell_x100 * 25u) >> 1;
+#elif TGT_TICKS_PER_MS_X10 == 7500UL
+        /* 24 MHz capture clock (the 2.7T board): 7.5 ticks per 0.01 ms */
+        cvt_dwell_ticks = ((unsigned long)dry_dwell_x100 * 15u) >> 1;
 #else
         cvt_dwell_ticks = ((unsigned long)dry_dwell_x100 * TGT_TICKS_PER_MS_X10) / 1000uL;
 #endif
@@ -1303,6 +1125,10 @@ static void plan_tooth(unsigned int angle, unsigned int stamp, unsigned int dt)
         /* us x 1.25, exactly, without a long division per change */
         cvt_inj_ticks = (unsigned long)dry_inj_pulse_us
                         + (unsigned int)(dry_inj_pulse_us >> 2);
+#elif TGT_TICKS_PER_MS_X10 == 7500UL
+        /* us x 0.75, exactly (2.7T board) */
+        cvt_inj_ticks = (unsigned long)dry_inj_pulse_us
+                        - (unsigned int)(dry_inj_pulse_us >> 2);
 #else
         cvt_inj_ticks = ((unsigned long)dry_inj_pulse_us * TGT_TICKS_PER_MS_X10) / 10000uL;
 #endif
@@ -1452,6 +1278,7 @@ void hc_drysched_init(void)
     for (i = 0; i < PLAN_N; i++) plan_type[i] = EV_NONE;
     TGT_PLAN_IC = HC_IC(TGT_ILVL_PLAN, TGT_GLVL_PLAN);
 
+    hc_plan_coincide = 1u;
     hc_tl_init();
 }
 
@@ -1463,9 +1290,32 @@ void hc_drysched_init(void)
    pass per tooth - a tenth of the CPU at 9600 rpm. The planner (hc_plan_isr,
    ILVL 9) runs as soon as nothing above it is running. */
 #define PLAN_BATCH 4u
+#if TGT_PLAN_DECIM_DT
+/* EVERY OTHER TOOTH ABOVE TGT_PLAN_DECIM_DT, EVERY FOURTH ABOVE
+   TGT_PLAN_DECIM4_DT (2.7T). A skipped capture costs the planner nothing:
+   the next one carries the absolute angle, so the epoch step is two or four
+   teeth (24.0 deg on a 60-2), inside the step limit g_gap_step + one tooth
+   (= gap + 3 teeth). The last tooth before the gap and the tooth that
+   confirms it are never skipped, so the gap step (+/- one corrected tooth)
+   is never added to a skipped one. A capture that makes a walk due is
+   never skipped. cap_skip counts the teeth skipped in a row. */
+static unsigned char cap_skip;
+#endif
 void hc_drysched_tooth(unsigned int angle, unsigned int stamp, unsigned int dt)
 {
-    unsigned char n = (unsigned char)((cap_head + 1u) & (CAP_N - 1u));
+    unsigned char n;
+#if TGT_PLAN_DECIM_DT
+    if (dt < TGT_PLAN_DECIM_DT && cursors_valid
+        && cap_skip < ((dt < TGT_PLAN_DECIM4_DT) ? 3u : 1u)
+        && (unsigned int)(stamp - plan_last) < HC_PLAN_PERIOD_TICKS) {
+        unsigned int a = (angle >= 3600u) ? (unsigned int)(angle - 3600u) : angle;
+        a = (a >= g_pre_gap) ? (unsigned int)(a - g_pre_gap)
+                             : (unsigned int)(a + 3600u - g_pre_gap);
+        if (a != 0u && a != g_gap_step) { cap_skip++; return; }
+    }
+    cap_skip = 0u;
+#endif
+    n = (unsigned char)((cap_head + 1u) & (CAP_N - 1u));
     if (n == cap_tail) {
         if (dry_sched_capture_overflow != 0xFFFFu) dry_sched_capture_overflow++;
         /* The planner fell CAP_N - 1 teeth behind. Its angle accumulator can
@@ -1636,6 +1486,8 @@ static void publish_edge(unsigned int target, unsigned int stamp,
         sm = 1u; sm <<= (unsigned char)(s - 1u);
         mask = (unsigned char)sm;
     }
+    /* a merged anchor drives its partner's output too (list_merge) */
+    if (w_mask) mask = w_mask;
     if (planner_generation != hc_dl_generation) return;
     dry_sched_next_angle = target;
     if (type == HC_DRY_DWELL_START) {
@@ -1667,7 +1519,11 @@ static void publish_edge(unsigned int target, unsigned int stamp,
             if (duration <= cvt_dwell_ticks) duration = cvt_dwell_ticks + 1u;
         }
     } else if (type == HC_DRY_SPARK) {
-        for (b = 0; b < 8u; b++) if (mask & (1u << b)) { id = ign_token[b]; break; }
+        {   /* the first output of the mask - shifted, not 1 << b per bit */
+            unsigned char m = mask;
+            for (b = 0; m && !(m & 1u); b++) m >>= 1;
+            if (!m) b = 8u; else id = ign_token[b];
+        }
         /* A spark whose dwell no longer owns the coil - the sequential twin of
            a coil that already fired, or a dwell refused at publication - is a
            no-op at execution (CC25's owner check). An owner only ever changes
@@ -1713,7 +1569,10 @@ static void publish_edge(unsigned int target, unsigned int stamp,
         dry_next_inj_slot = slot; dry_inj_start_angle = target;
     } else {
         if(type==HC_DRY_DWELL_START) {
-            if (id) for (b = 0; b < 8u; b++) if (mask & (1u << b)) ign_token[b] = id;
+            if (id) {
+                unsigned char m = mask;
+                for (b = 0; m; b++, m >>= 1) if (m & 1u) ign_token[b] = id;
+            }
             dry_dwell_start_angle = target;
         } else dry_spark_angle = target;
         dry_next_ign_slot = slot;
@@ -1857,4 +1716,3 @@ void hc_plan_isr(void) interrupt TGT_TRAP_PLAN using PLANBANK
     HC_RT_MAX(plan_run_max, (unsigned int)(T1 - t0));
     HC_RT_INC(plan_runs);
 }
-#endif /* !TGT_ENGINE_RUNTIME */

@@ -6,13 +6,13 @@ Developer tools by purpose. Each script's docstring is its manual.
 |---|---|---|
 | `build/` | image build, boot region, vector table, image validation, release packaging | `build_hanicore_me711.py` |
 | `config_source/` | the configuration model (page fields, presets, hardware descriptor) and its generator; `data/` holds the connector tables | `generate_config.py` |
-| `tunerstudio/` | `.ini` and dashboard generators, `.ini` audits, the K-line plugin (`plugin/`) | `gen_ts_ini_me711.py` |
+| `tuning/` | `.ini` and dashboard generators, `.ini` audits | `gen_ts_ini_me711.py` |
 | `flash/` | boot-mode wrapper, calibration restore, flash verification | `me7boot/hanicore_me7boot.py` |
 | `calibration/` | user presets, calibration migration across page layouts, VE axis re-binning | `me711_user_presets.py` |
 | `vehicle/` | vehicle logger and its analysis, throttle and trigger commissioning on the car, KWP entry | `me711_vehicle_test.py` |
 | `bench/` | K-line capture, output-channel snapshots, serial probing, logic-analyser capture | `me711_och_snapshot.py` |
 | `analysis/` | code-space, stack and interrupt-budget reports; runtime stress rig; OEM-binary analysis helpers (need your own ECU read) | `me711_stack_static.py` |
-| `research/` | `.ini` parser and audits used by the TunerStudio gates | `ts_ini.py` |
+| `research/` | `.ini` parser and audits used by the `.ini` gates | `ts_ini.py` |
 | `maintenance/` | repository checks, generated documentation | `check_repo_paths.py` |
 | `lib/` | shared modules: `hcpaths`, the C167 simulator `c167sim`, `me711_image`, `c166_disasm`, `host_c_test` | `py tools\lib\hcpaths.py` |
 

@@ -58,12 +58,14 @@ def page(tacho):
     pinTacho set explicitly."""
     import me711_config_state_test as T
     import me711_preset_apply_proof as AP
+    import hc_board          # the C4 image carries the 2.7T preset, not the AWT
     r = T.boot()
-    AP.press_apply(r, 3)
+    AP.press_apply(r, 6 if hc_board.IS_C4 else 3)
     AP.service(r)
     assert AP.och(r, 764) & 0xFF == 1, "APPLY refused"
     assert r("hc_cfg_mgr_commit_burn", 1, steps=60_000_000) == 0
-    AP.install_test_fuel(r)
+    if not hc_board.IS_C4:
+        AP.install_test_fuel(r)  # the AWT preset ships no fuel data
     AP.set_active(r, AP.off("CFG_U_PIN_TACHO"), tacho, 1)
     r("hc_cfg_mgr_init")
     r("hc_cfg_commit", steps=20_000_000)
@@ -104,7 +106,12 @@ def freq(edges):
 def main() -> int:
     print("=== tacho output, cavity 37 (simulator) ===")
     print("  image", M.PI.image())
-    s = M.Stress(page(37), ts=False)
+    pg = page(37)
+    import me711_config_state_test as T
+    # the page's cylinder count (FR TN: rpm x cylinders / 120 - the AWT 4,
+    # the 2.7T 6)
+    cyl = pg[12 + T.d(T._cfg, "CFG_CYLINDERS")]
+    s = M.Stress(pg, ts=False)
     s.boot()
     M.segment(s, "crank 250", 300_000, lambda t: 250, 250, [])
     prev = 250
@@ -112,9 +119,9 @@ def main() -> int:
         M.segment(s, "ramp", 200_000, M.ramp(prev, rpm, 0.2), rpm, [])
         window(s, 200_000, rpm)                      # settle the filter
         tg, out = window(s, 300_000, rpm)
-        f, want = freq(tg), rpm * 4 / 120.0
-        check("T1 %d rpm: P2.13 toggles at rpm x 4 / 120 = %.1f Hz (+-2 %%)"
-              % (rpm, want), f is not None and out and abs(f - want) <= 0.02 * want,
+        f, want = freq(tg), rpm * cyl / 120.0
+        check("T1 %d rpm: P2.13 toggles at rpm x %d / 120 = %.1f Hz (+-2 %%)"
+              % (rpm, cyl, want), f is not None and out and abs(f - want) <= 0.02 * want,
               "%s Hz, %d toggles, output %s" % (None if f is None else round(f, 2),
                                                 len(tg), out))
         prev = rpm
@@ -130,10 +137,11 @@ def main() -> int:
     window(s, 100_000, None)
     tg, out = window(s, 300_000, None)
     f = freq(tg)
-    ok = f is not None and out and abs(f - 100.0) <= 2.0
+    want = 3000 * cyl / 120.0
+    ok = f is not None and out and abs(f - want) <= 0.02 * want
     window(s, 6_000_000, None)
     tg2, out2 = window(s, 300_000, None)
-    check("T4 test: 3000 rpm = 100 Hz with the engine stopped, released after",
+    check("T4 test: 3000 rpm = %.0f Hz with the engine stopped, released after" % want,
           ok and not tg2 and not (s.mem.sfr.get(DP2, 0) & BIT),
           "%s Hz, output %s; after: %d edges" % (None if f is None else round(f, 2),
                                                 out, len(tg2)))

@@ -13,7 +13,18 @@ import host_c_test as H
 
 
 def main() -> int:
-    H.run("hckline", [H.HCP.find("hckline.c"), H.HOST_TESTS / "test_hckline.c"])
+    src = [H.HCP.find("hckline.c"), H.HOST_TESTS / "test_hckline.c"]
+    got = H.run("hckline", src)
+    if got:
+        # the Audi 2.7T build (24 MHz: no 115200) compiles hckline.c with
+        # HCKLINE_NO_115200 - the same core, GOFAST 115200 refused
+        import subprocess
+        cc, env = got
+        exe = H.TMP / "hc_hckline_no115200_host.exe"
+        H.build(cc, env, src, H.SHARED, exe,
+                flags=list(H.STRICT) + ["-DHCKLINE_NO_115200"])
+        subprocess.run([str(exe)], check=True, env=env)
+        print("PASS: hckline host tests (HCKLINE_NO_115200)")
     return 0
 
 

@@ -59,9 +59,11 @@ envelope = HB.envelope      # one definition: 16-bit length (see HB)
 def system_stack():
     """(STKOV, STKUN) from start_me711.a66 - 0xF606/0xF700 until 2026-10-06,
     0xF586/0xF800 since (the user stack moved below it, hcsafety.h)."""
-    s = START.read_text(errors="replace")
-    ov = int(re.search(r"MOV\s+STKOV,#0?([0-9A-F]+)H", s).group(1), 16)
-    un = int(re.search(r"MOV\s+STKUN,#0?([0-9A-F]+)H", s).group(1), 16)
+    # 2026-10-26: per BOARD, from hcsafety.h (HC_SSTK_BOT/TOP) - the startup
+    # file now carries both boards' values and a regex sees only the first
+    s = __import__("hc_board").board_text(START.parent / "hcsafety.h")
+    ov = int(re.search(r"#define\s+HC_SSTK_BOT\s+0x([0-9A-Fa-f]+)u", s).group(1), 16)
+    un = int(re.search(r"#define\s+HC_SSTK_TOP\s+0x([0-9A-Fa-f]+)u", s).group(1), 16)
     return ov, un
 
 
@@ -88,13 +90,15 @@ def _call_on(rig, name, args=()):
         # on the first image whose boot ended with it empty (V96 hc_validate,
         # FCODE since V81). The CSP word is the caller's segment.
         cpu.push(cpu.csp & 0xFF)
+    sp0 = cpu.m.sfr[0xFE12]   # returned = SENTINEL AND the frame unwound:
+    # code at seg:0002 exists (0x860002, 2026-10-25)
     cpu.push(SENTINEL)
     cpu.csp = (addr >> 16) & 0xFF
     cpu.ip = addr & 0xFFFF
     for i, v in enumerate(args):
         cpu.sr(8 + i, v & 0xFFFF)
     for _ in range(3_000_000):
-        if (cpu.ip & 0xFFFF) == SENTINEL:
+        if (cpu.ip & 0xFFFF) == SENTINEL and cpu.m.sfr[0xFE12] >= sp0:
             break
         cpu.step()
     cpu.csp, cpu.ip, cpu.m.sfr[0xFE12], cpu.ext = saved
@@ -253,6 +257,7 @@ def measure(rx=None, steps=1_400_000, call=None, args=(), calls=None,
     # relative to that. Nothing then depends on the page mapping.
     seen = {"hi": 0, "lo": 0xFFFF}
     lo_sys = [0xFFFF]
+    armed = [False]
     in_call = [False]
     bump = [0]
     o_step = S.CPU.step
@@ -266,7 +271,13 @@ def measure(rx=None, steps=1_400_000, call=None, args=(), calls=None,
             if r0 < seen["lo"]:
                 seen["lo"] = r0
         sp = self.m.sfr.get(0xFE12, 0xFFFF)
-        if 0xF000 < sp < lo_sys[0]:
+        # COUNTED ONLY ONCE THE STARTUP HAS SET SP TO STKUN (2026-10-26): the
+        # simulator resets SP to 0xF700 (the 05.12 boot block's value), and
+        # that pre-startup value was read as 256 B of use on the Porsche and
+        # 384 B on the 2.7T - the window top minus 0xF700, not a measurement
+        if sp == SYS_TOP:
+            armed[0] = True
+        if armed[0] and 0xF000 < sp < lo_sys[0]:
             lo_sys[0] = sp
         if in_call[0] and force_tick:
             bump[0] = (bump[0] + 1) & 0xFFFF
@@ -502,7 +513,7 @@ def main() -> int:
     # that floor reads AS the floor. V83's worst chain is 40 bytes, the first
     # image to go under it; compare against max(trace, floor).
     keep = int(re.search(r"#define\s+HC_STK_KEEP\s+(\d+)",
-                         (START.parent / "hcsafety.h").read_text()).group(1))
+                         __import__("hc_board").board_text(START.parent / "hcsafety.h")).group(1))
     seen_or_floor = max(obs, keep) if obs is not None else None
     check("and its answer agrees with the stack-write trace",
           seen_or_floor is not None and rep <= seen_or_floor
@@ -538,7 +549,7 @@ def main() -> int:
     # stack (R0 falls below ?C_USRSTKBOT, the next push lands at -2) - the
     # word hc_stack_overflowed() reads (hcsafety.h HC_STK_GUARD_HI).
     gh = re.search(r"#define\s+HC_STK_GUARD_HI\s+0x([0-9A-Fa-f]+)",
-                   (START.parent / "hcsafety.h").read_text())
+                   __import__("hc_board").board_text(START.parent / "hcsafety.h"))
     canary = (int(gh.group(1), 16) - 2) if gh else sym("?C_USRSTKBOT")
     was = rig.mem.r16(canary)
     rig.mem.w16(canary, (was ^ 0xFFFF) & 0xFFFF)

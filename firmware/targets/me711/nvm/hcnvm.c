@@ -15,12 +15,11 @@
 #include "hc_validation.h"
 #include "hcts.h"
 #include "hcnvm.h"
+#include "hcupd711.h"        /* the app-side OBD updater (P3); HC_UPDATER only */
 #include "hc_validation.h"   /* the SEMANTIC half of the LKG walk-back */
-#include "hcburnforensics.h"
 #include "hcasic.h"
 #include "hcasicstart.h"
 #include "hctrigger.h"
-#include "hcliveforensics.h"
 #include "hcdeadline711.h"
 
 extern unsigned int hc_tick_ms;
@@ -243,6 +242,9 @@ extern unsigned int hc_tick_ms;
 #define ER_LASTDQ       20u   /* 2 : the last status word the poll read      */
 #define ER_LASTMS       22u   /* 2 : wall time the last completed erase took */
 #define ER_LOADED       24u   /* 1 : HCNV_PAY_* currently in the shared slot  */
+#if HC_UPDATER
+#define ER_BASESEG      25u   /* 1 : segment of sector 0 - store or STAGING   */
+#endif
 #define ER_LEN          26u
 #define ER_MAGIC_VALUE  0x48434552uL   /* 'HCER' */
 
@@ -278,6 +280,13 @@ extern unsigned int hc_tick_ms;
  * lives in fl_prepare() instead. Re-preparing costs a 1024-byte SRAM copy. */
 #define HCNV_PAY_WRITER  0u
 #define HCNV_PAY_ERASER  1u
+#if HC_UPDATER
+/* The app-side OBD updater (P3, hcupd711.h) shares the one relocation slot and
+   fl_enter()'s interrupt window. A third selectable routine programs STAGING. */
+#define HCNV_PAY_STAGE   2u
+void far hc_nvm_stage_payload(void);
+void far hc_nvm_stage_payload_end(void);
+#endif
 
 /* THE AMD ERASE SEQUENCE, and the two commands that make it liveable.
  *
@@ -375,6 +384,21 @@ extern unsigned int hc_tick_ms;
  * IEN = 0 is not available as the masking primitive here. */
 #define HCNV_IE_BIT     0x0040u   /* xxIE  - the only bit this code may write */
 #define HCNV_IE_CLR     0xFFBFu   /* ~xxIE - preserves xxIR, ILVL and GLVL    */
+
+/* HOW fl_enter() writes xxIE. A word AND/OR on an interrupt control register
+   is a read-modify-write: a request flag (xxIR) the hardware sets between its
+   read and its write is written back as 0 and LOST. On the C167 only the bit
+   instructions (BSET/BCLR/BFLDL/BFLDH) are protected against a simultaneous
+   hardware update of the same register, so every mask and every restore here
+   is a BFLDL. Found on the OBD updater (bench 2026-10-30, obd_update_5): the
+   host kept talking while the ECU programmed, one lost S0TBIR left a reply
+   half sent and the link silent for good. The same window runs during every
+   Burn and reclaim, where CC15 (crank), T8 (the millisecond) and CC27 (the
+   S5500 exchange) are live - firmware-stability issue 07. */
+#include <intrins.h>
+#define HCNV_IE_OFF(ic)        _bfld_(ic, HCNV_IE_BIT, 0u)
+#define HCNV_IE_BACK(ic, sv)   do { if (((sv) & HCNV_IE_BIT) != 0u) { \
+                                   _bfld_(ic, HCNV_IE_BIT, HCNV_IE_BIT); } } while (0)
 #define HCNV_IR_BIT     0x0080u   /* xxIR  - READ ONLY for this module        */
 
 #define HCNV_OWNER_NONE 0u
@@ -589,6 +613,10 @@ extern unsigned int hc_tick_ms;
  * T7 is an SFR read: no call, no flash access, legal inside the RAM writer. */
 #define HCNV_POLL_US     1000u
 #define HCNV_POLL_TICKS  US_TO_TICKS(HCNV_POLL_US)
+#if HC_UPDATER
+#define HCNV_STAGE_WIN_US     600u   /* updater: words per window, hc_nvm_stage_payload */
+#define HCNV_STAGE_WIN_TICKS  US_TO_TICKS(HCNV_STAGE_WIN_US)
+#endif
 
 /* ==================================== V42: WHAT V41 GOT WRONG, AND IT WAS
  *                                      NOT THE BUS SEQUENCE
@@ -1491,8 +1519,6 @@ void far hc_nvm_payload(void)
     unsigned int dq5;
     unsigned int sa;
     unsigned int sb;
-    unsigned int volatile far *lf =
-        (unsigned int volatile far *)HC_LF_ADDR;
     if (cb[CB_CELL] >= TGT_FLASH_CELLS) {
         cb[CB_RESULT] = (unsigned char)HCNV_ERR_STAGE;
         return;
@@ -1547,9 +1573,6 @@ void far hc_nvm_payload(void)
         p = cellp + pos;
         s = src + pos;
         v = *s;
-
-        lf[LF_COMMAND_SEQ] = (unsigned int)(pos + 1u);
-        lf[LF_COMMAND_T7] = (unsigned int)T7;
 
         /* EXACTLY FOUR WRITE CYCLES PER WORD, AND NOT ONE MORE. */
         *unl1 = FL_UNLOCK1;
@@ -1623,30 +1646,6 @@ void far hc_nvm_payload(void)
             }
             goto reset_and_return;
         }
-
-        /* THE VERIFIED-COMPLETION STAMP, AND IT IS THE WRITER'S OWN.
-         *
-         * With HCNV_PROG_CHUNK == 1 the C bookkeeping in fl_enter() runs a
-         * few instructions after RETS - which is exactly the IC-restoration
-         * boundary this build exists to measure. A "this word verified" flag
-         * that only C can publish would report a command issued into an
-         * unsafe flash interval for a word the device had in fact finished.
-         *
-         * SO THE DISCRIMINATOR IS A TIME, NOT A SECOND SEQUENCE NUMBER, AND
-         * THAT IS A MEASURED DECISION. Stamping lf[LF_VERIFY_SEQ] here as
-         * well cost 18 bytes and took the linked writer to 1032 of the fixed
-         * 1024-byte relocation - it did not fit, and the relocation length is
-         * not something to widen for instrumentation. It does not need to:
-         * this word's LF_VERIFY_T7 lands 14 T7 ticks after its LF_COMMAND_T7
-         * (a nominal 11 us word), at most HCNV_POLL_US + HCNV_SETTLE_US if
-         * the poll ran long, whereas a VERIFY_T7 left over from the PREVIOUS
-         * word is a whole main-loop pass earlier - thousands of ticks, and
-         * unsigned it reads as nearly a full 65536-tick wrap. T7 wraps every
-         * 52.5 ms, far longer than one pass, so the two cases cannot be
-         * confused. Both halves of the comparison are written HERE, by the
-         * relocated writer, before it returns; the decoder does the subtract.
-         */
-        lf[LF_VERIFY_T7] = (unsigned int)T7;
 
         /* THE POLL DURATION IS THE MEASUREMENT THIS PROJECT NEVER TOOK. A
            normal word is 11 us - about 14 T7 ticks. A minimum near zero would
@@ -1809,8 +1808,15 @@ void far hc_nvm_eraser(void)
     }
 
     /* The sector base, built from two 16-bit halves for the same reason
-       CELL_ADDR is - a 32-bit multiply here would be a CALL to ?C_LMUL. */
+       CELL_ADDR is - a 32-bit multiply here would be a CALL to ?C_LMUL.
+       The base segment is a field so the updater's STAGING erase can reuse this
+       exact routine (TGT_FLASH_STAGE_SEG); for the store it is set to
+       TGT_FLASH_CFG_SEG by er_begin, so the store path is unchanged. */
+#if HC_UPDATER
+    seg = (unsigned int)((unsigned int)er[ER_BASESEG] + (unsigned int)er[ER_SECTOR]);
+#else
     seg = (unsigned int)(TGT_FLASH_CFG_SEG + (unsigned int)er[ER_SECTOR]);
+#endif
     sec = (unsigned int volatile huge *)(((unsigned long)seg << 16));
 
     slice = (unsigned int)(((unsigned int)er[ER_SLICETK] << 8)
@@ -1924,6 +1930,11 @@ static void fl_prepare_sel(unsigned char which)
     if (which == (unsigned char)HCNV_PAY_ERASER) {
         begin = (unsigned int)&hc_nvm_eraser;
         end = (unsigned int)&hc_nvm_eraser_end;
+#if HC_UPDATER
+    } else if (which == (unsigned char)HCNV_PAY_STAGE) {
+        begin = (unsigned int)&hc_nvm_stage_payload;
+        end = (unsigned int)&hc_nvm_stage_payload_end;
+#endif
     } else {
         begin = (unsigned int)&hc_nvm_payload;
         end = (unsigned int)&hc_nvm_payload_end;
@@ -2048,8 +2059,13 @@ static unsigned char live_admit(unsigned int now_ms, unsigned int rpm,
         elapsed = (unsigned int)(T1 - trg_last_edge_t1);
         horizon_ticks = (elapsed >= safe_dt) ? 0u
                       : (unsigned int)(safe_dt - elapsed);
-        /* T1 is 1.250 MHz; multiply by 0.8 without a 32-bit helper. */
+        /* T1 is 1.250 MHz; multiply by 0.8 without a 32-bit helper.
+           The 2.7T's 0.75 MHz: x 4/3 (horizon_ticks < 32768, fits). */
+#if TGT_TICKS_PER_MS_X10 == 12500UL
         horizon_us = (unsigned int)(horizon_ticks - (horizon_ticks / 5u));
+#else
+        horizon_us = (unsigned int)(horizon_ticks + (horizon_ticks / 3u));
+#endif
         set_be16(lb, L_HORIZON_US, horizon_us);
         if (horizon_us <= (unsigned int)TGT_LIVE_WORD_GUARD_US) {
             lb[L_ADMISSION] = (unsigned char)HCNV_ADMIT_ENGINE;
@@ -2137,12 +2153,6 @@ static unsigned char live_admit(unsigned int now_ms, unsigned int rpm,
     lb[L_ADMISSION] = (unsigned char)HCNV_ADMIT_READY;
     lb[L_PAUSE] = 0u;
     set_be16(lb, L_WINDOWS_OK, (unsigned int)(be16(lb, L_WINDOWS_OK) + 1u));
-    hc_lf_admit(now_ms, (unsigned int)T7, be16(CB, CB_POS),
-                HCNV_ADMIT_READY, sscon, (unsigned int)PECC0,
-                (unsigned int)PECC4,
-                (unsigned int)(((unsigned int)DP6 << 8) | P6),
-                (unsigned int)T8REL, (unsigned int)T8,
-                (unsigned int)T0, (unsigned int)CC7);
     return 1u;
 
 reject:
@@ -2151,59 +2161,54 @@ reject:
     return 0u;
 }
 
-/* V50. `dur` is xxIC read after the writer returned and before the restore;
-   `aft` is the same register read after it.  IEN is 0 across both, so no ISR
-   entry and no PEC service can have cleared xxIR in between: a bit that was
-   set and is now clear was cleared BY THE RESTORE.  That is the V48/V49
-   defect, and it is what must read zero on V50. */
-static unsigned int ir_dropped(unsigned int dur, unsigned int aft,
-                               unsigned int mask_value)
-{
-    return (unsigned int)(((dur & HCNV_IR_BIT) != 0u
-                           && (aft & HCNV_IR_BIT) == 0u) ? mask_value : 0u);
-}
+#if HC_UPDATER
+/* K-LINE RECEIVE STAYS LIVE THROUGH A FLASH WINDOW WHEN IT CAN (updater image).
+   ASC0 receive is PEC channel 6 into the RAM ring (hcserial711.c): a transfer
+   fetches nothing from flash, only the TERMINAL request (count 1 -> 0) enters
+   the flash-backed vector path. The longest window is an erase slice,
+   HCNV_ERASE_SLICE_US + the suspend wait (~1.03 ms), or a programming window
+   (HCNV_STAGE_WIN_US 600 us + the last word's 1 ms poll bound): 1.6 ms =
+   40 bytes at the 250 kbaud bulk rate ('!b'), so with at least 46 transfers
+   left the terminal cannot fall inside it (46, not more: below half the
+   ring is never under 47, so the gate cannot wait on a silent host).
+   upd_admit() opens no updater
+   window below that (the tick refills the ring within a millisecond), so
+   receive is never masked in one; 16 lost frames at 250 kbaud (bench
+   2026-10-30, obd_update_15: 544 of 3700 '!w' never answered).
+   Masked instead (the release behaviour), every byte that arrives in a 1 ms
+   slice overran S0RBUF; the updater host polls throughout an erase, its frames
+   were torn and the link hunter left 57600 (bench 2026-10-30, chunk_probe_1).
+   A Burn never saw it: TunerStudio is silent while the Burn reply is owed. */
+#define HCNV_PECRX_MIN  46u
+#endif
 
 static void fl_enter(void)
 {
     unsigned char huge *lb = SRAMB(NVM_LIVE);
     unsigned char ien;
+#if HC_UPDATER
+    unsigned char s0r_live;
+#endif
     unsigned int cc7, cc8, cc9, cc15, cc16, cc25, t8, s0r, s0e, ssct, sscr, ssce;
-    unsigned int cc26, s0tb, cc27;
+    unsigned int cc26, s0tb, cc27, cc28;
     unsigned int pending_before;
     unsigned int pending_after;
     unsigned char pec_in_flight = (unsigned char)(SSCBSY != 0);
     unsigned int t0;
-    unsigned int dur_cc7, dur_t8, dur_ssct, dur_sscr, dur_ssce;
-    unsigned int aft_cc7, aft_t8, aft_ssct, aft_sscr, aft_ssce;
-    unsigned int dropped;
     unsigned int elapsed;
-    unsigned char lf_guard;
-    unsigned int lf_g24, lf_g25, lf_g26, lf_g27;
-
-    /* THE RELOCATED WRITER STAMPS FOUR WORDS WITH NO CONDITION ON THEM.
-       It cannot afford one: the whole programmer must stay inside the fixed
-       1024-byte relocation, and a per-word test of the record's flags is
-       instructions it does not have. So the condition lives HERE, outside
-       the copy, where it costs nothing that matters.
-       Without it a SECOND Burn - one this build's procedure forbids, but
-       which nothing in the firmware prevents - would write over the frozen
-       first-event evidence and break its seal. Save the four words the
-       writer owns before entering it and put them back afterwards, so a
-       frozen record survives byte for byte. */
-    lf_guard = (unsigned char)(hc_lf_active() ? 0u : 1u);
-    lf_g24 = HC_LF_WORD(LF_COMMAND_SEQ);
-    lf_g25 = HC_LF_WORD(LF_VERIFY_SEQ);
-    lf_g26 = HC_LF_WORD(LF_COMMAND_T7);
-    lf_g27 = HC_LF_WORD(LF_VERIFY_T7);
 
     /* The only IEN=0 region is ownership and IC save/mask setup.  It ends
        BEFORE the CALLS that reaches the AM29 command.  The generated-listing
        gate verifies this ordering against the final image. */
     ien = (unsigned char)IEN;
     IEN = 0;
+#if HC_UPDATER
+    s0r_live = (unsigned char)((unsigned char)PECC6 >= (unsigned char)HCNV_PECRX_MIN);
+#endif
     cc7 = CC7IC; cc8 = CC8IC; cc9 = CC9IC; cc15 = CC15IC; t8 = T8IC;
     cc16 = CC16IC; cc25 = CC25IC;
     cc26 = TGT_PLAN_IC; s0tb = S0TBIC; cc27 = TGT_ASICX_IC;
+    cc28 = TGT_SLOWTICK_IC;
     s0r = S0RIC; s0e = S0EIC;
     ssct = SSCTIC; sscr = SSCRIC; ssce = SSCEIC;
     pending_before = (unsigned int)(((cc7 & 0x80u) ? 1u : 0u)
@@ -2220,39 +2225,60 @@ static void fl_enter(void)
                      | ((cc25 & 0x80u) ? 2048u : 0u)
                      | ((cc26 & 0x80u) ? 4096u : 0u)
                      | ((s0tb & 0x80u) ? 8192u : 0u)
-                     | ((cc27 & 0x80u) ? 16384u : 0u));
+                     | ((cc27 & 0x80u) ? 16384u : 0u)
+                     | ((cc28 & 0x80u) ? 32768u : 0u));
     /* clear ONLY xxIE.  xxIR is never written, so a request that becomes
        pending inside the window survives; ILVL/GLVL are never cleared, so they
        never have to be restored.  See the HCNV_IE_* note at the top. */
-    CC7IC &= HCNV_IE_CLR; CC8IC &= HCNV_IE_CLR; CC9IC &= HCNV_IE_CLR;
-    CC15IC &= HCNV_IE_CLR; T8IC &= HCNV_IE_CLR;
+    HCNV_IE_OFF(CC7IC); HCNV_IE_OFF(CC8IC); HCNV_IE_OFF(CC9IC);
+    HCNV_IE_OFF(CC15IC); HCNV_IE_OFF(T8IC);
     /* CC25 runs clock checkpoints even with no queued actuator events.
        Both V102 handlers are flash-backed: preserve their requests while
        preventing a vector fetch during the RAM programmer's busy window.
        Admission already excludes actuator deadlines inside the guard. */
-    CC16IC &= HCNV_IE_CLR; CC25IC &= HCNV_IE_CLR;
+    HCNV_IE_OFF(CC16IC); HCNV_IE_OFF(CC25IC);
     /* the planner level (CC26, requested by the crank ISR) and
        the reply job (S0TBINT) are flash-backed handlers too. */
-    TGT_PLAN_IC &= HCNV_IE_CLR; S0TBIC &= HCNV_IE_CLR;
-    /* the S5500 exchange level (CC27, requested by the tick, 2026-10-13) */
-    TGT_ASICX_IC &= HCNV_IE_CLR;
+    HCNV_IE_OFF(TGT_PLAN_IC); HCNV_IE_OFF(S0TBIC);
+    /* the S5500 exchange level (CC27, requested by the tick, 2026-10-13)
+       and the tick's body (CC28, requested by T8, 2026-10-28) */
+    HCNV_IE_OFF(TGT_ASICX_IC); HCNV_IE_OFF(TGT_SLOWTICK_IC);
     /* ASC0 receive/error requests enter the flash-backed first-level vector
        path even where the Bosch boot block owns their final handler. */
-    S0RIC &= HCNV_IE_CLR; S0EIC &= HCNV_IE_CLR; SSCEIC &= HCNV_IE_CLR;
-    if (!pec_in_flight) { SSCTIC &= HCNV_IE_CLR; SSCRIC &= HCNV_IE_CLR; }
+#if HC_UPDATER
+    if (!s0r_live) { HCNV_IE_OFF(S0RIC); }
+    HCNV_IE_OFF(S0EIC); HCNV_IE_OFF(SSCEIC);
+#else
+    HCNV_IE_OFF(S0RIC); HCNV_IE_OFF(S0EIC); HCNV_IE_OFF(SSCEIC);
+#endif
+    if (!pec_in_flight) { HCNV_IE_OFF(SSCTIC); HCNV_IE_OFF(SSCRIC); }
+#if HC_UPDATER
+    /* IEN=0 ENDS HERE in the updater image: every flash-backed source is
+       masked, so the bookkeeping below needs no global disable - and IEN=0
+       stops PEC too. At the 250 kbaud bulk rate a byte lasts 40 us, and the
+       bookkeeping on both sides of the writer overran S0RBUF (rxHwOvr +125
+       in 512 chunks vs +7 at 124800, bench 2026-10-30, link_probe_1/_2). */
+    IEN = 1;
+#endif
     /* bits 0..4 CC7/8/9/15,T8; 5..7 SSC TX/RX/ERR; 8..9 ASC RX/ERR;
        10..11 CC16/CC25; 12..13 CC26 planner / S0TB reply job; 14 CC27
        S5500 exchange.
        With PEC in flight only its terminal ordinary vectors remain enabled,
        so TX/RX are intentionally not represented as suppressed. */
-    set_be16(lb, L_MASK, (unsigned int)(0x7F9Fu | (pec_in_flight ? 0u : 0x0060u)));
+#if HC_UPDATER
+    set_be16(lb, L_MASK, (unsigned int)((0xFF9Fu | (pec_in_flight ? 0u : 0x0060u))
+                                        & (s0r_live ? 0xFEFFu : 0xFFFFu)));
+#else
+    set_be16(lb, L_MASK, (unsigned int)(0xFF9Fu | (pec_in_flight ? 0u : 0x0060u)));
+#endif
     set_be16(lb, L_PENDING_BEF, pending_before);
 
     /* IEN=1 before the command, through DQ polling, until the RAM writer has
        read back the word and returned the AM29 to read-array mode. */
+#if !HC_UPDATER
     IEN = 1;
+#endif
     t0 = (unsigned int)T7;
-    HC_LF_WORD(LF_WR_ENTRY) = (unsigned int)(HC_LF_WORD(LF_WR_ENTRY) + 1u);
     /* V47's opaque inline CALLS hid the separately compiled writer's register
        use from Keil.  In the final V47 image, fl_enter kept lb in R12:R13,
        t0 in R1 and SSCEIC in R3, while the writer returned with R12=CB_POS
@@ -2286,40 +2312,34 @@ static void fl_enter(void)
         POP R1
     }
     /* RETS is only reached after the writer has restored read-array. */
-    IEN = 0;
+#if !HC_UPDATER
+    IEN = 0;        /* (updater: the restore below is bit-protected BFLDL and
+                       the device is readable again - no global disable) */
+#endif
     elapsed = (unsigned int)((unsigned int)T7 - t0);
     if (elapsed > be16(lb, L_MAX_WR_US)) {
         set_be16(lb, L_MAX_WR_US, elapsed);
     }
-    dur_cc7 = CC7IC; dur_t8 = T8IC;
-    dur_ssct = SSCTIC; dur_sscr = SSCRIC; dur_ssce = SSCEIC;
     /* V50 restore: set ONLY xxIE, and only where it was set at save time.
        Blindly ORing HCNV_IE_BIT would ENABLE a source the caller had found
        disabled - save_ssctic was 0xB8 and save_sscric 0x3C on the V49 event,
        both with IE already 0. */
-    CC7IC  |= (cc7  & HCNV_IE_BIT);
-    CC8IC  |= (cc8  & HCNV_IE_BIT);
-    CC9IC  |= (cc9  & HCNV_IE_BIT);
-    CC15IC |= (cc15 & HCNV_IE_BIT);
-    CC16IC |= (cc16 & HCNV_IE_BIT);
-    CC25IC |= (cc25 & HCNV_IE_BIT);
-    TGT_PLAN_IC |= (cc26 & HCNV_IE_BIT);
-    TGT_ASICX_IC |= (cc27 & HCNV_IE_BIT);
-    S0TBIC |= (s0tb & HCNV_IE_BIT);
-    T8IC   |= (t8   & HCNV_IE_BIT);
-    S0RIC  |= (s0r  & HCNV_IE_BIT);
-    S0EIC  |= (s0e  & HCNV_IE_BIT);
-    SSCTIC |= (ssct & HCNV_IE_BIT);
-    SSCRIC |= (sscr & HCNV_IE_BIT);
-    SSCEIC |= (ssce & HCNV_IE_BIT);
-    /* THE DISCRIMINATOR.  IEN is still 0 here, so between the reads above and
-       the reads below no interrupt and no PEC transfer can clear an xxIR.  A
-       request that was pending before the restore and is gone after it was
-       destroyed BY the restore - which is exactly the V48/V49 defect, and
-       exactly what must now read zero.  lost_or keeps its old meaning: a
-       request AROSE while masked, which is legitimate and expected. */
-    aft_cc7 = CC7IC; aft_t8 = T8IC;
-    aft_ssct = SSCTIC; aft_sscr = SSCRIC; aft_ssce = SSCEIC;
+    HCNV_IE_BACK(CC7IC,  cc7);
+    HCNV_IE_BACK(CC8IC,  cc8);
+    HCNV_IE_BACK(CC9IC,  cc9);
+    HCNV_IE_BACK(CC15IC, cc15);
+    HCNV_IE_BACK(CC16IC, cc16);
+    HCNV_IE_BACK(CC25IC, cc25);
+    HCNV_IE_BACK(TGT_PLAN_IC, cc26);
+    HCNV_IE_BACK(TGT_ASICX_IC, cc27);
+    HCNV_IE_BACK(S0TBIC, s0tb);
+    HCNV_IE_BACK(T8IC,   t8);
+    HCNV_IE_BACK(TGT_SLOWTICK_IC, cc28);
+    HCNV_IE_BACK(S0RIC,  s0r);
+    HCNV_IE_BACK(S0EIC,  s0e);
+    HCNV_IE_BACK(SSCTIC, ssct);
+    HCNV_IE_BACK(SSCRIC, sscr);
+    HCNV_IE_BACK(SSCEIC, ssce);
     pending_after = (unsigned int)(((CC7IC & 0x80u) ? 1u : 0u)
                     | ((CC8IC & 0x80u) ? 2u : 0u)
                     | ((CC9IC & 0x80u) ? 4u : 0u)
@@ -2334,7 +2354,8 @@ static void fl_enter(void)
                     | ((CC25IC & 0x80u) ? 2048u : 0u)
                     | ((TGT_PLAN_IC & 0x80u) ? 4096u : 0u)
                     | ((S0TBIC & 0x80u) ? 8192u : 0u)
-                    | ((TGT_ASICX_IC & 0x80u) ? 16384u : 0u));
+                    | ((TGT_ASICX_IC & 0x80u) ? 16384u : 0u)
+                    | ((TGT_SLOWTICK_IC & 0x80u) ? 32768u : 0u));
     set_be16(lb, L_PENDING_AFT, pending_after);
     set_be16(lb, L_WRITER_ENT, (unsigned int)(be16(lb, L_WRITER_ENT) + 1u));
     if (SRAMB(NVM_CB)[CB_RESULT] == (unsigned char)HCNV_ERR_NONE) {
@@ -2344,24 +2365,7 @@ static void fl_enter(void)
     }
     lb[L_OWNER] = (unsigned char)HCNV_OWNER_NONE;
     IEN = ien;
-    if (lf_guard != 0u) {
-        HC_LF_WORD(LF_COMMAND_SEQ) = lf_g24;
-        HC_LF_WORD(LF_VERIFY_SEQ)  = lf_g25;
-        HC_LF_WORD(LF_COMMAND_T7)  = lf_g26;
-        HC_LF_WORD(LF_VERIFY_T7)   = lf_g27;
-        return;
-    }
-    dropped = ir_dropped(dur_cc7, aft_cc7, 0x0001u)
-            | ir_dropped(dur_t8,  aft_t8,  0x0002u)
-            | ir_dropped(dur_ssct, aft_ssct, 0x0004u)
-            | ir_dropped(dur_sscr, aft_sscr, 0x0008u)
-            | ir_dropped(dur_ssce, aft_ssce, 0x0010u);
-    hc_lf_ir_after(dropped, be16(CB, CB_POS));
-    hc_lf_writer_return((unsigned int)T7, elapsed);
-    hc_lf_restore((unsigned int)T7, be16(CB, CB_POS),
-                  cc7, t8, ssct, sscr, ssce,
-                  dur_cc7, dur_t8, dur_ssct, dur_sscr, dur_ssce,
-                  (unsigned int)SRAMB(NVM_CB)[CB_RESULT]);
+
 }
 
 /* ======================================================== THE RAM PROBE =====
@@ -2678,99 +2682,20 @@ static unsigned int retry_target(void)
     return NVM_RETRY_ISSUE;
 }
 
-/* Called only in ordinary flash code: immediately before/after fl_enter(),
- * and before nvm_fail() clears state.  It deliberately does not run from the
- * SRAM writer or with IEN cleared. */
-static void forensic_snapshot(unsigned char writer_result)
-{
-    unsigned int have_diary = (unsigned int)(be32(DGB, (unsigned int)DG_MAGIC)
-                                             == NVM_DG_MAGIC);
-    hc_bf_nvm_snapshot(cb_state, cb_phase, SRAMB(NVM_CB)[CB_RESULT], cb_cell,
-                       be16(CB, (unsigned int)CB_POS),
-                       be16(CB, (unsigned int)CB_ATTEMPTS), cb_err,
-                       writer_result,
-                       have_diary ? dg16((unsigned int)DG_RETRIES) : 0u,
-                       have_diary ? dg16((unsigned int)DG_WORD) : 0xFFFFu,
-                       have_diary ? dg16((unsigned int)DG_EXP) : 0u,
-                       have_diary ? dg16((unsigned int)DG_GOT1) : 0u,
-                       have_diary ? dg16((unsigned int)DG_GOT2) : 0u,
-                       have_diary ? dg16((unsigned int)DG_POLLMIN) : 0xFFFFu,
-                       have_diary ? dg16((unsigned int)DG_POLLMAX) : 0u);
-}
 
-/* Commit-stage trace values, visible in TS via OCH.
- * stage is the current point; lastStage only rises through meaningful reached
- * points; failStage snapshots lastStage at terminal failure. A new request is
- * the only normal reset, so retries and idle service preserve the evidence. */
-#define CST_IDLE           0u
-#define CST_ENTRY          1u   /* entered nvm_commit first-entry block      */
-#define CST_STAGE_VALID    2u   /* stage_valid() passed                      */
-#define CST_CELL_BLANK     3u   /* cell_blank() passed                       */
-#define CST_ATTEMPTS_INC   4u   /* cb_attempts incremented                   */
-#define CST_STATE_COMMIT   5u   /* cb_state = COMMITTING                     */
-#define CST_DG_BEGIN       6u   /* dg_begin() done                           */
-#define CST_FL_PREPARE     7u   /* fl_prepare() done (writer copied)         */
-#define CST_WRITER_LOOP    8u   /* entered fl_enter() writer loop            */
-#define CST_WORD_DONE      9u   /* one word programmed successfully          */
-#define CST_RETRY_HANDLED 10u   /* HCNV_RES_RETRY handled                    */
-#define CST_RETRY_TARGET  11u   /* retry_target() executed                   */
-#define CST_DONE_VERIFY   12u   /* DONE verified, scan complete              */
 
-static void trace_begin(void)
-{
-    /* hc_bf_b_received() begins the retained trace before this request is
-       accepted.  Keeping this no-op prevents the V44 working-block alias
-       from returning through a maintenance call site. */
-}
 
-static void trace_stage(unsigned char stage)
-{
-    /* V44 stage numbers were writer implementation details.  V45 maps only
-       executable transaction boundaries to the forensic contract. */
-    switch (stage) {
-    case CST_STATE_COMMIT:
-        hc_bf_stage(HCBF_ST_COMMITTING);
-        break;
-    case CST_FL_PREPARE:
-        hc_bf_stage(HCBF_ST_PREPARED);
-        break;
-    case CST_WRITER_LOOP:
-        hc_bf_stage(HCBF_ST_WRITER_ENTER);
-        break;
-    case CST_WORD_DONE:
-        hc_bf_stage(HCBF_ST_PROGRESS);
-        break;
-    case CST_RETRY_HANDLED:
-    case CST_RETRY_TARGET:
-        hc_bf_stage(HCBF_ST_RETRY);
-        break;
-    case CST_DONE_VERIFY:
-        hc_bf_stage(HCBF_ST_DONE);
-        break;
-    default:
-        break;
-    }
-}
 
-static void trace_fail(void)
-{
-    /* nvm_fail() records reason and stage before it clears the control block. */
-}
 
 /* ============================================================ the failure == */
 static void nvm_fail(unsigned int why)
 {
-    forensic_snapshot((unsigned char)SRAMB(NVM_CB)[CB_RESULT]);
-    hc_bf_fail((unsigned char)why);
-    trace_fail();
     cb_state = (unsigned char)HCNV_ST_FAILED;
     cb_phase = (unsigned char)HCNV_PH_NONE;
     cb_err = (unsigned char)why;
     set_be16(CB, (unsigned int)CB_ATTEMPTS, 0u);
     stage_clear();          /* stop retrying - the OLD record still stands */
     cb_seal();
-    hc_lf_recover((unsigned int)cb_state, why, be16(CB, CB_POS),
-                  HC_LF_WORD(LF_RESET_RAW));
     /* A FAILED BURN IS NOT AN UNRECOGNISED COMMAND, AND SAYING SO COST THE
      * TUNERSTUDIO SESSION.
      *
@@ -2828,7 +2753,6 @@ static void nvm_commit(unsigned int now_ms, unsigned int rpm,
 
     /* A completed transaction is recognised from the flash record, not from a
        transient RAM result. This is also the recovery path after power loss. */
-    trace_stage(CST_ENTRY);
     target = (unsigned int)cb_cell;
     if (target >= TGT_FLASH_CELLS) {
         nvm_fail(HCNV_ERR_FULL);
@@ -2846,10 +2770,6 @@ static void nvm_commit(unsigned int now_ms, unsigned int rpm,
                  (unsigned int)(be16(NVW, W_COMMITS) + 1u));
         nvm_scan();                 /* the new record is now the active one */
         nvm_select();               /* publish FLASH_A/B live, no reboot */
-        trace_stage(CST_DONE_VERIFY);
-        hc_bf_stage(HCBF_ST_OK_PENDING);
-        forensic_snapshot((unsigned char)SRAMB(NVM_CB)[CB_RESULT]);
-        hc_lf_durable(now_ms, be16(CB, CB_POS));
         hcts_finish_deferred_response(TS_OK);
         return;
     }
@@ -2877,7 +2797,6 @@ static void nvm_commit(unsigned int now_ms, unsigned int rpm,
             nvm_fail(HCNV_ERR_STAGE);
             return;
         }
-        trace_stage(CST_STAGE_VALID);
         if (!cell_blank(target)) {
             /* THE CELL IS CONSUMED. A reset after any program command leaves
                one like this, and so does a half-erased sector whose magic word
@@ -2904,10 +2823,8 @@ static void nvm_commit(unsigned int now_ms, unsigned int rpm,
             cb_seal();
             return;
         }
-        trace_stage(CST_CELL_BLANK);
         set_be16(CB, (unsigned int)CB_ATTEMPTS,
                  (unsigned int)(cb_attempts_get() + 1u));
-        trace_stage(CST_ATTEMPTS_INC);
         if (cb_attempts_get() > (unsigned int)HCNV_MAX_ATTEMPTS) {
             /* Bounded on purpose. A commit that keeps being interrupted must
                stop trying rather than leave the ECU rebooting forever - and
@@ -2916,15 +2833,12 @@ static void nvm_commit(unsigned int now_ms, unsigned int rpm,
             return;
         }
         cb_state = (unsigned char)HCNV_ST_COMMITTING;
-        trace_stage(CST_STATE_COMMIT);
         cb_phase = (unsigned char)HCNV_PH_PROGRAM;
         set_be16(CB, (unsigned int)CB_POS, 0u);
         cb_seal();
         SRAMB(NVM_CB)[CB_RESULT] = 0xFFu;
         dg_begin();
-        trace_stage(CST_DG_BEGIN);
         fl_prepare_sel((unsigned char)HCNV_PAY_WRITER);
-        trace_stage(CST_FL_PREPARE);
 } else if (SRAMB(NVM_CB)[CB_RESULT] != 0xFFu
                && SRAMB(NVM_CB)[CB_RESULT] != (unsigned char)HCNV_ERR_NONE
                && SRAMB(NVM_CB)[CB_RESULT] != (unsigned char)HCNV_RES_RETRY) {
@@ -2937,7 +2851,6 @@ static void nvm_commit(unsigned int now_ms, unsigned int rpm,
        read-array samples still toggle. Account that pre-existing result before
        inspecting it again, so a dead or permanently busy device is bounded. */
     if (SRAMB(NVM_CB)[CB_RESULT] == (unsigned char)HCNV_RES_RETRY) {
-        trace_stage(CST_RETRY_HANDLED);
         tries = (unsigned int)(dg16((unsigned int)DG_TRY) + 1u);
         dg_set16((unsigned int)DG_TRY, tries);
         if (tries > (unsigned int)((dg16((unsigned int)DG_FLAGS) >> 8)
@@ -2964,7 +2877,6 @@ static void nvm_commit(unsigned int now_ms, unsigned int rpm,
        On this later main-loop pass, prove the actual NOR target is retry-safe
        before any new AA/55/A0 sequence. */
     if (dg16((unsigned int)DG_TRY) != 0u) {
-        trace_stage(CST_RETRY_TARGET);
         r = retry_target();
         if (r == (unsigned int)HCNV_ERR_NONE) {
             set_be16(CB, (unsigned int)CB_POS,
@@ -3022,7 +2934,6 @@ static void nvm_commit(unsigned int now_ms, unsigned int rpm,
      * path still returns immediately, because that boundary IS a safety
      * property and is documented where it is taken. */
     t0 = (unsigned int)T7;
-    trace_stage(CST_WRITER_LOOP);
     for (;;) {
         if (!live_admit(now_ms, rpm, trig_turning, outputs_busy, page_stable)) {
             if (SRAMB(NVM_LIVE)[L_ADMISSION] == (unsigned char)HCNV_ADMIT_DEADLINE) {
@@ -3038,12 +2949,8 @@ static void nvm_commit(unsigned int now_ms, unsigned int rpm,
         if (SRAMB(NVM_ER)[ER_LOADED] != (unsigned char)HCNV_PAY_WRITER) {
             fl_prepare_sel((unsigned char)HCNV_PAY_WRITER);
         }
-        forensic_snapshot((unsigned char)0xFFu);
-        hc_bf_stage(HCBF_ST_WRITER_ENTER);
         fl_enter();
         r = (unsigned int)SRAMB(NVM_CB)[CB_RESULT];
-        forensic_snapshot((unsigned char)r);
-        hc_bf_stage(HCBF_ST_WRITER_RETURN);
         if (r == (unsigned int)HCNV_RES_RETRY) {
             /* A WORD DID NOT TAKE, AND THAT IS NOT YET A FAILURE.
              *
@@ -3080,7 +2987,6 @@ static void nvm_commit(unsigned int now_ms, unsigned int rpm,
                the next command gets the rest of this main-loop pass, all
                ordinary services, and the next pass with interrupts enabled. */
             SRAMB(NVM_CB)[CB_RESULT] = 0xFFu;
-            hc_bf_stage(HCBF_ST_RETRY);
             return;
         } else if (r != (unsigned int)HCNV_ERR_NONE) {
             nvm_fail(r);
@@ -3093,7 +2999,6 @@ static void nvm_commit(unsigned int now_ms, unsigned int rpm,
                                     | HCNV_PF_RETRY_OK));
             dg_set16((unsigned int)DG_TRY, 0u);
         }
-        trace_stage(CST_WORD_DONE);
         /* The platform, between every word: the 10 ms supervision raster and
            the 200.7 ms watchdog, both behind the tick gate. */
         hcts_target_yield();
@@ -3369,9 +3274,6 @@ void hc_nvm_boot(void)
        terminally failed and its partial cell remains consumed. */
     if (cb_state == (unsigned char)HCNV_ST_ARMED
         || cb_state == (unsigned char)HCNV_ST_COMMITTING) {
-        hc_lf_recover((unsigned int)cb_state,
-                      (unsigned int)SRAMB(NVM_CB)[CB_RESULT],
-                      be16(CB, CB_POS), HC_LF_WORD(LF_RESET_RAW));
         cb_state = (unsigned char)HCNV_ST_FAILED;
         cb_phase = (unsigned char)HCNV_PH_NONE;
         cb_err = (unsigned char)HCNV_ERR_PROGRAM;
@@ -3396,7 +3298,6 @@ unsigned int hc_nvm_request(void)
     /* The buffer stops being a record the instant a new Burn is asked for, so
        a reset during staging cannot commit a half-built one. */
     stage_clear();
-    trace_begin();                  /* only a genuine new Burn clears evidence */
 
     cb_state = (unsigned char)HCNV_ST_STAGING;
     cb_phase = (unsigned char)HCNV_PH_NONE;
@@ -3409,13 +3310,6 @@ unsigned int hc_nvm_request(void)
     set_be16(NVW, W_ARM_MS, hc_tick_ms);
     cb_seal();
     live_init();
-    hc_lf_arm(hc_tick_ms,
-              be16(SRAMB(NVM_LIVE), L_WINDOWS_OK),
-              be16(SRAMB(NVM_LIVE), L_WRITER_ENT),
-              be16(SRAMB(NVM_LIVE), L_WRITER_OK),
-              be16(SRAMB(NVM_LIVE), L_WRITER_FAIL));
-    hc_bf_request_accepted();
-    forensic_snapshot((unsigned char)0xFFu);
     return HCNV_ERR_NONE;
 }
 
@@ -3451,6 +3345,10 @@ static void stage_step(void)
 {
     unsigned long gen;
     unsigned int faults;
+#if HC_UPDATER
+    unsigned long hgen;
+    unsigned int i;
+#endif
 
     /* A page write that lands mid-staging means the snapshot would be torn -
        half the old calibration and half the new. Start again rather than
@@ -3480,6 +3378,24 @@ static void stage_step(void)
         if (NVW[W_SLOT] != (unsigned char)HCNV_SLOT_NONE) {
             gen = be32(NVW, W_BEST_GEN);
         }
+#if HC_UPDATER
+        /* AN OBD UPDATE KEEPS THE STORE ACROSS A PAGE LAYOUT CHANGE (the
+           loader never erases SA10..SA14), so the store can hold committed
+           records of the OLD layout that nvm_scan() refused (HCNV_ERR_LAYOUT)
+           while no record of this layout exists yet. Counting from the ACTIVE
+           record alone would then write generation 1 - older than every
+           refused record - and the bounded scan (4 tries, newest first) would
+           never reach it: the migrated tune would be lost at the next boot
+           (the project rules, "after a layout change the store must be
+           BLANK"). So the new record is newer than EVERY committed header,
+           whatever its layout. Headers only, sixteen bytes a cell, once per
+           Burn. */
+        for (i = 0u; i < TGT_FLASH_CELLS; i++) {
+            if (cell_header_gen(i, &hgen) && (long)(hgen - gen) > 0L) {
+                gen = hgen;
+            }
+        }
+#endif
         gen++;
         set_be32(CB, (unsigned int)CB_GEN, gen);
         stage_begin_header(gen);
@@ -3487,8 +3403,6 @@ static void stage_step(void)
         set_be16(NVW, W_STG_CRC, 0xFFFFu);
         NVW[W_STG_STEP] = (unsigned char)HCNV_STG_COPY;
         cb_seal();
-        hc_bf_stage(HCBF_ST_SNAPSHOT);
-        forensic_snapshot((unsigned char)0xFFu);
         return;
 
     case (unsigned char)HCNV_STG_COPY:
@@ -3499,7 +3413,6 @@ static void stage_step(void)
 
     default:
         stage_finish();
-        hc_lf_stage_done(hc_tick_ms);
         NVW[W_STG_STEP] = (unsigned char)HCNV_STG_IDLE;
         /* stage_header_ok(), not stage_valid(): the payload CRC in the record
            IS the rolling one this machine just computed byte by byte, so
@@ -3515,10 +3428,6 @@ static void stage_step(void)
             cb_err = (unsigned char)HCNV_ERR_NONE;
             stage_clear();
             cb_seal();
-            trace_stage(CST_DONE_VERIFY);
-            hc_bf_stage(HCBF_ST_OK_PENDING);
-            forensic_snapshot((unsigned char)SRAMB(NVM_CB)[CB_RESULT]);
-            hc_lf_durable(hc_tick_ms, be16(CB, CB_POS));
             hcts_finish_deferred_response(TS_OK);
             return;
         }
@@ -3534,7 +3443,6 @@ static void stage_step(void)
            this is exactly the shape of edit that broke it the first time. */
         cb_cell = (NVW[W_NEXT] == CELL_NONE) ? CELL_NONE : NVW[W_NEXT];
         cb_seal();
-        hc_bf_stage(HCBF_ST_TARGET);
         return;
     }
 }
@@ -3702,6 +3610,9 @@ static void er_begin(unsigned int sector, unsigned int now_ms)
     /* Converted to T7 ticks HERE, in ordinary C: the relocated routine may not
        call the 32-bit multiply and divide US_TO_TICKS() compiles to. */
     set_be16(er, ER_SLICETK, (unsigned int)US_TO_TICKS(HCNV_ERASE_SLICE_US));
+#if HC_UPDATER
+    er[ER_BASESEG] = (unsigned char)TGT_FLASH_CFG_SEG;  /* the store, SA10..   */
+#endif
     fl_prepare_sel((unsigned char)HCNV_PAY_ERASER);
 }
 
@@ -3727,6 +3638,14 @@ static unsigned char er_step(unsigned int now_ms, unsigned int rpm,
        not land where the SSC frame needs the CPU. If it is refused this pass
        the erase simply stays suspended, which is a state the device will sit
        in indefinitely at no cost. */
+    /* A RECLAIM HAS NO REPLY TO PROTECT. live_admit() refuses once
+       TGT_LIVE_BURN_DEADLINE_MS has passed since W_ARM_MS, and only a Burn
+       request arms that: with the 16-bit uptime the reclaim was admitted ~6 s
+       in every 65.5 s (firmware-stability issue 06; the updater's STAGING
+       erase took 197 s that way, bench 2026-10-30). A reclaim runs only with
+       no Burn in flight (er_wanted), and a Burn request re-arms the deadline
+       for itself, so arming it here takes nothing from a Burn. */
+    set_be16(NVW, W_ARM_MS, now_ms);
     if (!live_admit(now_ms, rpm, trig_turning, outputs_busy, page_stable)) {
         return 1u;
     }
@@ -3927,6 +3846,253 @@ void hc_nvm_service(unsigned int now_ms, unsigned int rpm,
     cb_seal();
 }
 
+#if HC_UPDATER
+/* ==========================================================================
+ * P3: THE APP-SIDE OBD UPDATER (hcupd711.h).
+ *
+ * It writes STAGING (SA15..SA18) from host chunks, CRC-checks it against the
+ * frozen contract, seals it last, and on commit asks the loader (via the
+ * battery-SRAM request the loader reads at 0x386904/06) to copy STAGING over
+ * the APP. It REUSES the proven machinery of this file - fl_enter()'s
+ * interrupt window, fl_prepare_sel()'s relocation slot, live_admit()'s SSC
+ * admission, and the sector eraser - so none of that discipline is duplicated.
+ * Only the word programmer is new, because its source and destination differ.
+ *
+ * Nothing here touches the store (SA10..SA14) or the running APP. A failed or
+ * interrupted staging is unsealed/short and the loader rejects it.
+ * ========================================================================== */
+
+/* The shared SRAM layout (UPD_CB, request words, U_* offsets, HC_SOP_*)
+   is in hcupd711.h, included above. The CRC-32 table and the running fold
+   moved to the FCODE driver (hcdiag711.c): the fold runs in hc_upd_write(),
+   never while the device is busy. */
+
+/* ------------------------------------------------------- the stage programmer
+ * ONE word per entry, into STAGING, from the chunk buffer in NVM_STAGE. Same
+ * bus discipline as hc_nvm_payload(): four write cycles, two agreeing reads,
+ * DQ5 honoured only while DQ7 disagrees, a bounded poll, and no return into
+ * flash without read-array mode (FL_RESET on any doubt, retry next pass). It
+ * reads every operand from SRAM so the relocated copy is self-contained. */
+void far hc_nvm_stage_payload(void)
+{
+    unsigned int volatile huge *unl1 = FLW(TGT_FLASH_UNLOCK1);
+    unsigned int volatile huge *unl2 = FLW(TGT_FLASH_UNLOCK2);
+    unsigned char huge *u = SRAMB(UPD_CB);
+    unsigned char huge *cb = SRAMB(NVM_CB);
+    unsigned int huge *src = SRAMW(NVM_STAGE);
+    unsigned int volatile huge *p;
+    unsigned long base;
+    unsigned int pos;
+    unsigned int nw;
+    unsigned int doff;
+    unsigned int v;
+    unsigned int a;
+    unsigned int b;
+    unsigned int t0;
+    unsigned int tw;
+
+    pos = (unsigned int)(((unsigned int)u[U_POS] << 8) | u[U_POS + 1u]);
+    nw  = (unsigned int)(((unsigned int)u[U_CHUNKW] << 8) | u[U_CHUNKW + 1u]);
+    doff = (unsigned int)(((unsigned int)u[U_DOFF] << 8) | u[U_DOFF + 1u]);
+    base = ((unsigned long)u[U_DSEG] << 16);
+
+    /* AS MANY WORDS AS FIT IN ONE ADMITTED WINDOW (2026-10-30), each with the
+       full single-word discipline below. One word per window paid the whole
+       admission + fl_enter() mask/restore of sixteen sources for ~10 us of
+       flash work: ~2 ms a word, 4 KB in 3.5 s on the bench 2.7T. The window
+       ends after HCNV_STAGE_WIN_US (+ the last word's poll), well inside the
+       1.1 ms TGT_LIVE_WORD_GUARD_US the admission grants and shorter than
+       the 1 ms erase slice the same admission already runs. Progress is
+       stored per word, so a RETRY keeps every word before it. */
+    tw = (unsigned int)T7;
+    while (pos < nw) {
+        p = FLW(base + (unsigned long)doff + ((unsigned long)pos << 1));
+
+        /* Settle: two agreeing reads, no write. */
+        a = *p;
+        b = *p;
+        if (a != b) {
+            *unl1 = FL_RESET;
+            u[U_PAYRES] = (unsigned char)HCNV_RES_RETRY;
+            cb[CB_RESULT] = (unsigned char)HCNV_RES_RETRY;
+            return;
+        }
+
+        v = (unsigned int)*(src + pos);
+        *unl1 = FL_UNLOCK1;
+        *unl2 = FL_UNLOCK2;
+        *unl1 = FL_PROGRAM;
+        *p = v;
+
+        a = (unsigned int)~v;
+        b = a;
+        t0 = (unsigned int)T7;
+        for (;;) {
+            WDTCON = TGT_WDTCON_SERVICE;
+            __asm { SRVWDT }
+            a = *p;
+            b = *p;
+            if (a == v && b == v) {
+                break;
+            }
+            if (((unsigned int)(a ^ v) & 0x0080u) != 0u && (a & 0x0020u) != 0u) {
+                a = *p;
+                b = *p;
+                break;              /* DQ5: the device ran its own timer out */
+            }
+            if ((unsigned int)((unsigned int)T7 - t0) >= (unsigned int)HCNV_POLL_TICKS) {
+                break;
+            }
+        }
+
+        if (a != v || b != v) {
+            *unl1 = FL_RESET;
+            u[U_PAYRES] = (unsigned char)HCNV_RES_RETRY;
+            cb[CB_RESULT] = (unsigned char)HCNV_RES_RETRY;
+            return;
+        }
+
+        pos++;
+        u[U_POS] = (unsigned char)(pos >> 8);
+        u[U_POS + 1u] = (unsigned char)pos;
+        if ((unsigned int)((unsigned int)T7 - tw) >= (unsigned int)HCNV_STAGE_WIN_TICKS) {
+            break;
+        }
+    }
+    u[U_PAYRES] = (unsigned char)HCNV_ERR_NONE;
+    cb[CB_RESULT] = (unsigned char)HCNV_ERR_NONE;
+}
+
+void far hc_nvm_stage_payload_end(void)
+{
+}
+
+/* ---- NCODE flash primitives for the FCODE updater driver (hcdiag711.c) ----
+ * The driver owns the state machine, the CRC and the host commands; the code
+ * here wraps the proven fl_enter()/live_admit()/eraser so none of that
+ * discipline is duplicated or leaves this file. */
+
+/* Begin erasing one STAGING sector, reusing the store eraser with its base
+   segment pointed at STAGING. */
+static void upd_erase_begin(unsigned int sector)
+{
+    unsigned char huge *er = ERB;
+    er_init();
+    er[ER_SECTOR] = (unsigned char)sector;
+    er[ER_BASESEG] = (unsigned char)TGT_FLASH_STAGE_SEG;
+    er[ER_OP] = (unsigned char)HCNV_EOP_START;
+    er[ER_STATE] = (unsigned char)HCNV_ER_RUNNING;
+    er[ER_RESULT] = (unsigned char)HCNV_ERR_NONE;
+    set_be16(er, ER_SLICES, 0u);
+    set_be16(er, ER_SLICETK, (unsigned int)US_TO_TICKS(HCNV_ERASE_SLICE_US));
+    fl_prepare_sel((unsigned char)HCNV_PAY_ERASER);
+}
+
+/* THE ADMISSION, WITHOUT THE BURN DEADLINE. live_admit() also refuses once
+   TGT_LIVE_BURN_DEADLINE_MS has passed since W_ARM_MS - the bound that keeps
+   a Burn inside TunerStudio's blockReadTimeout. An update has no deferred
+   reply to protect (every step is its own stop-and-wait command), and nothing
+   armed W_ARM_MS for it: with the 16-bit uptime the window was open only ~6 s
+   in every 65.5 s, and the first bench erase took 197 s in three bursts
+   (2026-10-30, evidence BENCH_20261030_27T_UPDATER/erase_probe_1). So each
+   step arms the deadline itself; every other condition is unchanged. The
+   store is gated off while an update runs, and its next Burn re-arms. */
+static unsigned char upd_admit(unsigned int now_ms, unsigned int rpm,
+                               unsigned char trig_turning,
+                               unsigned char outputs_busy,
+                               unsigned char page_stable)
+{
+    if ((unsigned char)PECC6 < (unsigned char)HCNV_PECRX_MIN) {
+        return 0u;          /* the K-line ring refills first (fl_enter note) */
+    }
+    set_be16(NVW, W_ARM_MS, now_ms);
+    return live_admit(now_ms, rpm, trig_turning, outputs_busy, page_stable);
+}
+
+/* ---- the single NCODE entry the FCODE driver (hcdiag711.c) calls ----
+ * One admitted erase/program step, dispatched by op. It is the ONLY updater
+ * code that touches this file's flash machinery - fl_enter()'s window,
+ * fl_prepare_sel()'s slot, live_admit()'s SSC admission and the sector eraser.
+ * Everything else (state, CRC, the host commands) lives in the FCODE driver.
+ * Returns an HC_SOP_* code; reads/writes the control block by the shared U_*
+ * layout in hcupd711.h. */
+unsigned int hc_nvm_stage_op(unsigned int op, unsigned int now_ms,
+                             unsigned int rpm, unsigned char trig_turning,
+                             unsigned char outputs_busy,
+                             unsigned char page_stable)
+{
+    unsigned char huge *u = SRAMB(UPD_CB);
+    unsigned char huge *er = ERB;
+    unsigned int pos;
+    unsigned int nw;
+
+    if (op == (unsigned int)HC_SOP_ERASE_BEGIN) {
+        upd_erase_begin((unsigned int)u[U_SECTOR]);
+        return (unsigned int)HC_SOP_OK;
+    }
+
+    if (op == (unsigned int)HC_SOP_ERASE_SLICE) {
+        if (er[ER_STATE] == (unsigned char)HCNV_ER_RUNNING) {
+            if (!upd_admit(now_ms, rpm, trig_turning, outputs_busy,
+                           page_stable)) {
+                return (unsigned int)HC_SOP_DEFER;
+            }
+            if (er[ER_LOADED] != (unsigned char)HCNV_PAY_ERASER) {
+                fl_prepare_sel((unsigned char)HCNV_PAY_ERASER);
+            }
+            fl_enter();
+            set_be16(er, ER_SLICES, (unsigned int)(be16(er, ER_SLICES) + 1u));
+            if (be16(er, ER_SLICES) > (unsigned int)HCNV_ERASE_MAX_SLICES) {
+                return (unsigned int)HC_SOP_FAIL;
+            }
+            return (unsigned int)HC_SOP_OK;
+        }
+        if (er[ER_STATE] == (unsigned char)HCNV_ER_FAILED) {
+            return (unsigned int)HC_SOP_FAIL;
+        }
+        /* the device finished this sector - advance, or finish the whole erase */
+        u[U_ERDONE] = (unsigned char)(u[U_SECTOR] + 1u);
+        if ((unsigned int)u[U_SECTOR] + 1u
+            < (unsigned int)TGT_FLASH_STAGE_SECTORS) {
+            u[U_SECTOR] = (unsigned char)(u[U_SECTOR] + 1u);
+            upd_erase_begin((unsigned int)u[U_SECTOR]);
+            return (unsigned int)HC_SOP_OK;
+        }
+        er[ER_STATE] = (unsigned char)HCNV_ER_IDLE;
+        return (unsigned int)HC_SOP_DONE;
+    }
+
+    /* HC_SOP_PROG_SLICE: one word of the current chunk into STAGING. */
+    pos = be16(u, U_POS);
+    nw  = be16(u, U_CHUNKW);
+    if (pos >= nw) {
+        return (unsigned int)HC_SOP_DONE;
+    }
+    if (!upd_admit(now_ms, rpm, trig_turning, outputs_busy, page_stable)) {
+        return (unsigned int)HC_SOP_DEFER;
+    }
+    if (er[ER_LOADED] != (unsigned char)HCNV_PAY_STAGE) {
+        fl_prepare_sel((unsigned char)HCNV_PAY_STAGE);
+    }
+    fl_enter();
+    if (u[U_PAYRES] == (unsigned char)HCNV_RES_RETRY) {
+        u[U_TRIES] = (unsigned char)(u[U_TRIES] + 1u);
+        if ((unsigned int)u[U_TRIES] > (unsigned int)HCNV_PROG_TRIES) {
+            return (unsigned int)HC_SOP_FAIL;
+        }
+        return (unsigned int)HC_SOP_OK;
+    }
+    if (u[U_PAYRES] != (unsigned char)HCNV_ERR_NONE) {
+        return (unsigned int)HC_SOP_FAIL;
+    }
+    u[U_TRIES] = 0u;
+    pos = be16(u, U_POS);
+    nw  = be16(u, U_CHUNKW);
+    return (pos >= nw) ? (unsigned int)HC_SOP_DONE : (unsigned int)HC_SOP_OK;
+}
+
+#endif /* HC_UPDATER */
+
 /* ================================================== what TunerStudio reads ==
  *
  * FUNCTIONS AND NOT GLOBALS, so that this module owns no near RAM at all - see
@@ -4086,20 +4252,8 @@ unsigned int hc_nvm_prog_flags(void)
     return dg_ok() ? dg16((unsigned int)DG_FLAGS) : 0u;
 }
 
-unsigned int hc_nvm_commit_stage(void)
-{
-    return hc_bf_stage_current();
-}
 
-unsigned int hc_nvm_commit_last_stage(void)
-{
-    return hc_bf_stage_last();
-}
 
-unsigned int hc_nvm_commit_fail_stage(void)
-{
-    return hc_bf_stage_fail();
-}
 
 /* ============================================ WHAT THE RECLAIM PUBLISHES ====
  *

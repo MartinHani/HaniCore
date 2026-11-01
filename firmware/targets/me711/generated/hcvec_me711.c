@@ -103,7 +103,7 @@ void hc_s0r_isr(void) interrupt TGT_TRAP_S0RINT
     hc_rx_take();
 }
 
-/* trap 0x02 is claimed by the firmware: NMI - hc_v02 in hcnmi_v49.a66 (retained first-event snapshot) */
+/* trap 0x02 is claimed by the firmware: NMI - hc_nmi_isr in hcmain_me711.c (trap and time into the reset log) */
 /* trap 0x18 is claimed by the firmware: CC8INT - hc_cc8_isr in hctrig_me711.c  (NWDG1 cam capture) */
 /* trap 0x19 is claimed by the firmware: CC9INT - hc_cc9_isr in hctrig_me711.c  (NWDG2 cam capture) */
 /* trap 0x1F is claimed by the firmware: CC15INT - hc_cc15_isr in hctrig_me711.c (KWDG crank capture) */

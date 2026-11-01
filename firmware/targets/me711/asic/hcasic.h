@@ -20,43 +20,10 @@
 #ifndef HCASIC_H
 #define HCASIC_H
 
-/* The state machine, published as asicState. */
-#define ASIC_OFF        0    /* not initialised                              */
-#define ASIC_IDLE       1    /* SSC up, nothing in flight                    */
-#define ASIC_START_TX   2    /* the 96-word startup frame is in flight       */
-#define ASIC_START_OK   3    /* it came back, checksum and class good        */
-#define ASIC_RUN_TX     4    /* a 118-word runtime frame is in flight        */
-#define ASIC_RUN_OK     5    /* runtime traffic is flowing                   */
-#define ASIC_FAULT      6    /* latched: too many failures in a row          */
-
 void asic_init(void);        /* SSC + PEC + pins. Call with IEN still 0.     */
 void asic_frame_clear(void); /* the exchange buffer - ONCE, at SSC_INIT only */
 void asic_isolate(void);     /* no frame; CS and every SSC pin remain inputs */
-void asic_service(void);     /* the state machine, from the main loop        */
-void asic_tick(void);        /* 1 ms, from the system tick ISR               */
-unsigned int asic_rx_word(unsigned char i);
-unsigned int asic_frame_word(unsigned char i);  /* the RAW buffer */   /* an ACCEPTED frame word      */
-
-/* The CS-only experimental stimulus. No clock, no data, no SSC - see the long
-   note in hcasic.c for exactly what it does and does not prove. */
-
-/* Everything below is telemetry. Public because hcmain_me711.c publishes it
-   and because the first bench test is judged on it. */
-extern unsigned char asic_state;
-extern unsigned char asic_alive;        /* a frame was accepted recently     */
-extern unsigned char asic_last_class;   /* the reply class byte we last saw  */
-extern unsigned int  asic_tx_count;
-extern unsigned int  asic_rx_count;
-extern unsigned int  asic_start_count;
-extern unsigned int  asic_run_count;
-extern unsigned int  asic_csum_ok;
-extern unsigned int  asic_csum_err;
-extern unsigned int  asic_class_err;
-extern unsigned int  asic_timeouts;
-extern unsigned int  asic_ssc_err;      /* SSCCON error bits, latched        */
-extern unsigned int  asic_last_csum;    /* what the last frame summed to     */
-extern unsigned int  asic_want_csum;    /* what its checksum word claimed    */
-
+unsigned int asic_frame_word(unsigned char i);  /* the RAW buffer */
 
 /* Exported for hcasicstart.c, which owns the startup/runtime state machine.
    The transport primitives stay here because they touch the SSC and the PEC
@@ -73,6 +40,7 @@ extern unsigned int  hc_ssc_err_vec;
 extern unsigned int  hc_ssc_last_err;
 extern unsigned char hc_ssc_done;
 extern unsigned int  hc_ssc_xfer_ticks;
+extern unsigned int  hc_ssc_start_t7;      /* T7 when the frame started    */
 extern unsigned char asic_err_latched;
 
 /* MEASURED CS-to-first-clock delay in T7 ticks - the V9 experiment. */

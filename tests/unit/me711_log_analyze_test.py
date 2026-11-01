@@ -229,7 +229,7 @@ def main() -> int:
     # V98r2 tune check: the car page's VE Table Generator signature (load
     # axis 15..160 on an alpha-N page, cells at the limit) vs a clean page
     import me711_migrate_calibration as M
-    ini_text = (hcpaths.TUNERSTUDIO / "hanicore_me711.ini").read_text(errors="replace")
+    ini_text = (hcpaths.TUNING / "hanicore_me711.ini").read_text(errors="replace")
     c = M.parse_ini(ini_text)
     pg = bytearray(4096)
     lo = c["loadSource"].bits[0]

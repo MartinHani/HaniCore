@@ -228,26 +228,39 @@ def native_stage():
     print()
     print("  --- V78 native main-relay stage (cavity 23) ---")
     import me711_config_state_test as T          # the rig with the step budget
+    import hc_board
     rig = T.boot()                                   # hc_cfg_init + mgr init
-    rig("hc_preset_apply_engine_active", 3)          # VAG_18T_ME711
-    rc = rig("hc_validate", 0)
-    pin = rig("hc_hal_main_relay_bound")
-    check("1.8T preset: MAIN_RELAY on cavity 23 in AUTO validates clean",
-          rc == 0, "hc_validate = 0x%04X" % rc)
-    check("the HAL calls cavity 23 NATIVE (bound = 2)", pin == 2, "bound=%d" % pin)
-    dp = [rig.m.r16(a) for a in (0xFFC2, 0xFFD2, 0xFFD6)]
-    rig("hc_hal_main_relay_set", 1)
-    after = [rig.m.r16(a) for a in (0xFFC2, 0xFFD2, 0xFFD6)]
-    check("a relay ON request on the native stage writes no direction register",
-          dp == after, "DP2/DP7/DP8 %s -> %s" % (dp, after))
-    for lvl in (1, 0):
-        rig.m.sfr[0xFFCC] = (rig.m.sfr.get(0xFFCC, 0) & ~4) | (4 if lvl else 0)
-        d = rig("hc_hal_main_relay_driven")
-        check("  'driven' follows KL15_STAT (P6.2 = %d)" % lvl, d == lvl, "driven=%d" % d)
-    rig("hc_cal_set_u8", cfg_off("CFG_MAIN_RELAY_MODE"), 0)
-    rc = rig("hc_validate", 0)
-    check("mode OFF on the native stage is REFUSED (PIN_CAP)", rc & 0x0020,
-          "hc_validate = 0x%04X" % rc)
+    if hc_board.IS_C4:
+        # the C4 board has NO relay stage on 23 (KL15 on 3, run-on internal,
+        # SSB 345;02): MAIN_RELAY routed there is refused for capability
+        rig("hc_cal_set_u8", T.O["CFG_U_PIN_MAIN_RELAY"] if "CFG_U_PIN_MAIN_RELAY" in T.O
+            else T.d(T._gen, "CFG_U_PIN_MAIN_RELAY"), 23)
+        rig("hc_cal_set_u8", cfg_off("CFG_MAIN_RELAY_MODE"), 2)
+        rc = rig("hc_validate", 0)
+        check("C4: MAIN_RELAY on cavity 23 is REFUSED (no relay stage, PIN_CAP)",
+              rc & 0x0020, "hc_validate = 0x%04X" % rc)
+        check("  ...and the HAL binds nothing there", rig("hc_hal_main_relay_bound") == 0,
+              "bound=%d" % rig("hc_hal_main_relay_bound"))
+    else:
+        rig("hc_preset_apply_engine_active", 3)          # VAG_18T_ME711
+        rc = rig("hc_validate", 0)
+        pin = rig("hc_hal_main_relay_bound")
+        check("1.8T preset: MAIN_RELAY on cavity 23 in AUTO validates clean",
+              rc == 0, "hc_validate = 0x%04X" % rc)
+        check("the HAL calls cavity 23 NATIVE (bound = 2)", pin == 2, "bound=%d" % pin)
+        dp = [rig.m.r16(a) for a in (0xFFC2, 0xFFD2, 0xFFD6)]
+        rig("hc_hal_main_relay_set", 1)
+        after = [rig.m.r16(a) for a in (0xFFC2, 0xFFD2, 0xFFD6)]
+        check("a relay ON request on the native stage writes no direction register",
+              dp == after, "DP2/DP7/DP8 %s -> %s" % (dp, after))
+        for lvl in (1, 0):
+            rig.m.sfr[0xFFCC] = (rig.m.sfr.get(0xFFCC, 0) & ~4) | (4 if lvl else 0)
+            d = rig("hc_hal_main_relay_driven")
+            check("  'driven' follows KL15_STAT (P6.2 = %d)" % lvl, d == lvl, "driven=%d" % d)
+        rig("hc_cal_set_u8", cfg_off("CFG_MAIN_RELAY_MODE"), 0)
+        rc = rig("hc_validate", 0)
+        check("mode OFF on the native stage is REFUSED (PIN_CAP)", rc & 0x0020,
+              "hc_validate = 0x%04X" % rc)
 
     # The S5500 temperatures: a window word is believed only when the ADC's
     # own channel tag (bits 15..12) names AN0 / AN1.

@@ -481,196 +481,199 @@ def main() -> int:
     # the interrupt-request bit set is what kicks PEC0 into moving word 0.
     print()
     print("--- the ASIC handshake, against a modelled ASIC ---")
+    if os.environ.get("HANICORE_BOARD") == "vag_me75_dc":
+        # the ME7.5 DC has no S5500 and no SSC frame: its CC650 + 68HC05
+        # monitor service is tests/firmware/asic/me75_dc_runtime_proof.py
+        print("  SKIP: the ME7.5 DC has no S5500 (see me75_dc_runtime_proof)")
+    else:
 
-    SSCTIC = 0x00FF72
-    SSCRIC = 0x00FF74
-    SSCEIC = 0x00FF76
-    SSCCON_A = 0x00FFB2
-    PECC0 = 0x00FEC0
-    PECC4 = 0x00FEC8
-    FRAMEA = define("TGT_ASIC_FRAME")
+        SSCTIC = 0x00FF72
+        SSCRIC = 0x00FF74
+        SSCEIC = 0x00FF76
+        SSCCON_A = 0x00FFB2
+        PECC0 = 0x00FEC0
+        PECC4 = 0x00FEC8
+        FRAMEA = define("TGT_ASIC_FRAME")
 
-    # The ASIC handshake needs a whole number of 10 ms rasters AFTER boot, so
-    # this budget is "boot + enough rasters", not an absolute. It is
-    # overridable because when an image's boot cost changes, the useful
-    # question is "does the handshake still work given time" and not "does it
-    # fit in a constant somebody picked in 2026".
-    # me711_boot_cost_proof.py is what guards the boot cost itself.
-    _ASIC_STEPS = int(os.environ.get("HANICORE_ASIC_STEPS", "1500000"))
+        # The ASIC handshake needs a whole number of 10 ms rasters AFTER boot, so
+        # this budget is "boot + enough rasters", not an absolute. It is
+        # overridable because when an image's boot cost changes, the useful
+        # question is "does the handshake still work given time" and not "does it
+        # fit in a constant somebody picked in 2026".
+        # me711_boot_cost_proof.py is what guards the boot cost itself.
+        _ASIC_STEPS = int(os.environ.get("HANICORE_ASIC_STEPS", "1500000"))
 
-    def run_asic(mode, steps=_ASIC_STEPS, seed=None):
-        """Model the ASIC and the SSC block transfer.
+        def run_asic(mode, steps=_ASIC_STEPS, seed=None):
+            """Model the ASIC and the SSC block transfer.
 
-        mode: 'good' | 'badsum' | 'silent' | 'ssc_error' | 'stuck_busy'
+            mode: 'good' | 'badsum' | 'silent' | 'ssc_error' | 'stuck_busy'
 
-        This models what V4's hardware run proved matters: a PEC block ends by
-        raising the node as an ORDINARY interrupt, so the firmware's real
-        SSC ISRs must run. The model therefore decrements the PEC counts to
-        zero and raises SSCTIC/SSCRIC, rather than quietly faking completion.
-        """
-        h2 = Harness(IMG, echo=True)
-        if seed:
-            for a_, v_ in seed.items():
-                h2.mem.w8(a_, v_)
-        st = {"xfers": 0}
-        o16 = S.Mem.w16
+            This models what V4's hardware run proved matters: a PEC block ends by
+            raising the node as an ORDINARY interrupt, so the firmware's real
+            SSC ISRs must run. The model therefore decrements the PEC counts to
+            zero and raises SSCTIC/SSCRIC, rather than quietly faking completion.
+            """
+            h2 = Harness(IMG, echo=True)
+            if seed:
+                for a_, v_ in seed.items():
+                    h2.mem.w8(a_, v_)
+            st = {"xfers": 0}
+            o16 = S.Mem.w16
 
-        def w16(self_, a, v, _o=o16):
-            r = _o(self_, a, v)
-            aa = a & 0xFFFFFF
-            if aa == SSCCON_A and mode == "stuck_busy":
-                # A peripheral wedged busy: exactly the state V4 could never
-                # recover from, because it rewrote SSCCON with SSCEN already
-                # set and the control bits silently ignored the write.
-                #
-                # SSCBSY IS STICKY ACROSS EVERY WRITE. It used to be re-asserted
-                # only when a write SET SSCEN, which meant
-                # asic_abort_transfer()'s `SSCCON = 0x461F` - no SSCBSY bit -
-                # silently un-wedged the modelled peripheral on every transfer
-                # timeout. The firmware then never saw three consecutive busy
-                # refusals and the escalation path was never exercised:
-                # refusals=0, tx=7, timeouts=7.
-                #
-                # V10 passed this check by accident. A second state machine,
-                # asic_service(), was still being called from the main loop and
-                # kept setting SSCEN independently, re-wedging the model between
-                # hcasicstart's attempts. Standing that machine down for V11
-                # removed the accident and exposed the model.
-                #
-                # A genuinely wedged peripheral stays busy whatever the firmware
-                # writes. That is what this now models, and it is a STRICTER
-                # test than any version before V11 ran.
-                self_.sfr[SSCCON_A] = v | 0x1000        # SSCBSY stuck
-            if aa == SSCTIC and (v & 0x0080) and mode not in ("silent",
-                                                              "stuck_busy"):
-                n = 0x60
-                if mode == "ssc_error":
-                    # An SSC error: flags set, error node raised, no data.
-                    self_.w16(SSCCON_A, (self_.r16(SSCCON_A) | 0x0800))
-                    self_.sfr[SSCEIC] = 0x00D5      # IE+IR, ILVL 5
-                    h2.cpu.irq_pending.add(SSCEIC)
+            def w16(self_, a, v, _o=o16):
+                r = _o(self_, a, v)
+                aa = a & 0xFFFFFF
+                if aa == SSCCON_A and mode == "stuck_busy":
+                    # A peripheral wedged busy: exactly the state V4 could never
+                    # recover from, because it rewrote SSCCON with SSCEN already
+                    # set and the control bits silently ignored the write.
+                    #
+                    # SSCBSY IS STICKY ACROSS EVERY WRITE. It used to be re-asserted
+                    # only when a write SET SSCEN, which meant
+                    # asic_abort_transfer()'s `SSCCON = 0x461F` - no SSCBSY bit -
+                    # silently un-wedged the modelled peripheral on every transfer
+                    # timeout. The firmware then never saw three consecutive busy
+                    # refusals and the escalation path was never exercised:
+                    # refusals=0, tx=7, timeouts=7.
+                    #
+                    # V10 passed this check by accident. A second state machine,
+                    # asic_service(), was still being called from the main loop and
+                    # kept setting SSCEN independently, re-wedging the model between
+                    # hcasicstart's attempts. Standing that machine down for V11
+                    # removed the accident and exposed the model.
+                    #
+                    # A genuinely wedged peripheral stays busy whatever the firmware
+                    # writes. That is what this now models, and it is a STRICTER
+                    # test than any version before V11 ran.
+                    self_.sfr[SSCCON_A] = v | 0x1000        # SSCBSY stuck
+                if aa == SSCTIC and (v & 0x0080) and mode not in ("silent",
+                                                                  "stuck_busy"):
+                    n = 0x60
+                    if mode == "ssc_error":
+                        # An SSC error: flags set, error node raised, no data.
+                        self_.w16(SSCCON_A, (self_.r16(SSCCON_A) | 0x0800))
+                        self_.sfr[SSCEIC] = 0x00D5      # IE+IR, ILVL 5
+                        h2.cpu.irq_pending.add(SSCEIC)
+                        st["xfers"] += 1
+                        return r
+                    sum_ = 0
+                    for i in range(n - 1):
+                        w = (0x1E00 + i) & 0xFFFF if i else 0x001E
+                        self_.w16(FRAMEA + 2 * i, w)
+                        sum_ = (sum_ + w) & 0xFFFF
+                    if mode == "badsum":
+                        sum_ ^= 0x0001
+                    self_.w16(FRAMEA + 2 * (n - 1), sum_)
+                    # The PEC blocks drain: both counts reach zero ...
+                    self_.w16(PECC0, self_.r16(PECC0) & 0xFF00)
+                    self_.w16(PECC4, self_.r16(PECC4) & 0xFF00)
+                    self_.sfr[SSCCON_A] = self_.r16(SSCCON_A) & ~0x1000  # not busy
+                    # ... and the nodes then fire as ORDINARY interrupts. The
+                    # HARDWARE sets the request bit; queueing the node without it
+                    # is not the same thing, and the RX ISR never ran until this
+                    # model wrote IR the way the peripheral would.
+                    self_.sfr[SSCTIC] = self_.r16(SSCTIC) | 0x0080
+                    self_.sfr[SSCRIC] = self_.r16(SSCRIC) | 0x0080
+                    h2.cpu.irq_pending.add(SSCTIC)
+                    h2.cpu.irq_pending.add(SSCRIC)
                     st["xfers"] += 1
-                    return r
-                sum_ = 0
-                for i in range(n - 1):
-                    w = (0x1E00 + i) & 0xFFFF if i else 0x001E
-                    self_.w16(FRAMEA + 2 * i, w)
-                    sum_ = (sum_ + w) & 0xFFFF
-                if mode == "badsum":
-                    sum_ ^= 0x0001
-                self_.w16(FRAMEA + 2 * (n - 1), sum_)
-                # The PEC blocks drain: both counts reach zero ...
-                self_.w16(PECC0, self_.r16(PECC0) & 0xFF00)
-                self_.w16(PECC4, self_.r16(PECC4) & 0xFF00)
-                self_.sfr[SSCCON_A] = self_.r16(SSCCON_A) & ~0x1000  # not busy
-                # ... and the nodes then fire as ORDINARY interrupts. The
-                # HARDWARE sets the request bit; queueing the node without it
-                # is not the same thing, and the RX ISR never ran until this
-                # model wrote IR the way the peripheral would.
-                self_.sfr[SSCTIC] = self_.r16(SSCTIC) | 0x0080
-                self_.sfr[SSCRIC] = self_.r16(SSCRIC) | 0x0080
-                h2.cpu.irq_pending.add(SSCTIC)
-                h2.cpu.irq_pending.add(SSCRIC)
-                st["xfers"] += 1
-            return r
+                return r
 
-        S.Mem.w16 = w16
-        h2.run(steps)
-        S.Mem.w16 = o16
-        return h2, bytes(h2.txb), st
+            S.Mem.w16 = w16
+            h2.run(steps)
+            S.Mem.w16 = o16
+            return h2, bytes(h2.txb), st
 
-    hG, txG, stG = run_asic("good")
-    a_state = hG.sym_u8("hc_asic_state")
-    check("the handshake starts transfers",
-          hG.sym_u16("hc_asic_start_tx") > 0,
-          f"start_tx={hG.sym_u16('hc_asic_start_tx')}")
-    check("the modelled ASIC saw them", stG["xfers"] > 0,
-          f"{stG['xfers']} exchange(s)")
-    check("the SSC RX node fires as a real interrupt at block end",
-          hG.sym_u16("hc_ssc_rx_vec") > 0,
-          f"rx_vec={hG.sym_u16('hc_ssc_rx_vec')}")
-    check("the SSC TX node fires too", hG.sym_u16("hc_ssc_tx_vec") > 0,
-          f"tx_vec={hG.sym_u16('hc_ssc_tx_vec')}")
-    check("NEITHER lands on the catch-all any more",
-          hG.sym_u16("hc_badvec") == 0,
-          f"badvec={hG.sym_u16('hc_badvec')}  (V4 hardware: 0x1B..0x2D)")
-    check("completed transfers are detected",
-          hG.sym_u16("hc_asic_start_rx") > 0,
-          f"start_rx={hG.sym_u16('hc_asic_start_rx')}")
-    check("a good reply is ACCEPTED", hG.sym_u16("hc_asic_start_ok") >= 2,
-          f"start_ok={hG.sym_u16('hc_asic_start_ok')}")
-    check("and it reaches the 118-word runtime state", a_state in (6, 7),
-          f"state={a_state}")
-    check("both PEC blocks drained to zero",
-          hG.sym_u16("hc_asic_pec_tx_end") == 0
-          and hG.sym_u16("hc_asic_pec_rx_end") == 0,
-          f"tx_left={hG.sym_u16('hc_asic_pec_tx_end')}, "
-          f"rx_left={hG.sym_u16('hc_asic_pec_rx_end')}")
-    check("the K-line stays idle-silent with the ASIC running",
-          txG == b"", f"{len(txG)} unsolicited byte(s)")
+        hG, txG, stG = run_asic("good")
+        a_state = hG.sym_u8("hc_asic_state")
+        check("the handshake starts transfers",
+              hG.sym_u16("hc_asic_start_tx") > 0,
+              f"start_tx={hG.sym_u16('hc_asic_start_tx')}")
+        check("the modelled ASIC saw them", stG["xfers"] > 0,
+              f"{stG['xfers']} exchange(s)")
+        check("the SSC RX node fires as a real interrupt at block end",
+              hG.sym_u16("hc_ssc_rx_vec") > 0,
+              f"rx_vec={hG.sym_u16('hc_ssc_rx_vec')}")
+        check("the SSC TX node fires too", hG.sym_u16("hc_ssc_tx_vec") > 0,
+              f"tx_vec={hG.sym_u16('hc_ssc_tx_vec')}")
+        check("NEITHER lands on the catch-all any more",
+              hG.sym_u16("hc_badvec") == 0,
+              f"badvec={hG.sym_u16('hc_badvec')}  (V4 hardware: 0x1B..0x2D)")
+        check("completed transfers are detected",
+              hG.sym_u16("hc_asic_start_rx") > 0,
+              f"start_rx={hG.sym_u16('hc_asic_start_rx')}")
+        check("a good reply is ACCEPTED", hG.sym_u16("hc_asic_start_ok") >= 2,
+              f"start_ok={hG.sym_u16('hc_asic_start_ok')}")
+        check("and it reaches the 118-word runtime state", a_state in (6, 7),
+              f"state={a_state}")
+        check("both PEC blocks drained to zero",
+              hG.sym_u16("hc_asic_pec_tx_end") == 0
+              and hG.sym_u16("hc_asic_pec_rx_end") == 0,
+              f"tx_left={hG.sym_u16('hc_asic_pec_tx_end')}, "
+              f"rx_left={hG.sym_u16('hc_asic_pec_rx_end')}")
+        check("the K-line stays idle-silent with the ASIC running",
+              txG == b"", f"{len(txG)} unsolicited byte(s)")
 
-    hB, txB, _ = run_asic("badsum")
-    check("a BAD checksum is rejected, not accepted",
-          hB.sym_u16("hc_asic_start_csum_err") > 0
-          and hB.sym_u16("hc_asic_start_ok") == 0,
-          f"csum_err={hB.sym_u16('hc_asic_start_csum_err')}")
-    check("a bad checksum still produces no stray vectors",
-          hB.sym_u16("hc_badvec") == 0, "badvec=0")
+        hB, txB, _ = run_asic("badsum")
+        check("a BAD checksum is rejected, not accepted",
+              hB.sym_u16("hc_asic_start_csum_err") > 0
+              and hB.sym_u16("hc_asic_start_ok") == 0,
+              f"csum_err={hB.sym_u16('hc_asic_start_csum_err')}")
+        check("a bad checksum still produces no stray vectors",
+              hB.sym_u16("hc_badvec") == 0, "badvec=0")
 
-    hS, txS, _ = run_asic("silent")
-    check("a SILENT ASIC times out instead of blocking",
-          hS.sym_u16("hc_asic_start_timeout") > 0,
-          f"timeouts={hS.sym_u16('hc_asic_start_timeout')}")
-    check("the K-line stays idle-silent with a silent ASIC", txS == b"",
-          f"{len(txS)} unsolicited byte(s)")
+        hS, txS, _ = run_asic("silent")
+        check("a SILENT ASIC times out instead of blocking",
+              hS.sym_u16("hc_asic_start_timeout") > 0,
+              f"timeouts={hS.sym_u16('hc_asic_start_timeout')}")
+        check("the K-line stays idle-silent with a silent ASIC", txS == b"",
+              f"{len(txS)} unsolicited byte(s)")
 
-    hE, txE, _ = run_asic("ssc_error")
-    check("an SSC ERROR is caught by its own handler",
-          hE.sym_u16("hc_ssc_err_vec") > 0,
-          f"err_vec={hE.sym_u16('hc_ssc_err_vec')}")
-    check("and it is counted as an SSC error, not a checksum failure",
-          hE.sym_u16("hc_asic_ssc_errors") > 0,
-          f"ssc_errors={hE.sym_u16('hc_asic_ssc_errors')}")
-    check("the error does not become a vector storm",
-          hE.sym_u16("hc_badvec") == 0, "badvec=0")
-    check("the K-line stays idle-silent after an SSC error", txE == b"",
-          f"{len(txE)} unsolicited byte(s)")
+        hE, txE, _ = run_asic("ssc_error")
+        check("an SSC ERROR is caught by its own handler",
+              hE.sym_u16("hc_ssc_err_vec") > 0,
+              f"err_vec={hE.sym_u16('hc_ssc_err_vec')}")
+        check("and it is counted as an SSC error, not a checksum failure",
+              hE.sym_u16("hc_asic_ssc_errors") > 0,
+              f"ssc_errors={hE.sym_u16('hc_asic_ssc_errors')}")
+        check("the error does not become a vector storm",
+              hE.sym_u16("hc_badvec") == 0, "badvec=0")
+        check("the K-line stays idle-silent after an SSC error", txE == b"",
+              f"{len(txE)} unsolicited byte(s)")
 
-    # THE WARM-RESET CASE. V4's hardware signature: the first cold boot
-    # transmitted twice and every warm boot afterwards reported TX=0000/0000
-    # forever, because a wedged SSC was never re-initialised.
-    # 3M steps, not the default 1.5M. Recovery from a wedge is bounded in
-    # TIME - an 8 ms transfer timeout, then THREE busy refusals one
-    # TGT_ASIC_START_PERIOD_MS apart - so the scenario has to be given at
-    # least ~70 ms of simulated time to reach it. V10 happened to get there
-    # inside the default budget only because a second, now-retired state
-    # machine was also cycling the transport and clearing in_flight sooner.
-    hW, txW, _ = run_asic("stuck_busy", steps=3_000_000)
-    check("a wedged SSC is RE-INITIALISED rather than waited on",
-          hW.sym_u16("hc_asic_reinits") > 0,
-          f"reinits={hW.sym_u16('hc_asic_reinits')} "
-          f"refusals={hW.sym_u16('hc_asic_busy_refusals')} "
-          f"tx={hW.sym_u16('hc_asic_start_tx')} "
-          f"timeouts={hW.sym_u16('hc_asic_start_timeout')} "
-          f"sscerr={hW.sym_u16('hc_asic_ssc_errors')} "
-          f"state={hW.sym_u16('hc_asic_state')}  "
-          f"(V4 would sit here forever)")
-    check("the firmware keeps trying after a wedge",
-          hW.sym_u16("hc_asic_busy_refusals") < 3,
-          "refusal counter is bounded and resets")
-    check("the K-line stays idle-silent with a wedged SSC", txW == b"",
-          f"{len(txW)} unsolicited byte(s)")
+        # THE WARM-RESET CASE. V4's hardware signature: the first cold boot
+        # transmitted twice and every warm boot afterwards reported TX=0000/0000
+        # forever, because a wedged SSC was never re-initialised.
+        # 3M steps, not the default 1.5M. Recovery from a wedge is bounded in
+        # TIME - an 8 ms transfer timeout, then THREE busy refusals one
+        # TGT_ASIC_START_PERIOD_MS apart - so the scenario has to be given at
+        # least ~70 ms of simulated time to reach it. V10 happened to get there
+        # inside the default budget only because a second, now-retired state
+        # machine was also cycling the transport and clearing in_flight sooner.
+        hW, txW, _ = run_asic("stuck_busy", steps=3_000_000)
+        check("a wedged SSC is RE-INITIALISED rather than waited on",
+              hW.sym_u16("hc_asic_reinits") > 0,
+              f"reinits={hW.sym_u16('hc_asic_reinits')} "
+              f"refusals={hW.sym_u16('hc_asic_busy_refusals')} "
+              f"tx={hW.sym_u16('hc_asic_start_tx')} "
+              f"timeouts={hW.sym_u16('hc_asic_start_timeout')} "
+              f"sscerr={hW.sym_u16('hc_asic_ssc_errors')} "
+              f"state={hW.sym_u16('hc_asic_state')}  "
+              f"(V4 would sit here forever)")
+        check("the firmware keeps trying after a wedge",
+              hW.sym_u16("hc_asic_busy_refusals") < 3,
+              "refusal counter is bounded and resets")
+        check("the K-line stays idle-silent with a wedged SSC", txW == b"",
+              f"{len(txW)} unsolicited byte(s)")
 
-    # ---- the one-flash frame extractor ------------------------------------
+    # ---- warm boots on a persistent SRAM ------------------------------------
     #
-    # V5 could only report the FIRST reply word. This freezes a whole reply in
-    # battery SRAM and prints one chunk per boot, so the ECU's own reset loop
-    # walks the frame out. The property that matters is COHERENCE: every chunk
-    # must come from the same frozen frame, not from whichever transfer
-    # happened last.
+    # The ECU's battery-backed SRAM survives a reset. Whatever the previous
+    # boot left there (V5..V62 kept a frozen ASIC frame and printed it one
+    # chunk per boot), a warm boot must never push it onto the K-line.
     print()
-    print("--- the frozen-frame extractor ---")
-    ASICLOG = EXTRAM + define("TGT_RAM_ASICDUMP")
+    print("--- warm boots on persistent SRAM ---")
+    SRAM_BYTES = 0x8000
 
     def boot_chain(n, mode="good"):
         boot_id = 0
@@ -710,14 +713,11 @@ def main() -> int:
             h3.run(1400000)
             S.Mem.w16 = o16
             texts.append(bytes(h3.txb))
-            for off in range(0, 0x600, 1):
-                keep[ASICLOG + off] = h3.mem.r8(ASICLOG + off)
+            for off in range(0, SRAM_BYTES, 1):
+                keep[EXTRAM + off] = h3.mem.r8(EXTRAM + off)
         return texts
 
-    # V23 deliberately removed hc_asicdump_print(); the battery-backed capture
-    # remains, but it must never be pushed onto K-line at boot. The dedicated
-    # me711_asicdump_salvage_proof.py owns the multi-boot content/coherence test.
-    # Keep two persistent-SRAM boots here only to enforce the silence contract.
+    # Two persistent-SRAM boots enforce the silence contract.
     ts = boot_chain(2)
     check("the persistent extractor remains silent across warm boots",
           all(t == b"" for t in ts),

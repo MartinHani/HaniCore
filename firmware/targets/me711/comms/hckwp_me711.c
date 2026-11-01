@@ -16,8 +16,13 @@
    before it switches rate. */
 static const unsigned char KW_SIG[] = TGT_SIGNATURE;
 
-static hckline_t    kw;
-static hckline_cfg_t kw_cfg;
+/* in the external SRAM on the 2.7T (HC_C4FAR, hctarget.h): its C167CR has
+   1 KB less on-chip RAM; the shared core then takes far pointers */
+#if TGT_BOARD_VAG_ME71_C4 != HCKL_FAR_SET
+#error "hckline.h must see DEFINE(HCKL_FAR=far) on the 2.7T build and only there"
+#endif
+static hckline_t     HC_C4FAR kw;
+static hckline_cfg_t HC_C4FAR kw_cfg;
 static unsigned char kw_on;           /* a KWP session owns the K-line */
 static unsigned long kw_us;           /* microseconds, advanced by addition */
 static unsigned int  kw_last_ms;
@@ -315,7 +320,7 @@ void far hc_kwp_service(unsigned int ms)
                 /* back to 10400 and LOCKED (and pinned) there: the tester
                    that asked for a rate the line (the cluster) cannot carry
                    is still talking at 10400 - not one of the hunt's rates */
-                hcts_link_force(0x77u, 1u);
+                hcts_link_force(TGT_S0BG_10400, 1u);
                 KL.t_pv = ms;
                 KC.good = 0u;
             }
@@ -330,7 +335,7 @@ void far hc_kwp_service(unsigned int ms)
         if (kl_wakeup(ms) && fb_st < 3u) {
             /* ISO 14230 FAST INIT: 10400 now - the tester's StartCommunication
                follows the 25 ms high phase - and the core's window opens */
-            hcts_link_force(0x77u, 1u);
+            hcts_link_force(TGT_S0BG_10400, 1u);
             hckline_on_fast_init(&kw, kw_us);
             kw_on = 1u;
             KL.st &= KL_PV_CLR;
@@ -344,31 +349,49 @@ void far hc_kwp_service(unsigned int ms)
             hckline_on_slow_init(&kw, b, kw_us);
             if (kw.state == HCKLINE_ST_SYNC) {
                 kw_on = 1u;
-                hcts_link_force(0x77u, 1u);     /* 10400 = 1 248 000 / 120 */
+                hcts_link_force(TGT_S0BG_10400, 1u);     /* 10400 = 1 248 000 / 120 */
             }
         }
         return;
     }
     hckline_tick(&kw, kw_us);
-    sent = 0u;
-    while (hckline_tx_pop(&kw, &b)) {
-        hcts_tx(b);
-        sent = 1u;
+    /* THE REPLY IS AN INTERRUPT JOB (2026-10-28, stability issue 03): byte
+       by byte through hcts_tx() at 10400 the IDENTIFY reply held the main
+       loop 35 ms - DBW, idle and every service starved at each entry. What
+       the core has ready goes out as one job; the tick drops its echo. */
+    if (!hc_tx_busy()) {
+        sent = 0u;
+        while (sent < (unsigned char)HC_TX_BUF_N && hckline_tx_pop(&kw, &b)) {
+            (void)hc_tx_stage(sent, b);
+            sent++;
+        }
+        if (sent) {
+            (void)hc_tx_start(HC_TXK_PLAIN, 0u, 0u, (unsigned int)sent,
+                              (const unsigned char *)0);
+        }
     }
-    if (sent) {
-        hcts_tx_end();
+    /* NOTHING MOVES UNTIL A REPLY HAS LEFT THE WIRE - not the rate after a
+       GOFAST, not the hunt after a StopCommunication: the job is idle once
+       its last byte is loaded, so also its echo (or 3 ms, a line without
+       echo). The blocking send used to guarantee this. */
+    if (hc_tx_busy()
+        || (hc_tx_echo_owed() != 0u
+            && hc_tx_echo_age() < (unsigned int)(3u * (TGT_TICKS_PER_MS_X10 / 10uL)))) {
+        return;
     }
     if (hckline_take_baud(&kw, &code)) {
         /* UNLOCKED: the rate is on probation until a CRC-valid request
            arrives at it (KL_PV below, 2026-10-13) */
         if (code == HCKLINE_BAUD_124800) {
-            hcts_link_force(TGT_S0BG_ALT2, 0u);
+            hcts_link_force(TGT_S0BG_124800, 0u);
+#ifdef TGT_S0BG_115200
         } else if (code == HCKLINE_BAUD_115200) {
-            hcts_link_force(TGT_S0BG_ALT, 0u);  /* V96 */
+            hcts_link_force(TGT_S0BG_115200, 0u);  /* V96 */
+#endif
         } else if (code == HCKLINE_BAUD_57600) {
             hcts_link_force(TGT_S0BG, 0u);
         } else {
-            hcts_link_force(0x77u, 0u);         /* TunerStudio at 10400 */
+            hcts_link_force(TGT_S0BG_10400, 0u);         /* TunerStudio at 10400 */
         }
         hckline_enter_private(&kw);
         kw_on = 0u;

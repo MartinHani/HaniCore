@@ -47,12 +47,14 @@ RELEASE_ID_BASE = 17416        # V44 = 17460, V48 = 17464, V49 = 17465
 
 
 def hctarget_define(name):
-    txt = HCTARGET.read_text(errors="replace")
-    m = re.search(r"^#define\s+" + re.escape(name) + r"\s+(.+?)\s*(?:/\*|$)",
-                  txt, re.M)
-    if not m:
+    import hc_board                  # the board's branch (2026-10-24)
+    txt = hc_board.board_text(HCTARGET)
+    ms = re.findall(r"^#define\s+" + re.escape(name) + r"\s+(.+?)\s*(?:/\*|$)",
+                    txt, re.M)
+    if not ms:
         raise SystemExit("%s not found in hctarget.h" % name)
-    return m.group(1).strip()
+    # the 4F overrides a few values in an #ifdef after the Porsche's
+    return (ms[-1] if hc_board.IS_4F else ms[0]).strip()
 
 
 def check(results, label, ok, detail=""):
@@ -116,11 +118,11 @@ def run(version_override=None, id_override=None):
           man["sha256"].upper() == hashlib.sha256(img).hexdigest().upper(),
           man["sha256"][:16] + "…")
 
-    ini = ROOT / ("tunerstudio/hanicore_%s.ini" % stem.lower()
+    ini = me711_image.INI if stem == me711_image.STEM else ROOT / ("tuning/hanicore_%s.ini" % stem.lower()
                   .replace("hanicore_me711_", "me711_"))
     if not ini.exists():
-        ini = ROOT / ("tunerstudio/hanicore_%s.ini"
-                      % stem.replace("HaniCore_ME711_", "me711_").lower())
+        ini = ROOT / ("tuning/hanicore_%s.ini"
+                      % stem.replace("HaniCore_ME711_", "me711_").replace("HaniCore_ME71_", "me71_").lower())
     if ini.exists():
         t = ini.read_text(errors="replace")
         mm = re.search(r"releaseId.*?0x([0-9A-Fa-f]{4})", t)

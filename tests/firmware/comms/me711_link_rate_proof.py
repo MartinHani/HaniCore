@@ -49,7 +49,11 @@ import me711_image as PI                 # noqa: E402
 import uart_wire_model as UW             # noqa: E402
 
 S0BG, S0CON = 0xFEB4, 0xFFB0
-RATE = {0x15: 57600, 0x0A: 115200, 0x09: 124800}
+import hc_board  # noqa: E402
+# S0BG -> nominal rate, per board (hctarget.h): the 2.7T's 24 MHz reaches
+# 57600 (0x0C) and 124800 (0x05) but not 115200 (HCKLINE_NO_115200)
+RATE = ({0x0C: 57600, 0x05: 124800} if hc_board.IS_C4
+        else {0x15: 57600, 0x0A: 115200, 0x09: 124800})
 FAILS = 0
 
 
@@ -165,14 +169,18 @@ def main() -> int:
     print("  image %s  sha256 %s\n" % (PI.image().name, PI.sha256()))
 
     UW.selftest()                   # the wire model still matches the bench
-    # from boot, hunting, straight to 115200 - the bench's first failure
+    # the board's rate ring (hcts.c, TGT_LINK_RATES): the 24 MHz C4 board
+    # has 57600 and 124800 only (no 115200, HCKLINE_NO_115200)
+    RING = (57600, 124800) if hc_board.IS_C4 else (57600, 115200, 124800)
+    FAST = RING[1]
+    # from boot, hunting, straight to the fast rate - the bench's first failure
     Hn = Link(echo=True)
     sw0 = Hn.sym8("hc_link_switches") or 0
-    n = Hn.until_answered(VREQ, 115200)
+    n = Hn.until_answered(VREQ, FAST)
     sw = ((Hn.sym8("hc_link_switches") or 0) - sw0) & 0xFF
-    check("B  a booted (hunting) ECU follows a host at 115200: exactly 2 "
-          "attempts, 1 switch",
-          n == 2 and sw == 1 and Hn.ecu_rate() == 115200,
+    check("B  a booted (hunting) ECU follows a host at %d: exactly 2 "
+          "attempts, 1 switch" % FAST,
+          n == 2 and sw == 1 and Hn.ecu_rate() == FAST,
           "attempts %s, switches %d, ECU %s" % (n, sw, Hn.ecu_rate()))
     del Hn
 
@@ -193,10 +201,12 @@ def main() -> int:
     # then the answer. Switches = the distance in the rate ring. V95 passed
     # "within 5" while its hunt lapped past the right rate (bench: a locked
     # 115200 -> 124800 change took 4 switches) - a bound that loose hid it.
-    ring = (57600, 115200, 124800)
-    for host in (115200, 124800, 57600, 124800, 115200, 57600):
+    ring = RING
+    order = ((124800, 57600, 124800, 57600) if hc_board.IS_C4
+             else (115200, 124800, 57600, 124800, 115200, 57600))
+    for host in order:
         before = L.ecu_rate()
-        dist = (ring.index(host) - ring.index(before)) % 3
+        dist = (ring.index(host) - ring.index(before)) % len(ring)
         want_n = 3 + (dist - 1) + 1
         sw0 = L.sym8("hc_link_switches") or 0
         n = L.until_answered(VREQ, host)
@@ -273,9 +283,9 @@ def main() -> int:
     ls = L.och16(842)
     sw = L.sym8("hc_link_switches")
     want = None
-    if sw is not None and L.ecu_rate() in (57600, 115200, 124800):
+    if sw is not None and L.ecu_rate() in RING:
         want = ((sw << 8) | (0x10 if L.sym8("hc_link_locked") else 0)
-                | {57600: 0, 115200: 1, 124800: 2}[L.ecu_rate()])
+                | RING.index(L.ecu_rate()))
     check("F  linkState (OCH 842) = rate | lock<<4 | switches<<8",
           want is not None and ls == want,
           "0x%04X want %s, switches %s" % (ls, want, sw))

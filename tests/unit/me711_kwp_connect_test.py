@@ -20,7 +20,7 @@ import hcpaths  # noqa: F401,E402  (puts every tools/ and tests/ module on sys.p
 import me711_kwp_connect as K          # noqa: E402
 
 FAILS = 0
-SIG = b"rusEFI HaniCore ME711 F26F2BF7"
+SIG = b"HaniCore ME711 F26F2BF7"
 
 
 def check(name, ok, detail=""):

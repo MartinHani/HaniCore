@@ -94,6 +94,7 @@ def scheduler_half_range_case() -> tuple[PT.Call, int, int, int]:
     # none, so it would correctly plan nothing and this case would prove
     # nothing about the half-range bug it exists for.
     PT.describe_engine(c)
+    PT.live_executor(c, sync=3)          # CC25 executes; see live_executor()
     c.call("hc_drysched_init")
     write16(c, "eng_adv_x10", 10)       # fire 0 -> spark 359.0 deg
     write16(c, "eng_dwell_x100", 0)
@@ -120,7 +121,12 @@ def scheduler_half_range_case() -> tuple[PT.Call, int, int, int]:
     c.call("hc_drysched_tooth", start, stamp, dt)
     c.set_t1(stamp)                     # the caller's `now` IS T1 (see below)
     c.call("hc_drysched_service", stamp, 3)
-    return c, c.u16("dry_sched_queued"), c.u16("dry_sched_executed"), 44270
+    # HELD = queued to the CC25 executor OR staged in the long-horizon table:
+    # 44270 ticks is beyond the executor's publication horizon, so since the
+    # deadline executor this event waits in the planner's table
+    # (dry_sched_pending) until it comes within reach
+    return (c, c.u16("dry_sched_queued") + c.u16("dry_sched_pending"),
+            c.u16("dry_sched_executed"), 44270)
 
 
 _GEN = (PT.ROOT / "firmware/generated/hc_config_generated.h").read_text(
@@ -192,9 +198,14 @@ def timer_ownership_case(source: int, cam: int = 1) -> PT.Call:
                       ("CFG_U_PIN_CAM1", 86),
                       ("CFG_U_PIN_CAM2", 87)):
         c.m.w8(CAL_RAM + uoff(slot), cav)
+    # CAM 2 IS ARMED ONLY WHEN THE PAGE USES IT (hctrig_me711.c, as
+    # hc_validation.c cam2_used): this case asks for both cams, so it says
+    # dual-cam sync - a raw page reads 0 there and cam 2 stayed cold
+    c.m.w8(CAL_RAM + uoff("CFG_U_SYNC_MODE"), 4)          # HC_SYNC_DUAL_CAM
     # Preserve the unrelated T0/CCM fields while proving that trigger-off
     # withdraws every T1/capture claim and trigger-on installs only its fields.
-    c.m.w16(0xFF50, 0x4242)  # T01CON: T1 running, T0 baseline
+    c.m.w16(0xFF50, 0x4242)  # T01CON: T0 and T1 running (TGT_T01CON since 2026-10-28)
+    c.m.w16(0xFE52, 0x4000)  # T1: arming must not restart it
     c.m.w16(0xFF56, 0xBEEF)  # CCM2: CC8/9 are the low byte
     c.m.w16(0xFF58, 0xABCD)  # CCM3: CC15 is the high nibble
     c.m.w16(0xFF88, 0xFFFF)  # CC8IC
@@ -204,17 +215,26 @@ def timer_ownership_case(source: int, cam: int = 1) -> PT.Call:
     return c
 
 
+def time_service(c: PT.Call, now: int) -> None:
+    """hc_drysched_time_service() at T1 = now. The caller's `now` IS T1, and
+    since the deadline executor the event itself runs at its CC25 compare -
+    which only falls due when the rig's clock is advanced to it."""
+    c.set_t1(now & 0xFFFF)
+    c.call("hc_drysched_time_service", now & 0xFFFF)
+
+
 def staged_future_case(rpm: int, delta_x10: int, start: int = 1000) -> tuple[bool, str]:
     """Exercise one long-horizon plan through the real staging and due cores."""
     c = PT.Call()
     PT.describe_engine(c)
+    PT.live_executor(c, sync=3)
     c.call("hc_drysched_init")
     c.call("hc_drysched_test_anchor", start)
     accepted = c.call("hc_drysched_schedule_after", delta_x10, 2, 1)
     stamp = 0xF200
     dt = round(1_250_000 / rpm)
     c.call("hc_drysched_test_advance", start, stamp, dt)
-    c.call("hc_drysched_time_service", stamp)
+    time_service(c, stamp)
     if accepted != 1 or c.u16("dry_sched_executed") != 0:
         return False, f"accept={accepted} early={c.u16('dry_sched_executed')}"
 
@@ -233,12 +253,12 @@ def staged_future_case(rpm: int, delta_x10: int, start: int = 1000) -> tuple[boo
     if remain:
         due = dt * remain // 60
         if due:
-            c.call("hc_drysched_time_service", (stamp + due - 1) & 0xFFFF)
+            time_service(c, (stamp + due - 1) & 0xFFFF)
             if c.u16("dry_sched_executed") != 0:
                 return False, f"executed one tick early; due={due}"
-        c.call("hc_drysched_time_service", (stamp + due) & 0xFFFF)
+        time_service(c, (stamp + due) & 0xFFFF)
     else:
-        c.call("hc_drysched_time_service", stamp)
+        time_service(c, stamp)
     ok = c.u16("dry_sched_executed") == 1 and c.u16("dry_sched_missed") == 0
     return ok, (f"dt={dt} staged_remainder={remain / 10:.1f} "
                 f"executed={c.u16('dry_sched_executed')}")
@@ -260,6 +280,7 @@ def strategy_sync_case(inj: int, ign: int, sync: int, rpm: int = 3000):
     PT.describe_engine(c, cylinders=8)
     c.m.w8(UBLOCK + CFG_U_INJ_STRATEGY, inj)
     c.m.w8(UBLOCK + CFG_U_IGN_STRATEGY, ign)
+    PT.live_executor(c, sync=sync)
     c.call("hc_drysched_init")
     for name, v in (("eng_adv_x10", 200), ("eng_dwell_x100", 300),
                     ("eng_ti_base_us", 10000), ("eng_deadtime_us", 0)):
@@ -298,7 +319,7 @@ def main() -> int:
           f"state={e.x.u8('trg_state')} reason={e.x.u16('trg_loss_reason')}")
 
     c, queued, executed, oracle = scheduler_half_range_case()
-    check("80-rpm event 17 degrees ahead is not executed at queue time",
+    check("80-rpm event 17 degrees ahead is held, not executed at queue time",
           queued > 0 and executed == 0,
           f"independent deadline delta={oracle} ticks queued={queued} executed={executed}")
 
@@ -347,8 +368,13 @@ def main() -> int:
               full_exec > 0, f"executed={full_exec}")
 
     off = timer_ownership_case(0)
-    check("triggerSource=off stops T1 and clears CC8/9/15 capture",
-          off.m.r16(0xFF50) == 0x0042
+    # 2026-10-28: T1 RUNS WHATEVER THE TRIGGER SOURCE. It is the CC25
+    # executor's clock, the output supervisor's and the ME7.5 DC monitor's;
+    # stopped with trigSource 0, a bench coil/injector pulse never ended (bench
+    # 2.7T, held ON to the 5 s guard). The disarmed CAPTURES keep a floating
+    # input quiet, so trigger-off must clear them and leave T01CON alone.
+    check("triggerSource=off keeps T1 running and clears CC8/9/15 capture",
+          off.m.r16(0xFF50) == 0x4242
           and off.m.r16(0xFF56) == 0xBE00
           and off.m.r16(0xFF58) == 0x0BCD
           and off.m.r16(0xFF88) == 0
@@ -359,8 +385,9 @@ def main() -> int:
            f"CCM3={off.m.r16(0xFF58):04X} armed={off.u8('hc_hal_trig_armed')}"))
 
     on = timer_ownership_case(1, cam=1)
-    check("triggerSource=real exclusively starts T1 and arms captures",
+    check("triggerSource=real arms the captures without restarting T1",
           on.m.r16(0xFF50) == 0x4242
+          and on.m.r16(0xFE52) >= 0x4000
           and on.m.r16(0xFF56) == 0xBEAA
           and on.m.r16(0xFF58) == 0xABCD
           and on.m.r16(0xFF88) == IC_CAM

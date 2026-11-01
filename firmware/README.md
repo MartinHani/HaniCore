@@ -9,7 +9,7 @@ Everything compiled into a HaniCore image.
 | `control/` | electronic throttle, idle, boost, VVT, knock, engine protection, fuel pump, main relay |
 | `sensors/` | wideband controller (CJ120 + LSU 4.2) |
 | `diagnostics/` | trouble codes, check-engine lamp |
-| `comms/` | K-line transport, TunerStudio server, KWP entry |
+| `comms/` | K-line transport, tuning-protocol server (the `.ini`'s CRC envelope), KWP entry |
 | `hal/` | `hchal.h`, the hardware-abstraction contract |
 | `generated/` | generated page layout, pin descriptor and presets (`tools/config_source/generate_config.py`) |
 | `targets/me711/` | the Bosch ME7.1.1 target: board header, HAL, ASIC exchange, trigger, planner and executor, flash store, startup |

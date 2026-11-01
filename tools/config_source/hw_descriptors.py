@@ -600,7 +600,7 @@ def _refuse_reserved_resources(d: "HwDescriptor") -> None:
 # (hcio711.c). Routable, with that resource named, and PROBABLE: the cavity
 # rests on the family workbook and the stage has never been measured.
 _ASIC_FRAME_OUTPUTS = {
-    104: ("LDR - boost valve (AWT N75), ASIC P7.2",
+    104: ("LDR - boost valve (VAG 1.8T N75), ASIC P7.2",
           PinCap.LOW_SIDE | PinCap.PWM_OUT, "ASIC P7.2 LDR via frame word 58",
           "family workbook 104 = SRU1_S|LDR_S; port map ASIC P7.2 = LDR "
           "(B-Muster); OEM actuator test [BIN 0x88F766] toggles FDE8.2"),
@@ -997,7 +997,7 @@ _ME711_SHEET = {
           "SY_TURBO = 1, so the distinction matters to a speed-density model"),
     # V97: the cam solenoid stages the V82 bench test already drives - the
     # MAIN CPU's own PWM pins through CJ920 low sides with freewheel diodes.
-    115: ("KNWS1 - cam timing valve 1 (AWT N205 lands here)",
+    115: ("KNWS1 - cam timing valve 1 (VAG 1.8T N205 lands here)",
           PinCap.LOW_SIDE | PinCap.PWM_OUT, "P7.0/POUT0",
           "me711.pdf p1: MAIN P7.0/POUT0 net KNWS1_P70 -> S6600 (CJ920, 2.2 A) "
           "OUT 6/7 -> cavity 115, freewheel BYG22D D6600; OEM key-on PWM init "
@@ -1056,9 +1056,10 @@ _ME75_ROWS: list[tuple[int, str, int, EvidenceClass, str, str]] = [
     (90, "G28- crank", PinCap.VR_IN | PinCap.SPECIAL_LOCKED, V, "CJ910", "crank return"),
     (86, "G40 cam", PinCap.HALL_IN | PinCap.FREQ_IN, V, "P2.8/CC8",
      "sensor takes +5 V from D141, not from the ECU pin"),
-    (29, "G70 air mass", PinCap.AIN | PinCap.FREQ_IN, P, "DISPUTED",
-     "AN0 per the schematic vs CC17 frequency per Pinout.xlsx - unresolved, and "
-     "the IO map says so explicitly"),
+    (29, "G70 air mass", PinCap.AIN, V, "P5.0/AN0",
+     "settled 2026-10-28 (.scratch/me75-reverse/IO_MAP.md, EXACT TARGET "
+     "BINARY): the DC stores AN0 where the X505P stores uhfm_w - analog, "
+     "not the CC17 frequency Pinout.xlsx claimed"),
     (101, "G31 charge air pressure", PinCap.AIN, V, "P5.14/AN14", "Bosch generic name TAGR"),
     (93, "G62 coolant", PinCap.AIN, V, "P5.10/AN10", "TMOT_P510"),
     (85, "G42 intake air", PinCap.AIN | PinCap.SPECIAL_LOCKED, V, "ASIC PXAN1",
@@ -1066,8 +1067,13 @@ _ME75_ROWS: list[tuple[int, str, int, EvidenceClass, str, str]] = [
     (17, "TMOT2 spare temperature", PinCap.AIN, V, "P5.13/AN13",
      "a spare temperature input this car does not use; iatChannel=13 moves IAT here"),
     (26, "battery", PinCap.AIN | PinCap.SPECIAL_LOCKED, V, "P5.5/AN5", ""),
-    (106, "G66 knock 2", PinCap.AIN | PinCap.SPECIAL_LOCKED, V, "P5.15/AN15", "via the knock IC"),
-    (107, "G61 knock 1", PinCap.AIN | PinCap.SPECIAL_LOCKED, V, "P5.15/AN15", "via the knock IC"),
+    # no routable resource (as the Porsche's KS1..4): the sensor reaches the
+    # CPU only as the knock IC's integrator on AN15, never as an analog input
+    # a coolant or pressure route could read (2026-10-31: they were offered)
+    (106, "G66 knock 2", PinCap.AIN | PinCap.SPECIAL_LOCKED, V, "",
+     "via the knock IC, its integrator on P5.15/AN15"),
+    (107, "G61 knock 1", PinCap.AIN | PinCap.SPECIAL_LOCKED, V, "",
+     "via the knock IC, its integrator on P5.15/AN15"),
     (92, "J338 p1 throttle 1", PinCap.AIN, V, "P5.1/AN1", "generic name IP1S"),
     (84, "J338 p4 throttle 2", PinCap.AIN, V, "P5.3/AN3", "generic name IP2S; opposing slope"),
     (35, "G79 pedal 1", PinCap.AIN, V, "P5.8/AN8", "generic name SP1S; also ASIC PXAN7"),
@@ -1099,9 +1105,22 @@ _ME75_ROWS: list[tuple[int, str, int, EvidenceClass, str, str]] = [
     (116, "ETR secondary air", PinCap.LOW_SIDE | PinCap.PWM_OUT, V, "P2.7", ""),
     (5, "LSHVK O2 heater pre-cat", PinCap.LOW_SIDE | PinCap.PWM_OUT, V, "P2.12", ""),
     (63, "LSHHK O2 heater post-cat", PinCap.LOW_SIDE | PinCap.PWM_OUT, V, "P2.4", ""),
-    (115, "N205 cam adjust valve", PinCap.LOW_SIDE | PinCap.PWM_OUT, P, "",
-     "the IO map names the connector pin but no CPU resource"),
+    # 2026-10-31: the DC drives it through the CC650 (X505P B_nwse 0x079838
+    # + the DC workbook): hcvvt711.c unit 2 -> hc_io_duty(HC_IO_LDR) ->
+    # hcasicstart_dc.inc HCCC650_OUT_N205, switched at the 10 ms frame as
+    # the stock ECU switches it. Until now it had no resource: refused.
+    (115, "N205 cam adjust valve", PinCap.LOW_SIDE | PinCap.PWM_OUT, P,
+     "CC650 reg 0x3A bit 4 (N205)",
+     "CC650 pin 10 -> CJ420B IN1 -> 115, active LOW, on/off"),
     (47, "MIL lamp", PinCap.LOW_SIDE, V, "ASIC PXO3", ""),
+    # 2026-10-31, from the DC reverse engineering (.scratch/me75-reverse/
+    # IO_MAP.md "Outputs driven by the CPU"): the two main-CPU stages the
+    # 2.7T-derived DC firmware already drives (TGT_POUT0_CAV, TGT_TACHO_CAV)
+    # had no row here, so the validator refused them.
+    (114, "CJ420B OUT3 - free PWM low side", PinCap.LOW_SIDE | PinCap.PWM_OUT, P,
+     "P7.0/POUT0", "DC workbook: unused POUT0 P7.0 -> CJ420B IN3 -> 114 [W]"),
+    (37, "TN rev counter", PinCap.LOW_SIDE | PinCap.PWM_OUT, P, "P2.13/CC13",
+     "archived I/O map + X505P routine: rev counter on P2.13 -> 37 [A][X]"),
 ]
 
 
@@ -1125,7 +1144,200 @@ def build_me75() -> HwDescriptor:
     return d
 
 
-DESCRIPTORS = {"BOSCH_ME711": build_me711, "ME75_4B0906018DC": build_me75}
+# ==========================================================================
+# THE AUDI 2.7T ME7.1 "C4" BOARD (2026-10-24) - docs/firmware/design/
+# ME71_27T_PORT_PLAN.md
+# ==========================================================================
+#
+# Built from the evidence that is variant-exact for THIS board, not from the
+# Porsche layers above:
+#   connector  tools/config_source/data/me71_c4_connector.csv <-
+#              extract_me71_c4.py <- Bosch Vari_ME75X.xls sheet SSB, column
+#              140 "ME7.1 V6 2,7l 5V T", Stueckliste 345;02 (the 2.7T BOM)
+#   CPU pins   tools/config_source/data/me71_c4_iomap.csv <- me7_port.xls FR
+#              "Belegung ME7.1 (VW) fuer C3 und C4 Muster" and ASIC "Belegung
+#              ME7.1 C4 (VW)"
+#   firmware   EXACT TARGET BINARY 4B0907551F where a resource was checked in
+#              the OEM code (pump P4.4, PWM periods, ASIC frame)
+# Every route is PROBABLE: SAME-GENERATION BOSCH data, no measurement on a
+# 2.7T ECU yet. A cavity the firmware has no drive or read path for is
+# described but offered to nothing - the V95 "silent dead route" rule.
+C4_CONN_CSV = ROOT / "tools/config_source/data/me71_c4_connector.csv"
+C4_SRC = ("Vari_ME75X.xls SSB col 140 (ME7.1 V6 2,7l 5V T, 345;02) + "
+          "me7_port.xls 'ME7.1 (VW) C3/C4' / 'ME7.1 C4' columns")
+
+_I, _G = PinCap.INJ_OUT | PinCap.LOW_SIDE, PinCap.IGN_OUT
+_A, _LK = PinCap.AIN, PinCap.SPECIAL_LOCKED
+_C4_ROUTES = {
+    # cavity: (meaning, caps, hal_resource, why)
+    96: ("EV1 - injector output 1", _I, "P7.6/CC30", "SSB A_P_EV1; FR EV1 CC30IO"),
+    97: ("EV2 - injector output 2", _I, "P7.5/CC29", "SSB A_P_EV2; FR EV2 CC29IO"),
+    88: ("EV3 - injector output 3", _I, "P7.4/CC28", "SSB A_P_EV3; FR EV3 CC28IO"),
+    89: ("EV4 - injector output 4", _I, "P8.7/CC23", "SSB A_P_EV4; FR EV4 CC23IO"),
+    112: ("EV5 - injector output 5", _I, "P8.6/CC22", "SSB A_P_EV5; FR EV5 CC22IO"),
+    113: ("EV6 - injector output 6", _I, "P8.5/CC21", "SSB A_P_EV6; FR EV6 CC21IO"),
+    102: ("ZUE1 - ignition output 1", _G, "P2.0/CC0",
+          "SSB A_P_ZUE1X; FR ZSP1 CC0IO; one CK110 S8591"),
+    103: ("ZUE2 - ignition output 2", _G, "P2.1/CC1", "SSB A_P_ZUE2X; FR ZSP2 CC1IO"),
+    94: ("ZUE3 - ignition output 3", _G, "P2.2/CC2", "SSB A_P_ZUE3X; FR ZSP3 CC2IO"),
+    95: ("ZUE4 - ignition output 4", _G, "P2.3/CC3", "SSB A_P_ZUE4X; FR ZSP4 CC3IO"),
+    110: ("ZUE5 - ignition output 5", _G, "P2.4/CC4", "SSB A_P_ZUE5X; FR ZSP5 CC4IO"),
+    111: ("ZUE6 - ignition output 6", _G, "P2.5/CC5", "SSB A_P_ZUE6X; FR ZSP6 CC5IO"),
+    82: ("DZG+ - crank sensor, differential, CJ910",
+         PinCap.VR_IN | PinCap.FREQ_IN | _LK, "P2.15/CC15",
+         "SSB E_F_NBMA; FR NBM CC15IO + T0IN"),
+    86: ("PHA1 - camshaft position 1", PinCap.HALL_IN | PinCap.FREQ_IN, "P2.8/CC8",
+         "SSB E_T_PHA1; FR NWDG CC8IO"),
+    87: ("PHA2 - camshaft position 2", PinCap.HALL_IN | PinCap.FREQ_IN, "P2.9/CC9",
+         "SSB E_T_PHA2; FR NWDG2 CC9IO"),
+    117: ("ESBM+ - throttle motor +", PinCap.DBW_HBRIDGE | _LK, "P7.2/POUT2",
+          "SSB A_T_ESBM+; FR DVE1 POUT2; BOM S8100 CJ220"),
+    118: ("ESBM- - throttle motor -", PinCap.DBW_HBRIDGE | _LK, "P7.7/CC31",
+          "SSB A_T_ESBM-; FR DVE2 CC31IO"),
+    92: ("IP1 - throttle position 1", _A, "P5.1/AN1", "SSB E_A_IP1S; FR IP1S AN1"),
+    84: ("IP2 - throttle position 2", _A, "P5.3/AN3", "SSB E_A_IP2S; FR IP2S AN3"),
+    35: ("SP1 - pedal position 1", _A, "P5.8/AN8", "SSB E_A_SP1S; FR SPS1/DKG AN8"),
+    34: ("SP2 - pedal position 2", _A, "P5.9/AN9", "SSB E_A_SP2S; FR SPS2 AN9"),
+    29: ("HFM - air mass", _A | PinCap.FREQ_IN, "P5.0/AN0", "SSB E_A_HFM; FR HFM/P AN0"),
+    101: ("DS - charge/manifold pressure", _A, "P5.14/AN14",
+          "SSB E_A_DS/E_A_PLADE; FR TAGR/DS AN14"),
+    93: ("TMOT - coolant temperature, on the S5500", _A, "ASIC P5.0/AN0",
+         "SSB E_A_TMOT; ASIC C4 AN0 = TMOT (S5500 window w00, as on ME7.1.1)"),
+    85: ("TANS - intake air temperature, on the S5500", _A, "ASIC P5.1/AN1",
+         "SSB E_A_TANS at 85 (and bridged to 26); ASIC C4 AN1 = TANS (w01). "
+         "On the Porsche 85 is DSBKV - here it IS the IAT input"),
+    100: ("AGRPOT - EGR position input, a spare 0-5 V analog input", _A,
+          "P5.11/AN11",
+          "SSB E_A_AGRPOT; FR IAGR AN11. Pot input with the 5 V supply beside "
+          "it: the natural home of an external wideband's 0-5 V output"),
+    70: ("LS1VK - front O2 bank 1 signal (narrowband input)", _A, "P5.6/AN6",
+         "SSB E_A_LS1VK; FR LS1VK AN6. An external wideband's 0-5 V output "
+         "may replace the narrowband here (low-impedance source over the "
+         "LSF bias network)"),
+    13: ("LS2VK - front O2 bank 2 signal (narrowband input)", _A, "P5.4/AN4",
+         "SSB E_A_LS2VK; FR LS2VK AN4"),
+    69: ("LS1HK - rear O2 bank 1 signal", _A, "P5.7/AN7",
+         "SSB E_A_LS1HK; FR LS1HK AN7"),
+    11: ("LS2HK - rear O2 bank 2 signal", _A, "P5.10/AN10",
+         "SSB E_A_LS2HK; FR LS2HK AN10"),
+    65: ("EKPR - fuel pump relay", PinCap.LOW_SIDE | PinCap.RELAY_OUT, "P4.4/A20",
+         "SSB A_S_EKPR; FR EKP on A20 = P4.4; EXACT TARGET BINARY 4B0907551F "
+         "BSET/BCLR P4.4, init P4 = 0x00F0 DP4 = 0x00DF (HIGH = off)"),
+    104: ("LDR - boost control valve (N75), MAIN POUT1",
+          PinCap.LOW_SIDE | PinCap.PWM_OUT, "P7.1/POUT1",
+          "SSB A_T_LDR; FR LDR/SU POUT1; OEM PP1 = 12499 at fCPU/64 = 30 Hz"),
+    114: ("EAGR - EGR valve stage, MAIN POUT0 (a free PWM low side)",
+          PinCap.LOW_SIDE | PinCap.PWM_OUT, "P7.0/POUT0",
+          "SSB A_T_EAGR; FR AGR POUT0"),
+    115: ("NWS - cam timing valve, both banks (3.7 A), on the S5500",
+          PinCap.LOW_SIDE | PinCap.PWM_OUT, "ASIC P2.11 NWS via frame word 55",
+          "SSB A_S_NWS 3,7A; ASIC C4 CC11IO = NWS; frame word 55 = ASIC P2 "
+          "image (hcio711.c, the Porsche analysis of the same table)"),
+    47: ("MIL - check-engine lamp, on the S5500", PinCap.LOW_SIDE,
+         "ASIC P1L.2 MIL via frame word 54",
+         "SSB A_S_MIL; ASIC C4 A2 (P1L.2) = MIL; frame word 54 = ASIC P1 image"),
+    37: ("TN - engine speed output to the cluster", PinCap.LOW_SIDE | PinCap.PWM_OUT,
+         "P2.13/CC13", "SSB A_T_TN; FR TN CC13IO"),
+}
+# dedicated wires - described, never routed (power, grounds, screens, sensor
+# supplies, heater stages the lambda layer owns, knock, CAN, K-line)
+_C4_LOCKED = {
+    1: "Electronics ground", 2: "Electronics ground",
+    3: "KL15 - the SWITCHED SUPPLY of this board (no cavity 21, no relay drive)",
+    62: "KL30 permanent supply", 43: "K-line", 90: "crank sensor -",
+    4: "O2 heater bank 2 pre-cat (S5500 P7.4)",
+    5: "O2 heater bank 1 pre-cat (S5500 P8.7)",
+    6: "O2 heater bank 2 post-cat (S5500 P7.6)",
+    63: "O2 heater bank 1 post-cat (S5500 P7.5)",
+    106: "knock sensor 1 (CC195)", 107: "knock sensor 2 (CC195)",
+    26: "TANS bridged to cavity 85 - route IAT on 85",
+    58: "CAN low", 77: "CAN low", 60: "CAN high", 79: "CAN high",
+}
+_C4_RESERVED_CPU_PINS = {
+    "P6.0": "external flash chip select", "P6.1": "external RAM chip select",
+    "P6.3": "VPROGEN (driven LOW, start_me711.a66)",
+    "P6.4": "CS_ASIC, the S5500 chip select", "P4.7": "CS_EEPR",
+    "P3.8": "SSC MRST (S5500)", "P3.9": "SSC MTSR (S5500)", "P3.13": "SSC SCLK",
+    "P3.10": "ASC0 TXD (K-line)", "P3.11": "ASC0 RXD (K-line)",
+    "P3.12": "NLEN_FR, the CJ910 run-on veto",
+    "P3.15": "the CJ220 status flag SF", "P2.11": "EGENFR, the CJ220 enable",
+}
+
+
+def build_vag_me71_c4() -> HwDescriptor:
+    rows: dict = {}
+    for r in csv.DictReader(C4_CONN_CSV.open(encoding="utf-8")):
+        rows.setdefault(int(r["cavity"]), []).append(r)
+    d = HwDescriptor("VAG_ME71_C4",
+                     "Bosch ME7.1 C4 - Audi 2.7T biturbo (24 MHz)",
+                     "121-pin SKE; functions per Bosch SSB column 345;02")
+    for n in range(1, PIN_COUNT + 1):
+        names = "|".join(r["vw_name"] for r in rows.get(n, []))
+        if n in _C4_ROUTES:
+            meaning, cap, hal, why = _C4_ROUTES[n]
+            d.pins.append(PhysicalPin(
+                n, names or meaning.split(" - ")[0], meaning,
+                (PinProperty(cap, EvidenceClass.PROBABLE, "C4 BOARD: %s; %s"
+                             % (C4_SRC, why)),),
+                hal, EvidenceClass.PROBABLE, "C4 BOARD: " + why))
+        elif n in _C4_LOCKED or rows.get(n):
+            text = _C4_LOCKED.get(n) or "; ".join(r["function"] for r in rows[n])
+            d.pins.append(PhysicalPin(
+                n, names, text,
+                (PinProperty(PinCap.SPECIAL_LOCKED, EvidenceClass.PROBABLE,
+                             "C4 BOARD: %s - described, no firmware path" % C4_SRC),)))
+        else:
+            d.pins.append(PhysicalPin(n))
+    _apply_switch_inputs(d)
+    bad = [(p.number, cpu_pin(p.hal_resource)) for p in d.pins
+           if cpu_pin(p.hal_resource) in _C4_RESERVED_CPU_PINS
+           and (p.capabilities & _ROUTE_CAPS)]
+    if bad:
+        raise SystemExit("C4: reserved CPU pin offered on a route: %s" % bad)
+    assert len(d.pins) == PIN_COUNT
+    return d
+
+
+# what a tuner reads in a 2.7T pin dropdown: the shared names, with the
+# cavities whose function differs on this board
+FRIENDLY_CAVITY_NAMES_C4 = dict(FRIENDLY_CAVITY_NAMES)
+FRIENDLY_CAVITY_NAMES_C4.update({
+    85: "Intake air temperature",
+    100: "EGR position input (spare 0-5 V)",
+    70: "Front O2 sensor 1 signal",
+    13: "Front O2 sensor 2 signal",
+    114: "EGR valve output",
+    115: "Cam timing valve (both banks)",
+})
+
+
+# what a tuner reads in an ME7.5 DC pin dropdown (2026-10-31): this board's
+# own connector (= the AWT harness), named from _ME75_ROWS. Until now the DC
+# .ini was built from the Porsche descriptor and its names.
+FRIENDLY_CAVITY_NAMES_DC = {
+    82: "Crankshaft position", 90: "Crankshaft position -",
+    86: "Camshaft position", 29: "MAF sensor", 101: "Charge air pressure",
+    93: "Coolant temperature", 85: "Intake air temperature",
+    17: "Spare temperature input", 26: "Battery voltage",
+    106: "Knock sensor 2", 107: "Knock sensor 1",
+    92: "Throttle position 1", 84: "Throttle position 2",
+    35: "Pedal sensor 1", 34: "Pedal sensor 2",
+    117: "Throttle motor +", 118: "Throttle motor -",
+    98: "5 V sensor supply", 53: "5 V sensor supply", 27: "MAF ground",
+    102: "Ignition output 1", 103: "Ignition output 2",
+    94: "Ignition output 3", 95: "Ignition output 4",
+    96: "Injector output 1", 97: "Injector output 2",
+    88: "Injector output 3", 89: "Injector output 4",
+    21: "Main relay", 65: "Fuel pump relay", 64: "Tank vent valve",
+    104: "Boost control valve", 116: "Electric thermostat output",
+    5: "Front O2 sensor heater", 63: "Rear O2 sensor heater",
+    115: "Cam timing valve", 47: "Check engine lamp",
+    114: "Spare PWM output (CJ420B)", 37: "Tacho output",
+}
+
+
+DESCRIPTORS = {"BOSCH_ME711": build_me711, "ME75_4B0906018DC": build_me75,
+               "VAG_ME71_C4": build_vag_me71_c4}
 
 _CAP_NAMES = [
     (PinCap.AIN, "AIN"), (PinCap.DIN, "DIN"), (PinCap.FREQ_IN, "FREQ_IN"),

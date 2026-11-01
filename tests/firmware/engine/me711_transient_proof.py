@@ -47,6 +47,10 @@ def off(name):
         return T.d(T._gen, name)
 
 
+import me711_heartbeat_gap_proof as _HBP   # noqa: E402
+TPMS = _HBP.TPMS
+
+
 class Rig:
     def __init__(self):
         self.r = T.boot()
@@ -66,7 +70,8 @@ class Rig:
             self.r("hc_cal_set_u8", base + i, v)
 
     def fuel(self, base, rpm=2000, crank=0, cut=0, ms=10):
-        self.t = (self.t + 1250 * ms) & 0xFFFF
+        # T1 ticks per ms of THIS board (1250, or 750 on the 2.7T)
+        self.t = (self.t + TPMS // 10 * ms) & 0xFFFF
         self.r.m.w16(T1, self.t)
         self.r.m.w16(T.sym("trg_rpm") & 0xFFFF, rpm)
         return self.r("hc_trans_fuel", base, crank, cut)

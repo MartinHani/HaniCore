@@ -28,7 +28,6 @@
 #include <reg167.h>
 #include "hctarget.h"
 #include "hcumkom.h"
-#include "hcliveforensics.h"
 
 /* Bosch ME7 FR question -> answer, no fixed point. [FR UMKOM 7.10 p1489] */
 static const unsigned char UM_FR[16] = {
@@ -92,10 +91,6 @@ void hc_umkom_service(unsigned int volatile far *frame)
 
     w1 = frame[1];
     hc_umkom_last_rx = w1;
-    hc_lf_um_before(um_acc_hi, um_acc_lo, (unsigned int)um_seed, um_ans,
-                    (unsigned int)hc_umkom_phase,
-                    (unsigned int)hc_umkom_health,
-                    (unsigned int)hc_umkom_expect, hc_umkom_answers, w1);
 
     /* --- ECHO ticks: 3 of every 4. Re-send the last answer, advance the
        accumulator, and leave. [BIN] 0x8B1E6E -> 0x8B20DC, then 0x8B20FC. --- */
@@ -107,7 +102,6 @@ void hc_umkom_service(unsigned int volatile far *frame)
         hc_umkom_last_tx = um_ans;
         um_acc_hi = (unsigned int)(um_acc_hi + 1u);      /* 0x8B20FC          */
         um_acc_lo = (unsigned int)(um_acc_lo + 0x00C7u);
-        hc_lf_um_after(um_acc_hi, um_acc_lo, (unsigned int)um_seed, um_ans);
         return;
     }
 
@@ -175,5 +169,4 @@ void hc_umkom_service(unsigned int volatile far *frame)
 
     um_acc_hi = (unsigned int)(um_acc_hi + 1u);          /* [BIN] 0x8B20FC    */
     um_acc_lo = (unsigned int)(um_acc_lo + 0x00C7u);
-    hc_lf_um_after(um_acc_hi, um_acc_lo, (unsigned int)um_seed, um_ans);
 }

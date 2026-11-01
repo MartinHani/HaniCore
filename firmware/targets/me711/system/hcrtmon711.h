@@ -49,12 +49,30 @@ typedef struct {
 /* Near RAM, at an address reserved by the linker: 0xF280 precedes the
    serial transport state and the user stack's guard band. A near operand keeps every update a
    single 4-byte instruction in the ISRs that make them. */
+#if !TGT_BOARD_VAG_ME71_C4
 #define TGT_RTMON_ADDR 0xF280u
+#else
+/* the 2.7T C167CR has no RAM at 0xF280 (hcsafety.h): XRAM, under the
+   user stack's guard band, kept out of every linker class */
+#define TGT_RTMON_ADDR 0xE5A0u
+#endif
 #define HC_RT (*(hc_rt_t volatile *)TGT_RTMON_ADDR)
 typedef char hc_rt_fits[(sizeof(hc_rt_t) <= 0x40u) ? 1 : -1];
 #define HC_RT_MAX(field, v) do { unsigned int _v = (v); \
     if (_v > HC_RT.field) HC_RT.field = _v; } while (0)
 #define HC_RT_INC(field) do { if (HC_RT.field != 0xFFFFu) HC_RT.field++; } while (0)
+
+/* THE MAIN-LOOP PASS PROFILE (2026-10-28, .scratch/firmware-stability 03).
+   Words of TGT_RAM_PASSREC:
+     0 magic 0x5052   1 passes > 20 ms   2 worst pass, ms   3 worst pass, T
+     (meaningless at >= one T7 wrap: 52 ms, 87 ms on the 2.7T)
+     4 the worst pass's longest segment   5 that segment, T
+     6..9 scratch (segment start T7, pass start ms, this pass's longest
+     segment T and id)   10 + id: segment id's worst, T (id 0..21).
+   pass_cp(id) in hcmain_me711.c ends segment id. */
+#define HC_PASSREC ((unsigned int volatile far *)(TGT_EXTRAM_BASE + TGT_RAM_PASSREC))
+#define HC_PASS_SEGS 22u
+void far hc_pass_begin(unsigned int now_ms, unsigned int pass_T);
 
 void far hc_rtmon_init(void);
 void far hc_rtmon_service(unsigned int now_ms);   /* main loop: scans, mirrors */

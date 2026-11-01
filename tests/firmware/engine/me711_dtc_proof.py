@@ -115,7 +115,7 @@ def fresh():
               "CFG_U_PIN_TPS2", "CFG_U_PIN_APP1", "CFG_U_PIN_APP2"):
         pg8(x, n, 255)                                # unrouted
     pg8(x, "CAL_DBW_ENABLE", 0)
-    for n in ("eng_sensor_err", "trg_synclost", "trg_cycle_lost", "asic_timeouts",
+    for n in ("eng_sensor_err", "trg_synclost", "trg_cycle_lost", "hc_asic_run_timeout",
               "hc_cfg_validation", "hc_ign_ovd_latch"):
         ram16(x, n, 0)
     x.call("hc_dtc_init")
@@ -131,7 +131,12 @@ def cel_run(x, t, key=1, frames=3):
     for _ in range(frames):
         x.call("hc_io_frame")
     st = x.call("hc_cel_state")
-    lamp = not (x.call("hc_io_word", 6) & 1)       # active LOW, P7.0
+    # the lamp stage, active LOW: ASIC P7.0 (TX word 58 = index 6, bit 0) on
+    # the Porsche; ASIC P1L.2 (word 54 = index 2, bit 2) on the C4 board
+    # (hcio711.c C4_MIL_BIT)
+    import hc_board
+    w, bit = (2, 0x0004) if hc_board.IS_C4 else (6, 0x0001)
+    lamp = not (x.call("hc_io_word", w) & bit)
     return st, lamp
 
 

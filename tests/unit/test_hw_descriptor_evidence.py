@@ -392,13 +392,17 @@ def test_every_me75_row_names_the_same_source_document(me75):
     assert HW._ME75_SRC.endswith("HANICORE_ENGINE_IO_MAP.md")
 
 
-def test_me75_leaves_the_disputed_air_mass_pin_probable(me75):
-    """The I/O map states plainly that the two sources disagree about whether
-    connector pin 29 is analog AN0 or a frequency on CC17, and refuses to
-    resolve it. The descriptor must carry that uncertainty, not erase it."""
+def test_me75_air_mass_pin_is_settled_by_the_target_binary(me75):
+    """The archived I/O map left pin 29 disputed (AN0 per the schematic, a CC17
+    frequency per Pinout.xlsx). 2026-10-28 the DC's own code settled it
+    (.scratch/me75-reverse/IO_MAP.md): it stores AN0 where the X505P stores
+    uhfm_w. The row must say analog AN0 and name that resolution - not keep a
+    dispute the binary answered, nor drop the reason."""
     p = me75.pin(29)
-    assert p.properties[0].evidence is EvidenceClass.PROBABLE
-    assert p.hal_resource == "DISPUTED"
+    assert p.properties[0].evidence is EvidenceClass.VERIFIED
+    assert p.hal_resource == "P5.0/AN0"
+    assert not p.capabilities & PinCap.FREQ_IN
+    assert "uhfm_w" in p.properties[0].source
 
 
 def test_pins_the_me75_io_map_does_not_name_have_no_capability(me75):

@@ -59,9 +59,27 @@ void hc_load_select(unsigned int tps) {
     {
         /* a missing or implausible sample HOLDS the last good one (aged
            above, released after ambientMaxAge) - never the fixed value */
+#if TGT_BOARD_VAG_ME71_C4 && !TGT_BOARD_VAG_ME75_DC
+        /* the 2.7T C4 board: HOG is a MAIN-CPU input, AN13 (me7_port.xls
+           "ME7.1 C4": AN13 = HOG; Bosch BOM 345;02 fits the SMD082), and the
+           family's DSUGRAD is 16221 (8D0907551M 0x1BE68, 4B0907551F
+           0x1BBC8; DSUOFS 0): hPa = counts x 16221/64 x 5/1024 = 1267/1024 */
+        raw=hc_fresh_ok(HC_AIN_MAF2)?(unsigned int)(hc_hal_ain_f(HC_AIN_MAF2)&0x03FFu):0xFFFFu;
+        if(raw<=1023u) {
+            raw=DIV((unsigned long)raw*1267u,1024u);
+#else
         raw=hc_fresh_asic_an(8u);
         if(raw<=1023u) {
+#if TGT_BOARD_VAG_ME75_DC
+            /* the ME7.5 DC: the CC650's reg 0x16 x4, in window tag 8
+               (hcasicstart_dc.inc); the DC's DSUGRAD is 16221 / DSUOFS 0
+               [0x81BF66], the 2.7T's numbers - it read the 2.7T's AN13
+               until 2026-11-01 */
+            raw=DIV((unsigned long)raw*1267u,1024u);
+#else
             raw=DIV((unsigned long)raw*1265u,1024u);
+#endif
+#endif
             if(raw>=400u && raw<=1200u) {
                 L.ambient=raw; L.ambient_source=2u; L.ambient_valid=1u; L.ambient_age_ms=0uL;
             }

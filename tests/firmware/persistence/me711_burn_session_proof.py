@@ -138,8 +138,7 @@ def map_sym(map_path, name):
 
 
 def p3_offset():
-    ini = ROOT / ("tunerstudio/hanicore_me711_%s.ini"
-                  % PI.STEM.replace("HaniCore_ME711_", ""))
+    ini = PI.INI
     if ini.exists():
         m = re.search(r"^\s*(\w*[Pp]3\w*|persistTestByte\w*)\s*=\s*scalar,"
                       r"\s*U08,\s*(\d+)", ini.read_text(errors="replace"),

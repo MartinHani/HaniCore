@@ -27,8 +27,10 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-GATE = ROOT / "tests/tunerstudio/me711_och_contract_proof.py"
-LIVE_INI = ROOT / "tunerstudio/hanicore_me711.ini"
+GATE = ROOT / "tests/tuning/me711_och_contract_proof.py"
+sys.path.insert(0, str(ROOT / "tools" / "lib"))
+import hc_board  # noqa: E402  the board's own .ini - the build checks THAT one
+LIVE_INI = ROOT / "tuning" / hc_board.INI
 TARGET_H = ROOT / ("firmware/targets/me711/hctarget.h")
 BUILD = ROOT / "tools/build/build_hanicore_me711.py"
 

@@ -50,6 +50,7 @@ import hcpaths  # noqa: F401,E402  (puts every tools/ and tests/ module on sys.p
 import c167sim as S                       # noqa: E402
 import me711_heartbeat_gap_proof as HB    # noqa: E402
 import me711_image as PI                  # noqa: E402
+import hc_board as HCB                    # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 TGT = ROOT / "firmware/targets/me711"
@@ -63,6 +64,29 @@ SENTINEL = 0x0002
 
 FAILS = 0
 CHECKS = 0
+
+
+def board_asm(text):
+    """`text` with the inactive branch of every `$IF (BOARD_C4)` /
+    `$IF (BOARD_DC)` ... `$ELSE` ... `$ENDIF` dropped, as A166 assembles it
+    for HANICORE_BOARD (the DC builds on the C4 branch)."""
+    flag = {"BOARD_C4": HCB.IS_C4, "BOARD_DC": HCB.IS_DC}
+    out, stack = [], []
+    for line in text.splitlines(keepends=True):
+        s = line.strip()
+        m = re.match(r"\$IF\s*\(\s*(\w+)\s*\)", s)
+        if m:
+            stack.append(flag.get(m.group(1), True))
+            continue
+        if s.startswith("$ELSE") and stack:
+            stack[-1] = not stack[-1]
+            continue
+        if s.startswith("$ENDIF") and stack:
+            stack.pop()
+            continue
+        if all(stack):
+            out.append(line)
+    return "".join(out)
 
 
 def check(name, ok, detail=""):
@@ -124,6 +148,8 @@ def call_predict(rig, fr, as_):
     # me711_nvm_proof.Ecu.call().
     saved = (cpu.csp, cpu.ip, cpu.m.sfr[0xFE12], cpu.ext)
     cpu.ext = None
+    sp0 = cpu.m.sfr[0xFE12]   # returned = SENTINEL AND the frame unwound:
+    # code at seg:0002 exists (0x860002, 2026-10-25)
     cpu.push(SENTINEL)
     cpu.csp = (addr >> 16) & 0xFF
     cpu.ip = addr & 0xFFFF
@@ -131,7 +157,7 @@ def call_predict(rig, fr, as_):
     cpu.sr(9, as_ & 0xFF)
 
     for _ in range(20000):
-        if (cpu.ip & 0xFFFF) == SENTINEL:
+        if (cpu.ip & 0xFFFF) == SENTINEL and cpu.m.sfr[0xFE12] >= sp0:
             break
         cpu.step()
     else:
@@ -175,11 +201,16 @@ def main() -> int:
               "%s (got %d)" % (why, got))
 
     # ------------------------------------------- the startup actually does it
-    src = START.read_text(errors="replace")
+    # THIS BOARD'S startup: the ME7.5 DC's block (2026-10-28) holds NLEN_FR
+    # LOW ahead of this one, so a plain index() of the whole file read the
+    # DC's `BSET DP3.12` and failed the Porsche on a line it never assembles
+    src = board_asm(START.read_text(errors="replace"))
+    latch = "BCLR    P3.12" if HCB.IS_DC else "BSET    P3.12"
     check("the startup latches P3.12 before it drives it",
-          src.index("BSET    P3.12") < src.index("BSET    DP3.12"),
+          latch in src and "BSET    DP3.12" in src
+          and src.index(latch) < src.index("BSET    DP3.12"),
           "latch before direction - the OEM's order, and the only one that "
-          "cannot glitch the line low")
+          "cannot glitch the line %s" % ("high (DC: held LOW)" if HCB.IS_DC else "low"))
     # THE INSTRUCTION, NOT THE WORD. `src.index("EINIT")` finds the first
     # mention of EINIT in a COMMENT, which in this file is hundreds of lines
     # above the instruction - so the check passed or failed on prose.

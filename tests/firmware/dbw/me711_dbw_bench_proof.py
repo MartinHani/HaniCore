@@ -75,8 +75,9 @@ def check(name, ok, detail=""):
 
 
 def hdr_int(name):
+    import hc_board   # THIS board's branch of hctarget.h (EKP P4.4 on the C4)
     m = re.search(r"#define\s+%s\s+(\d+)" % name,
-                  HDR.read_text(errors="replace"))
+                  hc_board.target_text())
     if not m:
         raise SystemExit("%s is not in hctarget.h" % name)
     return int(m.group(1))
@@ -221,6 +222,7 @@ def run_case(pokes, cmd_name, steps):
         "abort": rig.mem.r16(BOP.sym("hcb_abort") & 0xFFFF),
         "pulses": rig.mem.r16(BOP.sym("hcb_pulses") & 0xFFFF),
         "dp2": rig.mem.r16(0xFFC2),
+        "dp4": rig.mem.r16(0xFFCA),
         "dp7": rig.mem.r16(0xFFD2),
         "dp3": rig.mem.r16(0xFFC6),
         "dp8": rig.mem.r16(0xFFD6),
@@ -460,6 +462,7 @@ def main() -> int:
     # P2.12/CC12IO through a CJ920, both ME7.1.1 port-map columns agreeing.
     EKP_CAV = hdr_int("TGT_EKP_CONN_PIN")
     EKP_BIT = hdr_int("TGT_EKP_PORT_BIT")
+    EKP_PORT = hdr_int("TGT_EKP_PORT_NO")      # P2 on the Porsche, P4 on the C4
 
     r = sub([[armed, 1, 0], [cyl, 1, 0], [relay_pin, 1, EKP_CAV]],
             "cmdTestRelay")
@@ -478,20 +481,21 @@ def main() -> int:
           "mean nothing")
     if r["writes"]:
         ports = sorted({nm for _pc, nm in r["writes"]})
-        check("on P2, where cavity %d lives, and nowhere else" % EKP_CAV,
-              set(ports) <= {"P2", "DP2", "ODP2"},
-              "wrote %s - cavity %d is P2.%d"
-              % (", ".join(ports), EKP_CAV, EKP_BIT))
+        check("on P%d, where cavity %d lives, and nowhere else" % (EKP_PORT, EKP_CAV),
+              set(ports) <= {"P%d" % EKP_PORT, "DP%d" % EKP_PORT, "ODP%d" % EKP_PORT},
+              "wrote %s - cavity %d is P%d.%d"
+              % (", ".join(ports), EKP_CAV, EKP_PORT, EKP_BIT))
         lo, hi = BOP.seg_range("?PR?HCBENCH")
         pcs = [w[0] for w in r["writes"]]
         check("every write is inside hcbench's own code",
               all(lo <= pc <= hi for pc in pcs),
               "PCs 0x%06X..0x%06X" % (min(pcs), max(pcs)))
+    dpx = r["dp%d" % EKP_PORT]
     check("THE RELAY PIN IS AN INPUT AGAIN AT THE END",
-          (r["dp2"] & (1 << EKP_BIT)) == 0,
-          "DP2 = 0x%04X, bit %d clear - a bench command that latched a relay "
+          (dpx & (1 << EKP_BIT)) == 0,
+          "DP%d = 0x%04X, bit %d clear - a bench command that latched a relay "
           "would be the one thing this mode exists to avoid"
-          % (r["dp2"], EKP_BIT))
+          % (EKP_PORT, dpx, EKP_BIT))
     check("and the run stopped on its own",
           r["state"] in (2, 4),
           "hcbState=%d (2 DONE / 4 ABORTED), %d pulse(s), abort=0x%04X"

@@ -314,8 +314,7 @@ def main_one(stem: str) -> int:
     # ---- H: what TunerStudio and the preset store ----
     import re as _re
     import me711_image as PI
-    inis = sorted((ROOT / "tunerstudio").glob(
-        "hanicore_%s*.ini" % PI.STEM[len("HaniCore_"):].lower()))
+    inis = sorted((ROOT / "tuning").glob(PI.INI.stem + "*.ini"))
     rows = []
     for f in inis:
         m = _re.search(r"^\s*trigAngleX10\s*=\s*scalar,\s*(\w+),\s*(\d+),\s*\"([^\"]*)\",\s*([\d.]+),\s*([\d.-]+),\s*([\d.-]+),\s*([\d.-]+)",

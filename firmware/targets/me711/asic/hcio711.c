@@ -122,6 +122,34 @@ extern unsigned char hc_hal_trig_armed;   /* hchal.h: not included (far prototyp
 #include "hc_config_manager.h"
 #include "hc_validation.h"
 #include "hc_route.h"
+#if TGT_HAS_CJ110
+/* the ME7.5 DC's analog CJ110 core, compiled into this module (one object,
+   the linker file unchanged) - firmware/sensors/hccj110.c, host-tested */
+#include "hccj110.c"
+#endif
+#if TGT_HAS_CJ110
+static hccj110_t cj110;            /* bank 1, the DC's only wideband        */
+static unsigned int cj110_heat_ms; /* time in the heater sequence           */
+static unsigned int cj110_last_ms;
+#define CJ110_PREHEAT_MS  10000u   /* 2 V while the exhaust can still be wet */
+#define CJ110_PREHEAT_DV  20u      /* 2.0 V effective                        */
+#define CJ110_RAMP_FROM   70u      /* then 7.0 V ...                         */
+#define CJ110_RAMP_TO     120u     /* ... to 12.0 V at 0.4 V/s (rusEFI's    */
+#define CJ110_RAMP_DV_S   4u       /*  open-loop envelope - no Ri here)     */
+#define CJ110_HOT_AFTER_MS 5000u   /* lambda only 5 s after the ramp's end  */
+#endif
+#if TGT_BOARD_VAG_ME75_DC
+/* set here, applied by asic/hcasicstart_dc.inc through the CC650 shadows:
+   the run-on hold (reg 0x44 bit 2), the CJ110 LA line (reg 0x46 bit 0) and
+   the channel ON mask of the last hc_io_frame() (MIL, cam valve) */
+extern unsigned char hc_dc_hold;
+extern unsigned char hc_dc_la;
+extern unsigned char hc_dc_io_on;
+sbit IO_DC_LSU_HEAT  = P2  ^ TGT_DC_LSU_HEAT_BIT;
+sbit IO_DC_LSU_HEATD = DP2 ^ TGT_DC_LSU_HEAT_BIT;
+sbit IO_DC_NB_HEAT   = P2  ^ TGT_DC_NB_HEAT_BIT;
+sbit IO_DC_NB_HEATD  = DP2 ^ TGT_DC_NB_HEAT_BIT;
+#endif
 extern unsigned int far hc_dbw_term_f(unsigned char i);
 
 #define IO_OCH  ((unsigned char huge *)(TGT_EXTRAM_BASE + TGT_RAM_OCH))
@@ -149,6 +177,7 @@ sbit IO_CJ_CS2   = P8  ^ 2;
    unchanged from V79 to the first V93 bench image, held both pre-cat heater
    FETs ON from ASIC start. The OEM never BSETs/BCLRs these two bits (it does
    for LDR, TEV and the post-cat pair) - it drives these gates another way. */
+#if !TGT_BOARD_VAG_ME71_C4
 static const unsigned int idle_img[HC_IO_WORDS] = {
     0x00FFu, 0x0000u, 0x3DCFu, 0x0069u, 0x6301u, 0x00F0u, 0x7FEFu
 };
@@ -157,6 +186,37 @@ static const unsigned int ch_bit[HC_IO_COUNT] = {
     0x0004u, 0x0008u, 0x0010u, 0x0020u, 0x0040u, 0x8000u,
     0x0001u                                 /* P7.0 lamp, active LOW */
 };
+#else
+/* THE AUDI 2.7T ME7.1 C4 IMAGES (2026-10-24). The OEM's own seed, computed
+   exactly as the Porsche one above was ((cal & mask) | (~mask & default)
+   from page 0x0207 at 0x8717A6.. in 4B0907551F - the same code on both
+   boards, and the same computation reproduces the Porsche values above):
+       P6 00FF  P0 0000  P1 31C7  P2 FFF9  P3 6301  P4 0010  P7/P8 9061
+   with two HaniCore policies applied, as on the Porsche:
+     - P1L.3 NLEN_AS = 1 (0x31C7 -> 0x31CF): NL = NLEN_FR OR NOT NLEN_AS, so
+       NLEN_FR alone decides keep-alive and hc_io_runon_service() can let
+       the ECU power down (the seed's 0 would hold power whatever NLEN_FR);
+     - the pre-cat heater gates P7.4 / P8.7 rest CLEAR (0x9061 -> 0x1061).
+   Port map (me7_port.xls ASIC column "ME7.1 C4"): P7.4/P7.5/P7.6/P8.7 are
+   the four heaters exactly as on the Porsche; ASIC POUT2 (P7.2) is unused
+   (the N75 is the MAIN CPU's POUT1 here) and EVAP is MAIN POUT3, so LDR and
+   TEV have no ASIC bit (0: never driven); the lamp is A2 = P1L.2, word 54. */
+static const unsigned int idle_img[HC_IO_WORDS] = {
+    0x00FFu, 0x0000u, 0x31CFu, 0xFFF9u, 0x6301u, 0x0010u, 0x1061u
+};
+static const unsigned int ch_bit[HC_IO_COUNT] = {
+    0x0000u, 0x0000u, 0x0010u, 0x0020u, 0x0040u, 0x8000u,
+    0x0000u                     /* the lamp: word 54 bit 2, below */
+};
+#define C4_MIL_BIT  0x0004u     /* ASIC P1L.2, active LOW (seed 1 = off) */
+/* the cam valve NWS (cavity 115): ASIC P2.11, word 55, active LOW (seed
+   0xFFF9 holds it 1 = off). HC_IO_LDR's slot carries it - the 2.7T has no
+   ASIC boost stage (hcvvt711.c unit 2). INFERENCE that the ASIC copies
+   word 55 onto P2.11 as it copies the other port words (me7_port.xls names
+   the pin CC11IO/NWS; the OEM's own NWS write path is not traced): the
+   tester card's "Test cam valve" step proves it. */
+#define C4_NWS_BIT  0x0800u
+#endif
 /* stages whose ON is a SET bit (measured, above); the rest are active LOW.
    The post-cat pair P7.5/P7.6 is NOT measured (no CJ120 senses it). */
 #define CH_ACT_HIGH  ((unsigned char)((1u << HC_IO_LSH2VK) | (1u << HC_IO_LSH1VK)))
@@ -170,6 +230,14 @@ static const unsigned int ch_bit[HC_IO_COUNT] = {
    absent chip answers 0x00 or 0xFF and is NOT a verified chip. */
 #define CJ_IDENT_MASK      0xF8u
 #define CJ_IDENT_DEV       0x18u
+#ifdef TGT_BOARD_AUDI_4F
+/* the 4F's chips are unread; both datasheets give device 01100
+   (the Bosch CJ120 datasheet / the Bosch CJ125 datasheet p6), which the Porsche's do not answer */
+#define CJ_IDENT_OK(r)     (((r) & CJ_IDENT_MASK) == CJ_IDENT_DEV \
+                            || ((r) & CJ_IDENT_MASK) == 0x60u)
+#else
+#define CJ_IDENT_OK(r)     (((r) & CJ_IDENT_MASK) == CJ_IDENT_DEV)
+#endif
 /* Re-read INIT_REG1 after this many DIAG polls (per chip one poll per 50 ms,
    so ~1 s): a CJ120 that reset has lost its mode and must be rewritten. */
 #define CJ_REVERIFY_POLLS    20u
@@ -215,25 +283,29 @@ static unsigned int  tst_mark, tst_on_ms;
 static unsigned char ro_state, ro_flags, ro_seen_kl15;
 static unsigned int  ro_mark, ro_elapsed, ro_count;
 
-static unsigned char cj_phase[2], cj_next;
-static unsigned int  cj_reg1[2], cj_ident[2], cj_diag[2], cj_err[2];
-static unsigned char cj_rv[2];        /* DIAG polls since the last INIT_REG1 check */
-static unsigned char cj_want[2];      /* the INIT_REG1 the chip must hold  */
-static unsigned char cj_wrote[2];     /* what phase 0 last wrote           */
-static unsigned char cj_ok[2];        /* IDENT and the mode verified; only
+/* HC_C4FAR (hctarget.h): on the 2.7T board - no CJ120, and 1 KB less
+   on-chip RAM (hcsafety.h) - the wideband-chip state lives in the external
+   SRAM and the shared core is never called (TGT_HAS_CJ120 0). Empty on the
+   Porsche: its image does not change. */
+static unsigned char HC_C4FAR cj_phase[2], cj_next;
+static unsigned int  HC_C4FAR cj_reg1[2], cj_ident[2], cj_diag[2], cj_err[2];
+static unsigned char HC_C4FAR cj_rv[2];   /* DIAG polls since the last INIT_REG1 check */
+static unsigned char HC_C4FAR cj_want[2]; /* the INIT_REG1 the chip must hold  */
+static unsigned char HC_C4FAR cj_wrote[2]; /* what phase 0 last wrote          */
+static unsigned char HC_C4FAR cj_ok[2];   /* IDENT and the mode verified; only
                                          a failed check clears it (the ~1 s
                                          re-verification does not)            */
-static unsigned int  cj_mark, cj_xfers;
-static unsigned int  cj_tmo[2];     /* SSC exchanges that never completed */
+static unsigned int  HC_C4FAR cj_mark, cj_xfers;
+static unsigned int  HC_C4FAR cj_tmo[2]; /* SSC exchanges that never completed */
 
 /* V96 wideband state, per bank - the shared core's */
-static hcwb_t        wb[2];
-static unsigned int  wb_ur_raw[2];
+static hcwb_t        HC_C4FAR wb[2];
+static unsigned int  HC_C4FAR wb_ur_raw[2];
 /* a bench MODE HOLD - both chips held in one INIT_REG1 for a bounded
    time (hcbench mode 5, channels 8..13), heater off, lambda withheld: the
    bench experiment that proves RA / LA / PA physically. */
-static unsigned char tst_cj_active, tst_cj_mode;
-static unsigned int  tst_cj_mark, tst_cj_ms;
+static unsigned char HC_C4FAR tst_cj_active, tst_cj_mode;
+static unsigned int  HC_C4FAR tst_cj_mark, tst_cj_ms;
 static const unsigned char tst_cj_modes[HC_IO_TEST_CJ_N] = {
     HCWB_MODE_COLD, HCWB_MODE_COLD | HCWB_RA, HCWB_MODE_COLD | HCWB_LA,
     HCWB_MODE_PUMP, HCWB_MODE_CAL, 0x90u
@@ -278,7 +350,9 @@ void far hc_io_init(void)
         cj_want[i] = HCWB_MODE_COLD; cj_wrote[i] = HCWB_MODE_COLD;
         cj_ok[i] = 0u; cj_tmo[i] = 0u;
         CQ[i].ack_ms = 0u; CQ[i].reply_ms = 0u; CQ[i].settled = 0u;
+#if TGT_HAS_CJ120
         hcwb_init(&wb[i]);
+#endif
         wb_ur_raw[i] = HCWB_UR_NONE;
     }
     cj_next = 0u; cj_mark = 0u; cj_xfers = 0u; lam_status = 0u; lam_acq_flags = 0u;
@@ -286,7 +360,29 @@ void far hc_io_init(void)
     tst_cj_active = 0u; tst_cj_mode = HCWB_MODE_COLD; tst_cj_mark = 0u;
     tst_cj_ms = 0u;
     hc_io_cj_mask = 0u;
+#if TGT_HAS_CJ110
+    hccj110_init(&cj110);
+    cj110_heat_ms = 0u;
+    cj110_last_ms = 0u;
+#endif
 }
+
+/* the sensor that owns bank b's heater stage is present: a verified,
+   settled CJ120 selected as INTERNAL on this board; a NARROWBAND source on
+   a board without CJ120 (its heater has no chip to supervise it) */
+#if TGT_HAS_CJ120
+#define HEAT_SRC_OK(b) (cj_ok[b] && CQ[b].settled \
+                        && (hc_io_cj_mask & (unsigned char)(1u << (b))))
+#elif TGT_HAS_CJ110
+/* the ME7.5 DC: bank 1's LSU on the CJ110 (INTERNAL) or a narrowband */
+#define HEAT_SRC_OK(b) (IO_PAGE[(b) ? CFG_U_LAM2_SRC : CFG_U_LAM1_SRC] \
+                        == HC_LAMBDA_NARROWBAND \
+                        || ((b) == 0u && IO_PAGE[CFG_U_LAM1_SRC] \
+                            == HC_LAMBDA_INTERNAL_LSU))
+#else
+#define HEAT_SRC_OK(b) (IO_PAGE[(b) ? CFG_U_LAM2_SRC : CFG_U_LAM1_SRC] \
+                        == HC_LAMBDA_NARROWBAND)
+#endif
 
 void far hc_io_frame(void)
 {
@@ -316,13 +412,12 @@ void far hc_io_frame(void)
                 on = 0u; tst_on = 0u; tst_mark = hc_tick_ms;
                 if (++tst_n >= 3u) { tst_active = 0u; tst_pwm = 0xFFu; }
             }
-            if (!(P6 & (1u << TGT_KL15STAT_PORT_BIT))
+            if (!TGT_KL15_ON()
                 || (!bench && ((unsigned int)(hc_tick_ms - io_last_ms) > TGT_ADC_FRESH_MS
-                    || !cj_ok[b] || !CQ[b].settled
+                    || !HEAT_SRC_OK(b)
                     || !hc_fresh_ok(HC_AIN_VBAT) || (eng_sensor_err & ENG_ERR_BATT)
                     || hc_hal_asic_age() > TGT_ASIC_FRESH_MS
-                    || IO_PAGE[CFG_U_LAM_HEAT_POLICY] == HCWB_HEAT_OFF
-                    || !(hc_io_cj_mask & (unsigned char)(1u << b))))) {
+                    || IO_PAGE[CFG_U_LAM_HEAT_POLICY] == HCWB_HEAT_OFF))) {
                 /* Release cached normal duty terminally; frame progression
                    is not proof that the lifecycle controller has run. */
                 on = 0u; duty[c] = 0u; acc[c] = 0u;
@@ -342,6 +437,29 @@ void far hc_io_frame(void)
         }
     }
     img[6] = w;
+#if TGT_BOARD_VAG_ME75_DC
+    /* MIL and the cam valve (the 2.7T's reuse of HC_IO_LDR) go out through
+       the CC650 (hcasicstart_dc.inc); the two heaters are CPU pins. ON:
+       active level, then drive; OFF: inactive level, then release. */
+    hc_dc_io_on = on_mask;
+    if (on_mask & (unsigned char)(1u << HC_IO_LSH1VK)) {
+        IO_DC_LSU_HEAT = 1; IO_DC_LSU_HEATD = 1;      /* active HIGH */
+    } else {
+        IO_DC_LSU_HEAT = 0; IO_DC_LSU_HEATD = 0;
+    }
+    if (on_mask & (unsigned char)(1u << HC_IO_LSH1HK)) {
+        IO_DC_NB_HEAT = 0; IO_DC_NB_HEATD = 1;        /* active LOW */
+    } else {
+        IO_DC_NB_HEAT = 1; IO_DC_NB_HEATD = 0;
+    }
+#elif TGT_BOARD_VAG_ME71_C4
+    img[2] = (on_mask & (unsigned char)(1u << HC_IO_MIL))
+             ? (unsigned int)(img[2] & ~C4_MIL_BIT)
+             : (unsigned int)(img[2] | C4_MIL_BIT);
+    img[3] = (on_mask & (unsigned char)(1u << HC_IO_LDR))
+             ? (unsigned int)(img[3] & ~C4_NWS_BIT)
+             : (unsigned int)(img[3] | C4_NWS_BIT);
+#endif
 }
 
 unsigned int far hc_io_word(unsigned char i)
@@ -395,9 +513,18 @@ void far hc_io_all_off(void)
 /* ------------------------------------------------------------ run-on -- */
 static void veto(void)
 {
+#if TGT_BOARD_VAG_ME75_DC
+    hc_dc_hold = 0u;       /* the CC650's keep-alive bit (NLEN_FR stays LOW) */
+#else
     IO_NLEN_FR  = 1;       /* value first ... */
     IO_NLEN_FRD = 1;       /* ... then the driver, as hc_power_hold_assert */
+#endif
 }
+#if TGT_BOARD_VAG_ME75_DC
+#define RO_HOLD()  (hc_dc_hold = 1u)
+#else
+#define RO_HOLD()  (IO_NLEN_FR = 0)
+#endif
 
 #define BH  ((unsigned char huge *)(TGT_EXTRAM_BASE + TGT_RAM_BOOTHIST))
 typedef char hc_bh_fits[(HC_BH_BYTES <= TGT_RAM_BOOTHIST_LIMIT) ? 1 : -1];
@@ -488,7 +615,7 @@ unsigned char far hc_io_runon_service(unsigned int ms, unsigned char kl15,
            tri-states P3.12 and R5602 pulls it HIGH (veto): no reset, hang or
            watchdog can leave it asserted. */
         if (enabled) {
-            IO_NLEN_FR = 0;
+            RO_HOLD();
         } else {
             veto();
         }
@@ -502,7 +629,7 @@ unsigned char far hc_io_runon_service(unsigned int ms, unsigned char kl15,
         ro_mark = ms;
         ro_count++;
         if (enabled) {
-            IO_NLEN_FR = 0;              /* already low; stays low          */
+            RO_HOLD();                   /* already low; stays low          */
             ro_state = HC_RO_HOLD;
         } else {
             veto();
@@ -546,7 +673,7 @@ unsigned char far hc_io_runon_service(unsigned int ms, unsigned char kl15,
    CJ_BYTE_TMO_US - 8x its wire time - and a timed-out first byte aborts the
    transfer, so a dead SSC costs <= ~70 us per 25 ms slot. */
 #define CJ_BYTE_TMO_US   64u
-static unsigned char cj_tmo_flag;
+static unsigned char HC_C4FAR cj_tmo_flag;
 static unsigned char ssc_byte(unsigned char b)
 {
     unsigned int t0;
@@ -603,6 +730,12 @@ static unsigned int cj_xfer(unsigned char dev, unsigned int word)
 
 unsigned char far hc_io_cj120_due(unsigned int ms, unsigned char mask)
 {
+#if !TGT_HAS_CJ120
+    /* NO CJ120 ON THE 2.7T BOARD (BOM 345;02) - and P8.1/P8.2, the
+       Porsche's CJ120 chip selects, are ZAS1/ZAS2 low-side outputs here
+       (me7_port.xls FR "ME7.1": CC17IO/CC18IO). Never select a chip. */
+    return 0u;
+#endif
     return (unsigned char)(mask && (unsigned int)(ms - cj_mark) >= CJ_PERIOD_MS);
 }
 
@@ -610,6 +743,9 @@ void far hc_io_cj120_slot(unsigned int ms, unsigned char mask)
 {
     unsigned char d;
     unsigned int cmd, r;
+#if !TGT_HAS_CJ120
+    return;                             /* see hc_io_cj120_due() */
+#endif
 
     if (!mask || (unsigned int)(ms - cj_mark) < CJ_PERIOD_MS) {
         return;
@@ -669,7 +805,7 @@ void far hc_io_cj120_slot(unsigned int ms, unsigned char mask)
         break;
     case 2u:
         cj_ident[d] = r;
-        if ((r & CJ_IDENT_MASK) == CJ_IDENT_DEV) {
+        if (CJ_IDENT_OK(r)) {
             cj_phase[d] = 3u;
             cj_rv[d] = 0u;
             cj_ok[d] = 1u;
@@ -708,13 +844,89 @@ void far hc_io_lambda_service(unsigned int ms, unsigned int ua1,
                               unsigned int ur2, unsigned int vbatt_dv,
                               unsigned char running)
 {
-    static hcwb_pair_in_t in;     /* static: the user stack is 256 bytes */
+    static hcwb_pair_in_t HC_C4FAR in; /* static: the user stack is small */
     unsigned char b, mask;
 
     mask = (unsigned char)(
         (IO_PAGE[CFG_U_LAM1_SRC] == HC_LAMBDA_INTERNAL_LSU ? 1u : 0u)
         | (IO_PAGE[CFG_U_LAM2_SRC] == HC_LAMBDA_INTERNAL_LSU ? 2u : 0u));
     hc_io_cj_mask = mask;
+#if !TGT_HAS_CJ120
+    /* no wideband chip on this board: nothing to step, no heater to drive
+       (the external controller's lambda is lam_ext()); the raw UR words
+       are still published, as on the Porsche */
+    /* a NARROWBAND sensor's heater (the stock pre-cat heater stages, ASIC
+       P8.7 bank 1 / P7.4 bank 2): full on while the page's heater policy
+       allows it and the supply is up - the ME7 narrowband heater runs
+       straight from the battery; off otherwise */
+    for (b = 0u; b < 2u; b++) {
+        unsigned char pol = IO_PAGE[CFG_U_LAM_HEAT_POLICY];
+        unsigned char heat = (unsigned char)(
+            IO_PAGE[b ? CFG_U_LAM2_SRC : CFG_U_LAM1_SRC] == HC_LAMBDA_NARROWBAND
+            && ro_state == HC_RO_RUN && vbatt_dv >= 110u
+            && (pol == HC_LAMBDA_HEAT_IGNITION
+                || (pol == HC_LAMBDA_HEAT_RUNNING && running)));
+#if TGT_HAS_CJ110
+        if (b == 0u && IO_PAGE[CFG_U_LAM1_SRC] == HC_LAMBDA_INTERNAL_LSU) {
+            /* THE ME7.5 DC's CJ110 (hccj110.c): calibration with LA high at
+               key-on, then lambda from the stock LALIUS curve once hot. No
+               Ri: the heater runs rusEFI's open-loop envelope - 2 V while
+               the exhaust may be wet, then 7 -> 12 V at 0.4 V/s - as a duty
+               of the measured battery; lambda counts as hot 5 s after the
+               ramp ends. */
+            unsigned int dt = (unsigned int)(ms - cj110_last_ms);
+            unsigned int v_dv, d;
+            unsigned char allow = (unsigned char)(
+                ro_state == HC_RO_RUN && vbatt_dv >= 110u
+                && (pol == HC_LAMBDA_HEAT_IGNITION
+                    || (pol == HC_LAMBDA_HEAT_RUNNING && running)));
+            cj110_last_ms = ms;
+            if (dt > 1000u) dt = 1000u;
+            if (allow) {
+                if (cj110_heat_ms < 0xF000u) cj110_heat_ms += dt;
+            } else {
+                cj110_heat_ms = 0u;
+            }
+            if (!allow) {
+                v_dv = 0u;
+            } else if (cj110_heat_ms < CJ110_PREHEAT_MS) {
+                v_dv = CJ110_PREHEAT_DV;
+            } else {
+                unsigned int up = (unsigned int)
+                    (((cj110_heat_ms - CJ110_PREHEAT_MS) / 1000u) * CJ110_RAMP_DV_S);
+                v_dv = (unsigned int)(CJ110_RAMP_FROM + up);
+                if (v_dv > CJ110_RAMP_TO) v_dv = CJ110_RAMP_TO;
+            }
+            /* duty x10 = V / Vbatt (vbatt_dv >= 110 here), bounded */
+            d = (v_dv && vbatt_dv) ? (unsigned int)((v_dv * 1000u) / vbatt_dv) : 0u;
+            if (d > 1000u) d = 1000u;
+            hc_io_duty(HC_IO_LSH1VK, d);
+            hccj110_step(&cj110, (unsigned int)(ua1 & 0x03FFu),
+                         (unsigned char)(allow && cj110_heat_ms >=
+                             (unsigned int)(CJ110_PREHEAT_MS
+                             + (unsigned int)(((CJ110_RAMP_TO - CJ110_RAMP_FROM)
+                                / CJ110_RAMP_DV_S) * 1000u)
+                             + CJ110_HOT_AFTER_MS)),
+                         dt);
+            hc_dc_la = cj110.la;
+            wb[0].valid = cj110.valid;
+            wb[0].lambda = cj110.lambda;
+            wb[0].fcode = (unsigned char)(cj110.fcode == HCCJ110_F_CAL ? HCWB_F_CAL
+                          : cj110.fcode == HCCJ110_F_CHIP ? HCWB_F_CHIP : HCWB_F_NONE);
+            lam_status = (unsigned int)((lam_status & ~1u) | (cj110.valid ? 1u : 0u));
+            wb_ur_raw[b] = ur1;
+            continue;
+        }
+#endif
+        hc_io_duty((unsigned char)(b ? HC_IO_LSH2VK : HC_IO_LSH1VK),
+                   heat ? 1000u : 0u);
+        wb_ur_raw[b] = b ? ur2 : ur1;
+    }
+    if (ua1 || ua2) {
+        lam_acq_flags = 0u;
+    }
+    io_last_ms = ms;
+#else
 
     /* the two-bank glue is the shared core's (hcwb_pair_step, host-
        tested with both banks in tests/host/test_hcwb_dual.c); this only
@@ -817,6 +1029,7 @@ void far hc_io_lambda_service(unsigned int ms, unsigned int ua1,
         hc_io_duty((unsigned char)(b ? HC_IO_LSH2VK : HC_IO_LSH1VK),
                    wb[b].duty_x10);
     }
+#endif
 }
 
 /* ---------------------------------------------------------- bench test -- */
@@ -940,9 +1153,69 @@ void far hc_io_knock_band(unsigned char code)
    on lambda1X1000 / lamWhy, but STFT, the VE/WUE Analyze flags and the fast
    block's lambdaValue - every consumer of this - read 0 for it, exactly as
    for no measurement: nothing learns from a frozen reading. */
+/* EXTERNAL ANALOG WIDEBAND (lambdaNSource = 2, 2026-10-24) - the only
+   wideband the Audi 2.7T board can have (no CJ120 on it), and usable on the
+   Porsche too. The input is the routed pinLambdaN analog channel; the
+   transfer is FIXED until the next calibration-layout change can carry its
+   two points: 0 V = lambda 0.680 (AFR 10.0 gasoline), 5 V = lambda 1.360
+   (AFR 20.0), linear - the default analog output of the common controllers
+   (Innovate LC-1/LC-2, 14Point7 Spartan), and every programmable one can be
+   set to it. A rail reading (open wire, controller still heating) and a
+   stale sample read 0 = "no measurement", which every consumer already
+   treats as no lambda. ponytail: fixed curve; per-controller points need
+   two page fields (lambdaExtAt0V / lambdaExtAt5V) in the next layout. */
+extern unsigned int far hc_hal_ain_f(unsigned char sem);
+static unsigned int lam_ext(unsigned char b)
+{
+    unsigned char sem = b ? HC_AIN_O2_2_PRE : HC_AIN_O2_1_PRE;
+    unsigned int raw;
+    if (!hc_fresh_ok(sem)) {
+        return 0u;
+    }
+    raw = (unsigned int)(hc_hal_ain_f(sem) & 0x03FFu);
+    if (raw < 8u || raw > 1015u) {
+        return 0u;
+    }
+    /* 680 + raw * 680/1023; 43562/65536 = 0.664703 = 680/1023 to 1e-5,
+       one inline 16x16 MULU, no long helper (far code rule) */
+    return (unsigned int)(680u + (unsigned int)(((unsigned long)raw * 43562u) >> 16));
+}
+
+/* A NARROWBAND (switching) sensor on the bank's lambda pin (2026-10-27,
+   Speeduino egoType Narrow Band; rusEFI has no narrowband). It only says
+   rich (> 0.45 V) or lean (< 0.45 V) of stoichiometric, so this is a
+   PSEUDO-lambda: 1.000 at 0.45 V, 2/7 per mV, saturating at 0.90 (rich,
+   0.80 V) and 1.10 (lean, 0.10 V) - on the right side of 1.00 and never a
+   measurement of anything else. The trim uses it only at a stoichiometric
+   target (hcengctl711.c); lean protection never does (it needs the LSU).
+   ponytail: an open sensor biased at 0.45 V reads 1.00, not a fault -
+   add an activity check (it must switch) when the car shows the need. */
+static unsigned int lam_nb(unsigned char b)
+{
+    unsigned char sem = b ? HC_AIN_O2_2_PRE : HC_AIN_O2_1_PRE;
+    int mv, l;
+    if (!hc_fresh_ok(sem)) {
+        return 0u;
+    }
+    /* 10-bit, 5 V reference: mV = raw * 625 / 128 (4.883 mV/count) */
+    mv = (int)(((unsigned long)(hc_hal_ain_f(sem) & 0x03FFu) * 625u) >> 7);
+    l = 1000 + ((450 - mv) * 2) / 7;
+    if (l < 900) l = 900;
+    if (l > 1100) l = 1100;
+    return (unsigned int)l;
+}
+
 unsigned int far hc_io_lambda(unsigned char b)
 {
+    unsigned char src;
     b &= 1u;
+    src = IO_PAGE[b ? CFG_U_LAM2_SRC : CFG_U_LAM1_SRC];
+    if (src == HC_LAMBDA_EXTERNAL_ANALOG) {
+        return lam_ext(b);
+    }
+    if (src == HC_LAMBDA_NARROWBAND) {
+        return lam_nb(b);
+    }
     return (wb[b].valid == 1u) ? wb[b].lambda : 0u;
 }
 
@@ -975,8 +1248,13 @@ unsigned char far hc_io_wb_fault(unsigned char b)
    - the bank recalibrates and a real fault latches again (hcwb_clear) */
 void far hc_io_wb_clear(void)
 {
+#if TGT_HAS_CJ110
+    if (cj110.st == HCCJ110_ST_FAULT) hccj110_init(&cj110);
+#endif
+#if TGT_HAS_CJ120
     hcwb_clear(&wb[0]);
     hcwb_clear(&wb[1]);
+#endif
 }
 
 /* in three slices (part 0, 1, 2), one per main-loop pass - see
@@ -1060,8 +1338,10 @@ void far hc_io_publish(unsigned int boost_req_x10, unsigned char part)
     och16(396, hc_fuelpump_prime_left());
     och16(428, (unsigned int)((unsigned int)hc_main_relay_get_state()
                               | ((unsigned int)hc_main_relay_get_pin() << 8)));
-    och16(734u, wb[0].lambda);
-    och16(736u, wb[1].lambda);
+    och16(734u, (IO_PAGE[CFG_U_LAM1_SRC] == HC_LAMBDA_EXTERNAL_ANALOG)
+                ? lam_ext(0u) : wb[0].lambda);
+    och16(736u, (IO_PAGE[CFG_U_LAM2_SRC] == HC_LAMBDA_EXTERNAL_ANALOG)
+                ? lam_ext(1u) : wb[1].lambda);
     och16(738u, lam_status);
     och16(740u, (unsigned int)((cj_diag[0] & 0xFFu)
                                | ((cj_diag[1] & 0xFFu) << 8)));

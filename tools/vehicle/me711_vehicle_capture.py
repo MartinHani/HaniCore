@@ -97,7 +97,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-TS_DIR = ROOT / "tunerstudio"
+TS_DIR = ROOT / "tuning"
 TOOL_VERSION = "1.9 (fast block 1136..1223 every row, block tail in AUX)"
 RUN_RPM = 400              # at or above for two samples = RUNNING
 TL_EXT_OFF = 344           # the tooth profile follows the 344-byte LF record
@@ -316,7 +316,9 @@ def pick_ini(signature: str, version: str, override: str | None) -> Path:
     if override:
         return Path(override)
     cands = []
-    for p in TS_DIR.glob("hanicore_me711_v*.ini"):
+    # every board: hanicore_me711_v* (Porsche, 4F), hanicore_me71_27t_v*
+    # (2.7T) and hanicore_me75_dc_v* (ME7.5 DC)
+    for p in TS_DIR.glob("hanicore_me7*_v*.ini"):
         if p.stem.endswith(("_forensic", "_fallback")):
             continue
         try:
@@ -348,7 +350,9 @@ def build_manifest(version: str):
     if not version:
         return None
     hits = []
-    for j in sorted((ROOT / "bins/hanicore").glob("HaniCore_ME711_v*.json")):
+    # every board: HaniCore_ME711_v* (Porsche), _ME711_4F_v*, _ME71_27T_v*
+    # (2.7T) and _ME75_DC_v* (ME7.5 DC)
+    for j in sorted((ROOT / "bins/hanicore").glob("HaniCore_ME7*_v*.json")):
         try:
             d = json.loads(j.read_text())
         except Exception:
@@ -1287,13 +1291,10 @@ class Capture:
 
 
 def auto_ports() -> list:
-    """Serial ports that could be the KKL - an RP2040 USB device (VID 2E8A)
-    excluded: it speaks text and must never receive a TunerStudio frame."""
+    """Serial ports that could be the KKL."""
     try:
         from serial.tools import list_ports
-        out = [p.device for p in list_ports.comports()
-               if getattr(p, "vid", None) != 0x2E8A
-               and "pico" not in (p.description or "").lower()]
+        out = [p.device for p in list_ports.comports()]
         return out or ["COM3", "COM2"]
     except Exception:
         return ["COM3", "COM2"]

@@ -55,9 +55,6 @@ void hc_safety_service(unsigned int healthy, unsigned int cal_ok,
     if (!cycle_ok) inhibit |= HC_INHIBIT_NO_CYCLE;
     if (!key_on) inhibit |= HC_INHIBIT_KEYOFF;
     if (hc_tl_inhibit) inhibit |= HC_INHIBIT_TEST;       /* V92 '!K' */
-#if defined(HANICORE_BENCH_SAFE)
-    inhibit |= HC_INHIBIT_BENCH_SAFE;
-#endif
     hc_safety_inhibits = inhibit;
 
     /* EACH CLASS IS JUDGED ON THE INHIBITS THAT APPLY TO IT.

@@ -2,7 +2,6 @@
 /build/
 /out/
 firmware/targets/*/build/
-tools/tunerstudio/plugin/dist/
 *.obj
 *.o
 *.lst
@@ -24,8 +23,8 @@ tools/tunerstudio/plugin/dist/
 /bins/
 
 # Generated TunerStudio files (regenerate from the tree)
-/tunerstudio/*.ini
-/tunerstudio/*.dash
+/tuning/*.ini
+/tuning/*.dash
 
 # Local reference corpora and calibration files (third-party, not redistributable)
 /reference/

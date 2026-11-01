@@ -143,22 +143,40 @@ def main() -> int:
     check("F2 ... and IDENTIFY 'HC' -> F0 + the signature",
           r[3:4] == b"\xF0" and G.SIG in r, r[:32])
 
+    # the board's fast GOFAST rate: 115200 (code 04) on the Porsche; the 24 MHz
+    # C4 board cannot make 115200 (hctarget.h, HCKLINE_NO_115200), so 124800
+    # (code 03) - and a GOFAST 115200 must be REFUSED there
+    import hc_board
+    FAST, FC = (124800, b"\x03") if hc_board.IS_C4 else (115200, b"\x04")
+    if hc_board.IS_C4:
+        T.run_ms(400)
+        T.pin(0); T.run_ms(25); T.pin(1); T.run_ms(25)
+        T.send(kwp(b"\x81"), 10400); T.run_ms(80)
+        T.send(kwp(b"\xB0HC"), 10400); T.run_ms(150)
+        m = T.mark()
+        T.send(kwp(b"\xB1\x04"), 10400)
+        T.run_ms(100)
+        r = T.tx_since(m)
+        check("C4 GOFAST 115200 is refused (7F B1), the rate stays 10400",
+              r[3:5] == b"\x7F\xB1" and T.rate() == 10400,
+              "%s, rate %s" % (r.hex(), T.rate()))
+
     # P1: GOFAST on probation
     m = T.mark()
-    T.send(kwp(b"\xB1\x04"), 10400)
+    T.send(kwp(b"\xB1" + FC), 10400)
     T.run_ms(80)
     r = T.tx_since(m)
     T.run_ms(20)
     at_new = T.rate()
     T.run_ms(2500)
-    check("P1 GOFAST 115200 -> F1 04, the rate moves (%s)" % at_new,
-          r[3:5] == b"\xF1\x04" and at_new == 115200, r.hex())
-    check("P1 ... no request at 115200 for 2.5 s -> back at 10400",
+    check("P1 GOFAST %d -> F1 %02X, the rate moves (%s)" % (FAST, FC[0], at_new),
+          r[3:5] == b"\xF1" + FC and at_new == FAST, r.hex())
+    check("P1 ... no request at %d for 2.5 s -> back at 10400" % FAST,
           T.rate() == 10400, "rate %s" % T.rate())
 
     # P3 (2026-10-15, car): the cluster's traffic is bad frames at any rate.
     # The fallback 10400 is pinned: five bad bursts get no reply and leave
-    # the rate where the tester is (the car image moved it to 115200 - not
+    # the rate where the tester is (the car image moved it to FAST - not
     # back to 10400, which no hunt reaches).
     T.ask(G.OCH8, 10400)
     m = T.mark()
@@ -177,35 +195,41 @@ def main() -> int:
     T.pin(0); T.run_ms(25); T.pin(1); T.run_ms(25)
     T.send(kwp(b"\x81"), 10400); T.run_ms(80)
     T.send(kwp(b"\xB0HC"), 10400); T.run_ms(150)   # IDENTIFY before GOFAST
-    T.send(kwp(b"\xB1\x04"), 10400); T.run_ms(100)
-    proven = bool(T.ask(G.OCH8, 115200))
+    T.send(kwp(b"\xB1" + FC), 10400); T.run_ms(100)
+    proven = bool(T.ask(G.OCH8, FAST))
     m = T.mark()
     for _ in range(5):
-        T.send(BAD_FRAME, 115200)
+        T.send(BAD_FRAME, FAST)
         T.run_ms(40)
     tx = T.tx_since(m)
-    check("P2 pinned 115200 (proven): 5 bad bursts -> no reply, rate stays",
-          proven and tx == b"" and T.rate() == 115200,
+    check("P2 pinned %d (proven): 5 bad bursts -> no reply, rate stays" % FAST,
+          proven and tx == b"" and T.rate() == FAST,
           "proven %s, rate %s, %d bytes sent" % (proven, T.rate(), len(tx)))
     check("P2 ... and the tester's next request is answered",
-          bool(T.ask(G.OCH8, 115200)), "rate %s" % T.rate())
+          bool(T.ask(G.OCH8, FAST)), "rate %s" % T.rate())
     # ... through a 1 s silence (a polling tester's gap is 100..200 ms) ...
     T.run_ms(1000)
     for _ in range(4):
-        T.send(BAD_FRAME, 115200)
+        T.send(BAD_FRAME, FAST)
         T.run_ms(40)
     check("P2 ... still pinned after 1 s of silence: evidence does not move it",
-          T.rate() == 115200, "rate %s" % T.rate())
+          T.rate() == FAST, "rate %s" % T.rate())
     check("P2 ... and the tester's next request is answered",
-          bool(T.ask(G.OCH8, 115200)), "rate %s" % T.rate())
+          bool(T.ask(G.OCH8, FAST)), "rate %s" % T.rate())
     # ... until the tester has been silent 1.5 s (the KKL moved to the direct
     # cable): then evidence moves the rate again, as on a direct link
     T.run_ms(1700)
+    sw_a = T.rig.mem.r8(HB.sym("hc_link_switches") & 0xFFFF)
     for _ in range(4):
-        T.send(BAD_FRAME, 115200)
+        T.send(BAD_FRAME, FAST)
         T.run_ms(40)
+    sw_b = T.rig.mem.r8(HB.sym("hc_link_switches") & 0xFFFF)
+    # MOVED, judged by the switch count: on the C4 board's two-rate ring the
+    # fourth burst, while hunting, steps the rate on again - back to FAST
+    # (124800 -> 57600 -> 124800); the Porsche's three rates end elsewhere
     check("P2 ... released after 1.5 s of silence: evidence moves the rate",
-          T.rate() != 115200, "rate %s" % T.rate())
+          ((sw_b - sw_a) & 0xFF) >= 1 and (T.rate() != FAST or hc_board.IS_C4),
+          "rate %s, %d switch(es)" % (T.rate(), (sw_b - sw_a) & 0xFF))
 
     # P4: only a CRC-VALID request keeps the pin. Complete frames with a bad
     # CRC (a host at another rate parses as such garbage; so does the
@@ -216,13 +240,13 @@ def main() -> int:
     T.pin(0); T.run_ms(25); T.pin(1); T.run_ms(25)
     T.send(kwp(b"\x81"), 10400); T.run_ms(80)
     T.send(kwp(b"\xB0HC"), 10400); T.run_ms(150)
-    T.send(kwp(b"\xB1\x04"), 10400); T.run_ms(100)
-    proven = bool(T.ask(G.OCH8, 115200))
+    T.send(kwp(b"\xB1" + FC), 10400); T.run_ms(100)
+    proven = bool(T.ask(G.OCH8, FAST))
     for _ in range(20):                       # 6 s of bad-CRC frames
-        T.send(BAD_FRAME, 115200)
+        T.send(BAD_FRAME, FAST)
         T.run_ms(300)
     check("P4 bad-CRC frames alone (no valid request) do not hold the pin",
-          proven and T.rate() != 115200, "proven %s, rate %s" % (proven, T.rate()))
+          proven and T.rate() != FAST, "proven %s, rate %s" % (proven, T.rate()))
 
     # R1: 5-baud 30 ms after bus traffic. The traffic is put ON THE PIN (the
     # tester's UART bytes do not toggle the modelled P3.11): 2 ms of each

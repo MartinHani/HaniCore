@@ -30,11 +30,27 @@ typedef struct {
     unsigned int off, n, i;
     unsigned long crc;
     unsigned char st, kind, code, hold, hold_ok, pad;
+#if !TGT_BOARD_VAG_ME71_C4
     unsigned char buf[HC_TX_BUF_N];
+#endif
     unsigned int rx_t;            /* silent tick observations, saturates at 20 */
     unsigned char nxt, have;      /* the next reply byte, already computed     */
 } hc_ser_t;
+#if !TGT_BOARD_VAG_ME71_C4
 #define SER (*(hc_ser_t volatile *)0xF2C0u)
+#define SER_BUF(k) (SER.buf[k])
+#else
+/* THE 2.7T's C167CR has no RAM at 0xF2C0 (hcsafety.h). The shared fields
+   stay NEAR - XRAM 0xE580, kept out of every linker class - because the
+   main loop and two interrupt levels update them with one instruction each:
+   as a FAR object (2026-10-26, bench) the read-modify-writes split and the
+   reply stream died mid-frame. Only the transmit buffer is far (external
+   SRAM): the main loop fills it while the job is idle, the interrupt reads
+   one byte at a time. */
+#define SER (*(hc_ser_t volatile *)0xE580u)
+#define SER_BUF(k) (((unsigned char volatile far *)                      (TGT_EXTRAM_BASE + TGT_RAM_C4SER))[k])
+typedef char hc_ser_fits_c4[(sizeof(hc_ser_t) <= 0x20u) ? 1 : -1];
+#endif
 typedef char hc_ser_fits[(sizeof(hc_ser_t) <= 0x80u) ? 1 : -1];
 typedef char hc_ser_gap_offset[(offsetof(hc_ser_t,pad)==23u)?1:-1];
 typedef char hc_ser_st_offset[(offsetof(hc_ser_t,st)==18u)?1:-1];  /* HC_TX_BUSY_NOW */
@@ -225,7 +241,7 @@ static unsigned char payload(unsigned int i)
     case HC_TXK_TLOG:
         return hc_tlog_byte(o);
     default:
-        return SER.buf[i];
+        return SER_BUF(i);
     }
 }
 
@@ -316,9 +332,10 @@ unsigned char far hc_tx_start(unsigned char kind, unsigned char code,
 {
     unsigned int k;
     if (SER.st != ST_IDLE) return 0u;
-    if (kind == HC_TXK_BUF || kind == HC_TXK_PLAIN) {
+    /* src 0: the bytes are already in the job buffer (hc_tx_stage) */
+    if ((kind == HC_TXK_BUF || kind == HC_TXK_PLAIN) && src != 0) {
         if (n > HC_TX_BUF_N) n = HC_TX_BUF_N;
-        for (k = 0u; k < n; k++) SER.buf[k] = src[k];
+        for (k = 0u; k < n; k++) SER_BUF(k) = src[k];
     }
     if (kind == HC_TXK_PAGE) {
         (void)hc_cfg_mgr_read_u8(0u);        /* finish the DESIRED seed copy */
@@ -334,6 +351,17 @@ unsigned char far hc_tx_start(unsigned char kind, unsigned char code,
     prep();
     emit();
     S0TBIE = 1;
+    return 1u;
+}
+
+/* KWP replies (hckwp_me711.c, 2026-10-28): staged straight into the job
+   buffer while it is idle, then one HC_TXK_PLAIN job with src 0. Sent byte by
+   byte through hcts_tx() at 10400 baud, the 36-byte IDENTIFY reply held the
+   main loop 35 ms at every KWP entry (stability issue 03, bench 2.7T). */
+unsigned char far hc_tx_stage(unsigned char k, unsigned char b)
+{
+    if (SER.st != ST_IDLE || k >= HC_TX_BUF_N) return 0u;
+    SER_BUF(k) = b;
     return 1u;
 }
 

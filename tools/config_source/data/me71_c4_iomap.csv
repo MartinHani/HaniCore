@@ -1,0 +1,241 @@
+processor,cpu_pin,peripheral_fn,module,me71_signal,column
+MAIN CPU,79,BHE,EBC,NLEN,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,81,CLKOUT,EBC,SF,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,1,CS0,EBC,CS Flash,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,2,CS1,EBC,CS RAM,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,3,CS2,EBC,unbenutzt,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,4,CS3,EBC,VPROGEN,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,5,CS4,EBC,CS-ASIC,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,6,HOLD,EBC,T(akt),Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,7,HLDA,EBC,SY,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,8,BREQ,EBC,DA,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,99,EA,EBC,EA,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,98,ALE,EBC,ALE,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,97,READY,EBC,READY,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,96,WR,EBC,WR,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,95,RD,EBC,RD,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,142,NMI,EBC,NMI,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,141,RSTOUT,EBC,RSTOUT,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,140,RSTIN,EBC,RSTIN,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,138,XTAL1,EBC,XTAL1,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,137,XTAL2,EBC,XTAL2,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,118,A0,EBC,A0,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,119,A1,EBC,A1,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,120,A2,EBC,A2,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,121,A3,EBC,A3,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,122,A4,EBC,A4,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,123,A5,EBC,A5,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,124,A6,EBC,A6,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,125,A7,EBC,A7,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,128,A8,EBC,A8,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,129,A9,EBC,A9,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,130,A10,EBC,A10,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,131,A11,EBC,A11,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,85,A16,EBC,A16,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,86,A17,EBC,A17,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,87,A18,EBC,A18,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,88,A19,EBC,A19,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,100,AD0,EBC,D0,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,101,AD1,EBC,D1,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,102,AD2,EBC,D2,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,103,AD3,EBC,D3,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,104,AD4,EBC,D4,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,105,AD5,EBC,D5,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,106,AD6,EBC,D6,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,107,AD7,EBC,D7,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,108,AD8,EBC,D8,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,111,AD9,EBC,D9,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,112,AD10,EBC,D10,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,113,AD11,EBC,D11,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,114,AD12,EBC,D12,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,115,AD13,EBC,D13,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,116,AD14,EBC,D14,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,117,AD15,EBC,D15,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,132,A12,EBC,A12,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,133,A13,EBC,A13,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,134,A14,EBC,A14,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,135,A15,EBC,A15,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,89,A20,EBC,EKP,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,90,A21,EBC,CAN_R,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,91,A22,EBC,CAN_T,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,92,A23,EBC,CS-EEPR,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,19,POUT0,PWM,AGR,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,20,POUT1,PWM,LDR/SU,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,21,POUT2,PWM,DVE1,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,22,POUT3,PWM,TEV,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,47,CC0IO,CAPCOM,ZSP1,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,48,CC1IO,CAPCOM,ZSP2,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,49,CC2IO,CAPCOM,ZSP3,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,50,CC3IO,CAPCOM,ZSP4,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,51,CC4IO,CAPCOM,ZSP5,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,52,CC5IO,CAPCOM,ZSP6,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,53,CC6IO,CAPCOM,ZSP7,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,54,CC7IO,CAPCOM,ZSP8,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,57,CC8IO,CAPCOM,NWDG,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,58,CC9IO,CAPCOM,NWDG2,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,59,CC10IO,CAPCOM,KVA,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,60,CC11IO,CAPCOM,EGENFR,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,61,CC12IO,CAPCOM,"unbenutzt, Eingang hart auf VCC",Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,62,CC13IO,CAPCOM,TN,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,63,CC14IO,CAPCOM,VFZ,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,64,CC15IO,CAPCOM,NBM,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,9,CC16IO,CAPCOM,MF,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,10,CC17IO,CAPCOM,ZAS1 /STST,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,11,CC18IO,CAPCOM,ZAS2,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,12,CC19IO,CAPCOM,EV8,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,13,CC20IO,CAPCOM,EV7 /LUES2,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,14,CC21IO,CAPCOM,EV6,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,15,CC22IO,CAPCOM,EV5,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,16,CC23IO,CAPCOM,EV4,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,23,CC28IO,CAPCOM,EV3,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,24,CC29IO,CAPCOM,EV2,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,25,CC30IO,CAPCOM,EV1,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,26,CC31IO,CAPCOM,DVE2,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,65,T0IN,CAPCOM,NBM,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,74,T2IN,GPT1,KSA2,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,73,T3IN,GPT1,KSA3,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,70,T4IN,GPT1,KTI,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,69,T3EUD,GPT1,KSA1,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,68,T3OUT,GPT1,G2,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,67,CAPIN,GPT2,G1,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,66,T6OUT,GPT2,G0,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,27,AN0,ADC,HFM/P,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,28,AN1,ADC,IP1S,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,29,AN2,ADC,IPV,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,30,AN3,ADC,IP2S,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,31,AN4,ADC,LS2VK,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,32,AN5,ADC,UBAT,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,33,AN6,ADC,LS1VK,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,34,AN7,ADC,LS1HK,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,35,AN8,ADC,SPS1/DKG,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,36,AN9,ADC,SPS2,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,39,AN10,ADC,LS2HK,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,40,AN11,ADC,IAGR,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,41,AN12,ADC,KL15STAT,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,42,AN13,ADC,HOG,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,43,AN14,ADC,TAGR / DS,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,44,AN15,ADC,KI,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,77,TXD0,ASC0,K-Leitung,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,78,RXD0,ASC0,K-Leitung,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,75,MRST,SSC,ASIC/EEPR,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,76,MTSR,SSC,ASIC/EEPR,Belegung ME7.1 (VW) für C3 und C4 Muster
+MAIN CPU,80,SCLK,SSC,ASIC/EEPR,Belegung ME7.1 (VW) für C3 und C4 Muster
+ASIC,79,BHE,EBC,unben. Input -> GND,Belegung ME7.1 C4 (VW)
+ASIC,81,CLKOUT,EBC,unben. Input -> GND,Belegung ME7.1 C4 (VW)
+ASIC,1,CS0,EBC,unben. Pin n.c.,Belegung ME7.1 C4 (VW)
+ASIC,2,CS1,EBC,unben. Pin n.c.,Belegung ME7.1 C4 (VW)
+ASIC,3,CS2,EBC,unben. Pin n.c.,Belegung ME7.1 C4 (VW)
+ASIC,4,CS3,EBC,unben. Pin n.c.,Belegung ME7.1 C4 (VW)
+ASIC,5,CS4,EBC,unben. Pin n.c.,Belegung ME7.1 C4 (VW)
+ASIC,6,HOLD,EBC,unben. Input -> GND,Belegung ME7.1 C4 (VW)
+ASIC,7,HLDA,EBC,unben. Input -> GND,Belegung ME7.1 C4 (VW)
+ASIC,8,BREQ,EBC,unben. Input -> GND,Belegung ME7.1 C4 (VW)
+ASIC,99,EA,EBC,EA,Belegung ME7.1 C4 (VW)
+ASIC,98,ALE,EBC,ALE,Belegung ME7.1 C4 (VW)
+ASIC,97,READY,EBC,unben. Input -> GND,Belegung ME7.1 C4 (VW)
+ASIC,96,WR,EBC,unben. Pin n.c.,Belegung ME7.1 C4 (VW)
+ASIC,95,RD,EBC,RD,Belegung ME7.1 C4 (VW)
+ASIC,142,NMI,EBC,NMI,Belegung ME7.1 C4 (VW)
+ASIC,141,RSTOUT,EBC,RSTOUT,Belegung ME7.1 C4 (VW)
+ASIC,140,RSTIN,EBC,RSTIN,Belegung ME7.1 C4 (VW)
+ASIC,138,XTAL1,EBC,XTAL1,Belegung ME7.1 C4 (VW)
+ASIC,137,XTAL2,EBC,XTAL2,Belegung ME7.1 C4 (VW)
+ASIC,118,A0,EBC,SLP,Belegung ME7.1 C4 (VW)
+ASIC,119,A1,EBC,AAV/SU2,Belegung ME7.1 C4 (VW)
+ASIC,120,A2,EBC,MIL,Belegung ME7.1 C4 (VW)
+ASIC,121,A3,EBC,NLEN_AS,Belegung ME7.1 C4 (VW)
+ASIC,122,A4,EBC,LSP1VK,Belegung ME7.1 C4 (VW)
+ASIC,123,A5,EBC,LSP2VK,Belegung ME7.1 C4 (VW)
+ASIC,124,A6,EBC,LSP1HK,Belegung ME7.1 C4 (VW)
+ASIC,125,A7,EBC,LSP2HK,Belegung ME7.1 C4 (VW)
+ASIC,128,A8,EBC,FELA,Belegung ME7.1 C4 (VW)
+ASIC,129,A9,EBC,CRSH,Belegung ME7.1 C4 (VW)
+ASIC,130,A10,EBC,ESRSTSM,Belegung ME7.1 C4 (VW)
+ASIC,131,A11,EBC,SWRSTSM,Belegung ME7.1 C4 (VW)
+ASIC,85,A16,EBC,AD16,Belegung ME7.1 C4 (VW)
+ASIC,86,A17,EBC,unben. Input -> GND,Belegung ME7.1 C4 (VW)
+ASIC,87,A18,EBC,unben. Input -> GND,Belegung ME7.1 C4 (VW)
+ASIC,88,A19,EBC,unben. Input -> GND,Belegung ME7.1 C4 (VW)
+ASIC,100,AD0,EBC,AD0,Belegung ME7.1 C4 (VW)
+ASIC,101,AD1,EBC,AD1,Belegung ME7.1 C4 (VW)
+ASIC,102,AD2,EBC,AD2,Belegung ME7.1 C4 (VW)
+ASIC,103,AD3,EBC,AD3,Belegung ME7.1 C4 (VW)
+ASIC,104,AD4,EBC,AD4,Belegung ME7.1 C4 (VW)
+ASIC,105,AD5,EBC,AD5,Belegung ME7.1 C4 (VW)
+ASIC,106,AD6,EBC,AD6,Belegung ME7.1 C4 (VW)
+ASIC,107,AD7,EBC,AD7,Belegung ME7.1 C4 (VW)
+ASIC,108,AD8,EBC,AD8,Belegung ME7.1 C4 (VW)
+ASIC,111,AD9,EBC,AD9,Belegung ME7.1 C4 (VW)
+ASIC,112,AD10,EBC,AD10,Belegung ME7.1 C4 (VW)
+ASIC,113,AD11,EBC,AD11,Belegung ME7.1 C4 (VW)
+ASIC,114,AD12,EBC,AD12,Belegung ME7.1 C4 (VW)
+ASIC,115,AD13,EBC,AD13,Belegung ME7.1 C4 (VW)
+ASIC,116,AD14,EBC,AD14,Belegung ME7.1 C4 (VW)
+ASIC,117,AD15,EBC,AD15,Belegung ME7.1 C4 (VW)
+ASIC,132,A12,EBC,BF0,Belegung ME7.1 C4 (VW)
+ASIC,133,A13,EBC,BF1,Belegung ME7.1 C4 (VW)
+ASIC,134,A14,EBC,BF2,Belegung ME7.1 C4 (VW)
+ASIC,135,A15,EBC,BF3,Belegung ME7.1 C4 (VW)
+ASIC,89,A20,EBC,WFS_RC,Belegung ME7.1 C4 (VW)
+ASIC,90,A21,EBC,unben. Input -> GND,Belegung ME7.1 C4 (VW)
+ASIC,91,A22,EBC,unben. Pin n.c.,Belegung ME7.1 C4 (VW)
+ASIC,92,A23,EBC,unben. Input -> GND,Belegung ME7.1 C4 (VW)
+ASIC,19,POUT0,PWM,SLV,Belegung ME7.1 C4 (VW)
+ASIC,20,POUT1,PWM,unben. Input -> GND,Belegung ME7.1 C4 (VW)
+ASIC,21,POUT2,PWM,unben. Input -> GND,Belegung ME7.1 C4 (VW)
+ASIC,22,POUT3,PWM,unben. Input -> GND,Belegung ME7.1 C4 (VW)
+ASIC,47,CC0IO,CAPCOM,LUV,Belegung ME7.1 C4 (VW)
+ASIC,48,CC1IO,CAPCOM,unben. Input -> GND,Belegung ME7.1 C4 (VW)
+ASIC,49,CC2IO,CAPCOM,BT,Belegung ME7.1 C4 (VW)
+ASIC,50,CC3IO,CAPCOM,ULT/STST,Belegung ME7.1 C4 (VW)
+ASIC,51,CC4IO,CAPCOM,PMOEL,Belegung ME7.1 C4 (VW)
+ASIC,52,CC5IO,CAPCOM,ETR,Belegung ME7.1 C4 (VW)
+ASIC,53,CC6IO,CAPCOM,LUES/ETR/STST,Belegung ME7.1 C4 (VW)
+ASIC,54,CC7IO,CAPCOM,TAB1/PAC,Belegung ME7.1 C4 (VW)
+ASIC,57,CC8IO,CAPCOM,TAB2,Belegung ME7.1 C4 (VW)
+ASIC,58,CC9IO,CAPCOM,SELACS,Belegung ME7.1 C4 (VW)
+ASIC,59,CC10IO,CAPCOM,E_LDP,Belegung ME7.1 C4 (VW)
+ASIC,60,CC11IO,CAPCOM,NWS,Belegung ME7.1 C4 (VW)
+ASIC,61,CC12IO,CAPCOM,GTS,Belegung ME7.1 C4 (VW)
+ASIC,62,CC13IO,CAPCOM,MMS,Belegung ME7.1 C4 (VW)
+ASIC,63,CC14IO,CAPCOM,A_LDP,Belegung ME7.1 C4 (VW)
+ASIC,64,CC15IO,CAPCOM,NBM,Belegung ME7.1 C4 (VW)
+ASIC,9,CC16IO,CAPCOM,A_KOS,Belegung ME7.1 C4 (VW)
+ASIC,10,CC17IO,CAPCOM,E_KOS,Belegung ME7.1 C4 (VW)
+ASIC,11,CC18IO,CAPCOM,LA1,Belegung ME7.1 C4 (VW)
+ASIC,12,CC19IO,CAPCOM,LA2,Belegung ME7.1 C4 (VW)
+ASIC,13,CC20IO,CAPCOM,KLDF,Belegung ME7.1 C4 (VW)
+ASIC,14,CC21IO,CAPCOM,AC,Belegung ME7.1 C4 (VW)
+ASIC,15,CC22IO,CAPCOM,FST,Belegung ME7.1 C4 (VW)
+ASIC,16,CC23IO,CAPCOM,LSH1VK,Belegung ME7.1 C4 (VW)
+ASIC,23,CC28IO,CAPCOM,LSH2VK,Belegung ME7.1 C4 (VW)
+ASIC,24,CC29IO,CAPCOM,LSH1HK,Belegung ME7.1 C4 (VW)
+ASIC,25,CC30IO,CAPCOM,LSH2HK,Belegung ME7.1 C4 (VW)
+ASIC,26,CC31IO,CAPCOM,unben. Input -> GND,Belegung ME7.1 C4 (VW)
+ASIC,65,T0IN,CAPCOM,NBM,Belegung ME7.1 C4 (VW)
+ASIC,74,T2IN,GPT1,AUS,Belegung ME7.1 C4 (VW)
+ASIC,73,T3IN,GPT1,WA/SB,Belegung ME7.1 C4 (VW)
+ASIC,70,T4IN,GPT1,SV,Belegung ME7.1 C4 (VW)
+ASIC,69,T3EUD,GPT1,KUP,Belegung ME7.1 C4 (VW)
+ASIC,68,T3OUT,GPT1,KL50,Belegung ME7.1 C4 (VW)
+ASIC,67,CAPIN,GPT2,GRA,Belegung ME7.1 C4 (VW)
+ASIC,66,T6OUT,GPT2,BL,Belegung ME7.1 C4 (VW)
+ASIC,27,AN0,ADC,TMOT,Belegung ME7.1 C4 (VW)
+ASIC,28,AN1,ADC,TANS,Belegung ME7.1 C4 (VW)
+ASIC,29,AN2,ADC,TOEL/LHI/DAGD,Belegung ME7.1 C4 (VW)
+ASIC,30,AN3,ADC,U_WFS,Belegung ME7.1 C4 (VW)
+ASIC,31,AN4,ADC,TVKAT1,Belegung ME7.1 C4 (VW)
+ASIC,32,AN5,ADC,TVKAT2,Belegung ME7.1 C4 (VW)
+ASIC,33,AN6,ADC,LDP,Belegung ME7.1 C4 (VW)
+ASIC,34,AN7,ADC,DST,Belegung ME7.1 C4 (VW)
+ASIC,35,AN8,ADC,KLDF,Belegung ME7.1 C4 (VW)
+ASIC,36,AN9,ADC,unben. Input -> GND,Belegung ME7.1 C4 (VW)
+ASIC,39,AN10,ADC,IP1PLAUS,Belegung ME7.1 C4 (VW)
+ASIC,40,AN11,ADC,SP1PLAUS,Belegung ME7.1 C4 (VW)
+ASIC,41,AN12,ADC,ISHVK1,Belegung ME7.1 C4 (VW)
+ASIC,42,AN13,ADC,ISHVK2,Belegung ME7.1 C4 (VW)
+ASIC,43,AN14,ADC,ISHHK1,Belegung ME7.1 C4 (VW)
+ASIC,44,AN15,ADC,ISHHK2,Belegung ME7.1 C4 (VW)
+ASIC,75,MRST,SSC,SG-Rechner,Belegung ME7.1 C4 (VW)
+ASIC,76,MTSR,SSC,SG-Rechner,Belegung ME7.1 C4 (VW)
+ASIC,80,SCLK,SSC,SG-Rechner,Belegung ME7.1 C4 (VW)

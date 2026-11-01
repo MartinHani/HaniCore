@@ -113,8 +113,8 @@ class Call:
         self.c = S.CPU(self.m, 0, 0)
         # DPP1 WAS A LITERAL AND IT WAS THE V52 PAGE. See tools/lib/me711_dpp.py.
         _dpp.apply(self.m)
-        self.m.sfr[0xFE10] = 0xFC00          # CP, clear of all data
-        self.m.w16(0xFC00, 0xF9F0)           # R0 = Keil user stack
+        self.m.sfr[0xFE10] = PI.main_regbank()      # CP, from the map
+        self.m.w16(self.m.sfr[0xFE10], PI.user_stack_top())  # R0
 
     def __call__(self, fn, *args):
         a = sym(fn)
@@ -217,7 +217,10 @@ def main() -> int:
     rig2.m.w16(sym("hc_asic_run_ok") & 0xFFFF, 7)
     rig2.m.w8(sym("hc_asic_run_live") & 0xFFFF, 1)
     rig2.m.w8(sym("hc_asic_state") & 0xFFFF, 6)
-    rig2("hc_hal_ain_service")
+    # the snapshot is taken at the reply's accept (hc_hal_ain_capture, CC27
+    # level) since the S5500 exchange moved off the main loop; the main-loop
+    # hc_hal_ain_service() only keeps the freshness verdict
+    rig2("hc_hal_ain_capture")
 
     vals = [rig2("hc_s5500_val", i) for i in range(16)]
     raws = [rig2("hc_s5500_raw", i) for i in range(16)]
@@ -247,10 +250,11 @@ def main() -> int:
     rig3.m.w16(sym("hc_asic_run_ok") & 0xFFFF, 3)
     rig3.m.w8(sym("hc_asic_run_live") & 0xFFFF, 1)
     rig3.m.w8(sym("hc_asic_state") & 0xFFFF, 6)
-    rig3("hc_hal_ain_service")
+    rig3("hc_hal_ain_capture")
     idx3 = rig3.m.r16(sym("hc_s5500_idx") & 0xFFFF)
     check("a frame that is NOT an ADDAT block does not read as one",
-          idx3 != 0xFFFF and
+          rig3.m.r16(sym("hc_s5500_snaps") & 0xFFFF) >= 1   # it WAS judged
+          and idx3 != 0xFFFF and
           rig3.m.r16(sym("hc_s5500_plausible") & 0xFFFF) == 0,
           f"idx 0x{idx3:04X}, 0 plausible")
 

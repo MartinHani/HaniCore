@@ -664,14 +664,15 @@ def gen_pin_desc(d) -> str:
         m = re.search(r"AN(\d+)", p.hal_resource or "")
         adc = int(m.group(1)) if m else 0xFF
         if (m and (p.hal_resource or "").startswith("ASIC")
-                and d.target_id == "BOSCH_ME711"):
+                and d.target_id in ("BOSCH_ME711", "VAG_ME71_C4")):
             # V86: the PERIPHERAL ASIC's converter, not this CPU's - see
             # HC_ADC_ASIC() in hc_pin_descriptor.h. ME7.1.1 only: its HAL
             # reads ASIC AN0/AN1 from the S5500 frame. The deferred ME7.5
             # descriptor keeps its V85 encoding byte for byte.
             adc = 0xE0 | int(m.group(1))
         routable = bool(p.hal_resource)
-        if d.target_id == "BOSCH_ME711" and p.hal_resource == "NOT_ON_MAIN_CPU":
+        if (d.target_id in ("BOSCH_ME711", "VAG_ME71_C4")
+                and p.hal_resource == "NOT_ON_MAIN_CPU"):
             # V95: "NOT_ON_MAIN_CPU" is the ABSENCE of a resource, and the .ini
             # generator (gen_ts_ini_me711._pin_ok) has always read it so - the
             # firmware read it as routable. The validator then accepted e.g.
@@ -887,6 +888,22 @@ def _target_expr(target):
     return "0x%04Xu" % (sum(ord(c) for c in target) & 0xFFFF)
 
 
+C4_ONLY = "#if HC_PRESET_C4 && !HC_PRESET_DC"
+NOT_C4 = "#if !HC_PRESET_C4"
+DC_ONLY = "#if HC_PRESET_DC"
+# which guards compile IN on each board: 0 Porsche/4F, 1 2.7T, 2 ME7.5 DC
+_GUARD_ON = {0: (NOT_C4,), 1: (C4_ONLY,), 2: (DC_ONLY,)}
+
+
+def _board_guard(target):
+    """The #if a preset for `target` compiles under, or None (every board).
+    2026-10-31: the ME7.5 DC (built on the C4 branch) carries its own presets
+    only - until now it compiled the 2.7T's (refused there) and every image
+    carried the ME7.5 one."""
+    return {"VAG_ME71_C4": C4_ONLY, "BOSCH_ME711": NOT_C4,
+            "ME75_4B0906018DC": DC_ONLY}.get(target)
+
+
 def gen_presets(fields):
     """C for the engine presets, from hanicore_presets.py.
 
@@ -910,6 +927,20 @@ def gen_presets(fields):
     a('#include "hc_presets.h"')
     a('#include "hc_config_manager.h"')
     a('#include "hc_pin_descriptor.h"')
+    a("")
+    # 2026-10-24: ONE hc_presets.c, TWO BOARDS. A preset for the other board
+    # can only ever be refused (target_id), so each image carries its own:
+    # the Porsche image compiles exactly the presets it always had.
+    a("#if defined(TGT_BOARD_VAG_ME71_C4) && TGT_BOARD_VAG_ME71_C4")
+    a("#define HC_PRESET_C4 1")
+    a("#else")
+    a("#define HC_PRESET_C4 0")
+    a("#endif")
+    a("#if defined(TGT_BOARD_VAG_ME75_DC) && TGT_BOARD_VAG_ME75_DC")
+    a("#define HC_PRESET_DC 1")
+    a("#else")
+    a("#define HC_PRESET_DC 0")
+    a("#endif")
     a("")
     problems = []
     counts = {}
@@ -950,6 +981,9 @@ def gen_presets(fields):
         if problems:
             continue
         a("/* %s */" % pr.name)
+        g = _board_guard(pr.target)
+        if items and g:
+            a(g)
         if items:
             # THE ITEM LISTING stays in the file as comments (one ITEM line
             # per value, the old row format) - gates and readers parse it;
@@ -980,14 +1014,23 @@ def gen_presets(fields):
                     a("        " + ", ".join("0x%02Xu" % x for x in b[i:i + 12]) + ",")
                 nbytes += 3 + len(b)
             a("};")
+            if g:
+                a("#endif")
             a("")
             nbytes_of[pr.key] = nbytes
     if problems:
         raise SystemExit("preset generation refused:\n  " + "\n  ".join(problems))
     a("const hc_preset_t hc_engine_presets[] = {")
+    per_board = {0: 0, 1: 0, 2: 0}
     for pr in PRESETS.ENGINE_PRESETS:
         n = counts[pr.key]
         bd = 1 if getattr(pr, "board_default", False) else 0
+        g = _board_guard(pr.target)
+        for b in per_board:
+            if not g or g in _GUARD_ON[b]:
+                per_board[b] += 1
+        if g:
+            a(g)
         if n:
             a("    { %du, runs_%s, %du, %s, %du, %du }, /* %s%s */"
               % (pr.ident, pr.key.lower(), n, _target_expr(pr.target), bd,
@@ -995,10 +1038,17 @@ def gen_presets(fields):
         else:
             a("    { %du, 0, 0u, 0u, %du, 0u }, /* %s - populates nothing by design */"
               % (pr.ident, bd, pr.name))
+        if g:
+            a("#endif")
     a("};")
     a("")
-    a("const unsigned char hc_engine_preset_count = %du;"
-      % len(PRESETS.ENGINE_PRESETS))
+    a("#if HC_PRESET_DC")
+    a("const unsigned char hc_engine_preset_count = %du;" % per_board[2])
+    a("#elif HC_PRESET_C4")
+    a("const unsigned char hc_engine_preset_count = %du;" % per_board[1])
+    a("#else")
+    a("const unsigned char hc_engine_preset_count = %du;" % per_board[0])
+    a("#endif")
     a("")
     # THE BOARD DEFAULT IS A FLAG IN THE TABLE, NOT A CONSTANT EXPRESSION.
     #
@@ -1171,7 +1221,35 @@ _OUT_BIND_CAVITIES = {
     "pinCam1Sol": {115, 120},  # V97: POUT0 / POUT1 (hcvvt711.c)
     "pinCam2Sol": {115, 120},
     "pinMil": {47},            # V97: the ASIC P7.0 lamp stage
+    "pinIdleValve": {115, 120},   # 2026-10-31: POUT0 / POUT1 (hcidle711.c)
+    "pinIdleValve2": {115, 120},
 }
+# The Audi 2.7T C4 board (hctarget.h C4 branch, hc_hal_out_bindable as the
+# 2.7T image executes it, 2026-10-26): no cavity-23 relay stage (run-on is
+# internal), the cam solenoids on POUT0 = 114 (AGR), POUT1 = 104 and the
+# ASIC's NWS stage 115. Before this the 2.7T .ini offered the Porsche set.
+_OUT_BIND_CAVITIES_C4 = dict(_OUT_BIND_CAVITIES,
+                             pinMainRelay={65},
+                             pinCam1Sol={104, 114, 115},
+                             pinCam2Sol={104, 114, 115},
+                             # a real PWM unit only - the ASIC's 115 is a
+                             # port bit at the 10 ms frame
+                             pinIdleValve={104, 114},
+                             pinIdleValve2={104, 114})
+
+
+# The ME7.5 DC (2026-10-31): built on the C4 branch, so the same POUT0 = 114
+# / POUT1 = 104, tacho 37 and cam valve 115 - which the DC switches through
+# the CC650 (N205 bit) where the 2.7T uses its S5500 - with its own
+# descriptor (hc_pin_desc_me75_*). The same table as the 2.7T.
+_OUT_BIND_CAVITIES_DC = _OUT_BIND_CAVITIES_C4
+
+
+def out_bind_cavities():
+    """The bindable output cavities of the board being generated for."""
+    if _board_dc():
+        return _OUT_BIND_CAVITIES_DC
+    return _OUT_BIND_CAVITIES_C4 if _board_c4() else _OUT_BIND_CAVITIES
 
 # A CAPABILITY IS NOT A READ PATH (V98). A switch field offers the cavities
 # hchal_me711.c:hc_hal_din() reads - hw_descriptors.SWITCH_INPUT_CAVITIES, the
@@ -1181,10 +1259,23 @@ _DIN_FIELDS = {"pinLaunch", "pinFlatShift", "pinAntiLag", "pinPitLimiter"}
 _PIN_DESC_CACHE = {}
 
 
+def _board_c4():
+    import os
+    return os.environ.get("HANICORE_BOARD") == "vag_me71_c4"
+
+
+def _board_dc():
+    import os
+    return os.environ.get("HANICORE_BOARD") == "vag_me75_dc"
+
+
 def _pin_desc():
-    """The descriptor for the board this .ini is generated for."""
+    """The descriptor for the board this .ini is generated for - the one its
+    image links (build_hanicore_me711.py BOARDS "pindesc")."""
     if "d" not in _PIN_DESC_CACHE:
-        _PIN_DESC_CACHE["d"] = HW.build_me711()
+        _PIN_DESC_CACHE["d"] = (HW.build_me75() if _board_dc()
+                                 else HW.build_vag_me71_c4() if _board_c4()
+                                 else HW.build_me711())
     return _PIN_DESC_CACHE["d"]
 
 
@@ -1214,7 +1305,9 @@ def _pin_label_name(p) -> str:
     ME7.1.1 sheet says `A_T_EV8`, and offering an injector output under the
     name of a temperature input is the sort of friendly-wrong label the project rules
     section 10 says is worse than a raw integer."""
-    name = HW.FRIENDLY_CAVITY_NAMES.get(p.number)
+    name = (HW.FRIENDLY_CAVITY_NAMES_DC if _board_dc()
+            else HW.FRIENDLY_CAVITY_NAMES_C4 if _board_c4()
+            else HW.FRIENDLY_CAVITY_NAMES).get(p.number)
     if name:
         return name
     raise SystemExit("cavity %d is offered in a pin dropdown but has no "
@@ -1251,8 +1344,8 @@ def _pin_labels(need: int, ts_name: str) -> str:
               and (ts_name not in _CAPTURE_FIELDS or v in _CAPTURE_CAVITIES)
               and (ts_name not in _DIN_FIELDS
                    or v in HW.SWITCH_INPUT_CAVITIES)
-              and (ts_name not in _OUT_BIND_CAVITIES
-                   or v in _OUT_BIND_CAVITIES[ts_name])):
+              and (ts_name not in out_bind_cavities()
+                   or v in out_bind_cavities()[ts_name])):
             if ts_name in _DIN_FIELDS:
                 # V98: the switch-input table names the input, its wiring and
                 # the polarity that wiring needs (hw_descriptors.SWITCH_INPUTS)

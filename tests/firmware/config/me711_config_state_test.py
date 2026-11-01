@@ -162,7 +162,7 @@ class Rig:
         self.c = S.CPU(self.m, 0, 0)
         # DPP1 WAS A LITERAL AND IT WAS THE V52 PAGE. See tools/lib/me711_dpp.py.
         _dpp.apply(self.m)
-        self.m.sfr[0xFE10] = 0xFC00
+        self.m.sfr[0xFE10] = PI.main_regbank()   # 0xFD00 on the 2.7T
         # R0 = Keil's software stack. This used to be a literal address, and
         # hc_cfg is at 0xF98C: the harness was writing its own call frames over
         # the first hundred bytes of the very configuration page this gate
@@ -171,7 +171,7 @@ class Rig:
         # is the third time one literal stack address has imitated a firmware
         # defect.
         self.stack_top = PI.user_stack_top()
-        self.m.w16(0xFC00, self.stack_top)
+        self.m.w16(self.m.sfr[0xFE10], self.stack_top)
         # Opt-in: publish adc_raw and the S5500 window as accepted samples
         # before every eng_service() (see publish_samples()).
         self.publish_on_service = False
@@ -244,6 +244,21 @@ class Rig:
         return self.m.r8(sym(name) & 0xFFFF) & 0xFF
 
 
+import hc_board as _HB                                    # noqa: E402
+# the runnable engine preset each board's image carries: the AWT (3) on the
+# Porsche board, the Audi 2.7T (6) on the C4 board (no AWT preset there)
+ENGINE_PRESET = 6 if _HB.IS_C4 else 3
+
+
+def key_on(r, on=True):
+    """KL15 as THIS board's firmware reads it (hctarget.h TGT_KL15_ON):
+    P6.2 on the Porsche, main AN12 >= 400 counts on the C4 board."""
+    v = r.m.sfr.get(0xFFCC, 0)
+    r.m.sfr[0xFFCC] = (v | 4) if on else (v & ~4)
+    if _HB.IS_C4:
+        r.m.w16((sym("adc_raw") & 0xFFFF) + 2 * 12, 900 if on else 0)
+
+
 def boot():
     """A rig with hc_cfg_init() and hc_cfg_mgr_init() already run."""
     r = Rig()
@@ -298,7 +313,8 @@ def _hw_instr_per_ms(clocks_per_instr=4.0):
     margin, which is the safe direction for a budget check.
     """
     import re as _re
-    h = (ROOT / "firmware/targets/me711/hctarget.h").read_text(errors="replace")
+    import hc_board   # the board's own fCPU (2026-10-25: 24 MHz on the 2.7T)
+    h = hc_board.target_text()
     m = _re.search(r"#define\s+TGT_FCPU_HZ\s+(\d+)", h)
     if not m:
         raise SystemExit("TGT_FCPU_HZ not found in hctarget.h")
@@ -389,15 +405,20 @@ def main() -> int:
     make_valid(r)
     r("hc_cfg_mgr_apply_now", 0)
     seen = []
-    for pin in (97, 88, 112):          # B, C, D - all real EV pins
+    # the ME7.5 DC has four injector cavities and make_valid() uses them all:
+    # D there is a SWAP (slot 1 -> 89, slot 4 -> 96), the Porsche/C4 use EV5
+    seq, last = ((97, 88, 89), 89) if _HB.IS_DC else ((97, 88, 112), 112)
+    for pin in seq:                    # B, C, D - all real EV pins
         r.write(O["CFG_U_PIN_INJ"], pin)
         seen.append(r.active(O["CFG_U_PIN_INJ"]))
+    if _HB.IS_DC:
+        r.write(O["CFG_U_PIN_INJ"] + 3, 96)
     check("the runtime saw NONE of the intermediate values",
           seen == [96, 96, 96],
-          f"ACTIVE stayed {seen} while DESIRED went 97, 88, 112")
+          f"ACTIVE stayed {seen} while DESIRED went {seq}")
     r("hc_cfg_mgr_apply_now", 0)
     check("and the apply installs the LAST one, not the first",
-          r.active(O["CFG_U_PIN_INJ"]) == 112,
+          r.active(O["CFG_U_PIN_INJ"]) == last,
           f"ACTIVE = {r.active(O['CFG_U_PIN_INJ'])}")
     check("exactly one apply happened, not three",
           r.g16("hc_cfg_active_rev") == 2,
@@ -525,7 +546,10 @@ def main() -> int:
     check("identical writes do not stage work or invalidate geometry",
           r.g16("hc_cfg_dirty_groups")==0 and r.g16("hc_cfg_desired_rev")==rev
           and r.g16("hc_cfg_active_rev")==active_rev)
-    r.write(O["CFG_U_PIN_INJ"], 112)
+    other = 89 if _HB.IS_DC else 112        # see the latest-state case
+    r.write(O["CFG_U_PIN_INJ"], other)
+    if _HB.IS_DC:
+        r.write(O["CFG_U_PIN_INJ"] + 3, 96)
     check("a write while the engine turns stages the group",
           r.g16("hc_cfg_dirty_groups") & 0x7FFF,
           f"mask 0x{r.g16('hc_cfg_dirty_groups'):04X}")
@@ -538,7 +562,7 @@ def main() -> int:
     stopped = _steps(r, "hc_cfg_mgr_service", 0)
     check("stopping the engine applies it on the next pass",
           stopped > 2000 and r.g16("hc_cfg_dirty_groups") == 0
-          and r.active(O["CFG_U_PIN_INJ"]) == 112,
+          and r.active(O["CFG_U_PIN_INJ"]) == other,
           f"{stopped} steps, mask "
           f"0x{r.g16('hc_cfg_dirty_groups'):04X}")
 
@@ -581,10 +605,22 @@ def main() -> int:
     #
     # The rule stands. The data under it did not. See
     # tests/firmware/config/me711_cavity_truth_proof.py.
-    check("cavity 21 is a POWER INPUT and advertises no drive capability",
-          r.callb("hc_pin_can", 21, CAP["RELAY_OUT"]) == 0
-          and r.callb("hc_pin_can", 21, CAP["LOW_SIDE"]) == 0,
-          "KL15 - removing it takes this ECU offline, measured")
+    if _HB.IS_DC:
+        # the ME7.5 DC is ANOTHER connector: KL15 is cavity 3 and cavity 21
+        # is J271, the main relay's drive (.scratch/me75-reverse/
+        # BENCH_ADAPTER.md: the Porsche rig's KL15 on 21 would hit it)
+        check("ME7.5 DC: cavity 3 (KL15) advertises no drive capability",
+              r.callb("hc_pin_can", 3, CAP["RELAY_OUT"]) == 0
+              and r.callb("hc_pin_can", 3, CAP["LOW_SIDE"]) == 0,
+              "the ignition feed")
+        check("ME7.5 DC: cavity 21 IS the main-relay drive (relay capable)",
+              r.callb("hc_pin_can", 21, CAP["RELAY_OUT"]) == 1,
+              "J271 main relay")
+    else:
+        check("cavity 21 is a POWER INPUT and advertises no drive capability",
+              r.callb("hc_pin_can", 21, CAP["RELAY_OUT"]) == 0
+              and r.callb("hc_pin_can", 21, CAP["LOW_SIDE"]) == 0,
+              "KL15 - removing it takes this ECU offline, measured")
     # AND THE REST OF THE BLOCK IS NO LONGER LOCKED WHOLESALE.
     #
     # This required cavities 18..24 to advertise NOTHING, because the block was
@@ -598,10 +634,19 @@ def main() -> int:
     # columns agreeing on EV7 and EV8. So the assertion becomes the SPECIFIC
     # one, which is stronger than a blanket refusal: these four carry the
     # capability the sheet gives them, and 20/21/23 still carry none.
-    check("cavities 19 and 24 ARE injector outputs", 
-          r.callb("hc_pin_can", 19, CAP["INJ_OUT"]) == 1
-          and r.callb("hc_pin_can", 24, CAP["INJ_OUT"]) == 1,
-          "EV8 on 19 and EV7 on 24 - so this board has EIGHT injectors")
+    import hc_board
+    if hc_board.IS_C4:
+        # the 2.7T's C4 board puts TAUS_S on 19 and nothing on 24
+        # (hw_descriptors / hc_pin_desc_vag_me71_c4.c): neither is an injector
+        check("C4 board: cavities 19 and 24 are NOT injector outputs",
+              r.callb("hc_pin_can", 19, CAP["INJ_OUT"]) == 0
+              and r.callb("hc_pin_can", 24, CAP["INJ_OUT"]) == 0,
+              "19 TAUS_S, 24 unassigned on the ME7.1 C4")
+    else:
+        check("cavities 19 and 24 ARE injector outputs",
+              r.callb("hc_pin_can", 19, CAP["INJ_OUT"]) == 1
+              and r.callb("hc_pin_can", 24, CAP["INJ_OUT"]) == 1,
+              "EV8 on 19 and EV7 on 24 - so this board has EIGHT injectors")
     # V96 LOCKED 18 AND 22 AGAIN, on better evidence: on THIS board P8.2 /
     # P8.1 are the CJ120 chip selects (the ME7.1.1 schematic nets CS_CJ120_ZAS1_P81 /
     # ..ZAS2_P82 via bridges B1073 / B1053), driven HIGH at startup, and
@@ -615,11 +660,13 @@ def main() -> int:
           and r.callb("hc_pin_can", 18, CAP["LOW_SIDE"]) == 0
           and r.callb("hc_pin_can", 22, CAP["LOW_SIDE"]) == 0,
           "P8.2 / P8.1 = CS_CJ120 on this board")
-    check("and 20, 21 and 23 are STILL locked",
+    locked = (20, 23) if _HB.IS_DC else (20, 21, 23)
+    check("and %s are STILL locked" % ", ".join(map(str, locked)),
           all(r.callb("hc_pin_can", n, CAP["RELAY_OUT"]) == 0
               and r.callb("hc_pin_can", n, CAP["INJ_OUT"]) == 0
-              for n in (20, 21, 23)),
-          "20 is not named on the sheet; 21 is KL15; 23 is the main relay")
+              for n in locked),
+          "20 is not named on the sheet; 21 is KL15 (the DC: its main "
+          "relay, above); 23 is the main relay")
     check("cavity 23 is not offered as an injector output",
           r.callb("hc_pin_can", 23, CAP["INJ_OUT"]) == 0,
           "the workbook calls it EV8; it is the DME main relay drive")
@@ -929,8 +976,17 @@ def main() -> int:
     # fCPU from hctarget.h at four clocks per instruction - twice the C166
     # floor, so the answer errs towards pessimism.
     ms_steps = _hw_instr_per_ms()
-    check("a whole RPM-zero transaction fits well inside the 10 ms raster",
-          n < ms_steps * 5,
+    # THE BOUND IS THE MAIN LOOP'S, SINCE 2026-10-13. The 5 / 10 ms bounds
+    # here were the S5500's 10 ms raster while the main loop clocked its
+    # frame; the exchange is the CC27 interrupt now (the project rules),
+    # so a long main-loop pass delays only main-loop work: the throttle
+    # control step (me711_runtime_stress_proof: DBW step gap <= 20 ms) and
+    # the watchdog service (gate 20 ms, hardware 200 ms). The apply alone
+    # must stay within HALF of that 20 ms, and stacked on the measured
+    # baseline gap within all of it (2026-10-26: 50 048 instructions = 5.0 ms
+    # on the Porsche, 8.5 ms on the 24 MHz 2.7T).
+    check("a whole RPM-zero transaction fits in half the 20 ms main-loop budget",
+          n < ms_steps * 10,
           f"{n} instr = {n / ms_steps:.1f} ms on the part")
 
     # AN APPLY DOES NOT HAPPEN IN ISOLATION. hc_cfg_mgr_apply_now() runs from
@@ -942,9 +998,9 @@ def main() -> int:
     BASELINE_GAP_INSTR = 10790
     combined = n + BASELINE_GAP_INSTR
     check("and stacked on the measured baseline gap it is still inside it",
-          combined < ms_steps * 10,
+          combined < ms_steps * 20,
           f"{n} + {BASELINE_GAP_INSTR} = {combined} instr "
-          f"= {combined / ms_steps:.1f} ms of a 10 ms raster")
+          f"= {combined / ms_steps:.1f} ms of the 20 ms main-loop budget")
 
     # THE DEFERRED COPY IS NOT DRIVEN BY service() ANY MORE, so these checks
     # name hc_cfg_mgr_seed_step(). They used to call service() and, once the

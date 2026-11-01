@@ -1,0 +1,105 @@
+cavity,fitted,rb_name,vw_name,function,ssb_row
+1,x,M_M_EL,LE_MA,Elektronikmasse,49
+2,x,M_M_EL,LE_MA,Elektronikmasse,50
+3,x,U_U_KL15,KL15,Versorgungsspannung Kl.15,68
+4,x,A_S_LSH2VK,LS2VK_H,Lambdasondenheizung v. KAT 2 für LSU/LSF,397
+5,x,A_S_LSH1VK,LS1VK_H,Lambdasondenheizung v. KAT 1 für LSU/LSF,398
+6,x,A_S_LSH2HK,LS2HK_H,Lambdasondenheizung h. KAT 2 für LSF,395
+9,x,A_S_ULT1,ULVT1_S,Umluftventil Turbo alternativ zu AAV,340
+10,x,M_R_LS2HK,LS2HK_MA,Sensormasse LS2HK,58
+11,x,E_A_LS2HK,LS2HK_S,LSF hinter Kat. 2,100
+12,x,M_R_LS2VK,LS2VK_MA,Sensormasse LS2VK (alternativ zu virtueller Masse LSU2),60
+13,x,E_A_LS2VK,LS2VK_S,LSF vor Kat. 2 (alternativ zu LSU2 Nernstspannung),98
+16,x,E_A_TVKAT2,TVKAT2_S,"Temperatursensor Vorkat.2, alternativ zu Klopfsensor 4",155
+18,x,E_A_DSBKV,DSBKV_S,Unterdruck Bremskraftverstärker,171
+19,x,E_T_GTS,TAUS_S,"Temp.-Signal aus Kombi (PWM), alternativ zu T_AUS und Öldruck 0,3 bar",212
+20,x,E_T_TAB2,TAB2_S,"Abgastemperatur 2 (PWM), alternativ zu P/N",210
+25,x,A_T_LDP,LDP_S,Leak Detection Pump,301
+26,x,E_A_TANS,TAN_S,"Ansauglufttemperatur, gebrückt an Kl.26, altern. zu UBR",124
+27,x,M_R_HFM,HFM_MA,Sensormasse HFM,55
+28,x,E_T_KLDF,DF_S,Erregerstrom Generator DF,213
+29,x,E_A_HFM,HFM_S,Lastsignal HFM,78
+30,x,E_S_FST,FST_S,Tankfüllstand,233
+31,x,E_A_TVKAT1,TVKAT1_S,"Temperatursensor Vorkat.1, alternativ zu Klopfsensor 3",152
+32,x,M_C_SEN,SCH_SEN,Schirm Geber Karosseriesegm.,63
+33,x,M_R_SP2M,SP2_MA,Sensormasse Sollwertpoti 2,53
+34,x,E_A_SP2S,SP2_S,Sollwertpoti 2,91
+35,x,E_A_SP1S,SP1_S,Sollwertpoti 1,89
+36,x,M_R_SP1M,SP1_MA,Sensormasse Sollwertpoti 1,52
+37,x,A_T_TN,TN_S,Drehzahlausgang,402
+38,x,E_S_GRA,GRAEIN_S,"GRA, Fkt. ""Ein""",223
+39,x,E_S_KUP,KU_S,"GRA, Kupplung",222
+40,x,E_S_AC,AC_S,Schalter Klimabereitschaft / Drehzahlanhebung,217
+41,x,B_S_KOS,KKOBI_S,Klimakompressor,179
+43,x,B_D_DIAK,DIAK_S,"K-Leitung, WFS Immobilizer",178
+44,x,A_S_SLV,SLV_S,Sekundärluftventil,332
+45,x,A_S_VAKUPU,?,"Relais Vakuumpumpe (bei T4 mit AAV belegt, d.h. keine VAKUPU)",382
+46,x,A_S_SLP,SLP_S,Sekundärluftpumpe (Relais),295
+47,x,A_S_MIL,MIL_S,Fehlerlampe,325
+48,x,A_S_EFLA,EFLA_S,EGAS-Fehlerlampe,321
+49,x,E_A_TMOEL,TMOEL_S,"Motoröltemperatur alternativ zu Lenkwinkelsensor, Reserveeingang und Differenzdrucksensor",119
+50,x,M_R_SEN,SEN_MA,Sensormasse (Karosseriesegment),61
+51,x,M_R_LS1VK,LS1VK_MA,Sensormasse LS1VK (alternativ zu virtueller Masse LSU1),59
+53,x,A_U_5V2,5V2,5V-Versorgung 2 für Sollwertpoti 2 und sonstige Verbraucher,76
+54,x,E_F_VFZ,VFZG_S,Geschwindigkeitssignal,219
+55,x,E_S_BT,BTS_S,Bremstest,220
+56,x,E_S_BL,BLS_S,Bremslicht,221
+57,x,E_S_SV,GRASV_S,"GRA, Setzen Verzögerung",224
+58,x,B_D_CANL,CAN_L,"CAN-Low, 2 Pins zentraler Busabschluß, bei ME 7.1.1 C-Muster mit Funktionsrechner C167CR-4RM kein 2. CAN (77)",183
+59,x,M_C_CAN,CAN_SCH,Schirm CAN,66
+60,x,B_D_CANH,CAN_H,"CAN-High, 2 Pins zentraler Busabschluß, bei ME 7.1.1 C-Muster mit Funktionsrechner C167CR-4RM kein 2. CAN (79)",184
+61,x,E_T_TAB1,TAB1_S,"Abgastemperatur 1 (PWM) alternativ zu Klimadrucksignal, PAC",205
+62,x,U_U_UBD,KL30,Dauerversorgung Kl.30,67
+63,x,A_S_LSH1HK,LS1HK_H,Lambdasondenheizung h. KAT 1 für LSF,393
+64,x,A_T_TEV,TEV,Tankentlüftungsventil,293
+65,x,A_S_EKPR,EKPR,Relais für elektrische Kraftstoffpumpe,294
+67,x,E_P_CRSH,CRSH_S,Crash-PWM-Signal vom Air-Bag,235
+68,x,M_R_LS1HK,LS1HK_MA,Sensormasse LS1HK,57
+69,x,E_A_LS1HK,LS1HK_S,LSF hinter Kat. 1,99
+70,x,E_A_LS1VK,LS1VK_S,LSF vor Kat. 1 (alternativ zu LSU1 Nernstspannung),96
+72,x,A_U_5V2,5V2,5V-Versorgung 2 für Sollwertpoti 2 und sonstige Verbraucher,76
+73,x,A_U_5V1,5V1,"5V-Versorgung 1, Im Motorsegment für Istwertpoti 1 u. 2, im Karosseriesegment für Sollwertpoti 1",75
+74,x,E_T_MMS,MMS_S,"Motor-Soll-Moment-PWM, alternativ zu Öldruck 1,4 bar",227
+74,x,E_S_PMOEL,PMOEL_S,"Öldruck 1,4 bar, alternativ zu MMS",228
+75,x,E_S_WA,GRAWA_S,"GRA, Wiederaufnahme",226
+76,x,E_S_AUS,GRAAUS_S,"GRA, ""Aus""",225
+77,x,B_D_CANL,CAN_L,"CAN-Low, 2 Pins zentraler Busabschluß, bei ME 7.1.1 C-Muster mit Funktionsrechner C167CR-4RM kein 2. CAN (77)",183
+78,x,M_C_CAN,CAN_SCH,Schirm CAN,66
+79,x,B_D_CANH,CAN_H,"CAN-High, 2 Pins zentraler Busabschluß, bei ME 7.1.1 C-Muster mit Funktionsrechner C167CR-4RM kein 2. CAN (79)",184
+80,x,E_S_LDP,SLDP_S,Schalter Leak Detection Pump,215
+81,x,A_P_KVA,KVA_S,Verbrauchssignal,401
+82,x,E_F_NBMA,DZG+_S,Drehzahleingang + (Induktivgeber),192
+83,x,A_U_5V1,5V1,"5V-Versorgung 1, Im Motorsegment für Istwertpoti 1 u. 2, im Karosseriesegment für Sollwertpoti 1",75
+84,x,E_A_IP2S,IP2_S,Istwertpoti 2,87
+85,x,E_A_TANS,TAN_S,Ansauglufttemperatur,123
+86,x,E_T_PHA1,PHA1_S,Phasensignal1,197
+87,x,E_T_PHA2,PHA2_S,Phasensignal2,199
+88,x,A_P_EV3,EV3,Einspritzventil 3,267
+89,x,A_P_EV4,EV4,Einspritzventil 4,268
+90,x,E_F_NBMB,DZG-_S,Drehzahleingang - (Induktivgeber),193
+91,x,M_R_IPM,IP_MA,Sensormasse Istwertpotis,54
+92,x,E_A_IP1S,IP1_S,Istwertpoti 1,83
+93,x,E_A_TMOT,TMOT_S,Motortemperatur,113
+94,x,A_P_ZUE3X,ZUE3,Zündendstufe 3 extern,252
+95,x,A_P_ZUE4X,ZUE4,Zündendstufe 4 extern,253
+96,x,A_P_EV1,EV1,Einspritzventil 1,265
+97,x,A_P_EV2,EV2,Einspritzventil 2,266
+98,x,A_U_5V2,5V2,5V-Versorgung 2 für Sollwertpoti 2 und sonstige Verbraucher,76
+99,x,M_R_KS,KS_MA,Sensormasse Klopfsensoren,51
+100,x,E_A_AGRPOT,AGRPOT_S,AGR-Lagerückmeldung (Poti),143
+101,x,E_A_DS E_A_PLADE,SRD_S PLADE,Lade- oder Saugrohrdrucksensor (alternativ zu AGR-Temperatur),129
+102,x,A_P_ZUE1X,ZUE1,Zündendstufe 1 extern,250
+103,x,A_P_ZUE2X,ZUE2,Zündendstufe 2 extern,251
+104,x,A_T_LDR / A_S_SU,LDR_S / SRU1_S,Ladedrucktaktventil (alternativ zu Saugrohrumschaltung),330
+106,x,E_A_KS1,KS1_S,Klopfsensor 1,156
+107,x,E_A_KS2,KS2_S,Klopfsensor 2,158
+108,x,M_R_SEN,SEN_SCH,Sensormasse/Schirm (Motorsegment),65
+110,x,A_P_ZUE5X,ZUE5,Zündendstufe 5 extern,254
+111,x,A_P_ZUE6X,ZUE6,Zündendstufe 6 extern,255
+112,x,A_P_EV5,EV5,Einspritzventil 5,269
+113,x,A_P_EV6,EV6,Einspritzventil 6,270
+114,x,A_T_EAGR,AGR_S,Abgasrückführung,385
+115,x,A_S_NWS,NWS_S,"Nockenwellenverstellung; 3,7A",359
+116,x,A_S_ETR,ETH_S,Elektrische Thermostatregelung,305
+117,x,A_T_ESBM+,ESBM+,Electronic-System-Baukasten DV-E5 Motor +,399
+118,x,A_T_ESBM-,ESBM-,Electronic-System-Baukasten DV-E5 Motor -,400

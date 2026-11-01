@@ -1,18 +1,21 @@
 # HaniCore
 
-**Open standalone engine-management firmware for the Bosch ME7.1.1 ECU.**
+**Open standalone engine-management firmware for Bosch ME7 ECUs.**
 
-HaniCore replaces the factory software of a Bosch ME7.1.1 (Porsche
-`0261207696`, C167 at 40 MHz) with a configurable engine controller tuned in
-TunerStudio. It contains no Bosch code, boot region included. 1.0-dev, not
-road-ready. Test car: VW/Audi 1.8T AWT, drive-by-wire.
+HaniCore replaces the factory software of a Bosch ME7 ECU with a configurable
+engine controller, tuned with [LibreTune](#tuning-app-libretune) over an
+ordinary KKL (K-line) cable. Every image runs on HaniCore's own boot region:
+it contains no Bosch code. 1.0-dev, not road-ready. Test car: VW/Audi 1.8T,
+drive-by-wire, on the Porsche ECU.
 
-**Second target in the works: the VAG 1.8T ME7.5 ECU (1 MiB flash).** The
-same firmware will run on both; the ME7.5 traces in the tree (its pin
-descriptor, `hchal_me75` references) belong to that port and are not usable
-yet.
+| ECU (`--board`) | hardware | image | proven |
+|---|---|---|---|
+| Porsche ME7.1.1 (default) | `0261207696`, C167 40 MHz | `HaniCore_ME711_v102_dev` | **car** (1.8T) and bench (outputs, crank, Burn, OBD update) |
+| Audi 2.7T ME7.1 (`vag_me71_c4`) | `4B0907551F` / `0261206378`, C167CR 24 MHz | `HaniCore_ME71_27T_v102_dev` | bench (outputs, crank to 7500 rpm, Burn, OBD update); ceiling 7800 rpm |
+| Audi 4F 4.2 V8 ME7.1.1 (`audi_4f_v8`) | `0261208363`, C167 40 MHz | `HaniCore_ME711_4F_v102_dev` | experimental: simulator, and a tester's ECU connects |
+| VAG 1.8T ME7.5 (`vag_me75_dc`) | `4B0906018DC` / `0261207636`, C167CR 24 MHz | `HaniCore_ME75_DC_v102_dev` | bench (outputs, crank to 7000 rpm, Burn, OBD update); not yet in a car |
 
-## Works on the car
+## Features
 
 * crank and cam sync, sequential injection and sequential coil-on-plug
   (wasted spark until the cam has found the cycle)
@@ -20,65 +23,100 @@ yet.
   cranking, DFCO
 * ignition tables, dwell, CLT/IAT corrections
 * wideband lambda (on-board CJ120, bank 1) and closed-loop fuel trim
-* electronic throttle: control, idle, AutoCal, friction characterization
+* electronic throttle: control, idle, AutoCal, PID autotune, friction
+  characterization
+* boost control (N75, open or closed loop) and overboost fuel cut
+* cable throttle: idle air valve (2- or 3-wire) on a PWM output, single-track
+  TPS (simulator only so far)
 * sensors: coolant, charge pressure, onboard baro, throttle, pedal, battery
 * Burn in the car, main relay and run-on, fuel pump, tacho output
-* TunerStudio over the K-line, direct (cavity 43) or the car's diagnostic port
+* tuning over the K-line, direct (cavity 43) or the car's diagnostic port
+* firmware update over the same K-line, ECU closed, tune kept (below)
+* read-only vehicle logger with automatic analysis
+  (`tools\vehicle\me711_vehicle_test.py`, `me711_log_analyze.py`)
 
 ## Not yet working / not proven
 
-* boost control and overboost cut under load
 * knock control (the monitor runs; no calibration yet)
-* throttle PID autotune on a car (works on the bench)
-* wall-film values still need tuning (quick throttle goes rich)
 * VVT, launch, flat shift, anti-lag, check-engine lamp: simulator only
 * outputs 5–8 and the second wideband bank: unused on a 4-cylinder
-* no CAN, no firmware update without opening the ECU
+* no CAN
+* the K-line updater is bench-proven on the Porsche and the 2.7T only
 
 ## Known bugs
 
-* a TunerStudio request sent while a Burn is being written gets no reply;
-  TunerStudio retries it
 * with the engine running, an ASIC frame checksum error every 40–60 s (no
-  reset, the next frame is good)
-* above 2000 rpm a main-loop pass can take up to 24 ms, which delays throttle
-  steps and TunerStudio replies
+  reset, the next frame is good). A retry no longer stretches the 10 ms frame
+  raster, and the bad frame is now captured; the cause needs a car log
 * at 9600 rpm full acceleration (simulation) a few injector openings are
-  skipped; 9600 rpm is far above the AWT's limit
+  skipped; 9600 rpm is far above an I4 1.8T's limit (fix: the hardware-compare
+  output executor, designed, not built)
+
+Fixed, car check pending: main-loop passes of 24–41 ms (the K-line wake-up
+reply held the loop; bench worst pass 44 → 11 ms).
 
 ## Build the firmware
 
-No Keil? The flash image, `.ini` and plugin are under
+No Keil? The flash images and `.ini` files are under
 [Releases](https://github.com/MartinHani/HaniCore/releases).
 
 Keil C166 V7.53 (not included), Python 3.11+, Windows.
 
 ```powershell
 py -m pip install -r requirements.txt
-py tools\build\build_hanicore_me711.py     # image -> bins\hanicore\
-py tools\tunerstudio\gen_ts_ini_me711.py   # matching TunerStudio .ini -> tunerstudio\
+py tools\build\build_hanicore_me711.py     # image -> bins\hanicore\  (--board <b> for the other ECUs)
+py tools\tuning\gen_ts_ini_me711.py   # matching .ini -> tuning\
 py tests\run_gates.py fast                 # offline checks
 ```
 
 ## Flash
 
 The build writes a full 1 MiB flash image, `bins\hanicore\<image>.bin`. Write
-it with any ME7 boot-mode tool; do not let the tool correct checksums.
+it with any ME7 boot-mode tool; do not let the tool correct checksums. A
+full-image flash leaves the calibration store blank.
+
+**Update over the K-line, ECU closed.** Build the resident loader once, then
+the image with `--updater` (`<image>_updater.bin`): the first one goes in by
+boot mode, every later one over cavity 43 or the car's diagnostic port,
+engine stopped:
+
+```powershell
+py tools\build\build_loader.py [--board <b>]
+py tools\build\build_hanicore_me711.py [--board <b>] --updater
+py tools\flash\hc_update.py --image bins\hanicore\<image>_updater.bin --port COM3 [--kwp]
+```
+
+It saves the tune, writes the new image, lets a resident loader install it
+and puts the tune back (carried across by field name after a page-layout
+change). Bench: ~40 s on the Porsche, ~60 s on the 2.7T. An interrupted
+update is recovered by boot mode.
 
 ## Wiring
 
-The Porsche ECU on a VAG 1.8T (AWT) harness needs four terminal moves in the
+The Porsche ECU on a VAG 1.8T DBW (ME7.5) harness needs four terminal moves in the
 harness connector: KL15 3 → 21, relay-switched feed 121 → 3, main-relay drive
 21 → 23, intake-air temperature 85 → 26. Every cavity: [docs/PINOUT.md](docs/PINOUT.md).
 
+## Tuning app: LibreTune
+
+**TunerStudio is no longer supported; HaniCore uses LibreTune only.**
+
+HaniCore is tuned with **LibreTune**, an open-source tuning app. Its K-line
+support (an ordinary KKL / VAG-COM cable: the line's echo removed, the car's
+OBD wake-up) is in HaniCore's LibreTune build:
+[github.com/MartinHani/LibreTune/releases](https://github.com/MartinHani/LibreTune/releases)
+(a fork of [RallyPat/LibreTune](https://github.com/RallyPat/LibreTune),
+GPL-2.0; its own source and license).
+
 ## First setup
 
-1. TunerStudio: **Tools → TunerStudio Plugins → Add or Update a Plugin**,
-   pick `tunerstudio/plugin/HaniCore_KLine_Transport_<version>.jar`, restart
-   TunerStudio. Create a project with the generated `.ini`, connection type
-   **HaniCore K-Line**, 115200 baud.
+1. LibreTune: **New project / Connect ECU** → **K-line (KKL / VAG-COM
+   cable)** → cable connected to **ECU K-line pin** (bench) or **car OBD
+   socket**, the KKL's COM port, 57600 or 124800 baud. When asked for the
+   ECU definition, import the board's `.ini` from the release (or from
+   `tuning\` after a build).
 2. Base calibration:
-   * an engine with a preset (today *VAG 1.8T DBW (AWT)*): **Controller →
+   * an engine with a preset (today *VAG 1.8T DBW* or *Audi 2.7T biturbo V6*): **Controller →
      Base Tunes**, choose it, **APPLY ENGINE PRESET** with the engine stopped,
      Burn, key off and on;
    * any other engine: set the engine, trigger, injectors, ignition, sensors
@@ -91,30 +129,27 @@ harness connector: KL15 3 → 21, relay-switched feed 121 → 3, main-relay driv
    * Burn.
 4. Check the sensors and the trigger, then start.
 
-The ECU identifies itself as `rusEFI HaniCore ME711 <layout>` so TunerStudio
-uses its rusEFI protocol handling. HaniCore is not rusEFI firmware and is not
-affiliated with rusEFI.
+The ECU identifies itself as `HaniCore <board> <layout>`; the layout id makes
+an `.ini` for another page layout refuse to match.
 
 ## Resources used
 
 | resource | size | used | free |
 |---|---|---|---|
-| near code (one 64 KiB segment) | 64 512 B | 61 068 B | 3 444 B (3 072 kept as reserve) |
-| far code | 183 984 B | 116 768 B | 67 216 B |
-| constants (near + huge) | 12 608 B | 10 172 B | 2 436 B |
-| internal RAM (near data) | — | — | 192 B |
-| on-chip XRAM | 1 696 B | 1 631 B | 65 B |
-| user / system stack (worst case) | 512 / 634 B | 426 / 534 B | 83 % / 84 % used |
-| external SRAM | 32 KiB | 32 KiB | 0 (every byte assigned) |
+| near code (one 64 KiB segment) | 64 512 B | 58 622 B | 5 890 B (3 072 kept as reserve) |
+| far code | 183 984 B | 119 022 B | 64 962 B |
+| constants (near + huge) | 12 608 B | 10 116 B | 2 492 B |
+| internal RAM (near data) | — | — | 194 B |
+| on-chip XRAM | — | — | 95 B |
+| user / system stack (worst case) | 512 / 634 B | — | ≤ 85 % (build gate) |
+| external SRAM | 32 KiB | — | 2 648 B spare |
 | calibration page | 4 096 B | 4 091 B | 5 B |
-| TunerStudio live data block | 1 664 B | 1 664 B | 0 |
+| live data block | 1 664 B | 1 578 B | 86 B |
 | flash: calibration store | 576 KiB | 72 records of 8 KiB | — |
-| flash: reserved for a future K-line updater | 64 KiB | — | — |
+| flash, `--updater` image | — | resident loader 64 KiB, staging 256 KiB, store 40 records | — |
 
-Code space is not the limit; the calibration page, the live data block and
-RAM are. A good part of them still holds debug and bring-up leftovers (old
-diagnostics, unused calibration fields, developer channels); cleaning that up
-is in progress.
+Porsche release image, 2026-10-30. Code space is not the limit; the
+calibration page and RAM are.
 
 ## Safety
 
@@ -125,6 +160,5 @@ off public roads.
 
 ## License
 
-GPL-3.0-or-later ([LICENSE](LICENSE)), with an additional permission that
-lets the TunerStudio plugin run inside TunerStudio. No warranty.
+GPL-3.0-or-later ([LICENSE](LICENSE)). No warranty.
 [docs/LICENSING.md](docs/LICENSING.md).

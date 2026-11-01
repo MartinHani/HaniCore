@@ -4,14 +4,14 @@
      tools/config_source/hw_descriptors.py. Do not edit. -->
 
 Every cavity of the Porsche ME7.1.1 connector as the firmware's pin table
-sees it: the label TunerStudio shows, the Bosch net name, the capabilities
+sees it: the label the tuning app shows, the Bosch net name, the capabilities
 the validator allows, the evidence class of those capabilities, the CPU/ASIC
 resource, and the meaning. `SPECIAL_LOCKED` cavities are never routable.
 **PROBABLE** = Bosch documentation for this family, not measured on this board;
 **VERIFIED** = measured or settled by agreeing primary sources. Per-capability
 sources are in `tools/config_source/hw_descriptors.py`.
 
-| cavity | TunerStudio label | Bosch net | capabilities | evidence | resource | meaning |
+| cavity | label | Bosch net | capabilities | evidence | resource | meaning |
 |---|---|---|---|---|---|---|
 | 1 |  | `EL_MA` | SPECIAL_LOCKED | VERIFIED |  | Terminal 31, electronics ground |
 | 2 |  | `EL_MA` | SPECIAL_LOCKED | VERIFIED |  | Terminal 31, electronics ground |
@@ -116,7 +116,7 @@ sources are in `tools/config_source/hw_descriptors.py`.
 | 101 | MAP / pressure | `SRD_S / TAGR_S` | AIN | PROBABLE | P5.14/AN14 | PLADE / DSS - charge or manifold PRESSURE |
 | 102 | Ignition output 1 | `ZUE1` | IGN_OUT | PROBABLE | P2.0/CC0IO | ZUE1 = Zuendendstufe extern - external ignition output stage |
 | 103 | Ignition output 2 | `ZUE2` | IGN_OUT | PROBABLE | P2.1/CC1IO | ZUE2 = Zuendendstufe extern - external ignition output stage |
-| 104 | Boost control valve | `SRU1_S / LDR_S` | LOW_SIDE, PWM_OUT | PROBABLE | ASIC P7.2 LDR via frame word 58 | LDR - boost valve (AWT N75), ASIC P7.2 |
+| 104 | Boost control valve | `SRU1_S / LDR_S` | LOW_SIDE, PWM_OUT | PROBABLE | ASIC P7.2 LDR via frame word 58 | LDR - boost valve (VAG 1.8T N75), ASIC P7.2 |
 | 105 |  | `LUV_S` | LOW_SIDE, PWM_OUT | PROBABLE | NOT_ON_MAIN_CPU | LUV_S = Luftumfassungs-Ventil |
 | 106 |  | `KS1_S` | AIN, SPECIAL_LOCKED | PROBABLE |  | KS1_S = Klopfsensor 1 - via the knock IC |
 | 107 |  | `KS2_S` | AIN, SPECIAL_LOCKED | PROBABLE |  | KS2_S = Klopfsensor 2 - via the knock IC |
@@ -127,7 +127,7 @@ sources are in `tools/config_source/hw_descriptors.py`.
 | 112 | Injector output 5 | `EV5` | LOW_SIDE, INJ_OUT | PROBABLE | P8.6/CC22IO | EV5 = Einspritzventil - injector driver stage |
 | 113 | Injector output 6 | `EV6` | LOW_SIDE, INJ_OUT | PROBABLE | P8.5/CC21IO | EV6 = Einspritzventil - injector driver stage |
 | 114 |  | `AGR_S` | LOW_SIDE, PWM_OUT | PROBABLE | NOT_ON_MAIN_CPU | AGR_S = Ausgang Abgasrueckfuehrung - EGR |
-| 115 | Cam timing valve 1 | `NWS_S` | LOW_SIDE, PWM_OUT | PROBABLE | P7.0/POUT0 | KNWS1 - cam timing valve 1 (AWT N205 lands here) |
+| 115 | Cam timing valve 1 | `NWS_S` | LOW_SIDE, PWM_OUT | PROBABLE | P7.0/POUT0 | KNWS1 - cam timing valve 1 (VAG 1.8T N205 lands here) |
 | 116 |  | `ETH_S` | LOW_SIDE, PWM_OUT | PROBABLE |  | ETH_S = Elektrische Thermostatregelung |
 | 117 | Throttle motor + | `ESBM+` | DBW_HBRIDGE, SPECIAL_LOCKED | PROBABLE | P7.2/POUT2 | ESBM+ = DV-E5 throttle motor + (H-bridge) |
 | 118 | Throttle motor - | `ESBM-` | DBW_HBRIDGE, SPECIAL_LOCKED | PROBABLE | P7.7/CC31IO | ESBM- = DV-E5 throttle motor - (H-bridge) |

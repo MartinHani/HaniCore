@@ -43,6 +43,25 @@
 #define HCCAM_FAR
 #endif
 
+/* HCCAM_MEM - the memory type of the decoder state (hccam_t, hccam_bank).
+   Far (external SRAM) on the Audi 2.7T board only: its C167CR has 1 KB less
+   on-chip RAM than the Porsche's C167CS (targets/me711/system/hcsafety.h),
+   and only the main loop touches this state (trg_service). hc_board.h is the
+   build's board file, on every target module's include path. Empty for the
+   Porsche image and the host tests. */
+#ifdef __C166__
+#include "hc_board.h"
+#endif
+#ifdef TGT_BOARD_VAG_ME71_C4
+#if TGT_BOARD_VAG_ME71_C4
+#define HCCAM_MEM far
+#define HCCAM_MEM_FAR 1
+#endif
+#endif
+#ifndef HCCAM_MEM
+#define HCCAM_MEM
+#endif
+
 #define HCCAM_MAX_TEETH  8u
 #define HCCAM_HIST       5u      /* spacings compared per identification     */
 #define HCCAM_CYCLE      7200u   /* 720.0 degrees, 0.1 degree units           */
@@ -112,17 +131,17 @@ typedef struct {
 /* Resolve cfg into the pattern tables. Returns 0 when the configuration is
    unusable (unknown pattern, equal_n out of range, tolerance too wide for the
    pattern's closest teeth). */
-unsigned char HCCAM_FAR hccam_init(hccam_t *c, const hccam_cfg_t *cfg);
+unsigned char HCCAM_FAR hccam_init(hccam_t HCCAM_MEM *c, const hccam_cfg_t *cfg);
 
 /* The crank lost sync (or a reset): forget the history, keep the counters. */
-void HCCAM_FAR hccam_reset(hccam_t *c);
+void HCCAM_FAR hccam_reset(hccam_t HCCAM_MEM *c);
 
 /* One cam edge at engine angle a_x10 (0..7199, the half the crank decoder
    currently believes). crank_ok: the crank is synchronised; cycle_known:
    the cycle is currently claimed (FULL). Returns HCCAM_A_* flags. After
    HCCAM_A_FLIP the core has already moved its own history by 360 degrees:
    the NEXT angle it is given must be in the flipped coordinate. */
-unsigned char HCCAM_FAR hccam_edge(hccam_t *c, unsigned int a_x10,
+unsigned char HCCAM_FAR hccam_edge(hccam_t HCCAM_MEM *c, unsigned int a_x10,
                          unsigned char crank_ok, unsigned char cycle_known);
 
 /* For the validator: 0 = the configuration is unusable, 1 = usable but the
@@ -132,10 +151,10 @@ unsigned char HCCAM_FAR hccam_check(const hccam_cfg_t *cfg);
 
 /* The pattern's teeth (for the .ini help, tools and tests). */
 unsigned char HCCAM_FAR hccam_pattern_teeth(unsigned char pattern, unsigned char equal_n,
-                                  unsigned int *rel_out);
+                                  unsigned int HCCAM_MEM *rel_out);
 
 /* The image's two cams (index 0 = cam input 1). Defined in hccam.c so they
    live in XRAM with the core, not in the crank module's near RAM. */
-extern hccam_t hccam_bank[2];
+extern hccam_t HCCAM_MEM hccam_bank[2];
 
 #endif /* HCCAM_H */

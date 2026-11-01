@@ -66,7 +66,7 @@ UNEXPLAINED_MS = 15.0
 # the whole of its "unexplained" 29 ms beyond the reply job's own 6 ms. Each
 # single stall stays bounded by TX_RECOVERY_US (the non-RT idle check below
 # still counts them); only the per-reply SUM is no longer charged to K5.
-PERIODIC_TRAPS = {0x3E, 0x3B}            # T8 tick, CC27 S5500
+PERIODIC_TRAPS = {0x3E, 0x3B, 0x3C}      # T8 tick, CC27 S5500, CC28 tick body
 # The supported vehicle client waits 500 ms for an ordinary exchange. A full
 # 4096-byte page takes 357 ms of wire time alone and has a 1000 ms deadline.
 # The UART has two byte stages (174 us); a qualified planner span is longer
@@ -75,7 +75,7 @@ PERIODIC_TRAPS = {0x3E, 0x3B}            # T8 tick, CC27 S5500
 NORMAL_REPLY_MS, FULL_PAGE_REPLY_MS = 500.0, 1000.0
 # After engine RT yields, one tick (same ILVL as TX), one TX entry and SSC
 # overhead can precede progress. Keep that recovery independently bounded.
-TX_RECOVERY_US = (B.ISR_US["T8 tick"] + B.ISR_US["S0TB reply"]
+TX_RECOVERY_US = (B.ISR_US["T8 tick"] + B.ISR_US["CC28 tick body"] + B.ISR_US["S0TB reply"]
                   + B.ISR_US["SSC RX"] + B.ISR_US["SSC TX"] + 20.0)
 
 
@@ -307,11 +307,15 @@ class Host:
 
 
 def main() -> int:
-    rpm = int(sys.argv[sys.argv.index("--rpm") + 1]) if "--rpm" in sys.argv else 9600
+    import hc_board
+    # the board's own ceiling: 9600 on the 40 MHz Porsche; the 24 MHz 2.7T's
+    # preset limits at 6000 (the maintainer's design notes s.16)
+    top = 6000 if hc_board.IS_C4 else 9600
+    rpm = int(sys.argv[sys.argv.index("--rpm") + 1]) if "--rpm" in sys.argv else top
     dur = int(sys.argv[sys.argv.index("--ms") + 1]) if "--ms" in sys.argv else 4000
     print("=== K-line mixed traffic, 115200, %d rpm, %d ms ===" % (rpm, dur))
     print("  image   %s\n  sha256  %s\n" % (PI.image().name, PI.sha256()))
-    s = M.Stress(M.build_awt_page(), ts=False, baud_div=2)
+    s = M.Stress(M.build_board_page(), ts=False, baud_div=2)
     s.dbw_plant = True
     s.pedal = 0.25
     s.boot()

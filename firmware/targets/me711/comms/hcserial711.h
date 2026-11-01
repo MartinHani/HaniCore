@@ -20,7 +20,11 @@
 void far hc_pecrx_arm(void);
 /* SER.pad: tick publishes a ring boundary after a quiet wire gap; parser
    clears it before consuming the first byte after that boundary. */
+#if !TGT_BOARD_VAG_ME71_C4
 #define HC_PECRX_GAP (*(unsigned char volatile *)0xF2D7u)
+#else
+#define HC_PECRX_GAP (*(unsigned char volatile *)0xE597u)   /* 0xE580 + 23 */
+#endif
 void far hc_pecrx_tick(void);           /* T8 tick ISR, once per ms          */
 void far hc_pecrx_flush(void);          /* drop what has arrived (rate change) */
 void far hc_serial_boundary(void);     /* main-loop service boundaries only */
@@ -28,11 +32,17 @@ unsigned char far hc_tx_start(unsigned char kind, unsigned char code,
                               unsigned int off, unsigned int n,
                               const unsigned char *src);
 unsigned char far hc_tx_busy(void);
+/* byte k of the next job, while idle; then hc_tx_start(..., src 0) */
+unsigned char far hc_tx_stage(unsigned char k, unsigned char b);
 /* The TX state byte itself (hc_ser_t.st at 0xF2C0 + 18; hcserial711.c checks
    the offset): the 1 ms tick's K-line code reads it WITHOUT a call - a call
    from that level spills registers onto the user stack, which has 2 bytes
    of budget (me711_stack_budget_proof). Non-zero = transmitting. */
+#if !TGT_BOARD_VAG_ME71_C4
 #define HC_TX_BUSY_NOW()  (*(unsigned char volatile *)0xF2D2u != 0u)
+#else
+#define HC_TX_BUSY_NOW()  (*(unsigned char volatile *)0xE592u != 0u)  /* +18 */
+#endif
 unsigned int far hc_tx_sent(void);      /* bytes loaded, echo accounting     */
 unsigned int far hc_tx_echo_owed(void);
 void far hc_tx_echo_ate(unsigned char all);

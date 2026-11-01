@@ -170,7 +170,7 @@ def test_every_byte_of_the_page_is_owned():
     assert GEN.coverage(fields, consts["HC_CFG_SIZE"], base, size) == []
 
 
-def test_no_two_fields_share_a_tunerstudio_name():
+def test_no_two_fields_share_a_tuning_name():
     fields, _, _ = MODEL.resolve()
     names = [f.meta.ts for f in fields]
     dupes = {n for n in names if names.count(n) > 1}
@@ -395,7 +395,7 @@ def test_the_generated_ini_declares_the_unused_tail_of_the_reservation():
 # ==========================================================================
 # 8. the offset-9 class of bug, specifically
 # ==========================================================================
-def test_no_tunerstudio_name_can_land_on_another_fields_bytes():
+def test_no_tuning_name_can_land_on_another_fields_bytes():
     """THE OFFSET-9 REGRESSION.
 
     The first Project 2A .ini declared `cylinderCount` at offset 9. In the
@@ -435,7 +435,7 @@ def test_the_cylinder_count_field_is_where_the_firmware_reads_it():
 def test_the_dangerous_old_ini_is_not_loadable_as_an_ini():
     """It is kept for inspection, but it must not sit in the TunerStudio
     directory under a name TunerStudio will offer to open."""
-    ts = ROOT / "tunerstudio"
+    ts = ROOT / "tuning"
     hist = ts / "history"
     assert not (ts / "hanicore_universal.ini").exists()
     assert not (hist / "hanicore_universal.ini").exists()

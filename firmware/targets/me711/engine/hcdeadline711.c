@@ -23,13 +23,18 @@
 
 volatile unsigned long hc_dl_q_time[HC_DL_N];
 volatile unsigned int hc_dl_q_id[HC_DL_N];
-/* Per-slot timing history is deferred with the completed slot. */
-unsigned int hc_dl_q_late[HC_DL_N];
 volatile unsigned char hc_dl_q_type[HC_DL_N], hc_dl_q_mask[HC_DL_N], hc_dl_q_next[HC_DL_N];
 volatile unsigned char hc_dl_q_head;
 volatile unsigned int hc_dl_revision;
 unsigned int hc_dl_token, hc_dl_owner[16];
 unsigned char hc_dl_reserved_ign, hc_dl_reserved_inj, hc_dl_on_ign, hc_dl_on_inj;
+/* coils CC25 switched ON since the supervisor's last output scan: a new
+   dwell restarts that coil's ON age however short its OFF was (hcrtmon711.c) */
+unsigned char hc_rt_ign_fresh;
+/* each class's routed lanes and their port bits, [0] coils [1] injectors:
+   resolved with the route table (hchal_me711.c, engine stopped) so the
+   every-lane edge needs no per-lane look at ILVL 13 */
+unsigned char hc_dl_route_lanes[2], hc_dl_route_phys[2];
 unsigned long hc_dl_clock_ticks;
 unsigned int hc_dl_clock_last;
 volatile unsigned int hc_dl_generation;
@@ -99,6 +104,11 @@ void far hc_deadline_bench_port_f(unsigned char type, unsigned char mask, unsign
 {
     unsigned int volatile *port;
     unsigned int m=mask;   /* widen first: ~ on a char is CPLB, low byte only */
+#define BENCH_PW(a,mm) { port=(unsigned int volatile *)(a); m=(mm);         if(on) { *port&=~m;port[1]|=m; } else { *port|=m;port[1]&=~m; } }
+    if(type==HC_DL_BENCH_ALL) {   /* P2.0-7 coils, P7.4-6 + P8.3-7 injectors */
+        BENCH_PW(0xFFC0u,0x00FFu) BENCH_PW(0xFFD0u,0x0070u) BENCH_PW(0xFFD4u,0x00F8u)
+        return;
+    }
     if(type==HC_DL_BENCH_IGN) port=(unsigned int volatile *)0xFFC0u;
     else if(type==HC_DL_BENCH_INJ) port=(unsigned int volatile *)0xFFD0u;
     else port=(unsigned int volatile *)0xFFD4u;
@@ -144,7 +154,6 @@ static void bookkeeping(void)
 {
     unsigned char i=hc_dl_done_head,type,actual,b,bits;
     unsigned long n,width;
-    unsigned int late;
     if(i==HC_DL_NONE) {
         b=cooldown_channel;cooldown_channel=(unsigned char)((b+1u)&7u);
         if((D.cooldown&(1u<<b)) && (long)(hc_deadline_capture_time()-D.inj[b].legal_time)>=0) {
@@ -155,9 +164,6 @@ static void bookkeeping(void)
     type=(unsigned char)(hc_dl_q_type[i]&15u);actual=hc_dl_q_mask[i];
     n=hc_dl_q_time[i];
     if((hc_dl_q_type[i]&0xf0u)==0xd0u) {
-        late=hc_dl_q_late[i];
-        if(late>D.max_late) D.max_late=late;
-        if(late>125u) INC(D.late);
         D.command_tick=(unsigned int)n;
         if(actual) {
             if(type<=4u) INC(D.executed[type-1u]);
@@ -173,35 +179,59 @@ static void bookkeeping(void)
         hc_dl_q_type[i]=(unsigned char)(0xe0u|type);done_channel=0u;
         if((type==HC_DL_OPEN || type==HC_DL_CLOSE) && actual) return;
     } else {
-        b=done_channel;
-        bits=(unsigned char)(actual>>b);
-        while(!(bits&1u) && b<7u) { bits>>=1;b++; }
-        done_channel=(unsigned char)(b+1u);
-        hc_dl_q_mask[i]=(unsigned char)(actual&~(1u<<b));
-        if(type==HC_DL_OPEN) {
-            D.inj[b].token=hc_dl_q_id[i];D.inj[b].on_stamp=(unsigned int)n;
-            D.inj[b].on_time=n;D.inj[b].flags|=1u;
-        } else {
-            width=hc_deadline_ticks_us_f(n-D.inj[b].on_time);
-            HC_DL_WIDTH.delivered[b]=width;
-            D.inj[b].delivered_us=width>65535uL?65535u:(unsigned int)width;
-            D.inj[b].flags=(unsigned int)((D.inj[b].flags&~1u)|8u);
-            D.cooldown|=(unsigned int)(1u<<b);
-            D.inj[b].next_legal=(unsigned int)(n+HC_DL_OFF_TICKS);
-            D.inj[b].legal_time=n+HC_DL_OFF_TICKS;
+        /* LANES PER UNIT. 2026-10-24: every lane of the node in one unit (a
+           six-injector batch edge was seven units, one division each).
+           AT MOST TWO LANES PER UNIT (2026-10-25): a four-injector CLOSE
+           in one unit, after its own edge, held a CC25 entry over its
+           160 us slice (me711_executor_slice_proof); one lane per unit cost
+           a division each. The lanes left stay on the node for the next
+           unit. ponytail: the width is taken from the unit's first lane -
+           lanes of one CLOSE opened together (one OPEN node); if two with
+           different ON times ever share a CLOSE, a later lane's DELIVERED
+           width (telemetry only, hc_deadline_publish_diag) is the first's. */
+        unsigned char k=0u;
+        for(b=0u,bits=actual;bits;b++,bits>>=1) if(bits&1u) {
+            if(k==2u) { hc_dl_q_mask[i]=(unsigned char)(actual&(unsigned char)(0xFFu<<b)); return; }
+            k++;
+            if(type==HC_DL_OPEN) {
+                D.inj[b].token=hc_dl_q_id[i];D.inj[b].on_stamp=(unsigned int)n;
+                D.inj[b].on_time=n;D.inj[b].flags|=1u;
+            } else {
+                if(k==1u) width=hc_deadline_ticks_us_f(n-D.inj[b].on_time);
+                HC_DL_WIDTH.delivered[b]=width;
+                D.inj[b].delivered_us=width>65535uL?65535u:(unsigned int)width;
+                D.inj[b].flags=(unsigned int)((D.inj[b].flags&~1u)|8u);
+                D.cooldown|=(unsigned int)(1u<<b);
+                D.inj[b].next_legal=(unsigned int)(n+HC_DL_OFF_TICKS);
+                D.inj[b].legal_time=n+HC_DL_OFF_TICKS;
+            }
         }
-        if(hc_dl_q_mask[i]) return;
+        hc_dl_q_mask[i]=0u;
     }
     hc_dl_done_head=hc_dl_q_next[i];hc_dl_q_type[i]=0u;
 }
+
+/* history keeps running while the head is further away than this */
+#define HC_DL_HIST_MARGIN ((unsigned int)US_TO_TICKS(60u))
 
 void hc_deadline_dispatch(void)
 {
     unsigned int ps,id,late,elapsed;
     unsigned long n,command;
     unsigned char total=0u,worked=0u,i,tag,next,type,mask,actual,b,index,bits,c,route,allowed,physical,released,stale;
+    /* The head already validated in THIS entry (2026-10-24). Nothing below
+       CC25's level can run inside an entry and nothing above it moves the
+       head (the crank ISR's quiesce changes the generation, not the list),
+       so a head that was not due is the same node, with the same type/tag/
+       next, on the next unit: validating it again was ~36 instructions per
+       history unit, three units per edge. */
+    /* The sentinel is HC_DL_NONE, never a node value (2026-10-28): it was
+       254, so a head corrupted to exactly 254 matched it, skipped the
+       validation and was dispatched as a node - the executor never flagged
+       it (me711_runtime_fault_proof Q1 writes 254). An empty head (NONE)
+       needs no validation, so nothing can collide with it. */
+    unsigned char checked=HC_DL_NONE;
     unsigned int *owner;
-    unsigned char *routing;
     hc_dl_beat++;
     /* Drain due heads before history. After one history unit, check again.
        At most four units (each an edge or one history unit) per entry; pending history or
@@ -212,7 +242,7 @@ void hc_deadline_dispatch(void)
     while(total<4u) {
         i=hc_dl_q_head;
         /* Only this executor changes the head above planner priority. */
-        if(hc_dl_corrupt || (i!=HC_DL_NONE && (i>=HC_DL_N || !hc_dl_count
+        if(hc_dl_corrupt || (i!=checked && i!=HC_DL_NONE && (i>=HC_DL_N || !hc_dl_count
             || !(type=(unsigned char)((tag=hc_dl_q_type[i])&15u)) || type>HC_DL_BENCH_INJ_P8
             || (tag>=0x90u && tag<0xf0u)
             || ((next=hc_dl_q_next[i])!=HC_DL_NONE && next>=HC_DL_N)))) {
@@ -223,8 +253,19 @@ void hc_deadline_dispatch(void)
         n=now_ticks();
         if(i==HC_DL_NONE || (long)(command=n-hc_dl_q_time[i])<0) {
             UNLOCK(ps);
+            checked=i;      /* not taken: the same node on the next unit */
             if(worked && hc_dl_done_head==HC_DL_NONE) break;
-            bookkeeping();worked=1u;total++;
+            /* History units back to back while the head is not near
+               (2026-10-24): each unit used to re-take the lock, extend the
+               clock and re-test the head - about four passes per edge. The
+               16-bit look is conservative: a head that is near, overdue or
+               beyond half the timer goes back through the full test, and
+               arm_next() requests this level again for a head that is due. */
+            do { bookkeeping();worked=1u;total++; }
+            while(total<4u && hc_dl_done_head!=HC_DL_NONE
+                  && (i==HC_DL_NONE || (int)((unsigned int)hc_dl_q_time[i]
+                      -(unsigned int)T1)>(int)HC_DL_HIST_MARGIN));
+            if(hc_dl_done_head==HC_DL_NONE) break;
             continue;
         }
         b=(unsigned char)(tag>>4);
@@ -251,6 +292,8 @@ void hc_deadline_dispatch(void)
         owner=c==3u?hc_dl_active_inj:&hc_dl_owner[index];
         allowed=255u;
         if(!(c&1u)) {
+            /* 125 ticks = 4000 CPU clocks (100 us at 40 MHz, 167 us at 24 MHz): the
+               executor's own latency, so a CPU-time bound, in ticks on purpose */
             if(command>125uL || (trg_state<TRG_SYNC_CRANK && !hc_prime_on)
                 || hc_dl_inhibit || stale
                 || (eng_fuelcut&ENG_CUT_LIMP) || (type==HC_DL_OPEN && (eng_fuelcut&FUEL_CUTS))) allowed=0u;
@@ -267,12 +310,20 @@ void hc_deadline_dispatch(void)
                 route=hc_hal_actuator_route[index+b];
                 if((allowed&mask) && route) { actual=mask;physical=route; }
             }
-        } else if(b==15u && allowed==255u && id
+        } else if(b==15u && id
             && owner[0]==id && owner[1]==id
             && owner[2]==id && owner[3]==id
             && owner[4]==id && owner[5]==id
-            && owner[6]==id && owner[7]==id) {
-            actual=physical=255u;
+            && owner[6]==id && owner[7]==id
+            /* every ROUTED lane allowed, or none (2026-10-24): a CLOSE's
+               allowed set is the lanes that are ON - six on the 2.7T - and a
+               refused OPEN's is empty, so "== 255" sent those batch edges
+               through the per-lane loop, ~750 instructions at ILVL 13 */
+            && (route=hc_dl_route_lanes[index?1u:0u],
+                ((allowed&route)==route || !(allowed&route)))) {
+            /* the routed lanes are the edge (packed(): every lane) */
+            physical=hc_dl_route_phys[index?1u:0u];
+            actual=(unsigned char)(allowed&route);
             if(c&1u) {
                 owner[0]=owner[1]=owner[2]=owner[3]=0u;
                 owner[4]=owner[5]=owner[6]=owner[7]=0u;
@@ -280,13 +331,17 @@ void hc_deadline_dispatch(void)
                 else for(b=0u;b<8u;b++) if(hc_dl_owner[8u+b]==id) released|=(unsigned char)(1u<<b);
             } else released=255u;
         } else {
-            b=0u;bits=mask;mask=1u;
-            if(!id) bits=0u;
-            routing=&hc_hal_actuator_route[index+b];
-            for(;bits;owner++,routing++,bits>>=1,mask<<=1,b++) if((bits&1u) && *owner==id) {
+            /* A pointer walk up to the highest set lane (2026-10-25: the
+               2026-10-24 lowest-set-bit table cost more per lane on a dense
+               mask - four injectors closing together - and that loop runs at
+               ILVL 13: the critical section reached 51 us, budget 50,
+               me711_executor_slice_proof). A sparse pair (coils 1 + 6) walks
+               six cheap steps. */
+            b=0u;bits=id?mask:0u;mask=1u;
+            for(;bits;owner++,bits>>=1,mask<<=1,b++) if((bits&1u) && *owner==id) {
                 if(c&1u) { *owner=0u;if(!index || hc_dl_owner[index+b]==id) released|=mask; }
                 else released|=mask;
-                route=*routing;
+                route=hc_hal_actuator_route[index+b];
                 if((allowed&mask) && route) { actual|=mask;physical|=route; }
             }
         }
@@ -295,7 +350,7 @@ void hc_deadline_dispatch(void)
         }
         elapsed=(unsigned int)(T1-(unsigned int)n);
         n+=elapsed;command+=elapsed;
-        if(c==0u) hc_dl_on_ign|=actual;
+        if(c==0u) { hc_dl_on_ign|=actual; hc_rt_ign_fresh|=actual; }
         else if(c==2u) {
             /* released: every lane this OPEN owned. A lane refused here (late,
                cut, inhibited) while OFF still adopts this ticket as a pulse of
@@ -303,7 +358,8 @@ void hc_deadline_dispatch(void)
                that CLOSE matches no active ticket and the channel stays
                reserved for good. A still-ON lane cannot reach this (its next
                OPEN is published >= 200 us after the owned CLOSE). */
-            for(b=0u,bits=(unsigned char)(released&~hc_dl_on_inj);bits;bits>>=1,b++) if(bits&1u) hc_dl_active_inj[b]=id;
+            owner=hc_dl_active_inj;
+            for(bits=(unsigned char)(released&~hc_dl_on_inj);bits;bits>>=1,owner++) if(bits&1u) *owner=id;
             hc_dl_on_inj|=actual;
         }
         else if(c==1u) { hc_dl_on_ign&=(unsigned char)~actual;hc_dl_reserved_ign&=(unsigned char)~released; }
@@ -312,13 +368,49 @@ void hc_deadline_dispatch(void)
         /* Fixed-size trace and history-link commit; only this level writes
            the completed FIFO. No width calculation precedes the next edge. */
         late=command>65535uL?65535u:(unsigned int)command;
-        hc_dl_q_late[i]=late;
-        if(late>3125u) { hc_dl_corrupt|=2u;hc_dl_inhibit=HC_Q_WITHDRAWN; }
+        /* the lateness statistics at the edge, not from a per-slot copy
+           read back by the history (2026-10-24: 48 bytes of near RAM) */
+        if(late>D.max_late) D.max_late=late;
+        if(late>125u) INC(D.late);   /* 125 ticks = 4000 CPU clocks, see allowed */
+        /* grossly late (2.5 ms, in this board's ticks - it was 3125u, the
+           1.25 MHz count) = the executor is broken */
+        if(late>US_TO_TICKS(2500u)) { hc_dl_corrupt|=2u;hc_dl_inhibit=HC_Q_WITHDRAWN; }
         hc_dl_q_time[i]=n;hc_dl_q_mask[i]=actual;
         hc_dl_q_type[i]=(unsigned char)(0xd0u|type);hc_dl_q_next[i]=HC_DL_NONE;
         if(hc_dl_done_head==HC_DL_NONE) hc_dl_done_head=i;
         else hc_dl_q_next[hc_dl_done_tail]=i;
         hc_dl_done_tail=i;total++;
+        /* A SPARK THAT RELEASED ITS WHOLE TICKET RETIRES ITS BACKSTOP
+           (2026-10-28). The MAXDWELL node of the same ticket would find no
+           lane owned and do nothing - a whole CC25 entry (~1400 instructions
+           at 24 MHz), three a revolution on the 2.7T: ~6 % of the CPU at
+           8500 rpm (bench dlSuppressed, stress rig profile). Nothing above
+           this level edits the list (the crank ISR steps the generation, not
+           the links), so the walk needs no lock; the unlink is one locked
+           commit that steps the revision for the planner's walks. Counted
+           as the no-op it replaces (suppressed) with the same stale
+           accounting. A late, refused or missing spark keeps its backstop. */
+        /* bits = the node walked, c = its predecessor, b = nodes walked:
+           this edge is done with all three (the CC25 user stack is at its
+           budget - new locals spilled 6 B past it) */
+        if(type==HC_DL_SPARK && released) {
+            bits=hc_dl_q_head;c=HC_DL_NONE;b=0u;
+            while(bits<HC_DL_N && b++<6u) {
+                if((hc_dl_q_type[bits]&15u)==HC_DL_MAXDWELL && hc_dl_q_id[bits]==id) {
+                    if(!(hc_dl_q_mask[bits]&(unsigned char)~released)) {
+                        LOCK(ps);
+                        if(c==HC_DL_NONE) hc_dl_q_head=hc_dl_q_next[bits];
+                        else hc_dl_q_next[c]=hc_dl_q_next[bits];
+                        hc_dl_q_type[bits]=0u;hc_dl_count--;hc_dl_revision++;
+                        if(hc_dl_stale_n && (int)(id-hc_dl_stale_id)<=0) hc_dl_stale_n--;
+                        INC(D.suppressed);
+                        UNLOCK(ps);
+                    }
+                    break;
+                }
+                c=bits;bits=hc_dl_q_next[bits];
+            }
+        }
     }
     dry_sched_queued=hc_dl_count;
     if(!hc_dl_count) hc_dl_stale_n=0u;

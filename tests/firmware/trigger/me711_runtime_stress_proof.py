@@ -52,6 +52,9 @@ import me711_image as PI                 # noqa: E402
 import me711_runtime_stress as M         # noqa: E402
 
 POINTS = (1000, 3000, 5000, 7000, 8500, 9600)
+import hc_board  # noqa: E402
+if hc_board.IS_C4:              # the 2.7T: NMAX 6800 (stock), 24 MHz CPU
+    POINTS = (1000, 3000, 5000, 6000)    # the preset's rev limit (CPU budget)
 ENG_CUT_LIMP = 0x0008
 # The longest ILVL >= 13 section may delay the crank capture; it must stay
 # well under one tooth at the highest tested speed (104 us at 9600 rpm on a
@@ -59,14 +62,37 @@ ENG_CUT_LIMP = 0x0008
 CRIT_US = 50.0
 # Measured worst case + margin, per handler, exclusive of nested levels (us).
 ISR_US = {"CC15 crank": 40.0, "CC8 cam": 20.0, "CC9 cam2": 20.0,
-          "CC26 planner": 1200.0, "CC25 deadline": 160.0, "T8 tick": 120.0, "S0TB reply": 30.0,
+          "CC26 planner": 1200.0, "CC25 deadline": 160.0, "S0TB reply": 30.0,
+          # 2026-10-28: T8 only counts the ms and makes two requests (level
+          # 12); the tick's work - the old 120 us budget - is the CC28 body
+          "T8 tick": 20.0, "CC28 tick body": 120.0,
           "SSC RX": 10.0, "SSC TX": 10.0,
+          # 2026-10-29: the knock window's edges (MF set / cleared, CC16 +
+          # length) - a handful of instructions; unbudgeted until windows
+          # really opened (the knock config reload, hcknock711.c)
+          "CC16 knock": 10.0,
           # 2026-10-14: one step of the S5500 exchange (the frame is built
           # in steps between frames; profile worst ~110 us)
           "CC27 S5500": 150.0}
 # One background service stretch (wall time, all preemption included) and
 # the DBW control cadence it allows (nominal 5 ms, supervision 100 ms).
 SVC_MS = 12.0
+# 2026-10-24: CRIT_US and ISR_US are instruction budgets measured at 10 MIPS
+# (40 MHz). The same code takes fCPU-proportionally longer on a 24 MHz board,
+# so they scale by the clock; SVC_MS and DBW_GAP_MS are engine wall times and
+# do not. (The 2.7T is tested to its 4000 rpm development rev limit.)
+_SCALE = 40.0e6 / M.HB._define("TGT_FCPU_HZ")
+CRIT_US *= _SCALE
+LATE_US = 100.0 * _SCALE      # the executor tolerance: 125 ticks on both boards
+ISR_US = {k: v * _SCALE for k, v in ISR_US.items()}
+if hc_board.IS_C4:
+    # The critical-level rule is "half a 60-2 tooth at the highest tested
+    # speed" (a second edge can never overwrite the latched first): the 2.7T
+    # is tested to 6000 rpm, a 167 us tooth (83 us). Its batch fuel opens all
+    # six injectors in ONE edge, so CC25's longest entry is the six-lane one
+    # (~310 us, 2026-10-25) - lateness stays bounded by LATE_US.
+    CRIT_US = 1.0e6 / max(POINTS) / 2.0
+    ISR_US["CC25 deadline"] = 350.0
 DBW_GAP_MS = 20
 FAILS = 0
 
@@ -80,7 +106,15 @@ def check(name, ok, detail=""):
 def main() -> int:
     global FAILS
     FAILS=0
-    mode = next((a for a in sys.argv[1:] if a in ("ts115", "ts57", "nots")), "ts115")
+    import hc_board
+    # the default is the board's REAL top link rate: 115200 on the Porsche;
+    # the 2.7T has no 115200 (24 MHz, HCKLINE_NO_115200) and stock TunerStudio
+    # cannot select its 124800, so it runs TunerStudio at 57600. Measured
+    # 2026-10-26: ts115 at a steady 6000 rpm on the 2.7T = DBW step gap 25.6 ms
+    # (budget 20), watchdog 20.9 ms - a fast link costs it the top 1000 rpm
+    # (the maintainer's design notes).
+    mode = next((a for a in sys.argv[1:] if a in ("ts115", "ts57", "nots")),
+                "ts57" if hc_board.IS_C4 else "ts115")
     print("=== runtime budgets: engine + DBW + %s ===" % mode)
     print("  image   %s" % PI.image().name)
     print("  sha256  %s\n" % PI.sha256())
@@ -155,8 +189,8 @@ def main() -> int:
                   % (sorted(round(s, 1) for s in spreads), dw, d["DL_late"]))
     late_n = sum(r["fw_delta"]["DL_late"] for r in results)
     max_late = max(r["dl_max_late_us"] for r in results)
-    check("all steady and transient engine edges <= 100 us late",
-          late_n == 0 and max_late <= 100.0,
+    check("all steady and transient engine edges <= %.0f us late" % LATE_US,
+          late_n == 0 and max_late <= LATE_US,
           "%d gross late events; maximum %.1f us" % (late_n, max_late))
     rejected = sum(r["fw_delta"]["DL_rejected"] for r in results)
     cancelled = sum(r["fw_delta"]["DL_cancelled"] for r in results)
@@ -186,7 +220,7 @@ def main() -> int:
     planner_lat = max((r.get("rt") or {}).get("plan_lat_max", 0) for r in results)
     check("planner progresses within its 1.2 ms planning horizon",
           planner_runs > 0 and planner_lat <= 1500,
-          "%d runs, maximum request latency %.1f us" % (planner_runs, planner_lat * 0.8))
+          "%d runs, maximum request latency %.1f us" % (planner_runs, planner_lat * M.US_PER_TICK))
     check("every handler inside its execution budget", not over,
           "over: %s; worst %s" % (over or "none",
                                   {k: round(v, 1) for k, v in sorted(worst.items()) if k in ISR_US}))

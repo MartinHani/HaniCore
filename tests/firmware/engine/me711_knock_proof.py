@@ -100,6 +100,20 @@ class KnockRig(SQ.SeqRig):
         self.open_at = None
         self.aborted = 0
         self.x.call("hc_knock_init")
+        # THE WINDOW COMPARE IS THIS RIG'S TO SERVE (knock_hw: hc_cc16_isr at
+        # the window's T7, with the integrator modelled around it). Since the
+        # CC25 executor runs on Call.advance_deadlines(), the simulator would
+        # also vector an armed CC16 there itself - masked for that span.
+        adv = self.x.advance_deadlines
+
+        def advance(ticks, _adv=adv, _m=self.x.m):
+            ic = _m.r16(CC16IC)
+            _m.w16(CC16IC, ic & ~0x40)
+            try:
+                _adv(ticks)
+            finally:
+                _m.w16(CC16IC, (_m.r16(CC16IC) & ~0x40) | (ic & 0x40))
+        self.x.advance_deadlines = advance
 
     # ---- page -------------------------------------------------------------
     def w8(self, n, v, i=0):
@@ -160,10 +174,18 @@ class KnockRig(SQ.SeqRig):
         x.m.w16(x.c.cp(), x.stack_top)
         x.m.sfr[0xFE14], x.m.sfr[0xFE16] = 0xF200, 0xFE00
         sp = 0xF700
-        for w in (0x0000, a >> 16, 0xFFFE):       # PSW, CSP, IP (RETI)
+        # AS THE CPU ENTERS IT: the request acknowledged (IR cleared) and the
+        # handler at its own level, nothing nested; RETI then restores THIS
+        # PSW (pushing 0 left IEN off afterwards, and the CC25 executor -
+        # Call.advance_deadlines - could never run again)
+        psw = x.m.r16(0xFF10)
+        if fn == "hc_cc16_isr":
+            x.m.w16(CC16IC, x.m.r16(CC16IC) & ~0x80)
+        for w in (psw, a >> 16, 0xFFFE):          # PSW, CSP, IP (RETI)
             sp = (sp - 2) & 0xFFFF
             x.m.w16(sp, w)
         x.m.sfr[0xFE12] = sp
+        x.m.w16(0xFF10, psw & ~0x0800)
         x.c.csp, x.c.ip = a >> 16, a & 0xFFFF
         for _ in range(20000):
             if x.c.ip == 0xFFFE:
@@ -488,8 +510,13 @@ def k10_sync_loss():
     r.rev(skip_at=20)
     r.rev(skip_at=20)
     r.rev()          # the second disagreement is judged on this rev's tooth
-    n1, lost = len(r.win), r.u("trg_synclost") - loss0
+    n1 = len(r.win)
     r.runrevs(10)
+    # the decoder COUNTS a loss once the engine is seen to keep turning (a
+    # stopping engine's last revolution is not a fault - me711_trigger_test
+    # "repeated missing edge is counted once the engine keeps turning"), so
+    # the count is read after the re-sync, not on the tooth that withdrew it
+    lost = r.u("trg_synclost") - loss0
     during = r.win[n0:n1]
     longw = [w for w in during if (w[2] - w[1]) > LEN_X10 / 10.0 + 1.5]
     after = [w for w in r.win[n1:] if w[4] >= 4]

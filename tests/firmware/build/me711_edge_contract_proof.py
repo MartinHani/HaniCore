@@ -10,6 +10,11 @@ import hcpaths  # noqa: F401,E402  (puts every tools/ and tests/ module on sys.p
 import me711_deadline_proof as D
 import me711_trigger_test as P
 import me711_image as I
+import me711_heartbeat_gap_proof as HB
+TK100 = HB.TPMS // 100   # 100 us in capture ticks (125 at 1.25 MHz, 75 on the 2.7T);
+# edge lateness stays 125 TICKS on both boards (hcdeadline711.c: 4000 CPU clocks)
+def to_us(t):  # hc_deadline_ticks_us_f: the board's ticks -> us, as the firmware rounds
+    return t-(t+4)//5 if HB.TPMS==12500 else t+t//3
 
 def all_routes(r):
     for off,values in [(2551,[96,97,88,89,112,113,24,19]),(2563,[102,103,94,95,110,111,8,7])]:
@@ -26,7 +31,7 @@ def main():
     D.check('flash write guard admits adequate deadline margin',bool(r.call('hc_deadline_flash_admit',1375)&255))
     r.cancel();D.check('empty engine queue admits live word guard',bool(r.call('hc_deadline_flash_admit',1375)&255))
     for rpm,cycle in [(6000,3600),(9000,7200),(12000,3600)]:
-        r=D.Rig();period=round(1250000/rpm)*cycle//60
+        r=D.Rig();period=round(HB.TPMS*100/rpm)*cycle//60
         # Actual task width metadata and publisher; deliberately high duty.
         ticks=r.call('hc_deadline_inj_request',1,50000,1000,period&65535,period>>16)
         # C167 returns unsigned long in r4/r5.
@@ -34,14 +39,13 @@ def main():
         width=ticks-(ticks+4)//5
         # the OFF separation is reserved on both sides of the pulse within its
         # repetition period (hcdeadline_plan711.c: period - 2 x HC_DL_OFF_TICKS)
-        off=int(__import__('re').search(r'#define\s+HC_DL_OFF_TICKS\s+(\d+)u',
-            (I.ROOT/'firmware/targets/me711/engine/hcdeadline711.h').read_text()).group(1))
-        D.check(f'{rpm} RPM width reserves 2 x {off*4//5} us OFF separation',ticks==period-2*off and r.m.r16(D.DIAG+38+16)&2,str((ticks,period)))
+        off=TK100  # HC_DL_OFF_TICKS = US_TO_TICKS(100u)
+        D.check(f'{rpm} RPM width reserves 2 x 100 us OFF separation',ticks==period-2*off and r.m.r16(D.DIAG+38+16)&2,str((ticks,period)))
         ticket=r.publish(3,1,2000,width)
         r.call('hc_deadline_inj_admitted',1,ticket,r.u16('hc_dl_generation'),ticks&65535,ticks>>16);r.idle()
-        D.check(f'{rpm} RPM accepted width reflects clipped schedule',(r.m.r16(0x387290)|(r.m.r16(0x387292)<<16))==width)
+        D.check(f'{rpm} RPM accepted width reflects clipped schedule',(r.m.r16(0x387290)|(r.m.r16(0x387292)<<16))==to_us(ticks))
         r.run(2000+ticks+2500)
-        D.check(f'{rpm} RPM delivered width reflects commanded interval',abs((r.m.r16(0x3872b0)|(r.m.r16(0x3872b2)<<16))-width)<100,str((r.m.r16(0x3872b0)|(r.m.r16(0x3872b2)<<16))))
+        D.check(f'{rpm} RPM delivered width reflects commanded interval',abs((r.m.r16(0x3872b0)|(r.m.r16(0x3872b2)<<16))-to_us(ticks))<100,str((r.m.r16(0x3872b0)|(r.m.r16(0x3872b2)<<16))))
     r=D.Rig();all_routes(r)
     r.publish(1,255,5000,4000,absolute=True);r.publish(3,255,5000,4000,absolute=True);r.run(5000)
     D.check('eight coil and injector channels command exact board ports',r.dirs()==(255,0x70,0xf8),str(r.log))

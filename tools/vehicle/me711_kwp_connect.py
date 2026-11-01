@@ -127,9 +127,18 @@ def attempt(wire: Wire, rate: int, log) -> dict:
     r["signature"] = d[1:].decode("latin1", "replace")
     r["stage"] = 5
     d = wire.kwp_request(bytes([0xB1, RATE_CODE[rate]]))
+    # REFUSED (7F B1 ..): the ECU has no such rate (the 24 MHz 2.7T cannot
+    # make 115200) - same session, the next one (2026-10-28)
+    for alt in (57600, 124800):
+        if not (d and d[:2] == bytes([0x7F, 0xB1])) or alt == rate:
+            continue
+        log("  GOFAST %d refused: %s - trying %d" % (rate, d.hex(), alt))
+        rate = alt
+        d = wire.kwp_request(bytes([0xB1, RATE_CODE[rate]]))
     if not d or d[:2] != bytes([0xF1, RATE_CODE[rate]]):
         log("  GOFAST: %s" % (d.hex() if d else None))
         return r
+    r["rate"] = rate
     r["stage"] = 6
     time.sleep(0.02)                       # the ECU switches after its reply
     wire.ser.baudrate = rate

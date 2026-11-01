@@ -74,14 +74,28 @@ FIRST_BAD_SYM = "hc_val_first_bad_offset"
 # names the field it is refused on, so the entry is a claim about WHY and not
 # just a licence to fail.
 EXPECT = {
-    2: ("BOSCH_ME711 - the Porsche V8 DONOR description",
-        "CFG_TDC_CYL",
-        "declares eight cylinders and cannot declare their TDC angles - the "
-        "M48 firing order is in no document in this repository and the project rules "
-        "4 forbids inventing one. 12K/2."),
-    3: ("VAG_18T_ME711 - THE FIRST ENGINE", None, ""),
+    # (2: the Porsche V8 donor - removed 2026-10-31, owner)
+    3: ("VAG_18T_ME711 - VAG 1.8T DBW, THE FIRST ENGINE", None, ""),
     4: ("BOSCH_ME711_BOARD - the board default", None, ""),
+    8: ("AUDI_27T_ME711 - Audi 2.7T biturbo V6 (Porsche board)", None, ""),
 }
+# 2026-10-24: the 2.7T image carries ITS presets only (hc_presets.c
+# HC_PRESET_C4); HANICORE_BOARD=vag_me71_c4 asks this gate about them.
+import hc_board  # noqa: E402
+if hc_board.IS_C4:
+    EXPECT = {
+        5: ("VAG_ME71_C4_BOARD - the board default", None, ""),
+        6: ("AUDI_27T_ME71 - Audi 2.7T biturbo V6", None, ""),
+        9: ("VAG_18T_ME71_C4 - VAG 1.8T DBW (2.7T board)", None, ""),
+    }
+# The ME7.5 DC builds on the C4 branch but is ITS OWN target (descriptor
+# 0x03C2): its native preset is the 1.8T AWT, and the 2.7T's two are another
+# board's - refused by hc_preset_apply_engine() (rc 2), not validated here.
+if hc_board.IS_DC:
+    EXPECT = {
+        1: ("VAG_18T_ME75_AWT - VAG 1.8T DBW (ME7.5 board)", None, ""),
+        7: ("ME75_DC_BOARD - the board default", None, ""),
+    }
 
 CHECKS = FAILS = 0
 
@@ -141,11 +155,46 @@ def main() -> int:
     # refused. This says the apply DOES something - preset 2 and the board
     # default must reach DIFFERENT verdicts, which they can only do if the
     # values actually landed.
-    check("the preset apply actually changes the page",
-          got[2][0] != got[4][0],
-          "preset 2 rc 0x%04X vs board default rc 0x%04X - identical verdicts "
-          "would mean hc_preset_apply_engine_active() wrote nothing"
-          % (got[2][0], got[4][0]))
+    if hc_board.IS_DC:
+        r = T.boot()
+        before = bytes(r.active(i) for i in range(4096))
+        rc = r("hc_preset_apply_engine_active", 1) & 0xFF
+        after = bytes(r.active(i) for i in range(4096))
+        other = r("hc_preset_apply_engine_active", 6) & 0xFF
+        check("the preset apply actually changes the page",
+              rc == 0 and before != after,
+              "%d bytes changed (apply rc %d)"
+              % (sum(a != b for a, b in zip(before, after)), rc))
+        # since 2026-10-31 the DC image does not even carry it (hc_presets.c
+        # HC_PRESET_DC): 1 'no such preset', stronger than 2 'wrong board'
+        check("CONTROL: the 2.7T preset is refused as another board's",
+              other in (1, 2), "apply(6) rc %d (1 = not in this image, "
+              "2 = wrong board)" % other)
+    elif hc_board.IS_C4:
+        # no refused preset to compare on this board: read the page itself
+        r = T.boot()
+        before = r.active(T.O["CFG_CYLINDERS"])
+        rc = r("hc_preset_apply_engine_active", 6) & 0xFF
+        after = r.active(T.O["CFG_CYLINDERS"])
+        other = r("hc_preset_apply_engine_active", 3) & 0xFF
+        check("the preset apply actually changes the page",
+              rc == 0 and after == 6 and before != 6,
+              "cylinders %d -> %d (apply rc %d)" % (before, after, rc))
+        check("CONTROL: a Porsche-board preset is not in this image",
+              other != 0, "apply(3) rc %d" % other)
+    else:
+        # 2026-10-31: the V8 donor (the refused preset this compared) is
+        # gone - read the page itself, as on the C4
+        r = T.boot()
+        before = r.active(T.O["CFG_CYLINDERS"])
+        rc = r("hc_preset_apply_engine_active", 8) & 0xFF
+        after = r.active(T.O["CFG_CYLINDERS"])
+        other = r("hc_preset_apply_engine_active", 6) & 0xFF
+        check("the preset apply actually changes the page",
+              rc == 0 and after == 6 and before != 6,
+              "cylinders %d -> %d (apply rc %d)" % (before, after, rc))
+        check("CONTROL: a 2.7T-board preset is not in this image",
+              other != 0, "apply(6) rc %d" % other)
 
     print("\n%d/%d checks pass" % (CHECKS - FAILS, CHECKS))
     if FAILS:

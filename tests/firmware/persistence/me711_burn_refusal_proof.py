@@ -126,11 +126,9 @@ OCH_NAMES = ("nvmState", "nvmError", "cfgValidation", "cfgFirstBadOffset")
 
 
 def _och_map():
-    ini = (ROOT / "tunerstudio"
-           / ("hanicore_me711_%s.ini"
-              % PI.STEM.replace("HaniCore_ME711_", "")))
+    ini = PI.INI
     if not ini.exists():
-        ini = ROOT / "tunerstudio/hanicore_me711.ini"
+        ini = ROOT / "tuning/hanicore_me711.ini"
     txt = ini.read_text(errors="replace")
     body = txt.split("[OutputChannels]", 1)[1]
     out = {}

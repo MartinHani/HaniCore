@@ -44,7 +44,8 @@ import hcpaths  # noqa: F401,E402
 CONTROL = (ROOT.parents[0] / "evidence" / "CAR_20261013_RESETS"
            / "CAR_KIT_20261014_5248F4C9" / "bins" / "hanicore")
 FAILS = 0
-P150 = round(1_250_000 / 150)          # T1 ticks per tooth at 150 rpm
+import me711_heartbeat_gap_proof as HB  # noqa: E402
+P150 = round(HB.TPMS * 100 / 150)      # T1 ticks per tooth at 150 rpm (board clock)
 
 
 def check(name, ok, detail=""):
@@ -170,7 +171,9 @@ def main() -> int:
     if not (CONTROL / "HaniCore_ME711_v102_dev.bin").exists():
         check("the control image is present", False, str(CONTROL))
     else:
-        env = dict(os.environ, HANICORE_ME711_BINS=str(CONTROL))
+        # the control is a PORSCHE car image: run it on its own board's clock
+        env = dict(os.environ, HANICORE_ME711_BINS=str(CONTROL),
+                   HANICORE_BOARD="porsche_me711")
         r = subprocess.run([sys.executable, __file__, "--control-run"],
                            env=env, capture_output=True, text=True)
         out = r.stdout

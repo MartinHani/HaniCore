@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Execute the linked V49 NMI handler against a real C167 interrupt frame.
+"""Execute the linked NMI handler against a real C167 interrupt frame.
 
-The static V49 gate checks opcode shape and store ordering.  This proof checks
-the part that text cannot settle: the C167 hardware-frame offsets, register
-bank capture, balanced system stack and RETI restoration in the final image.
+hc_nmi_isr (hcmain_me711.c, since 2026-10-28; the V49 snapshot handler is
+retired) writes trap 2 and the tick into the reset log in hcconfig.c's
+big-endian order and returns. This checks it in the linked image: the two
+fields as rst_u16() reads them, the registers and the system stack restored,
+RETI back to the interrupted code.
 """
 from __future__ import annotations
 
@@ -18,10 +20,8 @@ import c167sim as C167  # noqa: E402
 import me711_image as IMG  # noqa: E402
 
 MAP_TEXT = IMG.MAP.read_text()
-LF = 0x386900
 RESET_TRAP = 0x38240A
 RESET_TRAP_MS = 0x382440
-VALID, ARMED, STARTED, COMPLETE, FROZEN = 0x8000, 1, 4, 8, 0x40
 checks = fails = 0
 
 
@@ -43,14 +43,13 @@ def symbol(name: str, kind: str) -> int:
 
 def main() -> int:
     image = IMG.image().read_bytes()
-    handler = symbol("hc_v02", "LABEL")
+    handler = symbol("hc_nmi_isr", "LABEL")
     tick = symbol("hc_tick_ms", "VAR")
-    asic = symbol("hc_asic_state", "VAR")
     mem = C167.Mem(image)
     cpu = C167.CPU(mem, handler >> 16, handler & 0xFFFF)
 
-    # State at the instant after C167 hardware entry.  The hardware has pushed
-    # PSW, CSP and IP, leaving IP at [SP], CSP at [SP+2] and PSW at [SP+4].
+    # State at the instant after C167 hardware entry: IP at [SP], CSP at
+    # [SP+2], PSW at [SP+4].
     bank = [0x1100 + i * 0x101 for i in range(16)]
     for i, value in enumerate(bank):
         cpu.sr(i, value)
@@ -63,23 +62,22 @@ def main() -> int:
     mem.w16(entry_sp + 2, interrupted_csp)
     mem.w16(entry_sp + 4, interrupted_psw)
     mem.sfr[0xFF10] = 0x0000       # NMI context, ordinary IRQs disabled
-
-    # A valid armed record and distinct boundary values make accidental zero
-    # captures visible.  Native retained words are little endian in SRAM.
-    header = [0x4843, 0x4C46, 0x0049, 344, VALID | ARMED]
-    for i, value in enumerate(header):
-        mem.w16(LF + i * 2, value)
-    mem.w16(LF + 24 * 2, 0x0037)   # command sequence
-    mem.w16(0x386874, 0x0701)      # owner/admission packed word
-    mem.w16(0x386804, 0x0400)      # CB state/phase packed word
-    mem.w16(0x386812, 0x2C00)      # big-endian CB_POS=44 as native word
+    # the data pages as start_me711.a66 sets them (DPP0..2 from the linker)
+    for i in range(3):
+        m = re.search(r"([0-9A-F]+)H\s+\?C_PAGEDPP%d" % i, MAP_TEXT)
+        mem.sfr[0xFE00 + 2 * i] = int(m.group(1), 16) if m else i
+    mem.sfr[0xFE06] = 3
     mem.w16(tick, 0x93AF)
-    mem.w8(asic, 7)
-    fast_active = symbol("hc_lf_fast_active", "VAR")
-    mem.w8(fast_active, 1)
+    for a in (RESET_TRAP, RESET_TRAP + 1, RESET_TRAP_MS, RESET_TRAP_MS + 1):
+        mem.w8(a, 0xEE)            # a stale log: the handler must overwrite it
 
+    def rst_u16(addr: int) -> int:
+        """hcconfig.c's rst_u16(): the reset log is BIG-ENDIAN."""
+        return (mem.r8(addr) << 8) | mem.r8(addr + 1)
+
+    before = (rst_u16(RESET_TRAP), rst_u16(RESET_TRAP_MS))
     trap = None
-    for _ in range(800):
+    for _ in range(200):
         try:
             cpu.step()
         except C167.Trap as exc:
@@ -88,55 +86,22 @@ def main() -> int:
         if (cpu.csp, cpu.ip) == (interrupted_csp, interrupted_ip):
             break
 
-    words = [mem.r16(LF + 2 * i) for i in range(172)]
     returned = (cpu.csp, cpu.ip) == (interrupted_csp, interrupted_ip)
     check("linked NMI handler executes to RETI", trap is None and returned,
           trap or f"PC={cpu.csp:02X}:{cpu.ip:04X}")
-    check("start and completion markers bracket a complete snapshot",
-          words[96] == 0x4E31 and words[97] == 0x4E32
-          and words[4] & (STARTED | COMPLETE | FROZEN)
-          == STARTED | COMPLETE | FROZEN)
-    check("hardware interrupt-frame offsets capture IP, CSP and PSW",
-          words[104:107] == [interrupted_ip, interrupted_csp, interrupted_psw],
-          "got=" + ",".join(f"{x:04X}" for x in words[104:107]))
-    check("all sixteen interrupted general registers are captured exactly",
-          words[126:142] == bank)
+    check("control: the log held something else before the NMI",
+          before == (0xEEEE, 0xEEEE))
+    check("trap 2 and its time, as hcconfig.c's big-endian reader sees them",
+          rst_u16(RESET_TRAP) == 2 and rst_u16(RESET_TRAP_MS) == 0x93AF,
+          f"trap={rst_u16(RESET_TRAP):04X} ms={rst_u16(RESET_TRAP_MS):04X}")
     check("RETI restores the system stack and original processor context",
           mem.sfr[0xFE12] == entry_sp + 6
           and mem.sfr[0xFF10] == (interrupted_psw & 0xFFF0)
-          and cpu.c == ((interrupted_psw >> 1) & 1)
           and (cpu.csp, cpu.ip) == (interrupted_csp, interrupted_ip),
           f"SP={mem.sfr[0xFE12]:04X} PSW={mem.sfr[0xFF10]:04X} "
           f"PC={cpu.csp:02X}:{cpu.ip:04X}")
-    check("handler restores its R1-R4 scratch registers",
-          [cpu.gr(i) for i in range(1, 5)] == bank[1:5])
-    check("first NMI disables subsequent ISR fast stamps",
-          mem.r8(fast_active) == 0)
-    check("snapshot captures transaction position, runtime state and command",
-          words[122:126] == [0x0701, 0x0400, 0x2C00, 7]
-          and words[143] == 0x0037,
-          "got=" + ",".join(f"{x:04X}" for x in words[122:126])
-          + f",cmd={words[143]:04X}")
-    # READ THEM THE WAY THE FIRMWARE READS THEM, NOT THE WAY THEY WERE WRITTEN.
-    #
-    # hcconfig.c's rst_u16() is RAM[off] << 8 | RAM[off + 1] - the reset log is
-    # BIG-ENDIAN - while a C166 MOV stores a word little-endian. An earlier
-    # version of this check used mem.r16() and so modelled both halves of the
-    # interface from the same assumption: it happily confirmed a native store
-    # that would have made rstPreviousTrap read 0x0200 instead of 2 and the
-    # trap timestamp byte-swapped, destroying comparability with the V48
-    # PHYSICAL numbers (trap 2 at 37807 ms) this whole build exists to extend.
-    def rst_u16(addr: int) -> int:
-        return (mem.r8(addr) << 8) | mem.r8(addr + 1)
-
-    check("RESETDIAG fields are readable by hcconfig.c's own big-endian reader",
-          rst_u16(RESET_TRAP) == 2 and rst_u16(RESET_TRAP_MS) == 0x93AF,
-          f"rst_u16 trap={rst_u16(RESET_TRAP):04X} "
-          f"ms={rst_u16(RESET_TRAP_MS):04X} "
-          f"(raw native {mem.r16(RESET_TRAP):04X}/"
-          f"{mem.r16(RESET_TRAP_MS):04X}) snapTick={words[142]:04X}")
-    check("and the retained snapshot keeps the tick in NATIVE order",
-          words[142] == 0x93AF)
+    check("every interrupted general register is restored",
+          [cpu.gr(i) for i in range(16)] == bank)
 
     print(f"{checks - fails}/{checks} checks pass")
     return int(bool(fails))

@@ -41,16 +41,13 @@ def evidence_root() -> Path:
 
 
 def candidate_ports() -> list[str]:
-    """Serial ports that could be the KKL, an RP2040 USB device (VID 2E8A)
-    excluded - it speaks text and must never receive a TunerStudio frame."""
+    """Serial ports that could be the KKL."""
     try:
         from serial.tools import list_ports
     except ImportError:
         return ["COM3", "COM2"]
     out = []
     for p in list_ports.comports():
-        if getattr(p, "vid", None) == 0x2E8A or "pico" in (p.description or "").lower():
-            continue
         out.append(p.device)
     return out or ["COM3", "COM2"]
 

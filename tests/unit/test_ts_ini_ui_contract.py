@@ -31,7 +31,7 @@ import hcpaths  # noqa: F401,E402  (puts every tools/ and tests/ module on sys.p
 
 import ts_ini_ui_contract as C          # noqa: E402
 
-GOOD = ROOT / "tunerstudio/hanicore_me711.ini"
+GOOD = ROOT / "tuning/hanicore_me711.ini"
 FROZEN_V29 = (ROOT / "release/Porsche_ME711_V29_PHYSICAL_TEST"
               / "hanicore_me711_v29.ini")
 
@@ -48,7 +48,7 @@ def good_text():
 
 # The developer pages (I/O chip window, RAM probe, Burn forensics) are only in
 # the forensic project; the mutations that edit them use that file.
-DEV = sorted((ROOT / "tunerstudio").glob("*_forensic.ini"))[0]
+DEV = sorted((ROOT / "tuning").glob("*_forensic.ini"))[0]
 
 
 def dev_text():

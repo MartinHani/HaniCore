@@ -9,6 +9,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "tools" / "lib"))
 import hcpaths  # noqa: F401,E402  (puts every tools/ and tests/ module on sys.path)
 import me711_trigger_test as P
 import me711_image as I
+import me711_heartbeat_gap_proof as HB
+# HC_DL_OFF_TICKS x 2: 100 us of software OFF separation on each side, in
+# capture ticks (TPMS = ticks per 10 ms: 250 at 1.25 MHz, 150 on the 2.7T)
+OFF2 = 2 * (HB.TPMS // 100)
 
 DIAG = 0x387500
 checks = fails = 0
@@ -183,7 +187,7 @@ def future_pulse_tests():
                        for i in range(24) if r.m.r8(P.sym('hc_dl_q_type')+i)&15==3
                        and r.m.r16(P.sym('hc_dl_q_id')+2*i)==second)
             check('adjusted OPEN retains the predecessor CLOSE and OFF reserve',
-                  ((start-close)&65535)==250,str((close,start)))
+                  ((start-close)&65535)==OFF2,str((close,start,OFF2)))
         r.run(14000)
         ports=transitions(r);lens=widths(ports)
         check('overlap handling preserves each admitted pulse width',
@@ -224,7 +228,9 @@ def main():
         r.run(41000)
         lens=r.pulse_lengths('inj')
         check('extended close survives half range and full timer wrap', len(lens)==1 and abs(lens[0]-37500)<125,str(lens))
-        check('delivered width uses extended command timestamps',abs(r.m.r16(DIAG+38+8)-30000)<100,str(r.m.r16(DIAG+38+8)))
+        # 37500 ticks in us on this board's clock (30 ms at 1.25 MHz)
+        want_us=37500*10000//HB.TPMS
+        check('delivered width uses extended command timestamps',abs(r.m.r16(DIAG+38+8)-want_us)<100,str((r.m.r16(DIAG+38+8),want_us)))
     r=Rig(); first=r.publish(1,1,1000,8000)
     r.publish(2,1,5000,first)
     r.run(6000)

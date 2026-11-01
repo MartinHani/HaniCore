@@ -260,23 +260,25 @@ def main_one(stem):
     import me711_image as PI
     img = PI.image().read_bytes()
     a = T.sym("hc_io_lambda") - 0x800000
-    code = img[a:a + 48]
+    code = img[a:a + 128]
 
-    def first(op):
-        """the first `op Rd(=R4/RL4),[Rw+#data16]` - any base register
+    def loads(op):
+        """every `op Rd(=R4/RL4),[Rw+#data16]` - any base register
         (2026-10-12: Keil indexes wb[] through R5 since the valid check;
         the gate looked only for the R4 form and its closed-loop part was
         skipped)"""
-        for k in range(len(code) - 3):
-            if code[k] == op and (code[k + 1] >> 4) in (4, 8):
-                return code[k + 2] | code[k + 3] << 8
-        return None
+        return [code[k + 2] | code[k + 3] << 8 for k in range(len(code) - 3)
+                if code[k] == op and (code[k + 1] >> 4) in (4, 8)]
+
+    # the PAIR: hcwb_t puts `valid` 4 bytes before `lambda` (hcwb.h). Since
+    # 2026-10-24 hc_io_lambda first reads the page (external-lambda source),
+    # so the first MOVB is no longer `valid`.
+    pair = [(v, l) for l in loads(0xD4) for v in loads(0xF4) if l - v == 4]
+    vnear, near = pair[0] if pair else (None, None)
 
     def phys(near):                            # DPPn page + offset
         return (r.m.sfr.get(0xFE00 + 2 * (near >> 14), 0) * 0x4000
                 + (near & 0x3FFF))
-    near = first(0xD4)                         # MOV  R4,[Rw+#wb.lambda]
-    vnear = first(0xF4)                        # MOVB RL4,[Rw+#wb.valid]
     lam_addr = phys(near) if near is not None else None
     probe = None
     if lam_addr is not None:

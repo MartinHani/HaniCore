@@ -11,6 +11,7 @@
 #include "hcengine.h"       /* eng_batt_dv (reset witness) */
 #include "hcasicstart.h"    /* the S5500 counters          */
 #include "hcumkom.h"        /* the monitoring exchange     */
+#include "hcatomic.h"
 
 unsigned int hc_stack_hwm, hc_sysstack_hwm;
 
@@ -132,7 +133,9 @@ static void wt_update(unsigned int now_ms)
  *   WT[24..27] periods > 10.5 / 11 / 12 / 15 ms    WT[28] periods < 9.5 ms
  *   WT[29] the previous start's T7 (a period > 52 ms wraps: those are
  *          transfer timeouts, which WT[8] counts). */
-#define WT_T7_MS(x10) ((unsigned int)((x10) * 125u))   /* 0.1 ms -> T7     */
+/* 0.1 ms -> T7 at the board's clock (125 at 40 MHz, 75 on the 24 MHz 2.7T -
+   until 2026-10-28 it was 125 on every board) */
+#define WT_T7_MS(x10) ((unsigned int)((x10) * (unsigned int)(TGT_TICKS_PER_MS_X10 / 100uL)))
 void far hc_rtwit_frame_start(unsigned int t7)
 {
     unsigned int per;
@@ -172,7 +175,7 @@ void far hc_rtwit_stall_service(unsigned int now_ms)
     if (trg_rpm != 0u) { WT[30] = 0u; return; }
     if ((unsigned int)(now_ms - WT[31]) < (WT[30] >> 8)) return;
     WT[31] = now_ms;
-    n = (unsigned int)(ms * 1250u);            /* <= 62500 T7 < one wrap   */
+    n = (unsigned int)(ms * (unsigned int)(TGT_TICKS_PER_MS_X10 / 10uL)); /* <= 62500 T7 < one wrap */
     t0 = T7;
     while ((unsigned int)(T7 - t0) < n) { }
 }
@@ -185,10 +188,34 @@ unsigned char far hc_rtwit_byte(unsigned int off)
     return (unsigned char)((off & 1u) ? w : (w >> 8));
 }
 
+typedef char hc_passrec_fits[((10u + HC_PASS_SEGS) * 2u <= TGT_RAM_PASSREC_LIMIT) ? 1 : -1];
+
+/* The top of every main-loop pass: judge the pass that just ended (its
+   length from the 1 ms tick, so it cannot wrap; pass_T is the T7 length
+   the loop measured), then start the next one. */
+void far hc_pass_begin(unsigned int now_ms, unsigned int pass_T)
+{
+    unsigned int ms = (unsigned int)(now_ms - HC_PASSREC[7]);
+    if (ms > 20u && HC_PASSREC[1] != 0xFFFFu) HC_PASSREC[1]++;
+    if (ms > HC_PASSREC[2] || (ms == HC_PASSREC[2] && pass_T > HC_PASSREC[3])) {
+        HC_PASSREC[2] = ms;
+        HC_PASSREC[3] = pass_T;
+        HC_PASSREC[4] = HC_PASSREC[9];
+        HC_PASSREC[5] = HC_PASSREC[8];
+    }
+    HC_PASSREC[6] = (unsigned int)T7;
+    HC_PASSREC[7] = now_ms;
+    HC_PASSREC[8] = 0u;
+    HC_PASSREC[9] = 0u;
+}
+
 void far hc_rtmon_init(void)
 {
     unsigned int volatile *p = (unsigned int volatile *)&HC_RT;
     unsigned int i;
+    for (i = 0u; i < (10u + HC_PASS_SEGS); i++) HC_PASSREC[i] = 0u;
+    HC_PASSREC[0] = 0x5052u;
+    HC_PASSREC[7] = hc_tick_ms;
     wt_boot();
     for (i = 0; i < sizeof(hc_rt_t) / 2u; i++) p[i] = 0u;
     HC_RT.ver = HC_RT_VER;
@@ -237,11 +264,16 @@ static unsigned int sup_beat, sup_age, sup_ok;
    is not due). Every output the executor holds ON is timed here, from its ON
    bit alone - not from the queue that failed: a coil ON longer than the
    MAXDWELL backstop allows, an injector ON longer than the longest pulse the
-   admission can produce (fuel + dead time, two u16 us, x 1.25 ticks), is an
+   admission can produce (fuel + dead time, two u16 us, in ticks), is an
    executor fault. Elapsed capture-clock ms per output, saturating; zero
    while OFF, or after a new actual injector OPEN following its own CLOSE. */
 static unsigned char sup_on_ms[16];
 static unsigned int sup_live;   /* outputs ON at the previous supervision */
+/* ms since the last output scan: the scan runs every second ms (2026-10-24,
+   ~350 instructions a ms at 24 MHz with twelve outputs switching); a coil's
+   new dwell is seen through hc_rt_ign_fresh, an injector's through its
+   ticket, so a short OFF between two scans cannot carry an age over */
+static unsigned char sup_pend;
 static const unsigned char sup_limit[16]={
     HC_RT_COIL_MS,HC_RT_COIL_MS,HC_RT_COIL_MS,HC_RT_COIL_MS,
     HC_RT_COIL_MS,HC_RT_COIL_MS,HC_RT_COIL_MS,HC_RT_COIL_MS,
@@ -257,7 +289,7 @@ void far hc_rt_supervise(void)
     unsigned long ticks;
 
     if (!hc_rt_armed) {
-        sup_beat = hc_dl_beat; sup_age = 0u; sup_ok = 0u; sup_live = 0u;
+        sup_beat = hc_dl_beat; sup_age = 0u; sup_ok = 0u; sup_live = 0u; sup_pend = 0u;
         HC_RT.clock_last=t;HC_RT.clock_frac=0u;
         for (b = 0u; b < 16u; b++) sup_on_ms[b] = 0u;
         return;
@@ -268,7 +300,9 @@ void far hc_rt_supervise(void)
     HC_RT.clock_last=t;
     elapsed=(unsigned int)(ticks/(unsigned int)(TGT_TICKS_PER_MS_X10/10u));
     HC_RT.clock_frac=(unsigned int)((unsigned int)ticks-elapsed*(TGT_TICKS_PER_MS_X10/10u));
-    h = hc_deadline_health();
+    /* the executor's health and the output ages every second ms (sup_pend) */
+    sup_pend = (unsigned char)((sup_pend > 255u - elapsed) ? 255u : sup_pend + elapsed);
+    h = (sup_pend >= 2u) ? hc_deadline_health() : 0u;
     b = hc_dl_beat;
 
     if (b != sup_beat) {
@@ -281,15 +315,23 @@ void far hc_rt_supervise(void)
     HC_RT_MAX(beat_age_max, sup_age);
     if (h & 1u) f |= HC_RT_F_EXEC_LATE;
     if (h & 2u) f |= HC_RT_F_EXEC_CFG;
-    {
+    if (sup_pend >= 2u) {
         unsigned int on = hc_dl_on_ign | ((unsigned int)hc_dl_on_inj << 8);
         /* Only outputs ON now or at the previous pass can have a nonzero
            age; every other age is already zero. */
         unsigned int m = on | sup_live;
+        unsigned int ps;
+        unsigned char fresh;
+        unsigned char el = sup_pend;
+        sup_pend = 0u;
         sup_live = on;
+        HC_ATOMIC_ENTER(ps);              /* read-and-clear vs CC25 */
+        fresh = hc_rt_ign_fresh; hc_rt_ign_fresh = 0u;
+        HC_ATOMIC_EXIT(ps);
         for (b = 0u; m; b++, on >>= 1, m >>= 1) {
             if (!(m & 1u)) continue;
             if (!(on & 1u)) sup_on_ms[b] = 0u;
+            else if (b < 8u && (fresh & (unsigned char)(1u << b))) sup_on_ms[b] = 0u;
             else if(b>=8u && hc_dl_active_inj[b-8u]
                     && HC_DL_WIDTH.progress_ticket[b-8u]!=hc_dl_active_inj[b-8u]) {
                 /* A new NONZERO active ticket follows an actual OPEN with its
@@ -300,9 +342,13 @@ void far hc_rt_supervise(void)
                 HC_DL_WIDTH.progress_ticket[b-8u]=hc_dl_active_inj[b-8u];
                 sup_on_ms[b]=0u;
             } else {
-                if(sup_on_ms[b]>255u-elapsed) sup_on_ms[b]=255u;
-                else sup_on_ms[b]=(unsigned char)(sup_on_ms[b]+elapsed);
-                if (sup_on_ms[b] > sup_limit[b])
+                if(sup_on_ms[b]>255u-el) sup_on_ms[b]=255u;
+                else sup_on_ms[b]=(unsigned char)(sup_on_ms[b]+el);
+                /* >=: the age is counted in 2 ms scans and a tick can be
+                   delayed, so > released up to 144.0x ms after ON - past
+                   the HC_RT_INJ_MS + two scans the design promises
+                   (me711_runtime_fault_proof P2, 2026-10-27) */
+                if (sup_on_ms[b] >= sup_limit[b])
                     f |= HC_RT_F_EXEC_STALL;
             }
         }

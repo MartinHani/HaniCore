@@ -53,7 +53,7 @@ def main():
  check('Burn command defers its reply rather than reporting V39 early success','hcts_defer_response();' in M and 'if (deferred_response == 0u)' in T)
  check('while pending, later wire traffic cannot overtake Burn reply','if (deferred_response != 0u)' in T and 'hcts_rx_pump();' in T)
  check('runtime service invokes one bounded commit pass without reset','nvm_commit(now_ms, rpm, trig_turning, outputs_busy, page_stable);' in service and '__asm { SRST }' not in service)
- check('retry leaves the current commit pass before any re-entry','SRAMB(NVM_CB)[CB_RESULT] = 0xFFu;' in commit and 'hc_bf_stage(HCBF_ST_RETRY);\n            return;' in commit)
+ check('retry leaves the current commit pass before any re-entry','SRAMB(NVM_CB)[CB_RESULT] = 0xFFu;' in commit and 'SRAMB(NVM_CB)[CB_RESULT] = 0xFFu;\n            return;' in commit)
  check('retry target is read twice and must be NOR-compatible before reissue','static unsigned int retry_target(void)' in N and 'a = *p;\n    b = *p;' in N and '(unsigned int)(a & v) != v' in N)
  check('unexpected partial state is rejected, not blindly retried','HCNV_PF_UNSAFE' in N and 'return HCNV_ERR_PROGRAM;' in between(N,'static unsigned int retry_target(void)','/* ============================================================ the failure'))
  check('only a verified blank-or-compatible partial target reaches a retry command','NVM_RETRY_ISSUE' in commit and 'dg_set16((unsigned int)DG_RETRIES' in N)

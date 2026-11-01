@@ -140,13 +140,15 @@ class Pump:
         # me711_nvm_proof.Ecu.call().
         saved = (cpu.csp, cpu.ip, cpu.m.sfr[0xFE12], cpu.ext)
         cpu.ext = None
+        sp0 = cpu.m.sfr[0xFE12]   # returned = SENTINEL AND the frame unwound:
+        # code at seg:0002 exists (0x860002, 2026-10-25)
         cpu.push(SENTINEL)
         cpu.csp = (addr >> 16) & 0xFF
         cpu.ip = addr & 0xFFFF
         for i, v in enumerate(args):
             cpu.sr(8 + i, v & 0xFFFF)
         for _ in range(200_000):
-            if (cpu.ip & 0xFFFF) == SENTINEL:
+            if (cpu.ip & 0xFFFF) == SENTINEL and cpu.m.sfr[0xFE12] >= sp0:
                 break
             cpu.step()
         else:
@@ -270,19 +272,26 @@ def part_two():
     print("\n  --- the EKP pin, attacked ---")
 
     # The evidence, checked against the generated map rather than retyped.
-    row = [ln for ln in IOMAP.read_text(errors="replace").splitlines()
-           if ",EKP," in ln]
-    check("Bosch's own port map still says EKP is on a MAIN CPU pin",
-          len(row) == 1 and row[0].startswith("MAIN CPU,61,P2.12,")
-          and "both ME7.1.1 columns agree" in row[0],
-          row[0][:96] if row else "no EKP row in me711_iomap.csv")
+    import hc_board
+    # the board's EKP pin: P2.12 on the Porsche (Bosch's ME7.1.1 port map);
+    # P4.4 on the C4 board (me7_port.xls ME7.1 column, 4B0907551F BSET P4.4)
+    want_port, want_bit = (4, 4) if hc_board.IS_C4 else (2, 12)
+    if not hc_board.IS_C4:
+        row = [ln for ln in IOMAP.read_text(errors="replace").splitlines()
+               if ",EKP," in ln]
+        check("Bosch's own port map still says EKP is on a MAIN CPU pin",
+              len(row) == 1 and row[0].startswith("MAIN CPU,61,P2.12,")
+              and "both ME7.1.1 columns agree" in row[0],
+              row[0][:96] if row else "no EKP row in me711_iomap.csv")
 
-    m = re.search(r"#define\s+TGT_EKP_PORT_BIT\s+(\d+)",
-                  HDR.read_text(errors="replace"))
-    check("and hctarget.h names the same bit",
-          m is not None and int(m.group(1)) == 12,
-          "TGT_EKP_PORT_BIT = %s, the map says P2.12"
-          % (m.group(1) if m else "missing"))
+    tgt = hc_board.target_text()
+    m = re.search(r"#define\s+TGT_EKP_PORT_BIT\s+(\d+)", tgt)
+    mp = re.search(r"#define\s+TGT_EKP_PORT_NO\s+(\d+)u", tgt)
+    check("and hctarget.h names the board's EKP pin (P%d.%d)" % (want_port, want_bit),
+          m is not None and int(m.group(1)) == want_bit
+          and (mp is None or int(mp.group(1)) == want_port),
+          "TGT_EKP_PORT_NO/BIT = %s/%s"
+          % (mp.group(1) if mp else "-", m.group(1) if m else "missing"))
 
     cmd = BOP.ini_command("cmdTestPump")
     print("      the '!T' bytes the .ini sends: %s"
@@ -331,7 +340,7 @@ def part_two():
         # and the second is now a two-module allow-list rather than a
         # monopoly.
         allowed_ports = {"P2", "DP2", "ODP2", "P7", "DP7", "ODP7",
-                         "P8", "DP8", "ODP8"}
+                         "P8", "DP8", "ODP8", "P4", "DP4", "ODP4"}
         check("every port written is an engine-output port",
               set(ports) <= allowed_ports, "wrote %s" % ", ".join(ports))
 
@@ -355,9 +364,10 @@ def part_two():
         check("no coil or injector pin is left an OUTPUT by a pump run",
               coils == 0 and inj == 0,
               "DP2 coils=0x%04X DP7/DP8 injectors=0x%04X" % (coils, inj))
+        dpx = r["dp"][3] if want_port == 4 else r["dp"][0]
         check("the pin is an INPUT again at the end",
-              (r["dp"][0] & (1 << 12)) == 0,
-              "DP2 = 0x%04X, bit 12 clear" % r["dp"][0])
+              (dpx & (1 << want_bit)) == 0,
+              "DP%d = 0x%04X, bit %d clear" % (want_port, dpx, want_bit))
 
 
 def main() -> int:

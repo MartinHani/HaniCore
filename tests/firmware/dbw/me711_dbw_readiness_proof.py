@@ -60,7 +60,7 @@ _AWT_PAGE = None
 def rig(tps2_bad=False):
     global _AWT_PAGE
     if _AWT_PAGE is None:
-        _AWT_PAGE = R.build_awt_page()
+        _AWT_PAGE = R.build_board_page()
     s = R.Stress(_AWT_PAGE, ts=False)
     s.dbw_plant = True
     s.pedal = 0.25
@@ -173,13 +173,22 @@ def main():
         s = rig()
         t_st, drove = run(s, 1600, hold_adc=True)
         a, f = st(s)
-        res.append(("R3 ADC silent 1.6 s: STALE latched at %s ms (window 1000 ms), EGENFR driven: %s"
-                    % (t_st, drove), t_st is not None and t_st >= 900 and a == 3
-                    and (f & F_STALE) and not drove))
-        s.mem.sfr[P6] = s.mem.sfr.get(P6, 0) & ~0x0004
-        run(s, 30)
-        s.mem.sfr[P6] = s.mem.sfr.get(P6, 0) | 0x0004
-        run(s, 600)
+        import hc_board
+        if hc_board.IS_C4:
+            # the C4 board reads KL15 FROM the main ADC (AN12, TGT_KL15_ON):
+            # a silent ADC reads as key OFF, so the throttle stays OFF - no
+            # STALE to latch, and the bridge must never be enabled
+            res.append(("R3 C4: ADC silent 1.6 s reads as key OFF: state %d, EGENFR driven: %s"
+                        % (a, drove), a != 2 and not drove))
+            run(s, 600)            # the ADC is back: KL15 reads ON again
+        else:
+            res.append(("R3 ADC silent 1.6 s: STALE latched at %s ms (window 1000 ms), EGENFR driven: %s"
+                        % (t_st, drove), t_st is not None and t_st >= 900 and a == 3
+                        and (f & F_STALE) and not drove))
+            s.mem.sfr[P6] = s.mem.sfr.get(P6, 0) & ~0x0004
+            run(s, 30)
+            s.mem.sfr[P6] = s.mem.sfr.get(P6, 0) | 0x0004
+            run(s, 600)
         a, f = st(s)
         res.append(("R4 key cycle with the ADC back: state %d, faults 0x%04X" % (a, f), a == 2 and f == 0))
 
@@ -239,12 +248,29 @@ def main():
 
         # Carry the faulted controller and all old sensor samples across reset.
         s = warm_restart(s)
+        # THE RETAINED FAULT IS STILL IN SRAM UNTIL THE RESTARTED STARTUP
+        # REACHES hc_dbw_init() (15 ms of boot on 2026-10-29) - reading it
+        # before then is the previous run's state, not a fault of this one.
+        # So: the startup must clear it within 100 ms, with the bridge off,
+        # and from then on the old samples must not raise it again.
+        s.adc_mute = {1, 3}
+        t_init, drove_init = None, False
+        for i in range(100):
+            s.run_us(1000)
+            drove_init |= bool(s.mem.sfr.get(DP2, 0) & 0x0800)
+            if not (s.mem.r16(DBW_FLT) & F_STALE):
+                t_init = i
+                break
+        s.adc_mute = set()
         t_st, drove_early = run_mute(s, 400, (1, 3))
+        drove_early |= drove_init
         t_b, _ = run(s, 800)
         a, f = st(s)
-        res.append(("R12 warm reset with retained fault/sample RAM: bridge before new TPS %s, state %d, faults 0x%04X"
-                    % ("DRIVEN" if drove_early else "off", a, f),
-                    t_st is None and t_b is None and not drove_early and a == 2 and f == 0))
+        res.append(("R12 warm reset with retained fault/sample RAM: reinitialised at %s ms, bridge before new TPS %s, "
+                    "state %d, faults 0x%04X, STALE at %s / %s ms"
+                    % (t_init, "DRIVEN" if drove_early else "off", a, f, t_st, t_b),
+                    t_init is not None and t_st is None and t_b is None
+                    and not drove_early and a == 2 and f == 0))
 
     nf = sum(not ok for _n, ok in res)
     print("%d/%d checks pass" % (len(res) - nf, len(res)))

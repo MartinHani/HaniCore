@@ -4,8 +4,9 @@ me711_overdwell_proof.py - the maximum-dwell watch on a RUNNING engine, on
 the LINKED image (c167sim), measured at the coil pins.
 
     py tests\firmware\engine\me711_overdwell_proof.py               the image me711_image names
-    py tests\firmware\engine\me711_overdwell_proof.py --control     V98r2 (9BF22D32, the car
-                                                    image): must FAIL
+    py tests\firmware\engine\me711_overdwell_proof.py --control     must FAIL: V98r2's policy
+                                                    (latch on the FIRST overdwell)
+                                                    put back on this image
 
 THE CAR (2026-10-02, V98r2 on the AWT): "when the throttle is opened more
 sharply and the rpm rises, the engine begins dying as if the ignition were
@@ -27,17 +28,25 @@ CASES
   O2a a 25 deg retard step mid-dwell: MEASURED, the dwell is kept (the spark
       is queued by time from the dwell) - a tip-in's retard is NOT how this
       scheduler overdwells.
-  O2b ONE overdwell (a single late release): the watch auto-fires once and
-      afterwards EVERY coil keeps sparking - no latch (V98r2 latches the coil
-      OFF until the engine stalls - the control fails here).
-  O3  the protection that the latch exists for is kept: a coil that is driven
-      ON again and again with no spark between (the V89 class: spark events
+  O2b ONE overdwell (one spark edge lost): the executor's own MAXDWELL edge
+      auto-fires once and afterwards EVERY coil keeps sparking - no latch
+      (V98r2 latches the coil OFF until the engine stalls - the control fails
+      here).
+  O3  the protection that the latch exists for is kept: a coil whose spark
+      edge is missing on three charges in a row (the V89 class: spark events
       missing) is released each time and LATCHED after the third.
+
+THE MISSING SPARK (2026-10-25). Until the 2026-10-07 executor the task-
+context 1 ms watch released coils, and O2b/O3 drove a coil pin ON from outside
+the scheduler for it to find. Since then the CC25 executor owns the release
+(the MAXDWELL edge queued with every dwell) and the task service only decides
+the rev cut, so a pin forced from outside is nobody's (hcrtmon711.c's 25 ms
+executor-fault supervisor). The cases now remove the coil's bit from its
+queued SPARK edge while that coil charges - the release that is missing is
+the spark, exactly the car's class - and leave its MAXDWELL edge alone.
 """
 from __future__ import annotations
 
-import os
-import subprocess
 import sys
 from pathlib import Path
 
@@ -45,17 +54,14 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "tools" / "lib"))
 import hcpaths  # noqa: F401,E402  (puts every tools/ and tests/ module on sys.path)
 
-CONTROL_STEM = "HaniCore_ME711_v98_dev"
-if "--control" in sys.argv:
-    env = dict(os.environ, HANICORE_ME711_STEM=CONTROL_STEM)
-    r = subprocess.run([sys.executable, __file__], env=env)
-    ok = r.returncode != 0
-    print("\nCONTROL (%s, V98r2): %s" % (CONTROL_STEM,
-          "FAILS as it must" if ok else "PASSED - the gate cannot tell"))
-    raise SystemExit(0 if ok else 1)
+# The V98r2 image itself has no CC25 executor (no hc_dl_* symbols), so it
+# would fail on a missing symbol - vacuously. The control is its POLICY on
+# this image instead: every overdwell latches its coil at once.
+CONTROL = "--control" in sys.argv
 
 import me711_trigger_test as PT          # noqa: E402
 import me711_trigger_scheduler_proof as V      # noqa: E402
+import me711_heartbeat_gap_proof as HB   # noqa: E402  (TPMS: this board's T1)
 
 CHECKS = FAILS = 0
 
@@ -77,9 +83,9 @@ class Rig(V.Rig):
         self.x.m.w8(u + V.uoff("CFG_U_IGN_STRATEGY", h), 1)   # wasted COP
         self.x.call("trg_init")
         self.x.call("trg_test_geometry")
-        self.p = round(1_250_000 / rpm)
+        self.p = round(HB.TPMS * 100 / rpm)   # T1 ticks per tooth of a 60-x
         self.adv = 300
-        self.force = 0           # coil bits driven ON every service step
+        self.hide = 0            # coil bits whose SPARK edge is removed
 
     def model(self):
         m = self.x.m
@@ -90,8 +96,31 @@ class Rig(V.Rig):
         for n in ("hc_ignition_allowed", "hc_injection_allowed"):
             m.w16(PT.sym(n) & 0xFFFF, 1)
         m.w16(PT.sym("hc_cfg_validation") & 0xFFFF, 0)
-        if self.force:
-            self.x.call("hc_hal_out_group", 0, self.force, 1)
+
+    def latch_first(self):
+        """--control: V91..V98's latch on the FIRST overdwell"""
+        n = self.u("dry_sched_overdwell")
+        if n != getattr(self, "ovd_seen", 0):
+            self.ovd_seen = n
+            a = PT.sym("hc_ign_ovd_latch") & 0xFFFF
+            self.x.m.w16(a, self.x.m.r16(a) | self.hide)
+
+    def lose_sparks(self):
+        """while a hidden coil charges, its queued SPARK edges drive nothing
+        (the next dwell of the same coil is 360 deg away, beyond the
+        horizon, so only the spark that ends THIS charge is touched)"""
+        m = self.x.m
+        on = m.r8(PT.sym("hc_dl_on_ign") & 0xFFFF) & self.hide
+        if not on:
+            return
+        q_t = PT.sym("hc_dl_q_type") & 0xFFFF
+        q_m = PT.sym("hc_dl_q_mask") & 0xFFFF
+        q_n = PT.sym("hc_dl_q_next") & 0xFFFF
+        i, seen = m.r8(PT.sym("hc_dl_q_head") & 0xFFFF), 0
+        while i != 255 and seen < 64:
+            if m.r8(q_t + i) & 15 == 2 and m.r8(q_m + i) & on:
+                m.w8(q_m + i, m.r8(q_m + i) & ~on)
+            i, seen = m.r8(q_n + i), seen + 1
 
     def service_to(self, ticks):
         # finer than the base rig: the watch runs once a millisecond
@@ -102,7 +131,10 @@ class Rig(V.Rig):
             self.clock = c0 + ticks * q // n
             self.model()
             self.x.call("trg_service")
-            # the main loop's 1 ms-gated watch (hcmain_me711.c), on T1
+            self.lose_sparks()
+            if CONTROL:
+                self.latch_first()
+            # the main loop's 1 ms-gated service (hcmain_me711.c), on T1
             self.x.call("hc_drysched_overdwell_service",
                         (t0 + ticks * q // n) & 0xFFFF)
             self.log.append((self.clock, self.x.call("hc_hal_out_mask_ign"),
@@ -157,15 +189,13 @@ def main() -> int:
           r.u("dry_sched_overdwell") == 0 and r.u("hc_ign_ovd_latch") == 0,
           "overdwell %d" % r.u("dry_sched_overdwell"))
 
-    # O2b: ONE overdwell - a release that came late once (a long main-loop
-    # pass, a missed event): coil 3's bit held ON for ~6 ms, once.
-    for _ in range(10):
+    # O2b: ONE overdwell - coil 3's spark edge lost once.
+    r.hide = 0x04
+    for _ in range(60):
         r.tooth()
-    r.force = 0x04
-    t_end = r.clock + int(6.0 * 1250)
-    while r.clock < t_end:
-        r.tooth()
-    r.force = 0
+        if r.u("dry_sched_overdwell"):
+            break
+    r.hide = 0
     r.to_gap()                    # realign rev() (no sync loss / cancel)
     ovd = r.u("dry_sched_overdwell")
     check("O2b one late release: the watch fires once (auto-fire)",
@@ -182,10 +212,10 @@ def main() -> int:
           "dead until the engine stalls)" % (latch, s))
 
     # O3: the V89 class - a coil commanded ON with no spark event after it
-    r.force = 0x08                 # coil 4's bit (cylinder 4, slot 4)
+    r.hide = 0x08                  # coil 4's bit (cylinder 4, slot 4)
     for _ in range(3):
         r.rev()
-    r.force = 0
+    r.hide = 0
     latch = r.u("hc_ign_ovd_latch")
     check("O3 a coil re-charged with no spark between: latched after 3",
           latch & 0x08 and r.u("dry_sched_overdwell") >= ovd + 3,
@@ -198,6 +228,10 @@ def main() -> int:
           s[3] == 0 and all(n >= 2 for n in s[:3]), "sparks %s" % s)
 
     print("\n%d checks, %d failed" % (CHECKS, FAILS))
+    if CONTROL:
+        print("CONTROL (latch on the first overdwell): %s"
+              % ("FAILS as it must" if FAILS else "PASSED - the gate cannot tell"))
+        return 0 if FAILS else 1
     return 1 if FAILS else 0
 
 

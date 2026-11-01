@@ -37,7 +37,7 @@ TOP = ("firmware", "tools", "tests", "docs", "evidence", "release", "bins",
 # Not in a fresh checkout by design: corpora, OEM reads, built images/maps,
 # and the maintainer's gitignored records (frozen releases, evidence, history).
 LOCAL_ONLY = re.compile(r"^(reference|bins|build|build/generated|tmp|archive"
-                        r"|release|evidence|docs/history|tunerstudio/history)(/|$)"
+                        r"|release|evidence|docs/history|tuning/history)(/|$)"
                         r"|/build(/|$)|\.(bin|hex|H86|M66|abs|lst|obj|json|log)$")
 SCAN = [ROOT / "tools", ROOT / "tests"]
 # A missing file with one of these suffixes is an INPUT that moved, never an

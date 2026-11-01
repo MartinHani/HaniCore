@@ -84,7 +84,7 @@ def static_checks():
           "HAL %s, descriptor %s" % (sorted(cpu | set(asic)), sorted(want)))
     check("...each ASIC input at the decoded reply word / bit",
           asic == HW.SWITCH_INPUT_ASIC_BITS, str(sorted(asic.items())))
-    ini = (ROOT / "tunerstudio/hanicore_me711.ini").read_text(
+    ini = (ROOT / "tuning/hanicore_me711.ini").read_text(
         errors="replace")
     for f in FIELDS:
         m = re.search(r"^\s*%s\s*=\s*bits,\s*U08,\s*\d+,\s*\[0:7\],(.*)$" % f,

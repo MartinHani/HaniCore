@@ -61,8 +61,6 @@ def conditions() -> dict:
                        and IMG.metadata().get("boot_region") == "hanicore_owned"),
         # hc_dbw.c stubs to zeros without TGT_DBW_CONTROLLER
         "dbw_absent": re.search(r"^#define\s+TGT_DBW_CONTROLLER\s+1", tgt, re.M) is None,
-        # burn forensics / ASIC dump are instrumentation behind TGT_BURN_DIAGNOSTICS
-        "diag_absent": re.search(r"^#define\s+TGT_BURN_DIAGNOSTICS\s+1", tgt, re.M) is None,
         # the build refuses to rebuild a stem that is frozen under release/
         "image_frozen": any((ROOT / "release").glob("*/%s.bin" % IMG.STEM)),
         # the unsolicited heartbeat was retired in V22: hb_service() is never called
@@ -74,6 +72,32 @@ def conditions() -> dict:
         # gates whose subject IS the local material: the reference corpora
         # (rusEFI, A2L), this ECU's own OEM reads, the frozen release files.
         # A public clone has none of them.
+        # the C4 board boots from its OWN (donor) boot region through the
+        # 05.12 mask ROM: the Porsche owned-region / OEM-boot-block gates have
+        # no subject there (me71_c4_boot_proof covers it)
+        "c4_donor_boot": IMG.MANIFEST.exists()
+                         and IMG.metadata().get("boot_region") == "oem_boot_contract",
+        # no PORSCHE OEM boot block runs: HaniCore's own region (the
+        # Porsche default) or the C4's own donor block (other OEM code)
+        # the C4 board's image carries the Audi 2.7T presets, not the AWT: a
+        # gate whose SUBJECT is the AWT preset has none here (its logic is
+        # board-independent and proven on the Porsche image;
+        # me71_27t_preset_apply_proof covers this board's preset)
+        # (the ME7.5 DC builds on the C4 branch: no AWT preset, no CJ120 -
+        # it has the analog CJ110 - 2026-10-29)
+        "awt_preset_absent": IMG.MANIFEST.exists()
+                             and IMG.metadata().get("board") in ("vag_me71_c4", "vag_me75_dc"),
+        # the C4 board has no CJ120 (narrowband heaters only, port plan s.3)
+        "no_cj120": IMG.MANIFEST.exists()
+                    and IMG.metadata().get("board") in ("vag_me71_c4", "vag_me75_dc"),
+        # a gate whose subject is the ME7.5 DC board (CC650 + monitor)
+        "not_dc_board": not (IMG.MANIFEST.exists()
+                             and IMG.metadata().get("board") == "vag_me75_dc"),
+        # a gate whose subject is the S5500 (the ME7.5 DC has the CC650)
+        "dc_board": IMG.MANIFEST.exists() and IMG.metadata().get("board") == "vag_me75_dc",
+        "porsche_oem_boot_absent": IMG.MANIFEST.exists() and (
+            IMG.metadata().get("boot_region") == "hanicore_owned"
+            or IMG.metadata().get("board") in ("vag_me71_c4", "audi_4f_v8", "vag_me75_dc")),
         "local_corpus_absent": not ((ROOT / "reference").is_dir()
                                     and (hcpaths.OEM_READ).exists()
                                     and (ROOT / "release").is_dir()),
@@ -87,12 +111,21 @@ REASON = {
     "owned_boot": "the image boots from HaniCore's own boot region; no OEM boot block "
                   "runs (me711_owned_boot_proof covers the region)",
     "dbw_absent": "the DBW controller is compiled out (TGT_DBW_CONTROLLER)",
-    "diag_absent": "burn forensics / ASIC dump compiled out (TGT_BURN_DIAGNOSTICS)",
     "image_frozen": "the image under test is frozen under release/ - bump the stem",
     "heartbeat_retired": "the heartbeat is retired (main loop never calls hb_service)",
     "not_v37": "pairs with the frozen V37 image; the image under test is newer",
     "rx_pec": "K-line receive is PEC6 (TGT_RX_PEC); the CC7 drain tick is compiled out",
     "local_corpus_absent": "needs the local reference corpora / OEM reads / frozen releases",
+    "porsche_oem_boot_absent": "no Porsche OEM boot block runs (HaniCore's own region, or the 2.7T's / "
+                               "4F's own block) - me711_owned_boot_proof / me71_c4_boot_proof / "
+                               "me711_4f_boot_proof cover them",
+    "awt_preset_absent": "the AWT preset is not in this board's image; its logic is proven on the "
+                         "Porsche image (me71_27t_preset_apply_proof covers this board's preset)",
+    "no_cj120": "this board has no CJ120 (narrowband lambda only)",
+    "not_dc_board": "its subject is the ME7.5 DC board (HANICORE_BOARD=vag_me75_dc)",
+    "dc_board": "its subject is the S5500; the ME7.5 DC has the CC650 (me75_dc_runtime_proof)",
+    "c4_donor_boot": "this board (2.7T, 4F) boots its own boot region via the mask ROM; "
+                     "me71_c4_boot_proof / me711_4f_boot_proof cover it",
 }
 
 
@@ -151,6 +184,9 @@ def main() -> int:
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--audit", action="store_true")
     ap.add_argument("--timeout", type=int, default=1800)
+    ap.add_argument("-j", "--jobs", type=int, default=1,
+                    help="gates run at once (default 1); a gate that times out is "
+                         "rerun alone at the end - a timeout under load is not a failure")
     args = ap.parse_args()
     gates = select(args)
 
@@ -172,21 +208,59 @@ def main() -> int:
     t_all = time.time()
     if args.tier == "tier1":
         failed += tier1_prelude()
+    todo = []
     for g in gates:
         if g.skip_if and cond.get(g.skip_if):
             print("  [SKIP] %-46s   -    %s" % (g.name, REASON[g.skip_if]))
             skipped.append(g.name)
-            continue
+        else:
+            todo.append(g)
+
+    def run_gate(g):
         cmd = ([sys.executable, "-m", "pytest", "-q", g.rel] if g.pytest
                else [sys.executable, str(g.path)])
         t0 = time.time()
         rc, out = run_one(cmd, max(args.timeout, g.timeout))
+        return g, rc, out, time.time() - t0
+
+    def report(g, rc, out, dt):
         lines = [ln.rstrip() for ln in out.splitlines() if ln.strip()]
         print("  [%s] %-46s %6.1fs  %s" % ("PASS" if rc == 0 else "FAIL", g.name,
-                                          time.time() - t0, (lines[-1] if lines else "")[:64]))
+                                          dt, (lines[-1] if lines else "")[:64]))
         sys.stdout.flush()
-        if rc:
-            failed.append((g.name, out))
+
+    if args.jobs <= 1:
+        for g in todo:
+            g, rc, out, dt = run_gate(g)
+            report(g, rc, out, dt)
+            if rc:
+                failed.append((g.name, out))
+    else:
+        # the gates that rewrite shared generated files run alone, first
+        for g in [g for g in todo if g.name in CAT.EXCLUSIVE]:
+            g, rc, out, dt = run_gate(g)
+            report(g, rc, out, dt)
+            if rc:
+                failed.append((g.name, out))
+        todo = [g for g in todo if g.name not in CAT.EXCLUSIVE]
+        # longest budget first, so the long simulations do not start last
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        timed_out = []
+        with ThreadPoolExecutor(args.jobs) as pool:
+            for f in as_completed([pool.submit(run_gate, g)
+                                   for g in sorted(todo, key=lambda g: -g.timeout)]):
+                g, rc, out, dt = f.result()
+                report(g, rc, out, dt)
+                if rc == 99 and out.startswith("TIMEOUT"):
+                    timed_out.append(g)
+                elif rc:
+                    failed.append((g.name, out))
+        for g in timed_out:                  # alone, as a serial run would
+            print("  [....] %-46s rerun alone after a timeout under load" % g.name)
+            g, rc, out, dt = run_gate(g)
+            report(g, rc, out, dt)
+            if rc:
+                failed.append((g.name, out))
     for g in physical:
         print("  [----] %-46s   -    physical: run by hand (%s)" % (g.name, g.rel))
 

@@ -124,6 +124,29 @@ def apply_preset(r, pid, n_items):
     budget = 400_000 + 4_000 * max(n_items, 0)
     return r("hc_preset_apply_engine", pid, 0, steps=budget) & 0xFF
 
+def guarded_out():
+    """Preset ids whose table row THIS board's build compiles out: the C4
+    presets on the Porsche (#if HC_PRESET_C4), the Porsche ones on the C4.
+    2026-10-31: three boards - the ME7.5 DC carries only its own."""
+    import hc_board
+    off = {"porsche": ("#if HC_PRESET_C4 && !HC_PRESET_DC", "#if HC_PRESET_DC"),
+           "c4": ("#if !HC_PRESET_C4", "#if HC_PRESET_DC"),
+           "dc": ("#if !HC_PRESET_C4", "#if HC_PRESET_C4 && !HC_PRESET_DC")}[
+        "dc" if hc_board.IS_DC else "c4" if hc_board.IS_C4 else "porsche"]
+    out, guard = set(), None
+    for ln in (SHARED / "generated/hc_presets.c").read_text(errors="replace").splitlines():
+        s = ln.strip()
+        if s.startswith("#if"):
+            guard = s
+        elif s.startswith("#endif"):
+            guard = None
+        else:
+            m = re.match(r"\{\s*(\d+)u,", s)
+            if m and guard in off:
+                out.add(int(m.group(1)))
+    return out
+
+
 def main() -> int:
     print("=== HaniCore - one board's configuration must not reach another ===\n")
     print("  image   %s" % PI.image().name)
@@ -147,13 +170,20 @@ def main() -> int:
           "%d distinct bound targets" % len({t for _i, _x, _n, t, _b in ps if t}))
 
     this_target = None
+    import hc_board   # the descriptor THIS board's image links
+    desc = ("me75_4b0906018dc" if hc_board.IS_DC
+            else "vag_me71_c4" if hc_board.IS_C4 else "bosch_me711")
     m = re.search(r"hc_pin_target_id\s*=\s*(0x[0-9A-Fa-f]+)",
-                  (SHARED / "generated/hc_pin_desc_bosch_me711.c").read_text(
-                      errors="replace"))
+                  (SHARED / ("generated/hc_pin_desc_%s.c" % desc)
+                   ).read_text(errors="replace"))
     this_target = int(m.group(1), 16)
     print("\n  the LINKED descriptor in this image is 0x%04X\n" % this_target)
 
     # ------------------------------------------------- the foreign preset
+    # 2026-10-24: hc_presets.c compiles another BOARD's presets out
+    # (#if HC_PRESET_C4); such a preset is not even in the image, and its
+    # refusal is 1 'no such preset' - stronger than 2 'wrong board'.
+    absent = guarded_out()
     for pid, _items, n, tid, _bd in ps:
         if tid == 0 or tid == this_target or n == 0:
             continue
@@ -161,8 +191,10 @@ def main() -> int:
         before = snapshot(r)
         rc = apply_preset(r, pid, n)
         after = snapshot(r)
+        want = (1, 2) if pid in absent else (2,)
         check("preset %d (target 0x%04X) is REFUSED on this board" % (pid, tid),
-              rc == 2, "return code %d, and 2 is 'wrong board'" % rc)
+              rc in want, "return code %d; 2 is 'wrong board'%s"
+              % (rc, ", 1 'not in this image'" if pid in absent else ""))
         check("  ...and the refusal wrote NOTHING", before == after,
               "%d sampled bytes unchanged - a half-applied preset would be "
               "worse than none" % len(before))
@@ -171,7 +203,7 @@ def main() -> int:
     # The fifth field of each row is `board_default`; taking it from the source
     # rather than naming an id here means a new board default cannot silently
     # fall outside the rule below.
-    board_default_id = next((i for i, _x, _n, _t, bd in ps if bd), None)
+    board_default_id = next((i for i, _x, _n, t, bd in ps if bd and t == this_target), None)
 
     # ------------------------------------------------- the native preset
     for pid, _items, n, tid, _bd in ps:

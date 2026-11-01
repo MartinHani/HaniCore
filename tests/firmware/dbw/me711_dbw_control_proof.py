@@ -268,6 +268,10 @@ class Rig:
             self.call("hc_hal_ain_bind",(sem,ch))
         self.call("hc_fresh_init")
         self.stale.clear()
+        # KL15 ON. The ME7.5 DC senses it on P4.4 (hctarget.h TGT_KL15_ON);
+        # until 2026-11-01 its misrouted pump write set that bit by accident.
+        # A 1 there is inert on the other boards (2.7T: the pump's OFF level).
+        self.mem.sfr[0xFFC8] = self.mem.sfr.get(0xFFC8, 0) | 0x0010
         fs = self.call("cfg_u16", (62,))
         self.set_adc(5, (135 * 1023 + fs - 1) // fs)
         # The ENGINE's battery value too (the main loop writes it on the ECU;

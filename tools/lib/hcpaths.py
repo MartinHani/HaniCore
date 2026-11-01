@@ -60,7 +60,7 @@ IMAGES = BINS / "hanicore"             # built images + manifests (local)
 # compare against the OEM firmware skip without it. Override with
 # HANICORE_OEM_READ.
 OEM_READ = Path(os.environ.get("HANICORE_OEM_READ", str(BINS / "oem" / "oem_read.bin")))
-TUNERSTUDIO = ROOT / "tunerstudio"          # generated .ini / .dash
+TUNING = ROOT / "tuning"          # generated .ini / .dash
 CONFIG_SOURCE = ROOT / "tools" / "config_source"
 # Raw bench / vehicle evidence: the workspace folder next to the repository
 # (HaniCore\evidence), never inside it. Override with HANICORE_RAW_EVIDENCE.
@@ -159,6 +159,6 @@ def check() -> int:
 
 
 if __name__ == "__main__":
-    for k in ("ROOT", "FIRMWARE", "ME711", "ME711_BUILD", "IMAGES", "TUNERSTUDIO", "REG167", "RAW_EVIDENCE"):
+    for k in ("ROOT", "FIRMWARE", "ME711", "ME711_BUILD", "IMAGES", "TUNING", "REG167", "RAW_EVIDENCE"):
         print("%-12s %s" % (k, globals()[k]))
     sys.exit(1 if check() else 0)

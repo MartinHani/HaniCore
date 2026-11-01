@@ -13,10 +13,14 @@
 #define HC_DL_BENCH_IGN 6u
 #define HC_DL_BENCH_INJ 7u
 #define HC_DL_BENCH_INJ_P8 8u
-#define HC_DL_GUARD 16u
-#define HC_DL_CHECKPOINT 16000u
-#define HC_DL_MAX_AHEAD 250000uL
-#define HC_DL_OFF_TICKS 125u /* software separation, not injector calibration */
+#define HC_DL_BENCH_ALL 9u   /* every coil + injector together: wiring checks */
+/* TIMES, in T1 ticks of whichever clock the board runs (2026-10-24: the
+   same values as the 1.25 MHz literals they replace - 16, 16000, 250000,
+   125 - and the same TIMES on the 0.75 MHz 2.7T board). hctarget.h first. */
+#define HC_DL_GUARD      ((unsigned int)US_TO_TICKS(13u))          /* 12.8 us */
+#define HC_DL_CHECKPOINT ((unsigned int)US_TO_TICKS(12800u))       /* 12.8 ms */
+#define HC_DL_MAX_AHEAD  ((unsigned long)TGT_TICKS_PER_MS_X10 * 20uL) /* 200 ms */
+#define HC_DL_OFF_TICKS  ((unsigned int)US_TO_TICKS(100u)) /* software separation, not injector calibration */
 #define HC_DL_OK 0u
 #define HC_DL_FULL 1u
 #define HC_DL_STALE 2u
@@ -53,6 +57,7 @@ typedef struct {
 typedef char dl_width_fits[(144u+sizeof(hc_dl_width_t)<=TGT_RAM_SCHEDPLAN_LIMIT)?1:-1];
 
 extern volatile unsigned int hc_dl_generation;
+extern unsigned char hc_dl_route_lanes[2], hc_dl_route_phys[2];
 extern volatile unsigned char hc_dl_count;
 /* QUIESCE. hc_deadline_quiesce() withdraws timing integrity:
    no coil charge or injector opening that was queued before it may start,
@@ -81,6 +86,7 @@ unsigned long hc_deadline_capture_time(void);
 unsigned long far hc_deadline_ticks_us_f(unsigned long ticks);
 unsigned int HC_COLD hc_deadline_bench_start(unsigned char type, unsigned char channel, unsigned int ticks);
 void HC_COLD hc_deadline_bench_stop(void);
+void far hc_deadline_bench_port_f(unsigned char type, unsigned char mask, unsigned char on);
 void HC_COLD hc_deadline_fuel_cut(void);
 void HC_COLD hc_deadline_publish_diag(void);
 unsigned long HC_COLD hc_deadline_inj_request(unsigned char mask,unsigned int fuel,unsigned int dead,unsigned long period);

@@ -7,7 +7,6 @@
 #include "hcasic.h"
 #include "hcasicframe.h"
 #include "hcasicstart.h"
-#include "hcasicdump.h"
 #include "hcpower.h"
 #include "hchal.h"
 #include "hchal_me711.h"
@@ -16,8 +15,8 @@
 #include "hcdeadline711.h"
 #include "hcbench.h"
 #include "hcnvm.h"
-#include "hcburnforensics.h"
-#include "hcliveforensics.h"
+#include "hcupd711.h"         /* the app-side OBD updater driver (P3); HC_UPDATER */
+#include "hcserial711.h"      /* hc_serial_boundary: the updater serves the link */
 #include "hcsafety.h"
 #include "hcengine.h"
 #include "hcmainrelay.h"
@@ -83,27 +82,6 @@ static unsigned int adc_to_cv(unsigned int raw)
                            * 10uL) / 1023uL);
 }
 
-static const unsigned char bf_och_map[] = {
-    HCBF_SEQUENCE, HCBF_CHECKSUM, HCBF_FLAGS, HCBF_BOOT_EPOCH,
-    HCBF_BURN_EPOCH, HCBF_HCTS_INITS, HCBF_HCTS_BOOT,
-    (unsigned char)(0x80u | HCBF_BURNS_PRE),
-    (unsigned char)(0x80u | HCBF_WRITES_PRE), HCBF_RESET_RAW,
-    (unsigned char)(0x80u | HCBF_BOOT_STAGE),
-    (unsigned char)(0x80u | HCBF_PREV_STAGE),
-    (unsigned char)(0x80u | HCBF_PREV_TRAP), HCBF_PREV_TRAP_MS,
-    HCBF_PREV_UPTIME, HCBF_PREV_LOOP, HCBF_PREV_WDT,
-    (unsigned char)(0x80u | HCBF_NVM_STATE),
-    (unsigned char)(0x80u | HCBF_NVM_PHASE),
-    (unsigned char)(0x80u | HCBF_NVM_RESULT),
-    (unsigned char)(0x80u | HCBF_NVM_CELL), HCBF_NVM_POS,
-    HCBF_NVM_ATTEMPTS, (unsigned char)(0x80u | HCBF_NVM_ERROR),
-    (unsigned char)(0x80u | HCBF_WRITER_RESULT), HCBF_NVM_RETRIES,
-    HCBF_FAIL_WORD, HCBF_FAIL_EXP, HCBF_FAIL_GOT, HCBF_FAIL_GOT2,
-    HCBF_POLL_MIN, HCBF_POLL_MAX, (unsigned char)(0x80u | HCBF_STAGE),
-    (unsigned char)(0x80u | HCBF_LAST_STAGE),
-    (unsigned char)(0x80u | HCBF_FAIL_STAGE),
-    (unsigned char)(0x80u | HCBF_FAILURE)
-};
 static const unsigned char rst_och_map[] = {
     RST_BOOTS, RST_RESET_RAW, RST_STAGE, RST_PREV_STAGE, RST_PREV_MS,
     RST_PREV_LOOP, RST_PREV_FIRSTVEC, RST_PREV_LASTVEC, RST_PREV_TRAP,
@@ -113,34 +91,14 @@ static const unsigned char rst_och_map[] = {
     RST_TGT3, RST_TGT4
 };
 
-static void update_forensics_live(unsigned char part)
+/* the reset log (552..603). OCH 470..551 and 604..609 were the V45/V49
+   Burn forensic records, retired 2026-10-28: nothing writes them. */
+static void pub_rstlog(void)
 {
     unsigned int i;
-    unsigned char off;
-    if(part==0u) {
-    put16(478, (hc_bf_u8(HCBF_VERSION) << 8) | hc_bf_u8(HCBF_LENGTH));
-    for (i = 0u; i < sizeof(bf_och_map); i++) {
-        off = bf_och_map[i];
-        put16((unsigned int)(480u + 2u * i), (off & 0x80u)
-              ? hc_bf_u8((unsigned int)(off & 0x7Fu)) : hc_bf_u16(off));
-    }
-        return;
-    }
     for (i = 0u; i < sizeof(rst_och_map); i++) {
         put16((unsigned int)(552u + 2u * i), hc_rst_get(rst_och_map[i]));
     }
-    /* The V45 diary is compiled out in this qualification profile. Preserve
-       its established channel offsets but make its three header scalars name
-       the active V49 record, so the normal 680-byte view can prove that the
-       forensic layout exists before the one permitted Burn. */
-    put16(604, HC_LF_WORD(LF_MAGIC0));
-    put16(606, HC_LF_WORD(LF_MAGIC1));
-    put16(484, HC_LF_WORD(LF_FLAGS));
-    put16(608, (unsigned int)(HC_LF_WORD(LF_MAGIC0) == 0x4843u
-          && HC_LF_WORD(LF_MAGIC1) == 0x4C46u
-          && HC_LF_WORD(LF_VERSION) == 0x0049u
-          && HC_LF_WORD(LF_LENGTH) == HC_LF_BYTES
-          && (HC_LF_WORD(LF_FLAGS) & LF_F_VALID) != 0u));
 }
 
 
@@ -162,9 +120,6 @@ static void pub_platform(void)
     frames++;
 
     status = HC_ST_WDT;
-#ifdef HANICORE_BENCH_SAFE
-    status |= HC_ST_BENCHSAFE;          /* only a build with no output backends */
-#endif
     if (tick_ok) {
         status |= HC_ST_TICK;
     }
@@ -441,9 +396,6 @@ static void pub_runtime(void)
     put16(464, hc_nvm_prog_retries());
     put16(466, hc_nvm_poll_min());
     put16(468, hc_nvm_poll_max());
-    put16(470, hc_nvm_commit_stage());
-    put16(472, hc_nvm_commit_last_stage());
-    put16(474, hc_nvm_commit_fail_stage());
     put16(476, (unsigned int)TGT_RELEASE_ID);
     /* --- V75: the pump and relay PINS, read back from the port ------------
      * bit0 the fuel pump pin is an output at the active level
@@ -471,13 +423,16 @@ static void pub_runtime(void)
                               /* bit 7: KL15_STAT, P6.2 - the CJ910's own view
                                  of the key, which the native main-relay stage
                                  on cavity 23 follows. */
-                              | ((P6 & (1u << TGT_KL15STAT_PORT_BIT))
-                                 ? 0x0080u : 0u)
+                              | (TGT_KL15_ON() ? 0x0080u : 0u)
                               /* bit 8 (2026-10-11): the tacho output on
                                  cavity 37 is running (hcroutes711.c) */
                               | ((unsigned int)hc_tacho_running() << 8)));
 
 }
+
+#if HC_UPDATER
+static void upd_publish(void);
+#endif
 
 static void pub_live(void)
 {
@@ -594,6 +549,12 @@ static void pub_live(void)
     }
     put16(730, hc_stack_hwm);
     put16(732, hc_nvm_lkg_steps());
+#if HC_UPDATER
+    /* The updater STATUS CHANNEL (hcupd711.h HC_UPD_OCH_*): every '!' command
+       answers TS_OK, so this is the only place the host learns whether a
+       STAGE/WRITE/SEAL was accepted and when the ECU is READY for the next. */
+    upd_publish();
+#endif
 }
 
 static void pub_tail(void)
@@ -631,8 +592,7 @@ unsigned char far hc_diag_publish_step(void)
     case 7u: hc_io_publish(io_boost_req, 4u); break;
     case 8u: hc_io_publish(io_boost_req, 5u); break;
     case 9u: hc_io_publish(io_boost_req, 6u); break;
-    case 10u: update_forensics_live(0u); break;
-    case 11u: update_forensics_live(1u); break;
+    case 10u: pub_rstlog(); break;
     default:
         pub_tail();
         pub_stage = 0u;
@@ -741,6 +701,536 @@ void far hc_preset_cmd_service_cold(void)
         put16(770, 1u);
     }
 }
+
+#if HC_UPDATER
+/* ==========================================================================
+ * P3: THE APP-SIDE OBD UPDATER DRIVER (hcupd711.h). FCODE.
+ *
+ * The state machine, the CRC-32 fold and the host STAGE/WRITE/SEAL/COMMIT
+ * command bodies. The flash machinery it drives (erase, program, the interrupt
+ * window) lives in hcnvm.c (NCODE) behind hc_nvm_stage_op(), reached from here
+ * through the hcfarbridge.h thunk; the relocatable programmer must stay there.
+ * Nothing here can corrupt a running app or a stored tune - see hcupd711.h.
+ * ========================================================================== */
+
+#define UPD_SB(a)  ((unsigned char huge *)(a))
+#define UPD_FW(a)  ((unsigned int volatile huge *)(a))
+
+static void upd_set_be16(unsigned char huge *p, unsigned int off, unsigned int v)
+{
+    p[off] = (unsigned char)(v >> 8);
+    p[off + 1u] = (unsigned char)(v & 0xFFu);
+}
+static unsigned int upd_be16(unsigned char huge *p, unsigned int off)
+{
+    return (unsigned int)(((unsigned int)p[off] << 8) | p[off + 1u]);
+}
+static unsigned long upd_be32(unsigned char huge *p, unsigned int off)
+{
+    return ((unsigned long)p[off] << 24) | ((unsigned long)p[off + 1u] << 16)
+         | ((unsigned long)p[off + 2u] << 8) | (unsigned long)p[off + 3u];
+}
+static void upd_set_be32(unsigned char huge *p, unsigned int off, unsigned long v)
+{
+    p[off] = (unsigned char)(v >> 24);
+    p[off + 1u] = (unsigned char)((v >> 16) & 0xFFuL);
+    p[off + 2u] = (unsigned char)((v >> 8) & 0xFFuL);
+    p[off + 3u] = (unsigned char)(v & 0xFFuL);
+}
+
+/* CRC-32: zlib/binascii (reflected, poly 0xEDB88320) - the FROZEN contract,
+   verified against binascii in tools/flash/hc_update.py. Folded in
+   hc_upd_write() with the K-line's own 16-entry nibble table (hc_crc32_update,
+   hcserial711.c): no 256-entry table (1 KiB of near const), and 4x the bitwise
+   fold - which mattered once chunks streamed at 250 kbaud (2026-10-30). */
+
+static unsigned char huge *upd_cb(void)
+{
+    unsigned char huge *u = UPD_SB(UPD_CB);
+    unsigned int i;
+    if (upd_be32(u, U_MAGIC) != UPD_MAGIC_VALUE) {
+        for (i = 0u; i < (unsigned int)U_LEN; i++) {
+            u[i] = 0u;
+        }
+        upd_set_be32(u, U_MAGIC, UPD_MAGIC_VALUE);
+        u[U_STATE] = (unsigned char)HC_UPD_ST_IDLE;
+    }
+    return u;
+}
+
+/* THE STATUS CHANNEL, WRITTEN AT ONCE. pub_live() refreshes it too, but that
+   is one slice of a twelve-slice publication cycle - 50..100 ms old - and the
+   host read a STAGE_BEGIN or a window end through that lag as "not handled"
+   or "refused": it fell back from the bulk rate the ECU had already taken and
+   resent chunks that had landed (bench 2026-10-30, obd_update_9/_12). So every
+   command and every state change publishes it immediately (seven words). */
+static void upd_publish(void)
+{
+    unsigned char huge *u;
+    unsigned long rv;
+    if (hc_ram_bad) {
+        put16(HC_UPD_OCH_STATE, (unsigned int)HC_UPD_ST_IDLE);
+        put16(HC_UPD_OCH_ERROR, (unsigned int)HCNV_ERR_RAM);
+        put16(HC_UPD_OCH_MARK, HC_UPD_OCH_MARKER);
+        return;
+    }
+    u = upd_cb();
+    rv = upd_be32(u, U_RECV);
+    put16(HC_UPD_OCH_STATE, (unsigned int)u[U_STATE]);
+    put16(HC_UPD_OCH_ERROR, (unsigned int)u[U_ERROR]);
+    put16(HC_UPD_OCH_RECV, (unsigned int)(rv >> 16));
+    put16(HC_UPD_OCH_RECV + 2u, (unsigned int)(rv & 0xFFFFuL));
+    put16(HC_UPD_OCH_LAST, (unsigned int)(((unsigned int)u[U_SEQ] << 8) | u[U_LASTRC]));
+    put16(HC_UPD_OCH_CMD, (unsigned int)(((unsigned int)u[U_SECTOR] << 8) | u[U_LASTCMD]));
+    put16(HC_UPD_OCH_MARK, HC_UPD_OCH_MARKER);
+    put16(HC_UPD_OCH_ERDONE, (unsigned int)u[U_ERDONE]);
+    put16(HC_UPD_OCH_PEND, (u[U_STATE] == (unsigned char)HC_UPD_ST_WRITING)
+          ? (unsigned int)((upd_be16(u, U_CHUNKW) - upd_be16(u, U_POS)) << 1) : 0u);
+}
+
+/* Record what an updater command did, for the status channel: the result and
+   the letter, and a sequence count so the host sees that THIS command was
+   handled (a refusal still answers TS_OK). */
+static void upd_note(unsigned char cmd, unsigned int rc)
+{
+    unsigned char huge *u = upd_cb();
+    u[U_LASTRC] = (unsigned char)rc;
+    u[U_LASTCMD] = cmd;
+    u[U_SEQ] = (unsigned char)(u[U_SEQ] + 1u);
+    upd_publish();
+}
+
+static void upd_fail(unsigned char err)
+{
+    unsigned char huge *u = upd_cb();
+    u[U_ERROR] = err;
+    u[U_STATE] = (unsigned char)HC_UPD_ST_FAILED;
+}
+
+/* Begin: refuse unless the engine is stopped, then start erasing STAGING. */
+static unsigned int hc_upd_begin(unsigned int rpm, unsigned char trig_turning,
+                                 unsigned char outputs_busy)
+{
+    unsigned char huge *u;
+    if (hc_ram_bad) {
+        return HCNV_ERR_RAM;
+    }
+    if (rpm != 0u || trig_turning != 0u || outputs_busy != 0u) {
+        return HCNV_ERR_VALIDATE;        /* an update needs the engine stopped */
+    }
+    u = upd_cb();
+    if (u[U_STATE] == (unsigned char)HC_UPD_ST_ERASING
+        || u[U_STATE] == (unsigned char)HC_UPD_ST_WRITING) {
+        return HCNV_ERR_STAGE;   /* never restart an erase/program in flight */
+    }
+    u[U_ERROR] = (unsigned char)HCNV_ERR_NONE;
+    u[U_SECTOR] = 0u;
+    u[U_ERDONE] = 0u;
+    u[U_ISSEAL] = 0u;
+    upd_set_be16(u, U_POS, 0u);
+    upd_set_be16(u, U_CHUNKW, 0u);
+    upd_set_be32(u, U_RECV, 0uL);
+    upd_set_be32(u, U_CRC, 0xFFFFFFFFuL);     /* CRC-32 init */
+    u[U_STATE] = (unsigned char)HC_UPD_ST_ERASING;
+    (void)hc_nvm_stage_op(HC_SOP_ERASE_BEGIN, 0u, 0u, 0u, 0u, 0u);
+    return HCNV_ERR_NONE;
+}
+
+/* Accept one chunk (<=64 bytes, even): copy to the staging buffer, fold it into
+   the CRC-32 minus the 32-byte header window, force the seal word to 0xFFFF,
+   and queue it for the programmer.
+
+   STREAMING (2026-10-30). Chunks are accepted strictly in order - `off` must
+   equal the bytes received so far - and a chunk that arrives while the
+   previous one is still being programmed is APPENDED to that job (same 64 KiB
+   segment, contiguous, room in the buffer) instead of being refused. So the
+   host streams: one '!w' after another with no status poll in between, and
+   checks the received count now and then; anything refused (out of order, a
+   new segment while WRITING, buffer full) simply leaves `received` where it
+   was and the host resends from there. A chunk is never programmed or folded
+   into the CRC twice. Stop-and-wait (a poll per chunk) took ~8 minutes for
+   the 2.7T app on the bench; most of it was the wire turnaround. */
+static unsigned int hc_upd_write(unsigned long off, const unsigned char *src,
+                                 unsigned int len)
+{
+    unsigned char huge *u;
+    unsigned char huge *dst;
+    unsigned long c;
+    unsigned long abs;
+    unsigned int i;
+    unsigned int sealw;
+    unsigned int bofs;
+    unsigned int nw;
+
+    if (hc_ram_bad) {
+        return HCNV_ERR_RAM;
+    }
+    u = upd_cb();
+    if (u[U_STATE] != (unsigned char)HC_UPD_ST_READY
+        && !(u[U_STATE] == (unsigned char)HC_UPD_ST_WRITING && !u[U_ISSEAL])) {
+        return HCNV_ERR_STAGE;            /* not blank/idle - refuse the chunk */
+    }
+    if (len == 0u || len > 256u || (len & 1u) != 0u) {
+        return HCNV_ERR_STAGE;
+    }
+    if (off != upd_be32(u, U_RECV)) {
+        return HCNV_ERR_STAGE;            /* strictly in order: resend from RECV */
+    }
+    if ((unsigned int)(off >> 16) >= (unsigned int)u[U_ERDONE]) {
+        return HCNV_ERR_STAGE;            /* that sector is still being erased */
+    }
+    if ((unsigned int)(off >> 16)
+        != (unsigned int)((off + (unsigned long)len - 1uL) >> 16)) {
+        return HCNV_ERR_STAGE;            /* must not straddle a 64 KiB segment */
+    }
+    if ((off + (unsigned long)len) > ((unsigned long)TGT_FLASH_STAGE_SECTORS
+                                      * TGT_FLASH_SECTOR_SIZE)) {
+        return HCNV_ERR_STAGE;            /* the whole image lands in STAGING   */
+    }
+    bofs = 0u;
+    if (u[U_STATE] == (unsigned char)HC_UPD_ST_WRITING) {
+        /* append to the job being programmed: same segment, contiguous */
+        nw = upd_be16(u, U_CHUNKW);
+        if (u[U_DSEG] != (unsigned char)(TGT_FLASH_STAGE_SEG + (unsigned int)(off >> 16))
+            || (unsigned int)(off & 0xFFFFuL)
+               != (unsigned int)(upd_be16(u, U_DOFF) + (nw << 1))) {
+            return HCNV_ERR_STAGE;
+        }
+        if ((nw << 1) + len > (unsigned int)UPD_BUF_CAP) {
+            /* THE JOB IS INDEXED FROM ITS START, so while streaming it never
+               drains and hit the cap with ~1 KB actually unprogrammed: every
+               chunk after that was refused (bench 2026-10-30, obd_update_24,
+               880 resends). Compact it: move the unprogrammed tail to the
+               front and rebase the flash offset. The programmer runs only
+               between these calls, never during one. */
+            unsigned int pos = upd_be16(u, U_POS);
+            unsigned int k;
+            unsigned char huge *b = UPD_SB(UPD_STAGEBUF);
+            if (((nw - pos) << 1) + len > (unsigned int)UPD_BUF_CAP) {
+                return HCNV_ERR_STAGE;    /* really full: resend later */
+            }
+            for (k = 0u; k < (unsigned int)((nw - pos) << 1); k++) {
+                b[k] = b[(pos << 1) + k];
+            }
+            upd_set_be16(u, U_DOFF, (unsigned int)(upd_be16(u, U_DOFF) + (pos << 1)));
+            nw = (unsigned int)(nw - pos);
+            upd_set_be16(u, U_CHUNKW, nw);
+            upd_set_be16(u, U_POS, 0u);
+        }
+        bofs = (unsigned int)(nw << 1);
+    }
+
+    dst = UPD_SB(UPD_STAGEBUF) + bofs;
+    c = upd_be32(u, U_CRC);
+    for (i = 0u; i < len; i++) {
+        unsigned char byte = src[i];
+        abs = off + (unsigned long)i;
+        dst[i] = byte;
+        /* CRC-32 over the app region EXCLUDING the 32-byte header
+           [TGT_FLASH_STAGE_HDR, +32) - the frozen contract. The K-line's own
+           nibble table (reflected, poly 0xEDB88320, the same CRC): 4x the
+           bitwise fold's speed, and it runs for every streamed byte. */
+        if (!(abs >= (unsigned long)TGT_FLASH_STAGE_HDR
+              && abs < (unsigned long)TGT_FLASH_STAGE_HDR + 32uL)) {
+            c = hc_crc32_update(c, byte);   /* hcserial711.c's nibble table */
+        }
+    }
+    upd_set_be32(u, U_CRC, c);
+
+    /* The staging SEAL word (header +30) stays 0xFFFF until hc_upd_seal(). */
+    sealw = (unsigned int)(TGT_FLASH_STAGE_HDR + 30uL);
+    if (off <= (unsigned long)sealw
+        && (unsigned long)sealw < off + (unsigned long)len) {
+        dst[(unsigned int)((unsigned long)sealw - off)] = 0xFFu;
+        dst[(unsigned int)((unsigned long)sealw - off) + 1u] = 0xFFu;
+    }
+
+    if (bofs == 0u) {                    /* a new job */
+        u[U_DSEG] = (unsigned char)(TGT_FLASH_STAGE_SEG + (unsigned int)(off >> 16));
+        upd_set_be16(u, U_DOFF, (unsigned int)(off & 0xFFFFuL));
+        upd_set_be16(u, U_POS, 0u);
+        u[U_TRIES] = 0u;
+    }
+    upd_set_be16(u, U_CHUNKW, (unsigned int)((bofs + len) >> 1));
+    u[U_ISSEAL] = 0u;
+    upd_set_be32(u, U_RECV, upd_be32(u, U_RECV) + (unsigned long)len);
+    u[U_STATE] = (unsigned char)HC_UPD_ST_WRITING;
+    return HCNV_ERR_NONE;
+}
+
+/* Seal: only if the running CRC equals the host's; then the 0x5AA5 seal word is
+   queued last (U_ISSEAL), so a cut before it leaves staging unsealed. */
+static unsigned int hc_upd_seal(unsigned long host_crc)
+{
+    unsigned char huge *u;
+    unsigned char huge *dst;
+    unsigned long final;
+
+    if (hc_ram_bad) {
+        return HCNV_ERR_RAM;
+    }
+    u = upd_cb();
+    if (u[U_STATE] != (unsigned char)HC_UPD_ST_READY) {
+        return HCNV_ERR_STAGE;
+    }
+    final = upd_be32(u, U_CRC) ^ 0xFFFFFFFFuL;
+    if (final != host_crc) {
+        upd_fail((unsigned char)HCNV_ERR_STAGE);
+        return HCNV_ERR_STAGE;
+    }
+    dst = UPD_SB(UPD_STAGEBUF);
+    dst[0] = 0xA5u;
+    dst[1] = 0x5Au;                        /* little-endian 0x5AA5 */
+    u[U_DSEG] = (unsigned char)TGT_FLASH_STAGE_SEG;
+    upd_set_be16(u, U_DOFF, (unsigned int)(TGT_FLASH_STAGE_HDR + 30uL));
+    upd_set_be16(u, U_CHUNKW, 1u);
+    upd_set_be16(u, U_POS, 0u);
+    u[U_TRIES] = 0u;
+    u[U_ISSEAL] = 1u;
+    u[U_STATE] = (unsigned char)HC_UPD_ST_WRITING;
+    return HCNV_ERR_NONE;
+}
+
+/* Commit: write the loader request, read it back until it holds (the 2.7T SRST
+   lost-write rule, hcloader.a66), then SRST into the loader. */
+static unsigned int hc_upd_commit(void)
+{
+    unsigned char huge *u;
+    unsigned int volatile huge *r0 = UPD_FW(UPD_REQ0);
+    unsigned int volatile huge *r1 = UPD_FW(UPD_REQ1);
+
+    if (hc_ram_bad) {
+        return HCNV_ERR_RAM;
+    }
+    u = upd_cb();
+    if (u[U_STATE] != (unsigned char)HC_UPD_ST_SEALED) {
+        return HCNV_ERR_STAGE;
+    }
+    u[U_STATE] = (unsigned char)HC_UPD_ST_COMMIT;
+    *r0 = UPD_REQ_UP;
+    *r1 = UPD_REQ_DT;
+    while (*r0 != UPD_REQ_UP || *r1 != UPD_REQ_DT) {
+        *r0 = UPD_REQ_UP;
+        *r1 = UPD_REQ_DT;
+    }
+    __asm { SRST }
+    return HCNV_ERR_NONE;                   /* not reached */
+}
+
+/* '!b' (see the call in upd_service_body): the switch, once the reply has
+   left the wire. Called at the top of every pass and from the link-serving
+   loops, so a '!b' that arrives inside a pass moves the rate at once. */
+static void upd_fast_switch(unsigned char huge *u)
+{
+    if (u[U_FAST] != 0u && !hc_tx_busy()
+        && (hc_tx_echo_owed() == 0u
+            || hc_tx_echo_age() >= (unsigned int)(3u * (TGT_TICKS_PER_MS_X10 / 10uL)))) {
+        u[U_FAST] = 0u;
+        hcts_link_force(TGT_S0BG_250000, 0u);
+    }
+}
+
+/* The main-loop driver: one admitted erase/program slice per pass. */
+static void upd_service_body(unsigned int now_ms, unsigned int rpm,
+                             unsigned char trig_turning, unsigned char outputs_busy,
+                             unsigned char page_stable)
+{
+    unsigned char huge *u;
+    unsigned int t0;
+    unsigned int r;
+
+    if (hc_ram_bad) {
+        return;
+    }
+    u = upd_cb();
+
+    /* '!b': move the link to the bulk rate once its TS_OK has left the
+       wire (the KWP GOFAST rule, hckwp_me711.c). UNLOCKED: the first bad
+       request drops it into the ordinary hunt (57600 / 124800), so a
+       line that cannot hold 250 kbaud costs the host a retry, nothing more.
+       A reset (the commit) boots at the default rate anyway. */
+    upd_fast_switch(u);
+
+    if (u[U_STATE] == (unsigned char)HC_UPD_ST_ERASING) {
+        /* As many 1 ms slices as the pass budget holds, each admitted on its
+           own: one slice per pass erased at ~30 % duty (4.5 s a sector). A
+           refused window (an S5500 frame due or on the wire) is waited out
+           inside the budget - returning on it cost the rest of the pass. */
+        t0 = (unsigned int)T7;
+        for (;;) {
+            r = hc_nvm_stage_op(HC_SOP_ERASE_SLICE, now_ms, rpm, trig_turning,
+                                outputs_busy, page_stable);
+            if (r == (unsigned int)HC_SOP_DEFER && (rpm != 0u || trig_turning != 0u)) {
+                return;
+            }
+            if (r == (unsigned int)HC_SOP_FAIL) {
+                upd_fail((unsigned char)HCNV_ERR_ERASE);
+                return;
+            }
+            if (r == (unsigned int)HC_SOP_DONE || u[U_ERDONE] != 0u) {
+                /* READY once sector 0 is blank: sectors 1..3 go on erasing
+                   in the background (READY below) while the host streams. */
+                u[U_STATE] = (unsigned char)HC_UPD_ST_READY;
+                return;
+            }
+            hcts_target_yield();
+            /* Serve the K-line between windows: the host streams chunks, and
+               a frame waiting for the end of this pass cost ~6 ms of every
+               chunk. This is a main-loop boundary - no page or config work
+               is open here - so a '!w' arriving now simply appends. */
+            hc_serial_boundary();
+            upd_fast_switch(u);
+            if ((unsigned int)((unsigned int)T7 - t0)
+                >= (unsigned int)US_TO_TICKS(UPD_PASS_US)) {
+                return;
+            }
+        }
+    }
+
+    if (u[U_STATE] == (unsigned char)HC_UPD_ST_READY && rpm == 0u && trig_turning == 0u) {
+        /* BETWEEN CHUNKS, SERVE THE LINK. With the queue empty this used to
+           return at once, and every request waited for the rest of the
+           main loop: 11.5 ms a reply at 250 kbaud, the wire needing 3.3
+           (bench 2026-10-30, obd_update_22). The engine is stopped; the
+           yield keeps the watchdog and the tick services going. */
+        t0 = (unsigned int)T7;
+        while (u[U_STATE] == (unsigned char)HC_UPD_ST_READY
+               && (unsigned int)((unsigned int)T7 - t0)
+                  < (unsigned int)US_TO_TICKS(UPD_PASS_US)) {
+            /* THE ERASE OVERLAP (2026-10-30): STAGING sectors not yet blank are
+               erased here, between chunks. The Am29F800B lets a non-erasing
+               sector be read and programmed while an erase is suspended
+               (pub. 21504 rev E, "Erase Suspend/Erase Resume Commands",
+               the ME7.1.1 schematic set), and every slice ends
+               suspended, so the next chunk programs sector n while sector n+1
+               is half erased. hc_upd_write() refuses a sector not yet blank. */
+            if (u[U_ERDONE] < (unsigned char)TGT_FLASH_STAGE_SECTORS) {
+                r = hc_nvm_stage_op(HC_SOP_ERASE_SLICE, now_ms, rpm, trig_turning,
+                                    outputs_busy, page_stable);
+                if (r == (unsigned int)HC_SOP_FAIL) {
+                    upd_fail((unsigned char)HCNV_ERR_ERASE);
+                    return;
+                }
+            }
+            hcts_target_yield();
+            hc_serial_boundary();
+            upd_fast_switch(u);
+        }
+    }
+
+    if (u[U_STATE] == (unsigned char)HC_UPD_ST_WRITING) {
+        t0 = (unsigned int)T7;
+        for (;;) {
+            r = hc_nvm_stage_op(HC_SOP_PROG_SLICE, now_ms, rpm, trig_turning,
+                                outputs_busy, page_stable);
+            /* A refused window is waited out inside the budget (see ERASING):
+               returning on it programmed ~2 words per main-loop pass - 4 KB
+               took 9 s on the bench 2.7T (rate_probe_2), the flash idle. */
+            if (r == (unsigned int)HC_SOP_DEFER && (rpm != 0u || trig_turning != 0u)) {
+                return;
+            }
+            if (r == (unsigned int)HC_SOP_FAIL) {
+                upd_fail((unsigned char)HCNV_ERR_PROGRAM);
+                return;
+            }
+            if (r == (unsigned int)HC_SOP_DONE) {
+                u[U_STATE] = (unsigned char)(u[U_ISSEAL]
+                             ? HC_UPD_ST_SEALED : HC_UPD_ST_READY);
+                return;
+            }
+            hcts_target_yield();
+            /* Serve the K-line between windows: the host streams chunks, and
+               a frame waiting for the end of this pass cost ~6 ms of every
+               chunk. This is a main-loop boundary - no page or config work
+               is open here - so a '!w' arriving now simply appends. */
+            hc_serial_boundary();
+            upd_fast_switch(u);
+            if ((unsigned int)((unsigned int)T7 - t0)
+                >= (unsigned int)US_TO_TICKS(UPD_PASS_US)) {
+                return;
+            }
+        }
+    }
+}
+
+void far hc_upd_service(unsigned int now_ms, unsigned int rpm,
+                        unsigned char trig_turning, unsigned char outputs_busy,
+                        unsigned char page_stable)
+{
+    upd_service_body(now_ms, rpm, trig_turning, outputs_busy, page_stable);
+    upd_publish();                       /* the state as it stands now */
+}
+
+/* 1 while an update owns the flash machinery, so the main loop gates
+   hc_nvm_service() off (the store and an update share the relocation slot). */
+unsigned char far hc_upd_active(void)
+{
+    unsigned int s;
+    if (hc_ram_bad) {
+        return 0u;
+    }
+    s = (unsigned int)upd_cb()[U_STATE];
+    return (unsigned char)((s != (unsigned int)HC_UPD_ST_IDLE
+                            && s != (unsigned int)HC_UPD_ST_FAILED) ? 1u : 0u);
+}
+
+/* The control block is battery-backed, so a stale state could gate the store
+   off forever after a power cycle. Clear it at every app boot - a reboot means
+   any update was abandoned (or committed, in which case the loader ran). */
+void far hc_upd_boot_reset(void)
+{
+    unsigned char huge *u = UPD_SB(UPD_CB);
+    unsigned int i;
+    for (i = 0u; i < (unsigned int)U_LEN; i++) {
+        u[i] = 0u;
+    }
+    upd_set_be32(u, U_MAGIC, UPD_MAGIC_VALUE);
+    u[U_STATE] = (unsigned char)HC_UPD_ST_IDLE;
+}
+
+unsigned int far hc_upd_state(void)
+{
+    return hc_ram_bad ? (unsigned int)HC_UPD_ST_IDLE
+                      : (unsigned int)upd_cb()[U_STATE];
+}
+unsigned int far hc_upd_error(void)
+{
+    return hc_ram_bad ? (unsigned int)HCNV_ERR_RAM
+                      : (unsigned int)upd_cb()[U_ERROR];
+}
+unsigned long far hc_upd_received(void)
+{
+    return hc_ram_bad ? 0uL : upd_be32(upd_cb(), U_RECV);
+}
+unsigned int far hc_upd_last(void)
+{
+    unsigned char huge *u;
+    if (hc_ram_bad) {
+        return (unsigned int)HCNV_ERR_RAM;
+    }
+    u = upd_cb();
+    return (unsigned int)(((unsigned int)u[U_SEQ] << 8) | u[U_LASTRC]);
+}
+unsigned int far hc_upd_lastcmd(void)
+{
+    unsigned char huge *u;
+    if (hc_ram_bad) {
+        return 0u;
+    }
+    u = upd_cb();
+    return (unsigned int)(((unsigned int)u[U_SECTOR] << 8) | u[U_LASTCMD]);
+}
+unsigned char far hc_upd_busy(void)
+{
+    unsigned int s;
+    if (hc_ram_bad) {
+        return 0u;
+    }
+    s = (unsigned int)upd_cb()[U_STATE];
+    return (unsigned char)((s == (unsigned int)HC_UPD_ST_ERASING
+                            || s == (unsigned int)HC_UPD_ST_WRITING) ? 1u : 0u);
+}
+#endif /* HC_UPDATER */
 
 void far hc_target_cmd_cold(unsigned char *p, unsigned int n)
 {
@@ -915,6 +1405,59 @@ void far hc_target_cmd_cold(unsigned char *p, unsigned int n)
             hc_hal_s5500_window(p[2]);
         }
         break;
+#if HC_UPDATER
+    /* ---- the app-side OBD updater (P3, hcupd711.h). Lowercase letters so the
+       uppercase command set is untouched. Each records intent and returns
+       TS_OK; hc_upd_service() does the work from the main loop and the host
+       polls the updater status (hc_upd_state/error/received). ---- */
+    case 'u':
+        /* STAGE_BEGIN: erase STAGING (SA15..SA18). Engine stopped only. */
+        upd_note('u', hc_upd_begin(trg_rpm,
+                                   (unsigned char)(trg_state >= TRG_COUNTING),
+                                   (unsigned char)(hcb_state == HCB_RUNNING)));
+        break;
+    case 'w':
+        /* STAGE_WRITE: p[2..5] = byte offset (u32, big-endian), p[6..] = data
+           (<= 64 bytes; the length is the frame length minus 6). */
+        if (n >= 7u) {
+            unsigned long off = ((unsigned long)p[2] << 24)
+                              | ((unsigned long)p[3] << 16)
+                              | ((unsigned long)p[4] << 8)
+                              | (unsigned long)p[5];
+            upd_note('w', hc_upd_write(off, &p[6], (unsigned int)(n - 6u)));
+        } else {
+            upd_note('w', HCNV_ERR_STAGE);
+        }
+        break;
+    case 'x':
+        /* STAGE_SEAL: p[2..5] = the host CRC-32 (u32, big-endian). */
+        if (n >= 6u) {
+            unsigned long crc = ((unsigned long)p[2] << 24)
+                              | ((unsigned long)p[3] << 16)
+                              | ((unsigned long)p[4] << 8)
+                              | (unsigned long)p[5];
+            upd_note('x', hc_upd_seal(crc));
+        } else {
+            upd_note('x', HCNV_ERR_STAGE);
+        }
+        break;
+    case 'b':
+        /* BULK RATE: 250 kbaud for the rest of this update, switched by
+           hc_upd_service() once this reply has left the wire. Only while
+           an update owns the flash machinery (the service runs then). */
+        if (!hc_ram_bad && hc_upd_active()) {
+            upd_cb()[U_FAST] = 1u;
+            upd_note('b', HCNV_ERR_NONE);
+        } else {
+            upd_note('b', HCNV_ERR_STAGE);
+        }
+        break;
+    case 'y':
+        /* COMMIT: request UP/DT in battery SRAM, read it back, SRST. Does not
+           return on success (the loader runs after the reset). */
+        upd_note('y', hc_upd_commit());     /* reached only on a refusal */
+        break;
+#endif
     default:
         break;
     }

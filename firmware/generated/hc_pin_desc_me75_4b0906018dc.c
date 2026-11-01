@@ -46,7 +46,7 @@ const hc_pin_desc_t HC_PIN_MEM hc_pin_table[HC_PHYSICAL_PIN_COUNT] = {
     { 0x8001u, 0x8001u, 1u, 0x05u }, /*  26 battery */
     { 0x8000u, 0x8000u, 0u, 0xFFu }, /*  27 MAF ground */
     { 0x0000u, 0x0000u, 0u, 0xFFu }, /*  28 not assigned in the source document */
-    { 0x0005u, 0x0000u, 1u, 0xFFu }, /*  29 G70 air mass */
+    { 0x0001u, 0x0001u, 1u, 0x00u }, /*  29 G70 air mass */
     { 0x0000u, 0x0000u, 0u, 0xFFu }, /*  30 not assigned in the source document */
     { 0x0000u, 0x0000u, 0u, 0xFFu }, /*  31 not assigned in the source document */
     { 0x0000u, 0x0000u, 0u, 0xFFu }, /*  32 not assigned in the source document */
@@ -54,7 +54,7 @@ const hc_pin_desc_t HC_PIN_MEM hc_pin_table[HC_PHYSICAL_PIN_COUNT] = {
     { 0x0001u, 0x0001u, 1u, 0x09u }, /*  34 G185 pedal 2 */
     { 0x0001u, 0x0001u, 1u, 0x08u }, /*  35 G79 pedal 1 */
     { 0x0000u, 0x0000u, 0u, 0xFFu }, /*  36 not assigned in the source document */
-    { 0x0000u, 0x0000u, 0u, 0xFFu }, /*  37 not assigned in the source document */
+    { 0x0060u, 0x0000u, 1u, 0xFFu }, /*  37 TN rev counter */
     { 0x0000u, 0x0000u, 0u, 0xFFu }, /*  38 not assigned in the source document */
     { 0x0000u, 0x0000u, 0u, 0xFFu }, /*  39 not assigned in the source document */
     { 0x0000u, 0x0000u, 0u, 0xFFu }, /*  40 not assigned in the source document */
@@ -123,16 +123,16 @@ const hc_pin_desc_t HC_PIN_MEM hc_pin_table[HC_PHYSICAL_PIN_COUNT] = {
     { 0x0100u, 0x0100u, 1u, 0xFFu }, /* 103 N291 coil, firing index 2 */
     { 0x0060u, 0x0060u, 1u, 0xFFu }, /* 104 LDR/SU boost valve */
     { 0x0000u, 0x0000u, 0u, 0xFFu }, /* 105 not assigned in the source document */
-    { 0x8001u, 0x8001u, 1u, 0x0Fu }, /* 106 G66 knock 2 */
-    { 0x8001u, 0x8001u, 1u, 0x0Fu }, /* 107 G61 knock 1 */
+    { 0x8001u, 0x8001u, 0u, 0xFFu }, /* 106 G66 knock 2 */
+    { 0x8001u, 0x8001u, 0u, 0xFFu }, /* 107 G61 knock 1 */
     { 0x0000u, 0x0000u, 0u, 0xFFu }, /* 108 not assigned in the source document */
     { 0x0000u, 0x0000u, 0u, 0xFFu }, /* 109 not assigned in the source document */
     { 0x0000u, 0x0000u, 0u, 0xFFu }, /* 110 not assigned in the source document */
     { 0x0000u, 0x0000u, 0u, 0xFFu }, /* 111 not assigned in the source document */
     { 0x0000u, 0x0000u, 0u, 0xFFu }, /* 112 not assigned in the source document */
     { 0x0000u, 0x0000u, 0u, 0xFFu }, /* 113 not assigned in the source document */
-    { 0x0000u, 0x0000u, 0u, 0xFFu }, /* 114 not assigned in the source document */
-    { 0x0060u, 0x0000u, 0u, 0xFFu }, /* 115 N205 cam adjust valve */
+    { 0x0060u, 0x0000u, 1u, 0xFFu }, /* 114 CJ420B OUT3 - free PWM low side */
+    { 0x0060u, 0x0000u, 1u, 0xFFu }, /* 115 N205 cam adjust valve */
     { 0x0060u, 0x0060u, 1u, 0xFFu }, /* 116 ETR secondary air */
     { 0x8200u, 0x8200u, 1u, 0xFFu }, /* 117 throttle motor + */
     { 0x8200u, 0x8200u, 1u, 0xFFu }, /* 118 throttle motor - */

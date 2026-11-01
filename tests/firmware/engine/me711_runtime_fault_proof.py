@@ -32,8 +32,8 @@ P  EXECUTOR PROGRESS STALL: CC25 keeps running and the beat
    is never overdue, and drive nothing.
    Run AFTER X, so it is the second executor fault of the key cycle:
    P1 coil: the supervisor reports EXEC_STALL and releases it within
-      HC_RT_COIL_MS + 2 ms of its ON
-   P2 injector: EXEC_STALL, released within HC_RT_INJ_MS + 2 ms of its ON
+      HC_RT_COIL_MS + two 2 ms supervisor scans of its ON
+   P2 injector: EXEC_STALL, released within HC_RT_INJ_MS + two scans of its ON
 
 S  CRANK SIGNAL DROPOUT: 3 consecutive crank edges missing at
    3000 rpm, mid-revolution (a false gap):
@@ -71,9 +71,14 @@ import hcpaths  # noqa: F401,E402
 
 import me711_image as PI                  # noqa: E402
 import me711_runtime_stress as R          # noqa: E402
+TPM = R.TICKS_PER_S // 1000   # capture ticks per ms: 1250, or 750 on the 2.7T
+# the supervisor ages outputs every 2 ms (hcrtmon711.c sup_pend, since
+# 2026-10-25): an ON is first seen up to one scan late and the limit is
+# checked once a scan, so a release lands within two scans of the limit
+SCAN_MS = 2
 
 CC25IC, CC26IC = 0xF172, 0xF174
-HC_RT = 0xF280                            # hcrtmon711.h TGT_RTMON_ADDR
+HC_RT = 0xE5A0 if __import__("hc_board").IS_C4 else 0xF280  # hcrtmon711.h TGT_RTMON_ADDR
 RT_QUIESCE_N, RT_QUIESCE_LAST = HC_RT + 10, HC_RT + 12
 RPM = 3000
 TPS = 1_250_000                           # T1 ticks per second
@@ -162,9 +167,9 @@ def committed_releases(s, records):
             if wanted is None or off is None:
                 missing.append((bit, wanted, off))
             elif off < wanted - 1:       # one timer tick of observation alignment
-                early.append((bit, (off - wanted) / 1.25))
+                early.append((bit, (off - wanted) / (TPM / 1000.0)))
             elif off > wanted + 125:    # strict normal engine lateness budget
-                late.append((bit, (off - wanted) / 1.25))
+                late.append((bit, (off - wanted) / (TPM / 1000.0)))
     return count, missing, early, late
 
 
@@ -231,7 +236,7 @@ def active_at(s, instant, end):
 
 
 def run_until(s, us, rpm_fn, pred=None, step=100):
-    t_end = s.t1_ext + int(us * 1.25)
+    t_end = s.t1_ext + int(us * TPM / 1000.0)
     while s.t1_ext < t_end:
         s.run_us(step, rpm_fn)
         if pred and pred():
@@ -339,7 +344,7 @@ def injected_episode(s, name, mutation, expected, restore=None, hold=False, evid
     flags = s.r16("hc_rt_fault")
     res.append(("%s fault/release: flags 0x%04X -> 0x%04X, episodes %d -> %d, release %.2f ms"
                 % (name, before_flags, flags, before_faults, s.r16("hc_rt_exec_faults"),
-                   ((end - start) / 1250.0) if end is not None else -1),
+                   ((end - start) / TPM) if end is not None else -1),
                 active is not None and end is not None and (flags & expected) != 0
                 and flags & before_flags == before_flags))
     if evidence_bit:
@@ -356,8 +361,8 @@ def injected_episode(s, name, mutation, expected, restore=None, hold=False, evid
     stop, clear, start_again = restart(s)
     sparks = R.edges_stats(s, start_again, s.t1_ext, RPM)["sparks"]
     res.append(("%s deterministic standstill recovery: %.0f ms, restarted %d sparks"
-                % (name, ((clear - stop) / 1250.0) if clear else -1, sparks),
-                clear is not None and clear - stop >= 100 * 1250 and sparks > 0
+                % (name, ((clear - stop) / TPM) if clear else -1, sparks),
+                clear is not None and clear - stop >= 100 * TPM and sparks > 0
                 and s.r8("hc_dl_inhibit") == 0))
     if "-v" in sys.argv:
         for detail, passed in res:
@@ -380,7 +385,7 @@ def corrupt_overdue(s):
     address = (R.sym("hc_dl_q_time") & 0xFFFFFF) + 4 * head
     now_address = R.sym("hc_dl_clock_ticks") & 0xFFFFFF
     now = s.mem.r16(now_address) | s.mem.r16(now_address + 2) << 16
-    write32(s, address, (now - 12500) & 0xFFFFFFFF)
+    write32(s, address, (now - 10 * TPM) & 0xFFFFFFFF)
 
 
 def consumed_overdue(s):
@@ -417,7 +422,7 @@ def main():
     args = parser.parse_args()
     control = args.control
     res = []
-    s = R.Stress(R.build_awt_page(), ts=False)
+    s = R.Stress(R.build_board_page(), ts=False)
     s.dbw_plant = True
     s.pedal = 0.25
     quiesces = observe_quiesce(s)
@@ -452,19 +457,19 @@ def main():
     unblock = block(s.cpu, [CC26IC])
     t_q = run_until(s, 20000, lambda t: RPM, lambda: s.mem.r16(RT_QUIESCE_N) != q0)
     if t_q is not None:
-        run_until(s, max(0, 20000 - (t_q - t_stall) / 1.25), lambda t: RPM)
+        run_until(s, max(0, 20000 - (t_q - t_stall) / (TPM / 1000.0)), lambda t: RPM)
     unblock()
     t_back = s.t1_ext
     res.append(("F1 planner stalled: quiesce %s (reason %d, 2 = OVERFLOW), %.1f ms after the stall"
                 % ("seen" if t_q else "NOT seen", s.mem.r16(RT_QUIESCE_LAST),
-                   ((t_q - t_stall) / 1250.0) if t_q else -1),
+                   ((t_q - t_stall) / TPM) if t_q else -1),
                 f_charge is not None and t_q is not None and s.mem.r16(RT_QUIESCE_LAST) == 2))
     per = on_periods(s, t_stall, t_back)
     late_on = [p for p in per if t_q is not None and p[2] > t_q]
     res.append(("F2 outputs turned ON after the quiesce: %d" % len(late_on), t_q is not None and not late_on))
-    lim = int((1.5 * dwell + 0.3) * 1250)
+    lim = int((1.5 * dwell + 0.3) * TPM)
     still = [p for p in active_at(s, t_q, t_back)
-             if t_q is not None and (p[3] is None or p[3] > t_q + (lim if p[0] == "c" else int((inj_max + 0.3) * 1250)))] if t_q else [None]
+             if t_q is not None and (p[3] is None or p[3] > t_q + (lim if p[0] == "c" else int((inj_max + 0.3) * TPM)))] if t_q else [None]
     res.append(("F3 outputs exceed their coil/pulse release bound after quiesce: %d" % len(still), t_q is not None and not still))
     normal_quiesces.extend(quiesces[f_q_start:])
     run_until(s, 100000, lambda t: RPM)
@@ -473,7 +478,7 @@ def main():
     st2 = R.edges_stats(s, t_r, s.t1_ext, RPM)
     spread = [v for v in st2["spark_angle_spread_deg"].values() if v is not None]
     res.append(("F4 after the planner returns: %d sparks in 50 ms, spread %s deg"
-                % (st2["sparks"], spread), st2["sparks"] >= 4 and spread and max(spread) <= 3.0))
+                % (st2["sparks"], spread), st2["sparks"] >= 4 and twin_ok(spread)))
 
     # ---------------------------------------------------------- X: executor
     run_until(s, 100000, lambda t: RPM, lambda: outputs_now(s) != 0, step=20)
@@ -485,7 +490,7 @@ def main():
         print("X: beat %d irq39 %s fault 0x%x inhibit %d out 0x%x cc25ic 0x%x" % (
             s.r16("hc_dl_beat"), s.cpu.irq_count.get(0x39), s.r16("hc_rt_fault"),
             s.mem.r8(R.sym("hc_dl_inhibit") & 0xFFFFFF), outputs_now(s), s.cpu._sget(CC25IC)))
-    run_until(s, 30000 - ((t_rel or s.t1_ext) - t_x) / 1.25, lambda t: RPM)
+    run_until(s, 30000 - ((t_rel or s.t1_ext) - t_x) / (TPM / 1000.0), lambda t: RPM)
     unblock()
     run_until(s, 50000, lambda t: RPM)
     t_x_end = s.t1_ext
@@ -494,9 +499,9 @@ def main():
                 (flt & 3) != 0 and s.r16("hc_rt_exec_faults") == f0 + 1))
     span = active_at(s, t_x, t_x_end)
     over = [p for p in span if p[3] is None
-            or (p[3] - p[2]) > ((dwell if p[0] == "c" else inj_max) + 3.5) * 1250]
+            or (p[3] - p[2]) > ((dwell if p[0] == "c" else inj_max) + 3.5) * TPM]
     res.append(("X2 %d output(s) ON at the stall, released %.2f ms after it; over plan + 3.5 ms: %d"
-                % (len(span), ((t_rel - t_x) / 1250.0) if t_rel else -1, len(over)),
+                % (len(span), ((t_rel - t_x) / TPM) if t_rel else -1, len(over)),
                 t_rel is not None and bool(span) and not over))
     again = [p for p in on_periods(s, t_x, t_x_end) if t_rel is not None and p[2] > t_rel]
     res.append(("X3 outputs ON again while the engine turns (CC25 back for 50 ms): %d" % len(again),
@@ -513,7 +518,7 @@ def main():
     s.run_us(50000, lambda t: RPM)
     st3 = R.edges_stats(s, t_s, s.t1_ext, RPM)
     res.append(("X4 inhibit %d while turning, cleared %.0f ms after the stop (trg_state %d), restart drives %d sparks"
-                % (held_turning, ((t_clear - t_stop) / 1250.0) if t_clear else -1, nosig, st3["sparks"]),
+                % (held_turning, ((t_clear - t_stop) / TPM) if t_clear else -1, nosig, st3["sparks"]),
                 held_turning == 4 and t_clear is not None and nosig == 0 and held == 0
                 and st3["sparks"] > 0))
 
@@ -534,16 +539,16 @@ def main():
     t_sync = run_until(s, 500000, lambda t: RPM, lambda: s.r8("trg_state") >= 3, step=20)
     t_s_end = s.t1_ext
     res.append(("S1 dropout: crank position withdrawn %s (reason %d), quiesces %d -> %d"
-                % ("after %.2f ms" % ((t_l - t_d) / 1250.0) if t_l else "NOT",
+                % ("after %.2f ms" % ((t_l - t_d) / TPM) if t_l else "NOT",
                    s.r16("trg_loss_reason"), q0, s.mem.r16(RT_QUIESCE_N)),
                 s_charge is not None and t_l is not None and s.mem.r16(RT_QUIESCE_N) != q0))
     late_on = [p for p in on_periods(s, t_d, t_s_end)
                if t_l is not None and t_sync is not None and t_l < p[2] < t_sync]
     res.append(("S2 outputs ON between the loss and crank resync (%.1f ms): %d"
-                % (((t_sync - t_l) / 1250.0) if (t_l and t_sync) else -1, len(late_on)),
+                % (((t_sync - t_l) / TPM) if (t_l and t_sync) else -1, len(late_on)),
                 t_l is not None and t_sync is not None and not late_on))
     still = [p for p in active_at(s, t_l, t_s_end)
-             if p[3] is None or p[3] > t_l + (lim if p[0] == "c" else int((inj_max + 0.3) * 1250))] if t_l else [None]
+             if p[3] is None or p[3] > t_l + (lim if p[0] == "c" else int((inj_max + 0.3) * TPM))] if t_l else [None]
     res.append(("S3 outputs exceed their coil/pulse release bound after the loss: %d" % len(still), t_l is not None and not still))
     run_until(s, 150000, lambda t: RPM)
     t_r = s.t1_ext
@@ -551,7 +556,7 @@ def main():
     st4 = R.edges_stats(s, t_r, s.t1_ext, RPM)
     spread = [v for v in st4["spark_angle_spread_deg"].values() if v is not None]
     res.append(("S4 after resync: %d sparks in 60 ms, spread %s deg" % (st4["sparks"], spread),
-                st4["sparks"] >= 4 and spread and max(spread) <= 3.0))
+                st4["sparks"] >= 4 and twin_ok(spread)))
     res.append(("S1b ...and the loss IS counted once the crank runs on (trg_synclost %d -> %d)"
                 % (lost0, s.r16("trg_synclost")), s.r16("trg_synclost") == lost0 + 1))
     normal_quiesces.extend(quiesces[s_q_start:])
@@ -564,11 +569,11 @@ def main():
     longc = [p for p in allp if p[0] == "c" and p[3] is not None and (p[3] - p[2]) > lim]
     # the executor-stall case (X2) may hold an open injector up to its plan
     # + 3.5 ms; anything beyond that is an injector left open
-    limi = int((inj_max + 3.5) * 1250)
+    limi = int((inj_max + 3.5) * TPM)
     longi = [p for p in allp if p[0] == "i" and p[3] is not None and (p[3] - p[2]) > limi]
-    res.append(("B1 coil ON > %.2f ms: %d (max %.2f ms)" % (lim / 1250.0, len(longc),
-                max([(p[3] - p[2]) / 1250.0 for p in allp if p[0] == "c" and p[3]] or [0])), not longc))
-    res.append(("B2 injector open > %.2f ms: %d" % (limi / 1250.0, len(longi)), not longi))
+    res.append(("B1 coil ON > %.2f ms: %d (max %.2f ms)" % (lim / TPM, len(longc),
+                max([(p[3] - p[2]) / TPM for p in allp if p[0] == "c" and p[3]] or [0])), not longc))
+    res.append(("B2 injector open > %.2f ms: %d" % (limi / TPM, len(longi)), not longi))
 
     # ---------------------------------------------------------- P: progress
     if args.only != "normal":
@@ -578,18 +583,25 @@ def main():
     return report(res, control, run_ok)
 
 
+def twin_ok(spread):
+    """every spark at its angle or at its wasted-spark twin (360 deg), as
+    me711_runtime_stress_proof judges it - the 2.7T preset runs crank-only
+    wasted COP"""
+    return bool(spread) and all(min(v, abs(v - 360.0)) <= 3.0 for v in spread)
+
+
 def progress_cases(s):
     res = []
     for kind, cap, name in (("c", 25, "P1 coil"), ("i", 140, "P2 injector")):
         n0 = s.r16("hc_rt_exec_faults")
         latched = s.r16("hc_rt_fault")
         t_on, t_off, flt, heartbeat_moves = progress_stall(s, kind)
-        held_ms = ((t_off - t_on) / 1250.0) if (t_on and t_off) else -1
+        held_ms = ((t_off - t_on) / TPM) if (t_on and t_off) else -1
         res.append(("%s: its OFF hidden, fault 0x%04X, released %.1f ms after ON (cap %d ms), faults %d -> %d"
                     % (name, flt & 0xFFFF, held_ms, cap, n0, s.r16("hc_rt_exec_faults")),
                     t_off is not None and (flt & STALL) != 0 and heartbeat_moves
                     and flt & latched == latched and outputs_now(s) == 0
-                    and held_ms <= cap + 2 and s.r16("hc_rt_exec_faults") == n0 + 1))
+                    and held_ms <= cap + 2 * SCAN_MS and s.r16("hc_rt_exec_faults") == n0 + 1))
         after = s.t1_ext
         s.run_us(20000, lambda t: RPM)
         res.append(("%s stale ON prevented while turning" % name,
@@ -597,7 +609,7 @@ def progress_cases(s):
                     and s.r8("hc_dl_inhibit") == EXECUTOR_INHIBIT))
         stop, clear, started = restart(s)
         res.append(("%s standstill recovery and next start" % name,
-                    clear is not None and clear - stop >= 100 * 1250
+                    clear is not None and clear - stop >= 100 * TPM
                     and R.edges_stats(s, started, s.t1_ext, RPM)["sparks"] > 0))
     return res
 
@@ -638,7 +650,8 @@ def timing_results(s):
     from me711_runtime_stress_proof import CRIT_US, ISR_US
     crit = s.mask["ILVL13"][1] / 10.0
     res = [("fault-matrix critical section %.1f us <= %.1f us" % (crit, CRIT_US), crit <= CRIT_US)]
-    for trap, name in ((0x39, "CC25 deadline"), (0x3E, "T8 tick")):
+    for trap, name in ((0x39, "CC25 deadline"), (0x3E, "T8 tick"),
+                       (0x3C, "CC28 tick body")):
         value = s.isr.get(trap, [0, 0, 0, 0])[2] / 10.0
         res.append(("fault-matrix %s exclusive WCET %.1f us <= %.1f us" % (name, value, ISR_US[name]),
                     value <= ISR_US[name]))

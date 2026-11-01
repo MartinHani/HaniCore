@@ -24,12 +24,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools" / "lib"))
 import hcpaths  # noqa: F401,E402  (puts every tools/ and tests/ module on sys.path)
 
 ROOT = Path(__file__).resolve().parents[2]
-INI = ROOT / "tunerstudio/hanicore_me711.ini"
+INI = ROOT / "tuning/hanicore_me711.ini"
 # The developer commands (I/O chip window sweep, RAM probe, link restart)
 # are offered by the developer (forensic) project only; "offered" means by
 # either file, and the user file offers a subset.
-INI_DEV = sorted((ROOT / "tunerstudio").glob("*_forensic.ini"))[0]
-GEN = ROOT / "tools/tunerstudio/gen_ts_ini_me711.py"
+INI_DEV = sorted((ROOT / "tuning").glob("*_forensic.ini"))[0]
+GEN = ROOT / "tools/tuning/gen_ts_ini_me711.py"
 MAIN = ROOT / "firmware/targets/me711/diagnostics/hcdiag711.c"
 
 # Commands the firmware implements that the .ini deliberately does not offer.
@@ -45,6 +45,10 @@ def _firmware_commands():
     body = src[start:end]
     # strip comments so a letter mentioned in prose is not counted
     body = re.sub(r"/\*.*?\*/", " ", body, flags=re.S)
+    # the OBD updater's letters exist only in --updater images and are sent
+    # by tools/flash/hc_update.py, never by TunerStudio; the .ini pairs with
+    # the release image, which does not compile them
+    body = re.sub(r"#if HC_UPDATER\b.*?#endif", " ", body, flags=re.S)
     return set(re.findall(r"case\s+'(.)'\s*:", body))
 
 
@@ -69,7 +73,7 @@ def _ini_commands(text):
     about that character since. The comparison against the generator failed to
     catch it because BOTH SIDES broke the same way.
 
-    So the decoding is not done here. tests/tunerstudio/ts_ini_command_shape_proof.py
+    So the decoding is not done here. tests/tuning/ts_ini_command_shape_proof.py
     builds it from the rusEFI corpus - 4553 literals in files known to load -
     and the project rules say so: a gate that models both halves of
     an interface from the same assumption tests nothing about the assumption.
@@ -164,7 +168,7 @@ def test_the_dead_alive_text_buttons_are_gone():
         ".ini will grow buttons for it again")
 
 
-def test_the_s5500_window_sweep_is_reachable_from_tunerstudio():
+def test_the_s5500_window_sweep_is_reachable_from_tuning_app():
     """The one diagnostic that can close the runtime-frame analog mapping
     WITHOUT another flash. It was implemented in the firmware but reachable
     only from a terminal, which meant a bench session had to leave TunerStudio

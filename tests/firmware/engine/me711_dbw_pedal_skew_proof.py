@@ -103,7 +103,7 @@ def stabs(t0, period, rise, n, lo=0.05, hi=0.95):
 def main() -> int:
     print("=== DBW pedal pair under a fast press (simulator) ===")
     print("  image", RS.PI.image(), RS.PI.sha256()[:8] if hasattr(RS.PI, "sha256") else "")
-    s = Rig(RS.build_awt_page(dbw=True), ts=False)
+    s = Rig(RS.build_board_page(dbw=True), ts=False)
     s.dbw_plant = True
     s.pedal = 0.05
     s.boot()

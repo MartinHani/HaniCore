@@ -30,7 +30,7 @@
    universal_schema(). A literal here meant that adding a field
    left a battery-backed page from the previous firmware looking
    valid, with the new bytes holding whatever SRAM had. */
-#define HC_UNIVERSAL_SCHEMA          0xE921u
+#define HC_UNIVERSAL_SCHEMA          0x357Du
 #define HC_UNIVERSAL_MAGIC           0x4855u   /* 'HU' */
 
 /* ------------------------------------------------- layout identity -- */
@@ -39,7 +39,7 @@
    what a stored calibration record carries so that a firmware whose page
    layout has moved REFUSES the record instead of reinterpreting it. See
    layout_id() in tools/config_source/generate_config.py. */
-#define HC_CFG_LAYOUT_ID             0x83D8361EuL
+#define HC_CFG_LAYOUT_ID             0x3EF8E9EAuL
 
 /* -------------------------------------------------------- apply policy -- */
 /* WHEN a validated change may reach the running engine. SAFETY_CRITICAL
@@ -153,11 +153,12 @@ typedef enum {
 #define HC_TRACK_SAME                 1u
 #define HC_TRACK_SCALED               2u
 
-/* LambdaSource: Wideband controller source */
+/* LambdaSource: Lambda sensor source. Narrowband: a switching sensor reads only rich or lean of 1.00 - the display shows 0.90..1.10 and closed loop trims only while the lambda target is 1.00 */
 #define HC_LAMBDA_OFF                 0u
 #define HC_LAMBDA_INTERNAL_LSU        1u
 #define HC_LAMBDA_EXTERNAL_ANALOG     2u
 #define HC_LAMBDA_CAN                 3u
+#define HC_LAMBDA_NARROWBAND          4u
 
 /* LambdaHeaterPolicy: When the wideband heater may run */
 #define HC_LAMBDA_HEAT_OFF            0u
@@ -347,11 +348,11 @@ typedef enum {
 #define CFG_U_FLOOD_CLEAR_X10          2724u /* u16 Flood clear above pedal */
 #define CFG_U_DBW_FAULT_DEBOUNCE_MS    2726u /* u16 Sensor fault confirm time */
 #define CFG_U_DBW_BATT_COMP            2728u /* u8 Battery voltage compensation */
-#define CFG_U_DBW_PAD                  2729u /* u8 Alignment pad */
+#define CFG_U_PIN_IDLE_VALVE           2729u /* u8 Idle air valve pin */
 #define CFG_U_INJ_TIMING_MODE          2730u /* u8 Injection timing refers to */
-#define CFG_U_SEQ_PAD                  2731u /* u8 Alignment pad */
+#define CFG_U_PIN_IDLE_VALVE2          2731u /* u8 Idle air valve second pin */
 #define CFG_U_TRANS_ENABLE             2732u /* u8 Transient fuel */
-#define CFG_U_TRANS_PAD                2733u /* u8 Alignment pad */
+#define CFG_U_IDLE_VALVE_FREQ          2733u /* u8 Idle air valve PWM frequency */
 #define CFG_U_AS_DECAY_MS              2734u /* u16 After-start duration */
 #define CFG_U_WW_X_PCT                 2736u /* u8[16] Wall wetting fraction */
 #define CFG_U_WW_TAU_20MS              2752u /* u8[16] Wall film time constant */
@@ -360,7 +361,7 @@ typedef enum {
 #define CFG_U_IGN_IAT_AX               2816u /* u16[8] IAT timing correction axis */
 #define CFG_U_IGN_IAT_CORR             2832u /* s16[8] IAT timing correction */
 #define CFG_U_IDLE_TIM_EN              2848u /* u8 Closed loop idle ignition timing */
-#define CFG_U_IDLE_TIM_PAD             2849u /* u8 Alignment pad */
+#define CFG_U_IDLE_ACTUATOR            2849u /* u8 Idle actuator */
 #define CFG_U_IDLE_TIM_KP              2850u /* u16 Idle timing proportional gain */
 #define CFG_U_IDLE_TIM_MIN             2852u /* s16 Idle timing min adjustment (retard) */
 #define CFG_U_IDLE_TIM_MAX             2854u /* s16 Idle timing max adjustment (advance) */

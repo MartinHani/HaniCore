@@ -38,6 +38,7 @@
 #include "hccam.h"
 #include "hcbench.h"
 #include "hcvvt711.h"
+#include "hcio711.h"           /* hc_io_duty: the 2.7T ASIC cam valve */
 
 #define VV HC_VVT711
 typedef char hc_vvt_fits[(sizeof(hc_vvt711_t) <= TGT_RAM_VVT_LIMIT) ? 1 : -1];
@@ -53,9 +54,19 @@ static void unit_write(unsigned char u, unsigned int duty_x10)
     unsigned int f = hc_cal_u16(CFG_U_VVT_FREQ_HZ);
     unsigned int pp, pw;
 
+#ifdef TGT_NWS_ASIC_CAV
+    if (u == 2u) {
+        /* the 2.7T C4 cam valve: an S5500 port bit (hcio711.c, HC_IO_LDR's
+           slot on this board), frame-synchronous at the 10 ms raster - the
+           OEM switches this valve on/off */
+        hc_io_duty(HC_IO_LDR, duty_x10);
+        return;
+    }
+#endif
     if (f < 20u) f = 250u;                  /* the OEM's 250 Hz            */
     if (f > 1000u) f = 1000u;
-    pp = (unsigned int)((62500u / f) * 10u);   /* fCPU/64 counts per period */
+    /* fCPU/64 counts per period: 62500 x 10 at 40 MHz, 37500 x 10 at 24 */
+    pp = (unsigned int)(((unsigned int)(TGT_PWM_SLOW_HZ / 10uL) / f) * 10u);
     pw = (unsigned int)((unsigned long)duty_x10 * pp / 1000u);
     if (duty_x10 == 0u || pw == 0u) {
         if (VV.unit_on[u]) {
@@ -181,7 +192,12 @@ static void step_cam(unsigned char b, unsigned int ms, unsigned char bench)
     c.duty_on_x10 = hc_cal_u16v((unsigned int)(CFG_U_VVT_DUTY_ON + 2u * b));
 
     pin = hc_cal_u8(b ? CFG_U_PIN_CAM2_SOL : CFG_U_PIN_CAM1_SOL);
-    u = (pin == 115u) ? 0u : (pin == 120u) ? 1u : 0xFFu;
+    u = (pin == TGT_POUT0_CAV) ? 0u : (pin == TGT_POUT1_CAV) ? 1u : 0xFFu;
+#ifdef TGT_NWS_ASIC_CAV
+    if (pin == TGT_NWS_ASIC_CAV) {
+        u = 2u;
+    }
+#endif
 
     /* the position: fresh while tooth 0 keeps being identified */
     if (VV.syncs[b] != VV.seen[b]) {
@@ -282,7 +298,7 @@ void far hc_vvt_service(unsigned int now_ms)
         unsigned char u, pin0 = hc_cal_u8(CFG_U_PIN_CAM1_SOL),
                          pin1 = hc_cal_u8(CFG_U_PIN_CAM2_SOL);
         for (u = 0u; u < 2u; u++) {
-            unsigned char cav = u ? 120u : 115u;
+            unsigned char cav = u ? TGT_POUT1_CAV : TGT_POUT0_CAV;
             if (VV.unit_on[u] && pin0 != cav && pin1 != cav) {
                 unit_write(u, 0u);
             }

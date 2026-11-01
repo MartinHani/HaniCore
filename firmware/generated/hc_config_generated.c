@@ -257,11 +257,11 @@ const hc_cfg_slot_t hc_cfg_slots[HC_CFG_SLOT_COUNT] = {
     { 2724u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 2u, 0x0000u }, /* floodClearX10 */
     { 2726u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP         , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* dbwFaultDebounceMs */
     { 2728u,    1u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP         , 0u                                        , 1u, 0x0000u }, /* dbwBattComp */
-    { 2729u,    1u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP         , 0u                                        , 1u, 0x0000u }, /* dbwPad */
+    { 2729u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING    , HC_FLAG_IS_PIN                            , 1u, 0x0040u }, /* pinIdleValve */
     { 2730u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_INJECTOR_ROUTING  , 0u                                        , 1u, 0x0000u }, /* injTimingMode */
-    { 2731u,    1u, HC_APPLY_LIVE      , HC_GRP_INJECTOR_ROUTING  , 0u                                        , 1u, 0x0000u }, /* seqPad */
+    { 2731u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING    , HC_FLAG_IS_PIN                            , 1u, 0x0040u }, /* pinIdleValve2 */
     { 2732u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* transEnable */
-    { 2733u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* transPad */
+    { 2733u,    1u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 1u, 0x0000u }, /* idleValveFreq */
     { 2734u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* asDecayMs */
     { 2736u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* wwXPct */
     { 2752u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* wwTau */
@@ -270,7 +270,7 @@ const hc_cfg_slot_t hc_cfg_slots[HC_CFG_SLOT_COUNT] = {
     { 2816u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* ignIatAx */
     { 2832u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* ignIatCorr */
     { 2848u,    1u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 1u, 0x0000u }, /* idleTimingEnable */
-    { 2849u,    1u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 1u, 0x0000u }, /* idleTimingPad */
+    { 2849u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 1u, 0x0000u }, /* idleActuator */
     { 2850u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 2u, 0x0000u }, /* idleTimingKp */
     { 2852u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 2u, 0x0000u }, /* idleTimingMinX10 */
     { 2854u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 2u, 0x0000u }, /* idleTimingMaxX10 */

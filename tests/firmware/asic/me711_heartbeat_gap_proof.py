@@ -56,7 +56,10 @@ CURRENT = PI.image()
 TGT = ROOT / "firmware/targets/me711/hctarget.h"
 MAP = PI.MAP
 
-_t = TGT.read_text(errors="replace")
+# 2026-10-24: the BOARD's values (HANICORE_BOARD, tools/lib/hc_board.py) -
+# the 2.7T runs a 0.75 MHz timer at 24 MHz; the Porsche text is unchanged.
+import hc_board as _HB  # noqa: E402
+_t = _HB.board_text(TGT)
 
 
 
@@ -140,7 +143,10 @@ if abs(_T8_INSTR - _HW_MS_INSTR) > 1.0:
 STEPS_BOUND = 3_600_000              # ~1.4 s - Phase A (V17), 1 beat window
 STEPS_REAL = 7_000_000              # ~2.8 s - Phase B, room for 2+ beats
 WARMUP_MS = 40
-STEPS_PER_MS = 2500                   # c167sim: 2 steps/tick, 1250 ticks/ms
+# c167sim: 2 steps per timer tick, at THIS board's ticks per ms - 2500 on
+# the Porsche (1250 ticks/ms), 1500 on the 2.7T (750). It was 2500 for both,
+# so every rig "millisecond" on the 2.7T lasted 1.67 ms (a 5-baud bit 333 ms).
+STEPS_PER_MS = 2 * TPMS // 10
 
 
 def sym(name):
@@ -321,7 +327,26 @@ class Rig:
         def w16(s_, a, v, _o=ow16):
             aa = a & 0xFFFFFF
             if aa == ADCON and (v & 0x80):
-                s_.sfr[ADDAT] = ((v & 0x0F) << 12) | (100 + (v & 0x0F) * 37)
+                ch = v & 0x0F
+                val = 100 + ch * 37
+                if _HB.IS_C4:
+                    # a CONSISTENT engine-stopped ECU (the stress rig's model:
+                    # throttle 20 %, pedal 0, 13.5 V, KL15 on, baro 1014 hPa) -
+                    # nonsense sensors would put the firmware in fault handling
+                    # AN12 = KL15 FOLLOWS P6.2, the rigs' one key switch (the
+                    # Porsche's own KL15 input) - every key-off vector works
+                    val = {1: 102 + 170, 3: 919 - 170, 8: 150, 9: 75, 5: 767,
+                           14: 378, 13: 820,
+                           12: 800 if s_.sfr.get(0xFFCC, 0) & 4 else 20}.get(ch, val)
+                s_.sfr[ADDAT] = (ch << 12) | val
+                if _HB.IS_C4:
+                    # the C4 board's KL15 IS an ADC reading (AN12,
+                    # TGT_KL15_ON; hcmain polls ADCIR for it): the
+                    # conversion must COMPLETE here, or every key reads
+                    # OFF. AN12 = 544 counts >= 400 = key on. The Porsche
+                    # keeps this rig's historical no-ADC behaviour (its
+                    # KL15 is P6.2, set below).
+                    s_.sfr[0xFF98] = s_.sfr.get(0xFF98, 0) | 0x80   # ADCIR
             if aa == SSCTIC and (v & 0x0080):
                 n = (s_.r16(PECC4) & 0x00FF) or WORDS_START
                 rx = [0] * n
@@ -334,6 +359,12 @@ class Rig:
                     # ACCEPTED - acceptance is the checksum, hcasicstart.c).
                     rx = [0] * n
                     rx[n - 1] = 0x5A5A
+                if n == WORDS_RUN and getattr(h, "corrupt_runtime", 0) > 0:
+                    # 2026-10-28 (me711_asic_retry_raster_proof): ONE runtime
+                    # reply with a wrong checksum, the car's 1-in-3000 error.
+                    h.corrupt_runtime -= 1
+                    h.corrupt_steps.append(h.cpu.steps)
+                    rx[n - 1] ^= 0x0101
                 for i, w in enumerate(rx):
                     _o(s_, FRAMEA + 2 * i, w)
                 _o(s_, PECC0, s_.r16(PECC0) & 0xFF00)

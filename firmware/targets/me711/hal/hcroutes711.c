@@ -15,6 +15,8 @@
 #define OP_P2 2u
 #define OP_P7 7u
 #define OP_P8 8u
+#define OP_P3 3u                /* the ME7.5 DC's pump relay (P3.7)        */
+#define OP_P4 4u                /* the 2.7T C4 board's pump relay (P4.4) */
 
 /* Ordinary task HAL calls may release an output, but cannot create an ON
    without a pulse token. Routing work is deliberately outside CC25. */
@@ -36,6 +38,16 @@ void HC_COLD hc_hal_port_of(unsigned char cav, unsigned char *port,
                         unsigned char *bitno)
 {
     *port = OP_NONE; *bitno = 0u;
+#if TGT_BOARD_VAG_ME75_DC
+    /* THE ME7.5 DC HAS FOUR COILS AND FOUR INJECTORS (P2.0..P2.3, P7.6..P7.4
+       + P8.7). The Porsche's ZUE5..8 / EV5..8 pins are other things here:
+       P2.4 the post-cat heater, P2.5 the 68HC05 monitor line, P2.6 KL50 in,
+       P8.3..P8.6 inputs (CC19..CC22). Until 2026-11-01 hc_hal_outputs_safe()
+       walked them through this table and released the monitor line in the
+       middle of an answer (me75_dc_runtime_proof E). */
+    if (cav == 110u || cav == 111u || cav == 8u || cav == 7u
+        || cav == 112u || cav == 113u || cav == 24u || cav == 19u) return;
+#endif
     switch (cav) {
     /* injectors - EV1..EV8, all on P7/P8 CAPCOM pins */
     case 96u:  *port = OP_P7; *bitno = 6u;  break;   /* EV1 P7.6/CC30 */
@@ -66,7 +78,13 @@ void HC_COLD hc_hal_port_of(unsigned char cav, unsigned char *port,
        drives ZUE7 on cavity 8 (the ME7.1.1 schematic p1). DO NOT move CC7 to compare
        mode 1 or 3 - those drive the pin, and then this route WOULD conflict. */
     case 7u:   *port = OP_P2; *bitno = 7u;  break;   /* ZUE8 P2.7/CC7 */
-    case 65u:  *port = OP_P2; *bitno = 12u; break;   /* EKP fuel pump P2.12 */
+    /* EKP, THE BOARD'S OWN PUMP PIN (hctarget.h TGT_EKP_PORT_NO/BIT):
+       P2.12 Porsche, P4.4 2.7T, P3.7 ME7.5 DC. The DC builds on the 2.7T
+       branch and inherited "P4.4" here until 2026-11-01 - on the DC P4.4 is
+       the KL15 INPUT: the pump's request drove it LOW, the ECU saw key-off
+       every ~40 ms, and the spark permission flickered (bench, 25 % of the
+       sparks lost). */
+    case 65u:  *port = TGT_EKP_PORT_NO; *bitno = TGT_EKP_PORT_BIT; break;
     default: break;
     }
 }
@@ -162,8 +180,15 @@ void HC_COLD hc_tacho_service(void)
     /* half-period in T1 ticks (1.25 MHz) = 37 500 000 / rpm x 2 / cylinders.
        37 500 000 / rpm fits 16 bits from 573 rpm; below that it saturates
        (a needle under 600 rpm is the cluster's business). */
+    /* the constant is T1 ticks per second x 60 / 2: 37.5e6 at 1.25 MHz,
+       22.5e6 at 0.75 MHz (the 2.7T board, where it fits from 344 rpm) */
+#if TGT_TICKS_PER_MS_X10 == 12500UL
     q = (rpm < 573u) ? 65000u
-                     : (unsigned int)((unsigned long)37500000uL / (unsigned int)rpm);
+#else
+    q = (rpm < 344u) ? 65000u
+#endif
+                     : (unsigned int)(((unsigned long)TGT_TICKS_PER_MS_X10 * 3000uL)
+                                      / (unsigned int)rpm);
     /* THE CLUSTER'S CALIBRATION (2026-10-16): tachoScale % multiplies the
        frequency = divides the period; bounded so the quotient fits 16 bits */
     {

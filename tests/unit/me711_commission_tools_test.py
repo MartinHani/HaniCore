@@ -33,8 +33,7 @@ import me711_dbw_vehicle_test as DBW     # noqa: E402
 import me711_trigger_vehicle_test as TRG  # noqa: E402
 import me711_heater_drive_test as HTR    # noqa: E402
 
-INI = ROOT / "tunerstudio" / ("hanicore_me711_%s.ini"
-                                        % PI.STEM.replace("HaniCore_ME711_", "").lower())
+INI = PI.INI  # both boards: <stem>.ini (hanicore_me711_v102_dev / hanicore_me71_27t_v102_dev)
 CHECKS = FAILS = 0
 
 

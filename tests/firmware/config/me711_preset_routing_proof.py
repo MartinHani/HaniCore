@@ -69,7 +69,7 @@ def cap_names(bits):
 
 def descriptors():
     d = {}
-    for build in (HW.build_me711, HW.build_me75):
+    for build in (HW.build_me711, HW.build_me75, HW.build_vag_me71_c4):
         desc = build()
         d[desc.target_id] = desc
     return d

@@ -365,8 +365,11 @@ def main() -> int:
     r.m.w8(REQ, ord("!")); r.m.w8(REQ + 1, ord("E")); r.m.w8(REQ + 2, 1)
     r("hcts_target_cmd", REQ, 3)
     service(r)
+    # Since 2026-10-31 each image compiles only its own board's presets, so
+    # the ME7.5's id is absent here (NO_SUCH); WRONG_BOARD stays legal.
     check("the ME7.5 preset (id 1) is refused as another ECU's",
-          och(r, 764) == (4 | 1 << 8), "verdict 0x%04X" % och(r, 764))
+          och(r, 764) in (3 | 1 << 8, 4 | 1 << 8),
+          "verdict 0x%04X" % och(r, 764))
 
     # ------------------------- no runtime path keyed on the preset id
     readers = []

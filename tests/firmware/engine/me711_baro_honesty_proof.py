@@ -124,9 +124,9 @@ def audit(text):
 def main() -> int:
     ini = Path(sys.argv[1]) if len(sys.argv) > 1 else None
     if ini is None:
-        ini = ROOT / "tunerstudio" / (PI.STEM.lower() + ".ini")
+        ini = PI.INI
     if not ini.exists():
-        print("no .ini: %s\n  generate it: py tools/tunerstudio/gen_ts_ini_me711.py" % ini)
+        print("no .ini: %s\n  generate it: py tools/tuning/gen_ts_ini_me711.py" % ini)
         return 2
     text = ini.read_text(errors="replace")
 

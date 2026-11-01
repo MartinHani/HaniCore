@@ -62,27 +62,57 @@
  * says "attempted 400 times, never once answered" is worth far more than one
  * that silently pretends to have succeeded.
  */
+#include "hctarget.h"
+#if TGT_BOARD_VAG_ME75_DC
+/* the ME7.5 DC has no S5500: the CC650 + 68HC05 monitor service, same
+   module, same exports (asic/hcasicstart_dc.inc) */
+#include "hcasicstart_dc.inc"
+#else
 #include <reg167.h>
 #include "hctarget.h"
 #include "hcasic.h"
 #include "hcasicframe.h"
 #include "hcasicstart.h"
-#include "hcasicdump.h"
 #include "hcumkom.h"
-#include "hcliveforensics.h"
 #include "hcio711.h"
 #include "hcrtmon711.h"    /* the S5500 raster in the reset witness */
 #include "hchal.h"          /* hc_hal_ain_capture */
 #include "hckwp_me711.h"    /* HC_KL.asic_prep (SRAM) */
 #include "hcnvm.h"          /* hc_nvm_word_owned */
+#include "hctrigger.h"      /* trg_rpm (the bad-reply capture) */
 
 #define FRAME ((unsigned int volatile far *)((unsigned long)TGT_ASIC_FRAME))
 /* the pre-build steps between runtime frames (HC_KL.asic_prep, 2026-10-14) */
 #define PREP_CAPTURE  0u   /* the accepted reply is not snapshotted yet     */
-#define PREP_ZERO     1u
-#define PREP_FILL     2u
-#define PREP_SUM      3u
-#define PREP_READY    4u   /* the next frame is complete                    */
+#define PREP_BADCAP   1u   /* a REJECTED reply is copied out (issue 02)     */
+#define PREP_ZERO     2u
+#define PREP_FILL     3u
+#define PREP_SUM      4u
+#define PREP_READY    5u   /* the next frame is complete                    */
+
+/* THE BAD S5500 REPLY (2026-10-28, .scratch/firmware-stability issue 02).
+   On a runtime checksum mismatch the header is written at once and the
+   frame itself is copied out in the next idle step (PREP_BADCAP), before the
+   next build overwrites it - not in the failing step, which stays short.
+   Words (native order; hcprofile711.c serves them big-endian):
+     0 captures   1 errors running   2 errors stopped   3 calc   4 received
+     5 T7 at the frame start   6 T7 when seen   7 ms   8 rpm
+     9 frame words copied (0 = copy pending / missed)   10 runtime frames ok
+     11 UMKOM word 1 of the last good reply   12 ms of the last good reply
+     15 magic 0x4241; then the frame. Kept across resets. */
+#define BAD ((unsigned int volatile far *)(TGT_EXTRAM_BASE + TGT_RAM_ASICBAD))
+#define BAD_MAGIC 0x4241u
+#if ((TGT_ASICBAD_HDR + TGT_ASIC_WORDS_RUN) * 2u > TGT_ASICBAD_EXPORT) || ((TGT_ASICBAD_HDR + TGT_ASIC_WORDS_RUN) * 2u > TGT_RAM_ASICBAD_LIMIT) || (TGT_ASICBAD_EXPORT + TGT_RAM_PASSREC_LIMIT > 344u)
+#error "the bad-reply capture / pass profile does not fit its region or the window's 344 bytes"
+#endif
+
+static void bad_copy(void)
+{
+    unsigned char i;
+    for (i = 0u; i < (unsigned char)TGT_ASIC_WORDS_RUN; i++)
+        BAD[TGT_ASICBAD_HDR + i] = FRAME[i];
+    BAD[9] = (unsigned int)TGT_ASIC_WORDS_RUN;
+}
 
 sbit ASIC_CS_LATCH_S = P6  ^ TGT_ASIC_CS_PORT_BIT;
 sbit ASIC_CS_DIR_S   = DP6 ^ TGT_ASIC_CS_PORT_BIT;
@@ -169,6 +199,11 @@ void hc_asic_start_init(void)
 
     hc_umkom_init();          /* mirrors [BIN] 0x8B2188, once per session     */
     HC_KL.asic_prep = PREP_ZERO;   /* no runtime frame pre-built             */
+    if (BAD[15] != BAD_MAGIC) {    /* the capture survives resets            */
+        unsigned char i;
+        for (i = 0u; i < (unsigned char)TGT_ASICBAD_HDR; i++) BAD[i] = 0u;
+        BAD[15] = BAD_MAGIC;
+    }
 
     /* Idle HIGH, push-pull, output. [BIN] 0x823214-0x82321A does exactly this
        order: latch, then open-drain off, then direction. */
@@ -196,7 +231,6 @@ static unsigned char build(unsigned char runtime)
             sum = (unsigned int)(sum + w);
         }
         FRAME[HC_ASICFRAME_CKSUM_WORD] = sum;
-        hc_asicdump_txprefix(FRAME[0], FRAME[1], FRAME[2], FRAME[3]);
         return (unsigned char)TGT_ASIC_WORDS_START;
     }
 
@@ -286,6 +320,12 @@ static void build_rt_zero(void)
     }
 }
 
+#if TGT_BOARD_VAG_ME71_C4
+static const unsigned int C4_RT_W4[7] = {
+    0x8F0Cu, 0xBF07u, 0xBF08u, 0x001Fu, 0xBF0Du, 0x0000u, 0xF006u
+};
+#endif
+
 static void build_rt_fill(void)
 {
     unsigned int i;
@@ -300,23 +340,33 @@ static void build_rt_fill(void)
         hc_io_frame();
         for (i = 0u; i < (unsigned int)HC_IO_WORDS; i++)
             FRAME[HC_IO_WORD0 + i] = hc_io_word((unsigned char)i);
+#if !TGT_BOARD_VAG_ME71_C4
         /* words 59..66 are the ASIC's PWM period/width registers. The
            OEM's forced-OFF values, never 0 (= full ON) - see hcio711.h. */
         for (i = 0u; i < (unsigned int)HC_IO_PWM_WORDS; i++)
             FRAME[HC_IO_PWM_WORD0 + i] = hc_io_pwm_word((unsigned char)i);
+#else
+        /* THE 2.7T's OWN RUNTIME WORDS (2026-10-27). The stock 4B0907551F
+           fills words 4..70 through the pointer table at 0x817106 and
+           initialises those cells from 0x8172B2 [EXACT TARGET BINARY,
+           0x87668A]: words 4..10, 25/26 and 41/42 carry the values below
+           and words 59..66 come from a dummy cell (0). HaniCore sent 0 /
+           the Porsche's PWM pairs there, and the real C4 S5500 never
+           started its word-1 questions and reset MAIN after ~300 ms
+           (bench: umkom_last_rx 0, 29 frames, every boot). */
+        for (i = 0u; i < 7u; i++)
+            FRAME[4u + i] = C4_RT_W4[i];
+        FRAME[25] = 0x0010u;  FRAME[26] = 0x0010u;
+        FRAME[41] = 0x79E0u;  FRAME[42] = 0x79E0u;
+#endif
 
-        if (run_initial < 2u) {
+        if (run_initial < TGT_UM_GRACE) {
             FRAME[1] = r1;               /* OEM grace: echo, um_service idle  */
             FRAME[2] = r2;
             FRAME[3] = r3;
         } else {
             hc_umkom_service(FRAME);    /* owns words 1..3, in place          */
         }
-
-        /* Bench record: words 1..3 as received vs as transmitted. */
-        hc_asicdump_echo(r1, r2, r3,
-                         FRAME[0], FRAME[1], FRAME[2], FRAME[3]);
-        hc_asicdump_txprefix(FRAME[0], FRAME[1], FRAME[2], FRAME[3]);
     }
 }
 
@@ -332,7 +382,7 @@ void hc_asic_start_service(unsigned int ms)
 {
     unsigned char huge *prep = &HC_KL.asic_prep;   /* the pre-build step */
     unsigned char n;
-    unsigned int tx1, tx2, tx3;
+    unsigned int fail_at;                          /* a failed frame's slot */
 
     if (hc_asic_run_live && (unsigned int)(ms - hc_asic_last_ok_ms) > 50u) {
         hc_asic_run_live = 0u;
@@ -375,11 +425,16 @@ void hc_asic_start_service(unsigned int ms)
                     break;
                 }
                 if (*prep < PREP_READY) {
-                    if (*prep == PREP_CAPTURE)   hc_hal_ain_capture();
-                    else if (*prep == PREP_ZERO) build_rt_zero();
-                    else if (*prep == PREP_FILL) build_rt_fill();
-                    else                         (void)build_rt_sum();
-                    (*prep)++;
+                    /* a good reply's snapshot or a bad one's copy, then the
+                       build (each is one step; neither follows the other) */
+                    if (*prep == PREP_CAPTURE)       { hc_hal_ain_capture(); *prep = PREP_ZERO; }
+                    else if (*prep == PREP_BADCAP)   { bad_copy();           *prep = PREP_ZERO; }
+                    else {
+                        if (*prep == PREP_ZERO)      build_rt_zero();
+                        else if (*prep == PREP_FILL) build_rt_fill();
+                        else                         (void)build_rt_sum();
+                        (*prep)++;
+                    }
                 }
             }
             break;
@@ -405,7 +460,6 @@ void hc_asic_start_service(unsigned int ms)
             n = build((unsigned char)(hc_asic_state == HC_ASIC_ST_RUNTIME_TX));
         }
         *prep = PREP_ZERO;       /* a failed frame rebuilds, no snapshot   */
-        tx1 = FRAME[1]; tx2 = FRAME[2]; tx3 = FRAME[3];
 
         /* The select is NOT touched here. asic_start_transfer asserts it and
            the RX ISR raises it, which is the OEM's split and the only one
@@ -439,8 +493,6 @@ void hc_asic_start_service(unsigned int ms)
         words_in_flight = n;
         phase_mark = ms;
         if (hc_asic_state == HC_ASIC_ST_RUNTIME_TX) {
-            hc_lf_asic_launch(ms, (unsigned int)T7, tx1, tx2, tx3,
-                              (unsigned int)hc_asic_state, hc_asic_run_tx);
             hc_rtwit_frame_start((unsigned int)T7);   /* raster telemetry */
         }
         if (hc_asic_state == HC_ASIC_ST_RUNTIME_TX) hc_asic_run_tx++;
@@ -451,23 +503,25 @@ void hc_asic_start_service(unsigned int ms)
     case HC_ASIC_ST_WAIT1:
     case HC_ASIC_ST_WAIT2:
     case HC_ASIC_ST_RUNTIME_WAIT:
+        /* A FAILED RUNTIME FRAME KEEPS THE START-TO-START RASTER (2026-10-28,
+           stability issue 01): the next frame is due one period after the
+           failed one STARTED, as for an accepted one. Anchored at the moment
+           the failure was SEEN, one bad reply (checksum, SSC error, timeout)
+           made a 12-13 ms period - a late frame and a monitoring mismatch,
+           the condition that reset MAIN on the car (2026-10-13). The OEM
+           drops a bad reply and sends the next frame on its own raster slot
+           [BIN 0x8BEAB4: BCLR SSCRIE/SSCTIE, BSET P6.4, RETS; 0x8BEAE8 sends].
+           The startup frames keep retrying from the failure. */
+        fail_at = (hc_asic_state == HC_ASIC_ST_RUNTIME_WAIT) ? phase_mark : ms;
         /* An SSC error is a failure in its own right, and it is the one the
            V4 log could not distinguish from silence. */
         if (asic_err_latched) {
             hc_asic_start_csum_err++;      /* counted separately below too    */
             hc_asic_ssc_errors++;
             hc_asic_retries++;
-            if (hc_asic_state == HC_ASIC_ST_RUNTIME_WAIT) {
-                hc_lf_asic_complete(ms, (unsigned int)T7,
-                    FRAME[0], FRAME[1], FRAME[2], FRAME[3], 0u,
-                    FRAME[words_in_flight - 1u], 2u,
-                    (unsigned int)hc_asic_state,
-                    hc_ssc_pec_tx_left(), hc_ssc_pec_rx_left(),
-                    (unsigned int)(ms - phase_mark));
-            }
             asic_abort_transfer();
             hc_asic_state = (unsigned char)(hc_asic_state - 1u);
-            hc_asic_next_attempt = ms;
+            hc_asic_next_attempt = fail_at;
             run_now = 0;
             break;
         }
@@ -482,26 +536,8 @@ void hc_asic_start_service(unsigned int ms)
             if (hc_asic_state == HC_ASIC_ST_RUNTIME_WAIT) hc_asic_run_rx++;
             else                                          hc_asic_start_rx++;
 
-            {   /* Freeze the reply BEFORE judging it - a frame that fails
-                   validation is exactly the one worth having. */
-                unsigned int calc = hc_asic_frame_sum(words_in_flight);
-                hc_asicdump_capture(hc_asic_state, hc_asic_start_tx,
-                                    (unsigned int)words_in_flight, calc,
-                                    FRAME[words_in_flight - 1u], ms,
-                                    hc_asic_run_tx);
-                hc_asic_last_calc = calc;
-                hc_asic_last_recv = FRAME[words_in_flight - 1u];
-                if (hc_asic_state == HC_ASIC_ST_RUNTIME_WAIT) {
-                    hc_lf_asic_complete(ms, (unsigned int)T7,
-                        FRAME[0], FRAME[1], FRAME[2], FRAME[3],
-                        calc, FRAME[words_in_flight - 1u],
-                        (unsigned int)(calc == FRAME[words_in_flight - 1u]
-                                       ? 0u : 1u),
-                        (unsigned int)hc_asic_state,
-                        hc_asic_pec_tx_end, hc_asic_pec_rx_end,
-                        hc_asic_last_xfer_ms);
-                }
-            }
+            hc_asic_last_calc = hc_asic_frame_sum(words_in_flight);
+            hc_asic_last_recv = FRAME[words_in_flight - 1u];
             if (hc_asic_last_calc == FRAME[words_in_flight - 1u]) {
                 /* (the sum taken above - not a second 117-word pass) */
                 hc_asic_last_ok_ms = ms;
@@ -529,7 +565,7 @@ void hc_asic_start_service(unsigned int ms)
                     hc_asic_run_ok++;
                     hc_asic_run_live = 1u;
                     *prep = PREP_CAPTURE;  /* snapshot it, then rebuild */
-                    if (run_initial < 2u) run_initial++;
+                    if (run_initial < TGT_UM_GRACE) run_initial++;
                     hc_asic_state = HC_ASIC_ST_RUNTIME_TX;
                 } else if (hc_asic_state == HC_ASIC_ST_WAIT1) {
                     /* PHASE ADVANCE: startup #1 accepted -> startup #2 NOW.
@@ -547,13 +583,26 @@ void hc_asic_start_service(unsigned int ms)
                     run_now = 1;
                 }
             } else {
-                if (hc_asic_state == HC_ASIC_ST_RUNTIME_WAIT)
+                if (hc_asic_state == HC_ASIC_ST_RUNTIME_WAIT) {
                     hc_asic_run_csum_err++;
-                else
+                    BAD[0]++;
+                    if (trg_rpm != 0u) BAD[1]++; else BAD[2]++;
+                    BAD[3] = hc_asic_last_calc;
+                    BAD[4] = hc_asic_last_recv;
+                    BAD[5] = hc_ssc_start_t7;
+                    BAD[6] = (unsigned int)T7;
+                    BAD[7] = ms;
+                    BAD[8] = trg_rpm;
+                    BAD[9] = 0u;
+                    BAD[10] = hc_asic_run_ok;
+                    BAD[11] = hc_umkom_last_rx;
+                    BAD[12] = hc_asic_last_ok_ms;
+                    *prep = PREP_BADCAP;   /* the frame, next idle step */
+                } else
                     hc_asic_start_csum_err++;
                 hc_asic_retries++;
                 hc_asic_state = (unsigned char)(hc_asic_state - 1u);
-                hc_asic_next_attempt = ms;         /* a RETRY waits out the period    */
+                hc_asic_next_attempt = fail_at;    /* the raster slot (above)         */
             }
             break;
         }
@@ -564,19 +613,11 @@ void hc_asic_start_service(unsigned int ms)
             else
                 hc_asic_start_timeout++;
             hc_asic_retries++;
-            if (hc_asic_state == HC_ASIC_ST_RUNTIME_WAIT) {
-                hc_lf_asic_complete(ms, (unsigned int)T7,
-                    FRAME[0], FRAME[1], FRAME[2], FRAME[3], 0u,
-                    FRAME[words_in_flight - 1u], 3u,
-                    (unsigned int)hc_asic_state,
-                    hc_ssc_pec_tx_left(), hc_ssc_pec_rx_left(),
-                    (unsigned int)(ms - phase_mark));
-            }
             /* Release the select so the ASIC sees a clean edge next time. */
             ASIC_CS_LATCH_S = 1;
             asic_abort_transfer();
             hc_asic_state = (unsigned char)(hc_asic_state - 1u);
-            hc_asic_next_attempt = ms;
+            hc_asic_next_attempt = fail_at;
             run_now = 0;
         }
         break;
@@ -593,3 +634,4 @@ unsigned char hc_asic_healthy(void)
         && (hc_asic_state == HC_ASIC_ST_RUNTIME_TX
             || hc_asic_state == HC_ASIC_ST_RUNTIME_WAIT));
 }
+#endif /* TGT_BOARD_VAG_ME75_DC */

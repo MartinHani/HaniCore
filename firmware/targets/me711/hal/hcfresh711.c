@@ -98,7 +98,7 @@ void far hc_fresh_service(void)
        while serial work delays the ordinary control raster. */
     /* This service also runs from serial yields. It only releases existing
        ownership; main-loop and serial yields share the guarded control raster. */
-    if (!(P6 & (1u << TGT_KL15STAT_PORT_BIT))) {
+    if (!TGT_KL15_ON()) {
         if (!hc_etbcal_supervise(ETB_WHY_NOTLIVE)
             && (hc_dbw_bridge_on_f() || hc_dbw_state() != DBW_OFF)) hc_dbw_shutdown(0u);
     } else if (!hc_fresh_ok(HC_AIN_TPS1) || !hc_fresh_ok(HC_AIN_TPS2)) {

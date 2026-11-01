@@ -91,7 +91,23 @@ class Rig(G.Rig):
                                          "hc_safety_inhibits")}
 
     def group(self, base, which, on):
-        self.call(G.sym("hc_hal_out_group"), (base, which, 1 if on else 0))
+        if on and G.owned_on():
+            # Since the deadline executor hc_hal_out_group() refuses engine
+            # ON; CC25 drives it through hc_hal_deadline_ports() with the
+            # resolved physical mask, and THAT is where the page validation
+            # and hc_ignition/injection_allowed are enforced. Unlike
+            # G.drive() this does NOT permit() - the permission under test is
+            # the one hc_safety_service() just set.
+            self.call(G.sym("hc_hal_out_group"), (base, which, 0))
+            tab = G.sym("hc_hal_actuator_route") & 0xFFFF
+            first = 0 if base == HC_OUT_IGN1 else 8
+            physical = 0
+            for i in range(8):
+                if which >> i & 1:
+                    physical |= self.rig.mem.r8(tab + first + i)
+            self.call(G.sym("hc_hal_deadline_ports"), (base, which, physical, 1))
+        else:
+            self.call(G.sym("hc_hal_out_group"), (base, which, 1 if on else 0))
         return self.dirs()
 
 

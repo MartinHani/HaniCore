@@ -9,7 +9,6 @@
 #include "hcasic.h"
 #include "hcasicframe.h"
 #include "hcasicstart.h"
-#include "hcasicdump.h"
 #include "hcpower.h"
 #include "hchal.h"
 #include "hchal_me711.h"
@@ -18,8 +17,7 @@
 #include "hcdeadline711.h"
 #include "hcbench.h"
 #include "hcnvm.h"
-#include "hcburnforensics.h"
-#include "hcliveforensics.h"
+#include "hcupd711.h"         /* the app-side OBD updater (P3); HC_UPDATER only */
 #include "hcsafety.h"
 #include "hcengine.h"
 #include "hcmainrelay.h"
@@ -176,31 +174,61 @@ sbit NLEN_FR_DIR   = DP3 ^ TGT_NLEN_FR_PORT_BIT;
  * serial drain: a bench image that resets is nearly always an image that armed
  * something it did not understand.
  */
+/* NMI: trap 2 and its time into the reset log (big-endian, the order
+   hcconfig.c's rst_u16() reads), then back. Nothing else: the V49 snapshot
+   that ran here is retired (2026-10-28), and the common trap stub would
+   cost 36 B more of the system stack at the deepest nest. */
+#define NMI_RSTLOG ((unsigned char volatile far *)                     (TGT_EXTRAM_BASE + TGT_RAM_CFG + TGT_RAM_RSTLOG))
+void hc_nmi_isr(void) interrupt 0x02
+{
+    NMI_RSTLOG[RST_TRAP] = 0u;
+    NMI_RSTLOG[RST_TRAP + 1u] = 0x02u;
+    NMI_RSTLOG[RST_TRAP_MS] = (unsigned char)(tick_ms >> 8);
+    NMI_RSTLOG[RST_TRAP_MS + 1u] = (unsigned char)(tick_ms & 0xFFu);
+}
+
 /* THE S5500 EXCHANGE (2026-10-13): requested by the 1 ms tick, one state
    transition per request - see TGT_TRAP_ASICX in hctarget.h and the note at
    the end of hc_tick_isr(). Same level as the planner, so its bank too. */
 void hc_asic_isr(void) interrupt TGT_TRAP_ASICX using PLANBANK
 {
     HC_PROBE_CLAIM(TGT_TRAP_ASICX);
+#if TGT_BOARD_VAG_ME75_DC
+    if (!hc_asic_up) {           /* boot: the 68HC05 monitor alone */
+        hc_asic_mon_service();
+        return;
+    }
+#endif
     hc_asic_start_service(tick_ms);
 }
 
-void hc_tick_isr(void) interrupt TGT_TRAP_T8INT using TICKBANK
+/* THE MILLISECOND (2026-10-28): T8's overflow at the crank's level, three
+   statements - see TGT_ILVL_MSTICK in hctarget.h. Level 12 shares the
+   crank's bank: none of its sources preempts another. */
+void hc_tick_isr(void) interrupt TGT_TRAP_T8INT using CRANKBANK
 {
-    unsigned int lf_now;
-    unsigned int lf_gap;
     HC_PROBE_CLAIM(TGT_TRAP_T8INT);
 
     /* NO SOFTWARE RELOAD HERE. See the note above; T8REL does it. */
-    lf_now = 0u;
-    if (hc_lf_fast_active != 0u)
-        lf_now = (unsigned int)T7;
     tick_ms++;
-    asic_tick();
+#if TGT_BOARD_VAG_ME75_DC
+    if (yield_armed || hc_asic_mon_on) {   /* the monitor runs from boot */
+#else
     if (yield_armed) {
+#endif
         /* THE S5500 EXCHANGE IS CLOCKED HERE (2026-10-13), not by the main
-           loop: see the note at the end of this routine. */
+           loop: see the note at the end of hc_slowtick_isr(). */
         TGT_ASICX_IR = 1;
+    }
+    TGT_SLOWTICK_IR = 1;
+}
+
+/* THE TICK'S BODY, unchanged, at the old tick level 8 (CC28 requested by
+   hc_tick_isr): a late or merged request costs this work, never the ms. */
+void hc_slowtick_isr(void) interrupt TGT_TRAP_SLOWTICK using TICKBANK
+{
+    HC_PROBE_CLAIM(TGT_TRAP_SLOWTICK);
+    if (yield_armed) {
         /* the K-line pin, exactly once a ms: fast-init wake-up timing */
         hc_kl_tick((unsigned char)((P3 & 0x0800u) ? 1u : 0u),
                    (unsigned char)DSTP6, tick_ms);
@@ -210,13 +238,6 @@ void hc_tick_isr(void) interrupt TGT_TRAP_T8INT using TICKBANK
     hc_tacho_tick();     /* re-arm the CC13 toggle after a match */
     if (rx_irq_mode) {
         hc_pecrx_tick(); /* K-line bytes PEC6 stored -> hcts ring */
-    }
-    if (hc_lf_fast_active != 0u) {
-        lf_gap = (unsigned int)(lf_now - HC_LF_WORD(LF_TICK_LAST_T7));
-        HC_LF_WORD(LF_TICK_LAST_T7) = lf_now;
-        HC_LF_WORD(LF_TICK_LAST_GAP) = lf_gap;
-        if (lf_gap > HC_LF_WORD(LF_TICK_MAX_GAP))
-            HC_LF_WORD(LF_TICK_MAX_GAP) = lf_gap;
     }
     /* THE S5500 EXCHANGE RUNS IN THIS TICK (2026-10-13). Until then it was
        "NOT serviced here ... it belongs in the main loop, where it cannot
@@ -464,6 +485,16 @@ static void dbw_poll(void)
                                        && hcb_state != HCB_RUNNING));
     }
 }
+/* the pass profile (stability issue 03, hcrtmon711.h TGT_RAM_PASSREC):
+   end segment `id` - its worst, and this pass's longest segment */
+static void pass_cp(unsigned char id)
+{
+    unsigned int n = (unsigned int)T7;
+    unsigned int d = (unsigned int)(n - HC_PASSREC[6]);
+    HC_PASSREC[6] = n;
+    if (d > HC_PASSREC[10u + id]) HC_PASSREC[10u + id] = d;
+    if (d > HC_PASSREC[8]) { HC_PASSREC[8] = d; HC_PASSREC[9] = id; }
+}
 #define SVC_BEGIN()   (svc_t = T7)
 #define SVC_END(f)    do { HC_RT_MAX(f, (unsigned int)(T7 - svc_t)); service_boundary(); } while (0)
 static void wdt_main(void)
@@ -498,7 +529,7 @@ static void service_boundary(void)
  * ?C_INIT, so until hc_asic_start_init() executes, hc_asic_state holds
  * WHATEVER THE RAM HELD. If that stale byte happened to be
  * HC_ASIC_ST_SSC_INIT, an unguarded yield would call asic_init() - bringing
- * the SSC up before hc_asicdump_salvage() and hc_power_hold_assert().
+ * the SSC up before hc_power_hold_assert().
  *
  * That is precisely the ordering the V12 salvage fix exists to protect (see
  * the comment at the salvage call site) and precisely the "do not reorder the
@@ -828,7 +859,6 @@ static void stage(unsigned int s)
 {
     boot_stage = s;
     hc_rst_stage(s);
-    hc_bf_boot_stage(s);
 }
 
 /* ============================================ the non-blocking heartbeat ===
@@ -944,18 +974,29 @@ void main(void)
 
     stage(BOOT_ENTRY);
     hc_rst_reset_raw(reset_raw);
-    /* This is after RESETDIAG has frozen the preceding run, but before ASC,
-       configuration, NVM and HCTS can clear any volatile transaction state. */
-    hc_bf_boot_early(reset_raw);
-    /* V49 freezes the preceding first-event record before configuration, NVM
-       recovery or runtime traffic can overwrite the evidence it describes. */
-    hc_lf_boot_early(reset_raw, hc_rst_get(RST_BOOTS));
-    /* and one record in the boot history, with KL15 as this boot sees
+    /* one record in the boot history, with KL15 as this boot sees
        it (P6.2 is an input from reset) - the key-off reset storm's trail. */
+#if TGT_BOARD_VAG_ME71_C4
+    /* KL15 is an ADC channel on this board (hctarget.h TGT_KL15_ON): one
+       synchronous conversion of AN12 now, so the boot history and the
+       run-on's "booted with the key off" rule read a real value before the
+       1 ms tick owns the converter. The timers are not running yet, so the
+       wait is bounded by count: a conversion at ADCON 0xF00C is ~50 us at
+       24 MHz and 3000 passes are well over a millisecond. */
+    {
+        unsigned int n = 3000u;
+        ADCON = 0xF000u | TGT_ADC_KL15_CH;
+        ADCIR = 0;
+        ADST = 1;
+        while ((ADBSY || !ADCIR) && --n) {
+        }
+        adc_raw[TGT_ADC_KL15_CH] = n ? ADDAT : 0u;
+        ADCIR = 0;
+    }
+#endif
     hc_io_boothist_boot(hc_rst_get(RST_BOOTS), reset_raw,
                         hc_rst_get(RST_PREV_MS), hc_rst_get(RST_PREV_STAGE),
-                        (unsigned char)((P6 & (1u << TGT_KL15STAT_PORT_BIT))
-                                        != 0u));
+                        (unsigned char)TGT_KL15_ON());
     stage(BOOT_RAM);
     stage(BOOT_WDT);
 
@@ -976,6 +1017,19 @@ void main(void)
     T8 = (unsigned int)(0u - TGT_TICK_RELOAD);
     T0 = 0;
     T1 = 0;
+#if TGT_BOARD_VAG_ME75_DC
+    /* THE 68HC05 MONITOR FIRST (bench 4B0906018DC, 2026-11-01). It resets
+       the CPU when the first answer has not come ~90 ms after reset, and
+       the boot below takes ~90 ms before the main loop (62 ms of it
+       hc_cfg_init() rebuilding a page) - the ECU reset every 118 ms. So the
+       monitor starts here, served by the 1 ms tick (T8) and its request
+       (CC27) and nothing else: the boot only READS flash, so no vector fetch
+       can meet a busy device, and fl_enter() masks both for a Burn. */
+    hc_asic_mon_early();
+    TGT_ASICX_IC = HC_IC(TGT_ILVL_ASICX, TGT_GLVL_ASICX);   /* hc_asic_isr */
+    T8IC = HC_IC(TGT_ILVL_MSTICK, TGT_GLVL_MSTICK);         /* the ms     */
+    IEN = 1;
+#endif
 
     /* --- ASC0 and the shared TunerStudio server ------------------------- */
     TXD0_LATCH = 1;
@@ -1043,6 +1097,12 @@ void main(void)
             OCHP[k] = 0u;
         }
     }
+#if HC_UPDATER
+    /* The updater control block is battery-backed too; a stale ERASING/WRITING
+       state would gate the store off for good after a power cycle. A boot means
+       any update was abandoned (or committed, in which case the loader ran). */
+    hc_upd_boot_reset();
+#endif
     stage(BOOT_CONFIG);
     cfg_fault_cache = hc_cfg_faults();
     cfg_fault_gen = 0;
@@ -1099,7 +1159,8 @@ void main(void)
        compiled in, every dangerous output already off and left off by the
        startup. Only now. */
     hc_rst_marker(DIAG_BEFORE_IEN);
-    T8IC = HC_IC(TGT_ILVL_TICK, 0);
+    TGT_SLOWTICK_IC = HC_IC(TGT_ILVL_TICK, 0);          /* the tick's body */
+    T8IC = HC_IC(TGT_ILVL_MSTICK, TGT_GLVL_MSTICK);     /* the millisecond */
     hcts_rx_arm();
     IEN = 1;
     hc_rst_marker(DIAG_AFTER_IEN);
@@ -1129,15 +1190,6 @@ void main(void)
        V3 showed it matters (it did not) but because the OEM does it in port
        init before EINIT, and correct platform state is worth keeping once it
        costs nothing. */
-    hc_asicdump_init();
-    /* salvage BEFORE hc_power_hold_assert()/hc_asic_start_init() can run.
-       hc_power_hold_assert() only ever touches P3.12 (see hcpower.c) but
-       hc_asic_start_init() zeroes every hc_asic_* counter this reads, and
-       nothing before this line has touched FRAME or those counters this
-       boot: the zero-list above stops at adc_raw[], irq_disable_all() only
-       clears interrupt-control SFRs, and start_me711.a66 has no bulk
-       RAM clear of any kind. See the maintainer's design notes. */
-    hc_asicdump_salvage(reset_raw);
     hc_power_hold_assert();
     hc_io_init();          /* ASIC images at the OEM idle values, run-on idle */
     hc_boost_init();       /* boost core idle, no cut */
@@ -1153,17 +1205,6 @@ void main(void)
     /* The ASIC state machine now owns its own state, so the serial waits may
        start servicing it. NOT ONE LINE EARLIER - see hcts_target_yield(). */
     yield_armed = 1;
-    /* ONE chunk of the frozen ASIC reply per boot. The ECU resets every
-       ~310 ms on its own, so ~4 seconds of that yields both complete 96-word
-       frames in order. Printed EARLY, before the liveness lines, so a chunk is
-       never lost to the deadline. */
-    /* hc_asicdump_print() is NOT called any more - it transmitted
-       unsolicited "HCE/HCDM/HCD/HCPM ..." lines on the real K-line with no
-       host request behind them (same real-hardware trace that found
-       reset_report()/banner()/step_line() doing the same thing - see the
-       comment where those used to be defined). The salvage it would have
-       printed is still captured by hc_asicdump_salvage() above and still
-       sits in battery-backed SRAM; only the automatic K-line dump is gone. */
     hc_rst_marker(DIAG_ASIC_ISOLATED);
     hc_rst_cond((unsigned int)hc_asic_state);
     stage(BOOT_ASIC);
@@ -1177,10 +1218,16 @@ void main(void)
     alive_mark = tick_ms;
     rst_mark = tick_ms;
     hc_rst_publish();
+    HC_PASSREC[6] = (unsigned int)T7;   /* the profile starts here, */
+    HC_PASSREC[7] = tick_ms;            /* not at init (the boot)   */
 
     for (;;) {
         wdt_main();
         HC_RT_MAX(pass_max, (unsigned int)(T7 - pass_t));
+        /* the pass profile (stability issue 03): segment 0 is the tail of
+           the pass that just ended; pass_cp(n) ends segment n below */
+        pass_cp(0u);
+        hc_pass_begin(tick_ms, (unsigned int)(T7 - pass_t));
         pass_t = T7;
 
         /* hb_service() is NOT called any more. The unsolicited "H\n"
@@ -1200,18 +1247,20 @@ void main(void)
             hc_stall_req = 0;
             hcts_stall(ms);
         }
+        pass_cp(1u);
 
         SVC_BEGIN();
         hcts_poll();
         hcts_service();
         SVC_END(svc_comms);
+        pass_cp(2u);
         /* the 5-baud decoder and the KWP session (P3.11 = RXD0) */
         hc_kwp_service(tick_ms);   /* the tick samples the pin */
+        pass_cp(3u);
 
         hc_knock_service(tick_ms);  /* V97; KI via the tick (hc_ki_req) */
         wdt_main();
-
-        asic_service();
+        pass_cp(18u);
 
         hcts_poll();
         loop_count++;
@@ -1222,6 +1271,7 @@ void main(void)
             rst_mark = tick_ms;
             hc_rst_publish();
         }
+        pass_cp(19u);
 
         /* The page is only acted on once it has stopped moving. TunerStudio
            writes a 16-bit value as two separate one-byte writes, and between
@@ -1244,6 +1294,7 @@ void main(void)
                 }
             }
         }
+        pass_cp(20u);
 
         /* Telemetry on a 40 ms raster off the 1 ms tick, and RESETDIAG's
            liveness line every 100 ms until somebody talks to us. hc_trace_on is
@@ -1279,12 +1330,15 @@ void main(void)
         trg_service();
         hc_tl_service(tick_ms);              /* tooth profile test */
         hc_drysched_overdwell_service(T1);   /* max dwell, 1 ms gated */
+        pass_cp(4u);
         SVC_BEGIN();
         eng_acquire();
         SVC_END(svc_eng);
+        pass_cp(5u);
         SVC_BEGIN();
         eng_calculate();
         SVC_END(svc_eng);
+        pass_cp(6u);
         /* YIELD POINTS INSIDE THE PASS. The V97 services (idle, limp,
            DTC, boost, both wideband banks) made one main-loop pass up to
            8.6 ms between two S5500 services - over the 6.5 ms share of the
@@ -1295,6 +1349,7 @@ void main(void)
            two compares otherwise. Profiled on c167sim: eng_service 1.8 ms,
            the V97 block ~1.3 ms, hc_boost_service 0.8 ms of it. */
         hcts_target_yield();
+        pass_cp(7u);
 
         /* The RPM-zero transaction.
          *
@@ -1313,6 +1368,7 @@ void main(void)
         hc_preset_cmd_service_cold();  /* staged preset/calibration work */
         hc_route_service();   /* no-op unless the configuration moved */
         SVC_END(svc_other);
+        pass_cp(8u);
         /* Not inside a measured stretch: the yield runs its own DBW step and
            watchdog service (and the S5500 start service the 10 ms raster needs). */
         hcts_target_yield();          /* a re-route is 1.2-1.7 ms (APPLY) */
@@ -1335,6 +1391,7 @@ void main(void)
             (void)hc_cfg_mgr_seed_step();
         }
         SVC_END(svc_other);
+        pass_cp(9u);
         /* THE CONTROLLED KEY-OFF. KL15 is the CJ910's own ST/IGN line
            (P6.2). With the native main relay routed (bound = 2) the far
            module asserts run-on the pass KL15 drops, and until it releases
@@ -1342,8 +1399,8 @@ void main(void)
            is the one lever every output class already obeys - spark, fuel,
            pump, throttle. A Burn or an erase in flight holds the release. */
         io_ro = hc_io_runon_service(tick_ms,
-                    (unsigned char)((P6 & (1u << TGT_KL15STAT_PORT_BIT)) != 0u),
-                    (unsigned char)(hc_hal_main_relay_bound() == 2u),
+                    (unsigned char)TGT_KL15_ON(),
+                    (unsigned char)TGT_RUNON_ENABLED(),
                     (unsigned char)(hc_nvm_word_owned()
                                     || hc_cfg_mgr_burn_pending()
                                     || hc_nvm_phase() != HCNV_PH_NONE
@@ -1426,16 +1483,19 @@ void main(void)
         /* The bridge PWM frequency follows its page field here, so a change
            takes effect and becomes visible without driving the plate. */
         hc_hal_dbw_pwm_poll();
+        pass_cp(10u);
         SVC_BEGIN();
         hc_idle_service(tick_ms);   /* the throttle floor hc_dbw uses */
         hc_vvt_service(tick_ms);    /* cam phase control */
         SVC_END(svc_other);
+        pass_cp(11u);
         SVC_BEGIN();
         hc_limp_service(tick_ms);   /* engine protection fuel cuts */
         hc_dtc_service(tick_ms);    /* trouble codes + MIL request */
         hc_cel_service(tick_ms,     /* lamp test + MIL (policy only) */
                        (unsigned char)((io_ro & HC_RO_F_KEYOFF) == 0u));
         SVC_END(svc_other);
+        pass_cp(12u);
         hcts_target_yield();          /* the services above are one
                                          stretch - me711_preset_gap_proof */
         hc_dbw_key((unsigned char)((io_ro & HC_RO_F_KEYOFF) == 0u), trg_rpm);
@@ -1444,6 +1504,7 @@ void main(void)
                        (unsigned char)(hc_dbw_allowed != 0u
                                        && hcb_state != HCB_RUNNING));
         SVC_END(svc_dbw);
+        pass_cp(13u);
         /* Background control yields retain engine interrupt priority;
            DBW and watchdog progress at the adjacent service boundaries. */
 
@@ -1461,6 +1522,7 @@ void main(void)
                              (unsigned char)(trg_rpm != 0u
                                              && trg_state >= TRG_SYNC_CRANK));
         SVC_END(svc_lambda);
+        pass_cp(14u);
         /* boost control (hcboost711.c, FCODE; the shared hcldr core):
            open or closed loop, and the overboost FUEL cut
            (ENG_CUT_BOOST), judged whether or not boost is enabled. */
@@ -1475,6 +1537,7 @@ void main(void)
         hc_io_test_service(tick_ms);
         hcts_target_yield();          /* see the yield after eng_service() */
         hc_serial_boundary();
+        pass_cp(15u);
 
         /* THE NON-VOLATILE COMMIT. It may only begin while these safety facts
            say the stopped ECU can tolerate a bounded flash-program slice.
@@ -1494,11 +1557,25 @@ void main(void)
                                     && trg_state == TRG_NO_SIGNAL))) {
             (void)hc_nvm_request();  /* the Burn owed since the engine ran */
         }
+#if HC_UPDATER
+        /* An update and the store share the one relocation slot and the ER
+           block, so they must never run in the same pass. While an update owns
+           the flash machinery the store is gated OFF and the updater driver
+           takes the slice instead; the engine is stopped throughout. */
+        if (hc_upd_active()) {
+            hc_upd_service(tick_ms, trg_rpm,
+                       (unsigned char)(trg_state >= TRG_COUNTING),
+                       (unsigned char)(hcb_state == HCB_RUNNING || (hc_etbcal_status() & 0x00F0u)
+                                       || hc_dbw_bridge_on() || (trg_rpm==0u && hc_dl_count)),
+                       hc_cfg_stable);
+        } else
+#endif
         hc_nvm_service(tick_ms, trg_rpm,
                        (unsigned char)(trg_state >= TRG_COUNTING),
                        (unsigned char)(hcb_state == HCB_RUNNING || (hc_etbcal_status() & 0x00F0u)
                                        || hc_dbw_bridge_on() || (trg_rpm==0u && hc_dl_count)),
                        hc_cfg_stable);
+        pass_cp(16u);
 
         /* THE S5500 WINDOW, MOVED BY AN ORDINARY PAGE EDIT.
          *
@@ -1536,8 +1613,10 @@ void main(void)
             if (hc_diag_publish_step()) och_cycle = 0u;
             SVC_END(svc_diag);
         }
+        pass_cp(17u);
         hc_rtmon_service(tick_ms);
         HC_RT.dbw_gap_max = hc_dbw_gap_max();
+        pass_cp(21u);
         /* alive_line() IS NOT CALLED HERE ANY MORE. See the paragraph above
            the function's definition for why, and do not resurrect a call to
            it from this loop without a non-blocking replacement.

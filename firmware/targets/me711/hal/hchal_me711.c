@@ -477,7 +477,7 @@ void hc_hal_trig_disarm(void)
  * THE CONDITIONS FOR AN ON, and all are required (V84 - there is no longer a
  * user-facing arm; CFG_OUTPUTS_ARMED is a retired page byte):
  *
- *   1. the back end is compiled in           - HANICORE_BENCH_SAFE absent
+ *   1. the back end is compiled in (always, since V63)
  *   2. the CLASS is permitted by hcsafety.c  - spark/fuel need the crank;
  *                                              throttle/pump/relay need only
  *                                              the ALWAYS set (link, page,
@@ -533,6 +533,8 @@ void hc_hal_trig_disarm(void)
 #define OP_P2     2u
 #define OP_P7     7u
 #define OP_P8     8u
+#define OP_P3     3u            /* the ME7.5 DC's pump relay (P3.7)      */
+#define OP_P4     4u            /* the 2.7T C4 board's pump relay (P4.4) */
 
 /* A configured CAVITY resolved to (port, bitno). The mapping is the one the
    descriptor and tools/config_source/data/me711_iomap.csv carry, where both ME7.1.1
@@ -599,10 +601,17 @@ static unsigned char out_cavity_of(unsigned char sem)
 
 static unsigned char stage_active_high(unsigned char port, unsigned char bitno)
 {
+#if TGT_BOARD_VAG_ME71_C4
+    if (port == OP_P4 || port == OP_P3) {
+        return (unsigned char)TGT_EKP_ACTIVE_HIGH;      /* the pump */
+    }
+#endif
     if (port == OP_P2) {
+#if !TGT_BOARD_VAG_ME71_C4
         if (bitno == (unsigned char)TGT_EKP_PORT_BIT) {
             return (unsigned char)TGT_EKP_ACTIVE_HIGH;
         }
+#endif
         if (bitno < 8u) {
             return (unsigned char)TGT_IGN_ACTIVE_HIGH;   /* ZUE1..8 */
         }
@@ -636,6 +645,11 @@ static void port_set_dir(unsigned char port, unsigned char bitno,
     if (port == OP_P2) { if (is_out) DP2 |= m; else DP2 &= (unsigned int)~m; }
     else if (port == OP_P7) { if (is_out) DP7 |= m; else DP7 &= (unsigned int)~m; }
     else if (port == OP_P8) { if (is_out) DP8 |= m; else DP8 &= (unsigned int)~m; }
+#if TGT_BOARD_VAG_ME75_DC
+    else if (port == OP_P3) { if (is_out) DP3 |= m; else DP3 &= (unsigned int)~m; }
+#elif TGT_BOARD_VAG_ME71_C4
+    else if (port == OP_P4) { if (is_out) DP4 |= m; else DP4 &= (unsigned int)~m; }
+#endif
 }
 
 /* Is this pin an OUTPUT right now? Read from the direction register itself,
@@ -646,6 +660,11 @@ static unsigned char port_is_output(unsigned char port, unsigned char bitno)
     if (port == OP_P2) { return (unsigned char)((DP2 & m) ? 1u : 0u); }
     if (port == OP_P7) { return (unsigned char)((DP7 & m) ? 1u : 0u); }
     if (port == OP_P8) { return (unsigned char)((DP8 & m) ? 1u : 0u); }
+#if TGT_BOARD_VAG_ME75_DC
+    if (port == OP_P3) { return (unsigned char)((DP3 & m) ? 1u : 0u); }
+#elif TGT_BOARD_VAG_ME71_C4
+    if (port == OP_P4) { return (unsigned char)((DP4 & m) ? 1u : 0u); }
+#endif
     return 0u;
 }
 
@@ -656,6 +675,11 @@ static void port_write(unsigned char port, unsigned char bitno,
     if (port == OP_P2) { if (level) P2 |= m; else P2 &= (unsigned int)~m; }
     else if (port == OP_P7) { if (level) P7 |= m; else P7 &= (unsigned int)~m; }
     else if (port == OP_P8) { if (level) P8 |= m; else P8 &= (unsigned int)~m; }
+#if TGT_BOARD_VAG_ME75_DC
+    else if (port == OP_P3) { if (level) P3 |= m; else P3 &= (unsigned int)~m; }
+#elif TGT_BOARD_VAG_ME71_C4
+    else if (port == OP_P4) { if (level) P4 |= m; else P4 &= (unsigned int)~m; }
+#endif
 }
 
 /* EVERY ENGINE OUTPUT TO HIGH IMPEDANCE, unconditionally and without reading
@@ -690,6 +714,13 @@ void hc_hal_outputs_safe(void)
     port_write(OP_P2, (unsigned char)TGT_DBW_EN_PORT_BIT,
                (unsigned char)!TGT_DBW_EN_ACTIVE_HIGH);   /* inactive */
     port_set_dir(OP_P2, (unsigned char)TGT_DBW_EN_PORT_BIT, 0u);
+#if TGT_BOARD_VAG_ME71_C4
+    /* the N75 on POUT1: inactive latch, pin back to the latch, released */
+    P7 |= 0x0002u;
+    PWMCON1 &= (unsigned int)~0x0002u;
+    DP7 &= (unsigned int)~0x0002u;
+    PWMCON0 &= (unsigned int)~0x0022u;
+#endif
 }
 
 
@@ -756,8 +787,21 @@ static void out_routes_resolve(void)
        NEW route. Routing only changes with the engine stopped. */
     if (different && hc_dl_count) hc_drysched_abort(0u);
     for (i = 0u; i < OUT_HOT_N; i++) hc_hal_actuator_route[i] = candidate[i];
-    out_route_rev = hc_cfg_active_rev;
     PSW = (unsigned int)((PSW & 0x0FFFu) | ps);
+    /* The executor's every-lane summary of the same table, outside the lock
+       (it was 94 us of ILVL 13 inside it): each byte is written once with its
+       final value, and a changed table has no pending edge (the abort above).
+       The revision follows, so a planner run in between resolves again. */
+    {
+        unsigned char l0 = 0u, l1 = 0u, p0 = 0u, p1 = 0u, m = 1u;
+        for (i = 0u; i < 8u; i++, m <<= 1) {
+            if (candidate[i]) { l0 |= m; p0 |= candidate[i]; }
+            if (candidate[i + 8u]) { l1 |= m; p1 |= candidate[i + 8u]; }
+        }
+        hc_dl_route_lanes[0] = l0; hc_dl_route_phys[0] = p0;
+        hc_dl_route_lanes[1] = l1; hc_dl_route_phys[1] = p1;
+    }
+    out_route_rev = hc_cfg_active_rev;
 }
 
 void far hc_hal_deadline_prepare_f(void)
@@ -771,12 +815,6 @@ unsigned int hc_hal_out_mask_inj(void) { return out_on_inj; }
 
 unsigned char hc_hal_outputs_live(void)
 {
-#ifdef HANICORE_BENCH_SAFE
-    /* The compile-time veto still exists and still wins. It is no longer an
-       #error, because the thing it used to assert - that there is no back end
-       - is no longer true. */
-    return 0u;
-#else
     /* THE PERMISSION LAYER IS hcsafety.c AND IT IS NOT DUPLICATED HERE.
        It weighs ASIC health, calibration, key-off, crank and cycle, and it
        is the one place that decides. This asks it.
@@ -796,7 +834,6 @@ unsigned char hc_hal_outputs_live(void)
         return 0u;
     }
     return 1u;
-#endif
 }
 
 /* Per-class permission, for the callers that should ask a narrower question
@@ -1120,6 +1157,44 @@ void hc_hal_dbw_pwm_poll(void)
  * H/L forward, L/H reverse, L/L and H/H freewheel, an open input reads HIGH.
  * Which of forward/reverse OPENS a given throttle body is still the page's
  * dbwMotorDir, and 117/118 on a divided logic-analyser channel is the check. */
+#if TGT_BOARD_VAG_ME71_C4
+/* POUT1 (P7.1 -> CJ920 -> cavity 104, the N75 on the 2.7T board) as edge
+   PWM at fCPU/64. The CJ920 inverts (pin LOW = stage ON) and PWM mode 0 is
+   HIGH while PT >= PW, so with the latch 0 the stage is ON for PW of PP+1
+   counts: ON duty = PW / (PP + 1). OFF writes the inactive latch first,
+   then gives the pin back to the latch, then releases it. */
+static unsigned char pout1_on;
+static void pout1_set(unsigned int duty_x10, unsigned int hz)
+{
+    unsigned int pp, pw;
+    if (hz < 10u) hz = 30u;
+    if (hz > 1000u) hz = 1000u;
+    pp = (unsigned int)(((unsigned int)(TGT_PWM_SLOW_HZ / 10uL) / hz) * 10u);
+    if (duty_x10 > 1000u) duty_x10 = 1000u;
+    pw = (unsigned int)(((unsigned long)duty_x10 * pp) / 1000u);
+    if (pw == 0u) {
+        if (pout1_on) {
+            P7 |= 0x0002u;                  /* inactive level first  */
+            PWMCON1 &= (unsigned int)~0x0002u;
+            DP7 &= (unsigned int)~0x0002u;  /* released: stage OFF   */
+            PWMCON0 &= (unsigned int)~0x0022u;
+            pout1_on = 0u;
+        }
+        return;
+    }
+    PP1 = (unsigned int)(pp - 1u);
+    PW1 = pw;
+    if (!pout1_on) {
+        P7 &= (unsigned int)~0x0002u;       /* latch 0: pin = PWM    */
+        PT1 = 0u;
+        PWMCON0 |= 0x0022u;                 /* PTR1 run, PTI1 fCPU/64 */
+        PWMCON1 |= 0x0002u;                 /* POUT1 drives the pin  */
+        DP7 |= 0x0002u;
+        pout1_on = 1u;
+    }
+}
+#endif
+
 void hc_hal_out_duty(unsigned char sem, unsigned int duty_x10)
 {
     unsigned long pw;
@@ -1132,12 +1207,20 @@ void hc_hal_out_duty(unsigned char sem, unsigned int duty_x10)
     hc_hal_out_calls++;
 
     if (sem == HC_OUT_BOOST) {
+#if !TGT_BOARD_VAG_ME71_C4
         /* cavity 104 is the peripheral ASIC's LDR stage (ASIC P7.2),
            reached through the frame's port image - hcio711.c. Any other
            cavity, or no permission, commands it OFF. */
         hc_io_duty(HC_IO_LDR,
                    (hc_cal_u8(CFG_U_PIN_BOOST) == TGT_LDR_CAV
                     && hc_hal_out_class_live(sem)) ? duty_x10 : 0u);
+#else
+        /* the 2.7T C4 board: cavity 104 is the MAIN CPU's POUT1, real
+           hardware PWM at boostFreqHz (the OEM runs 30 Hz) */
+        pout1_set((hc_cal_u8(CFG_U_PIN_BOOST) == TGT_LDR_CAV
+                   && hc_hal_out_class_live(sem)) ? duty_x10 : 0u,
+                  hc_cal_u16(CAL_BOOST_FREQ_HZ));
+#endif
         return;
     }
     if (sem != HC_OUT_THR_PWM || !hc_hal_out_class_live(sem)) {
@@ -1263,6 +1346,11 @@ static unsigned char port_is_driven_active(unsigned char port,
     if (port == OP_P2) { dir = DP2 & m; lvl = P2 & m; }
     else if (port == OP_P7) { dir = DP7 & m; lvl = P7 & m; }
     else if (port == OP_P8) { dir = DP8 & m; lvl = P8 & m; }
+#if TGT_BOARD_VAG_ME75_DC
+    else if (port == OP_P3) { dir = DP3 & m; lvl = P3 & m; }
+#elif TGT_BOARD_VAG_ME71_C4
+    else if (port == OP_P4) { dir = DP4 & m; lvl = P4 & m; }
+#endif
     if (!dir) {
         return 0u;
     }
@@ -1346,7 +1434,16 @@ unsigned char hc_hal_out_bindable(unsigned int field, unsigned char cav)
     }
     if (field == CFG_U_PIN_CAM1_SOL || field == CFG_U_PIN_CAM2_SOL) {
         /* POUT0 / POUT1 (hcvvt711.c) */
-        return (unsigned char)((cav == 115u || cav == 120u) ? 1u : 0u);
+        return (unsigned char)((cav == TGT_POUT0_CAV || cav == TGT_POUT1_CAV
+#ifdef TGT_NWS_ASIC_CAV
+                                || cav == TGT_NWS_ASIC_CAV
+#endif
+                                ) ? 1u : 0u);
+    }
+    if (field == CFG_U_PIN_IDLE_VALVE || field == CFG_U_PIN_IDLE_VALVE2) {
+        /* POUT0 / POUT1 only (hcidle711.c): a valve needs a real PWM unit */
+        return (unsigned char)((cav == TGT_POUT0_CAV || cav == TGT_POUT1_CAV)
+                               ? 1u : 0u);
     }
     if (field == CFG_U_PIN_MAIN_RELAY
         && hc_pin_can(cav, HC_PINCAP_MAIN_RELAY_HW)) {
@@ -1386,7 +1483,7 @@ unsigned char hc_hal_main_relay_driven(void)
 {
     unsigned char port, bitno;
     if (hc_hal_main_relay_bound() == 2u) {
-        return (unsigned char)((P6 & (1u << TGT_KL15STAT_PORT_BIT)) ? 1u : 0u);
+        return (unsigned char)(TGT_KL15_ON() ? 1u : 0u);
     }
     if (HC_PIN_IS_UNASSIGNED(relay_driven_cav)) {
         return 0u;
@@ -1424,6 +1521,9 @@ void hc_hal_init(void)
        holds from reset onwards, and that is only true if nothing gets to run
        in front of it. */
     hc_hal_outputs_safe();
+#if TGT_BOARD_VAG_ME71_C4
+    pout1_on = 0u;                    /* released just above; no ?C_INIT */
+#endif
     /* start_me711.a66 never runs Keil's ?C_INIT, so these start at whatever
        the SRAM held. 0xFFFF forces the first call to read the page. */
     out_route_rev = 0xFFFFu;
@@ -1438,6 +1538,8 @@ void hc_hal_init(void)
     for (i = 0; i < (unsigned char)OUT_HOT_N; i++) {
         hc_hal_actuator_route[i] = OUT_UNROUTED;
     }
+    hc_dl_route_lanes[0] = hc_dl_route_lanes[1] = 0u;
+    hc_dl_route_phys[0] = hc_dl_route_phys[1] = 0u;
 
     /* start_me711.a66 hands straight to main() and never runs Keil's
        ?C_INIT, so NOTHING here starts at a known value. Every one of these is

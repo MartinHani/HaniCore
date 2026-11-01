@@ -15,7 +15,7 @@ py tests\run_gates.py --list -k <text>
 |---|---|
 | `host/` | portable C cores on a PC compiler, with negative controls |
 | `firmware/<subsystem>/` | the linked image in the C167 simulator, or its map and bytes |
-| `tunerstudio/` | the generated `.ini` against TunerStudio's rules and the firmware |
+| `tuning/` | the generated `.ini` against the INI format's rules and the firmware |
 | `unit/` | tools and test suites |
 | `simulator/` | the simulator's own models |
 | `physical/` | hardware-in-the-loop checks on a real ECU; never run by a tier |
