@@ -674,7 +674,8 @@ def build_27t_page(dbw=True, edits=()):
     import me711_config_state_test as T
     import me711_preset_apply_proof as AP
     r = T.boot()
-    AP.press_apply(r, 6)
+    import hc_board as _HBD          # the ME7.5 DC has the 1.8T tune (preset 1), not the 2.7T's
+    AP.press_apply(r, 1 if _HBD.IS_DC else 6)
     AP.service(r)
     assert AP.och(r, 764) & 0xFF == 1, "APPLY refused"
     assert r("hc_cfg_mgr_commit_burn", 1, steps=60_000_000) == 0
@@ -699,7 +700,7 @@ def build_27t_page(dbw=True, edits=()):
     r("hc_cfg_commit", steps=20_000_000)
     blob = bytes(r.m.r8(0x380000 + i) for i in range(12 + 4096))
     o = AP.off("CFG_U_DISPLACEMENT_CC")
-    assert (blob[12 + o] << 8) | blob[13 + o] == 2671, "displacement lost"
+    assert (blob[12 + o] << 8) | blob[13 + o] == (1781 if _HBD.IS_DC else 2671), "displacement lost"
     return blob
 
 

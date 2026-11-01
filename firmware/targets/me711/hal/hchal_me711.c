@@ -1271,8 +1271,13 @@ void hc_hal_out_duty(unsigned char sem, unsigned int duty_x10)
  * means no other module can leave this pin an output and turn a fault
  * indication into a driven line.
  */
+#if TGT_DBW_SF_PORT_NO == 2
+sbit DBW_SF_PIN = P2  ^ TGT_DBW_SF_PORT_BIT;    /* the DC: P2.9 */
+sbit DBW_SF_DIR = DP2 ^ TGT_DBW_SF_PORT_BIT;
+#else
 sbit DBW_SF_PIN = P3  ^ TGT_DBW_SF_PORT_BIT;
 sbit DBW_SF_DIR = DP3 ^ TGT_DBW_SF_PORT_BIT;
+#endif
 
 unsigned char hc_hal_dbw_sf_level(void)
 {

@@ -735,7 +735,8 @@ typedef struct {
     const unsigned char HC_PRESET_MEM *runs;
     unsigned int  n_items;    /* values set (fields x elements), for tools */
     unsigned int  target_id;  /* 0 = any board; else hc_pin_target_id */
-    unsigned char board_default; /* 1 = this board's fresh-page routing */
+    unsigned char board_default; /* 1 = this board's fresh-page routing,
+                                    2 = its fresh-page engine base tune */
     unsigned int  n_bytes;    /* length of runs[] */
 } hc_preset_t;
 
@@ -749,6 +750,10 @@ extern const unsigned char hc_engine_preset_count;
  * Nothing branches on it at runtime and every value it writes stays editable.
  * What it is FOR is the seed: see hc_preset_apply_engine_active(). */
 unsigned char HC_COLD hc_preset_board_default_id(void);
+
+/* THE BOARD'S ENGINE BASE TUNE for a fresh page (owner, 2026-11-02), applied
+ * after the routing above, or 0 if this board declares none. */
+unsigned char HC_COLD hc_preset_fresh_tune_id(void);
 
 /* Apply a preset to the ACTIVE calibration page rather than to DESIRED.
  *
@@ -790,12 +795,30 @@ unsigned char HC_COLD hc_preset_apply_engine(unsigned char id, unsigned int rpm)
 """
 
 PRESET_C_TAIL = R"""
+static unsigned char HC_COLD preset_flagged(unsigned char flag)
+{
+    unsigned char i;
+
+    for (i = 0u; i < hc_engine_preset_count; i++) {
+        if (hc_engine_presets[i].board_default == flag
+            && hc_engine_presets[i].target_id == hc_pin_target_id) {
+            return hc_engine_presets[i].id;
+        }
+    }
+    return 0u;
+}
+
+unsigned char HC_COLD hc_preset_fresh_tune_id(void)
+{
+    return preset_flagged(2u);
+}
+
 unsigned char HC_COLD hc_preset_board_default_id(void)
 {
     unsigned char i;
 
     for (i = 0u; i < hc_engine_preset_count; i++) {
-        if (hc_engine_presets[i].board_default
+        if (hc_engine_presets[i].board_default == 1u
             && hc_engine_presets[i].target_id == hc_pin_target_id) {
             return hc_engine_presets[i].id;
         }
@@ -1024,7 +1047,8 @@ def gen_presets(fields):
     per_board = {0: 0, 1: 0, 2: 0}
     for pr in PRESETS.ENGINE_PRESETS:
         n = counts[pr.key]
-        bd = 1 if getattr(pr, "board_default", False) else 0
+        bd = (1 if getattr(pr, "board_default", False)
+              else 2 if getattr(pr, "fresh_tune", False) else 0)
         g = _board_guard(pr.target)
         for b in per_board:
             if not g or g in _GUARD_ON[b]:
@@ -1034,7 +1058,8 @@ def gen_presets(fields):
         if n:
             a("    { %du, runs_%s, %du, %s, %du, %du }, /* %s%s */"
               % (pr.ident, pr.key.lower(), n, _target_expr(pr.target), bd,
-                 nbytes_of[pr.key], pr.name, " - BOARD DEFAULT" if bd else ""))
+                 nbytes_of[pr.key], pr.name,
+                 {1: " - BOARD DEFAULT", 2: " - FRESH-PAGE TUNE"}.get(bd, "")))
         else:
             a("    { %du, 0, 0u, 0u, %du, 0u }, /* %s - populates nothing by design */"
               % (pr.ident, bd, pr.name))
@@ -1066,6 +1091,17 @@ def gen_presets(fields):
     dupes = {t_: k for t_, k in per_target.items() if len(k) > 1}
     if dupes:
         raise SystemExit("more than one board_default preset per target: %s"
+                         % dupes)
+    fresh = {}
+    for pr in PRESETS.ENGINE_PRESETS:
+        if getattr(pr, "fresh_tune", False):
+            if getattr(pr, "board_default", False):
+                raise SystemExit("%s is both board_default and fresh_tune"
+                                 % pr.key)
+            fresh.setdefault(pr.target, []).append(pr.key)
+    dupes = {t_: k for t_, k in fresh.items() if len(k) > 1}
+    if dupes:
+        raise SystemExit("more than one fresh_tune preset per target: %s"
                          % dupes)
     a(PRESET_C_TAIL)
     return "\n".join(w) + "\n"

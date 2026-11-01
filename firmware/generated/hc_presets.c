@@ -10844,12 +10844,30 @@ const unsigned char hc_engine_preset_count = 4u;
 #endif
 
 
+static unsigned char HC_COLD preset_flagged(unsigned char flag)
+{
+    unsigned char i;
+
+    for (i = 0u; i < hc_engine_preset_count; i++) {
+        if (hc_engine_presets[i].board_default == flag
+            && hc_engine_presets[i].target_id == hc_pin_target_id) {
+            return hc_engine_presets[i].id;
+        }
+    }
+    return 0u;
+}
+
+unsigned char HC_COLD hc_preset_fresh_tune_id(void)
+{
+    return preset_flagged(2u);
+}
+
 unsigned char HC_COLD hc_preset_board_default_id(void)
 {
     unsigned char i;
 
     for (i = 0u; i < hc_engine_preset_count; i++) {
-        if (hc_engine_presets[i].board_default
+        if (hc_engine_presets[i].board_default == 1u
             && hc_engine_presets[i].target_id == hc_pin_target_id) {
             return hc_engine_presets[i].id;
         }

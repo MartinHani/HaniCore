@@ -165,6 +165,35 @@ def main():
         ck("%-22s = %3d" % (name, want), got[name] == want,
            "%s (read %d)" % (why, got[name]))
 
+    # 2026-11-02 (owner): on top of the routing, a fresh page is the board's
+    # ENGINE base tune (hanicore_presets fresh_tune) - the 2.7T board the
+    # 2.7T, the Porsche and the ME7.5 the 1.8T; the 4F assumes no engine.
+    import hc_board as HB
+    import hanicore_presets as PR
+    tgt = ("ME75_4B0906018DC" if HB.IS_DC else "VAG_ME71_C4" if HB.IS_C4
+           else "BOSCH_ME711")
+    tune = [x for x in PR.ENGINE_PRESETS
+            if getattr(x, "fresh_tune", False) and x.target == tgt]
+    r = T.boot()
+    preset = r.active(off("CFG_U_ENGINE_PRESET"))
+    if HB.IS_4F or not tune:
+        ck("no engine tune on a fresh page (this board names none)",
+           preset == [x for x in PR.ENGINE_PRESETS if x.board_default
+                      and x.target == tgt][0].ident,
+           "enginePreset %d" % preset)
+    else:
+        tune = tune[0]
+        cyl = r.active(T.O["CFG_CYLINDERS"])
+        ck("the fresh page IS the board's base tune (enginePreset)",
+           preset == tune.ident, "%s: read %d, want %d"
+           % (tune.name, preset, tune.ident))
+        want_cyl = tune.values["cylinders"].value
+        ck("...and describes its engine (cylinders)", cyl == want_cyl,
+           "read %d, want %d" % (cyl, want_cyl))
+        dbw = r.active(T.O["CAL_DBW_ENABLE"])
+        ck("...with the electronic throttle OFF", dbw == 0,
+           "dbwEnable %d" % dbw)
+
     ck("a fresh page PASSES hc_validate()", rc == T.VAL["HC_VAL_OK"],
        "rc = 0x%04X%s" % (rc, "" if rc == T.VAL["HC_VAL_OK"]
                           else " - " + faults(rc)))

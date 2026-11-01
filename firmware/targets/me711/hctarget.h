@@ -2097,6 +2097,7 @@ extern unsigned int adc_raw[];
 #define TGT_DBW_DIR_PORT_BIT   7        /* P7.7  -> S8100 IN2 */
 #define TGT_DBW_EN_PORT_BIT   11        /* P2.11 -> S8100 DI1 */
 #define TGT_DBW_SF_PORT_BIT   15        /* P3.15 <- S8100 SF  */
+#define TGT_DBW_SF_PORT_NO     3        /* SF is on P3 (the DC overrides) */
 
 /* V83. EGENFR IS ACTIVE LOW. THE BRIDGE IS PERMITTED ONLY WHILE P2.11 IS LOW.
  *
@@ -2358,6 +2359,16 @@ extern volatile unsigned char hc_probe_sink;
    cavity 5), post-cat on P2.4 (`NOT B_hshe`, active LOW -> cavity 63) */
 #define TGT_DC_LSU_HEAT_BIT   12u
 #define TGT_DC_NB_HEAT_BIT    4u
+
+/* the CJ220 fault flag SF: P2.9, not the Porsche's P3.15 (stock DP2 =
+   0x3CBF leaves P2.9 an input; IO_MAP.md "P2.9 (CJ220 SF)"; the 2026-08
+   ME7.5 hcdbw.c `sbit SF_PIN = P2 ^ 9`). Until 2026-11-01 the DC read
+   P3.15, an unrelated input: the bridge "faulted" the moment AutoCal
+   enabled it. */
+#undef  TGT_DBW_SF_PORT_BIT
+#define TGT_DBW_SF_PORT_BIT   9         /* P2.9 <- CJ220 SF */
+#undef  TGT_DBW_SF_PORT_NO
+#define TGT_DBW_SF_PORT_NO    2
 #else
 #define TGT_HAS_CJ110         0           /* the DC's analog CJ110 only     */
 #endif

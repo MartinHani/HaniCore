@@ -72,6 +72,7 @@ unsigned char  hc_dc_io_on;       /* hc_io_frame()'s channel ON mask        */
 static hccc650_t   cc;
 static hcme75mon_t mon;
 unsigned char hc_asic_up;         /* hc_asic_start_init() has run           */
+static unsigned char ana_step;    /* the 10 ms block, one step a ms (0 idle) */
 unsigned char hc_asic_mon_on;     /* the tick requests the service          */
 static unsigned char mon_mode;    /* MON_* below                            */
 static unsigned int  mon_end_t1;  /* T1 of the answer's rising edge         */
@@ -216,6 +217,7 @@ void hc_asic_start_init(void)
         for (i = 0u; i < (unsigned char)(TGT_ASIC_FRAME_MAX / 2u); i++) FRAME[i] = 0u;
     }
     hccc650_init(&cc, (unsigned char)TGT_CC650_SETUP_3E);
+    ana_step = 0u;
     /* the monitor has been running since hc_asic_mon_early() */
     hc_asic_up = 1u;
 }
@@ -253,18 +255,26 @@ void hc_asic_start_service(unsigned int ms)
     }
     hc_asic_state = cc.phase;
 
-    if (cc.phase == HCCC650_PH_RUN
-        && (unsigned int)(ms - hc_asic_next_attempt) >= TGT_CC650_ANA_MS) {
-        hc_asic_next_attempt = ms;
-        hc_rtwit_frame_start((unsigned int)T7);    /* the raster telemetry */
-        window_fill();
+    /* THE 10 ms BLOCK IN THREE 1 ms STEPS (2026-11-01). In one call it took
+       ~280 us at this level - the planner's level - against the 150 us the
+       S5500 exchange is held to (me711_runtime_stress, 1.8T at 7000 rpm). */
+    if (ana_step == 1u) {
         hc_io_frame();                  /* duties -> ON mask, heater pins */
         outputs_apply();
+        ana_step = 2u;
+    } else if (ana_step == 2u) {
         hc_asic_run_ok++;
         hc_asic_run_rx++;
         hc_asic_run_live = 1u;
         hc_asic_last_ok_ms = ms;
         hc_hal_ain_capture();
+        ana_step = 0u;
+    } else if (cc.phase == HCCC650_PH_RUN
+        && (unsigned int)(ms - hc_asic_next_attempt) >= TGT_CC650_ANA_MS) {
+        hc_asic_next_attempt = ms;
+        hc_rtwit_frame_start((unsigned int)T7);    /* the raster telemetry */
+        window_fill();
+        ana_step = 1u;
     }
     monitor_service();
 }

@@ -51,6 +51,26 @@ DASH = {"porsche_me711": "HaniCore.dash", "audi_4f_v8": "HaniCore.dash",
         "vag_me75_dc": "HaniCore_ME75DC.dash"}[BOARD]
 HCTARGET = ROOT / "firmware/targets/me711/hctarget.h"
 
+# RELEASE FILE NAMES (owner, 2026-11-02): HaniCore_<board>_<ECU part
+# number>_<build id>.bin / .ini - the ECU a file is for and the exact build,
+# readable without opening it. The development stems above stay what gates
+# and tools look up; the build also writes the release names (bins/release/).
+RELEASE_BOARD = {"porsche_me711": ("Porsche", "022906032BT"),
+                 "vag_me71_c4": ("27T", "4B0907551F"),
+                 "audi_4f_v8": ("4F", "4F0910560"),
+                 "vag_me75_dc": ("18T", "4B0906018DC")}
+RELEASE_DIR = ROOT / "bins/release"
+
+
+def release_stem(build_id: str, board: str | None = None,
+                 plain: bool = False) -> str:
+    """HaniCore_27T_4B0907551F_32F5BF30 - the published (--updater) image
+    and its .ini; `plain` marks the build without the updater (not
+    published)."""
+    tag, part = RELEASE_BOARD[board or BOARD]
+    return "HaniCore_%s_%s_%s%s" % (tag, part, build_id.upper(),
+                                     "_plain" if plain else "")
+
 
 def board_text(path: Path, is_c4: bool | None = None,
                is_dc: bool | None = None) -> str:

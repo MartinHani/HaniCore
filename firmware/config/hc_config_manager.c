@@ -391,6 +391,18 @@ static void seed_universal_defaults(void)
         /* the cam pattern tolerance inside its own 2..40 deg limits: 0 made
            every PATTERN wheel unusable and the Burn was refused */
         hc_cal_set_u8(CFG_U_CAM_TOOTH_TOL, 10u);
+        /* 2026-11-02 (bench 2.7T in LibreTune): the rest of the fields a
+           fresh page left BELOW their own .ini minimum - every preset sets
+           them, the board default did not. The presets' values; knock and
+           VVT stay OFF (knockMode / vvtMode 0), so nothing acts on them. */
+        hc_cal_set_u8(CFG_U_CAM_PHASE_CONFIRM, 2u);  /* two consistent checks */
+        hc_cal_set_u8(CFG_U_KNOCK_KEF_DYN, 18u);     /* x1.125 (/16)      */
+        hc_cal_set_u8(CFG_U_KNOCK_TP, 16u);
+        hc_cal_set_u8(CFG_U_KNOCK_TP_DYN, 4u);
+        hc_cal_set_u8(CFG_U_KNOCK_STEP_Q, 12u);      /* 3.0 deg (/4)      */
+        hc_cal_set_u8(CFG_U_KNOCK_MAX_Q, 51u);       /* 12.75 deg         */
+        hc_cal_set_u16(CFG_U_KNOCK_REAPPLY_MS, 1000u);
+        hc_cal_set_u16(CFG_U_VVT_FREQ_HZ, 250u);
         for (i = 0u; i < 8u; i++) {                  /* -20..120 C        */
             hc_cal_set_u16((unsigned int)(CFG_U_IGN_IAT_AX + 2u * i),
                            (unsigned int)(9800u + 200u * i));
@@ -403,6 +415,18 @@ static void seed_universal_defaults(void)
        against the hardware descriptor by me711_preset_routing_proof. Returns
        0 on a board that declares no default, and applies nothing. */
     (void)hc_preset_apply_engine_active(hc_preset_board_default_id());
+#if !defined(TGT_BOARD_AUDI_4F)
+    /* THEN THE BOARD'S ENGINE BASE TUNE (owner, 2026-11-02): a fresh or
+       fallen-back 2.7T page is the 2.7T tune, a Porsche or ME7.5 page the
+       1.8T - with the electronic throttle OFF, as every base tune. The 4F
+       shares the Porsche's presets but assumes no engine. 0 = none. */
+    {
+        unsigned char t = hc_preset_fresh_tune_id();
+        if (t != 0u) {
+            (void)hc_preset_apply_engine_active(t);
+        }
+    }
+#endif
 
     /* The header LAST, so a reset in the middle of this leaves a block that
        still reads as absent rather than one that reads as valid and is half

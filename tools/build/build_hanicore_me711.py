@@ -391,7 +391,7 @@ def provenance_state():
     # never in it.
     selected = [Path(__file__), TARGET_DIR / "build_me711.bat",
                 TARGET_DIR / "linker_me711.lnp"]
-    for pat in ("*.c", "*.h", "*.a66"):
+    for pat in ("*.c", "*.h", "*.a66", "*.inc"):
         selected += HCP.sources("me711", pat)
     for name in ("hanicore_presets.py", "generate_config.py",
                  "hanicore_config_schema.py"):
@@ -823,7 +823,9 @@ def write_build_id() -> str:
     compare the ECU's answer with the image that was meant to be there."""
     global BUILD_ID
     files = {TARGET_DIR / "build_me711.bat", TARGET_DIR / "linker_me711.lnp"}
-    for pat in ("*.c", "*.h", "*.a66"):
+    # *.inc: hcasicstart_dc.inc is compiled code (2026-11-01: a change to it
+    # left the build id unchanged)
+    for pat in ("*.c", "*.h", "*.a66", "*.inc"):
         files.update(HCP.sources("me711", pat))
     h = hashlib.sha256()
     for p in sorted(files, key=lambda q: q.relative_to(ROOT).as_posix()):
@@ -1860,6 +1862,29 @@ def main() -> int:
     # line said "V37_RAM_PROBE" while the build produced a V38 image -
     # the same drift that once had a V29 binary announce itself as V28
     # in a real hardware log.
+    # THE RELEASE NAMES (owner, 2026-11-02): HaniCore_<board>_<part>_<build
+    # id>.bin + the board's .ini under the same name, in bins/release/.
+    # Every release image carries the K-line updater ("we never build an
+    # image without it again"): only the --updater build is copied there;
+    # the plain build stays a working image for the gates. Side images
+    # (Bosch boot, P0 tests) are not releases. The older pair for the same
+    # board is replaced. The user's tool is build_hanicore.py.
+    if UPDATER and _SIDE == "_updater":
+        import shutil
+        import hc_board as _HB
+        rel = _HB.release_stem(BUILD_ID, BOARD_NAME)
+        _HB.RELEASE_DIR.mkdir(parents=True, exist_ok=True)
+        tag, part = _HB.RELEASE_BOARD[BOARD_NAME]
+        for old in _HB.RELEASE_DIR.glob("HaniCore_%s_%s_*" % (tag, part)):
+            old.unlink()
+        shutil.copyfile(OUT_BIN, _HB.RELEASE_DIR / (rel + ".bin"))
+        ini = ROOT / "tuning" / {"porsche_me711": "hanicore_me711.ini",
+                                 "audi_4f_v8": "hanicore_me711.ini",
+                                 "vag_me71_c4": "hanicore_me71_27t.ini",
+                                 "vag_me75_dc": "hanicore_me75_dc.ini"}[BOARD_NAME]
+        if ini.exists():
+            shutil.copyfile(ini, _HB.RELEASE_DIR / (rel + ".ini"))
+        print("release: bins/release/%s.bin + .ini" % rel)
     print("\n%s built. Offline checks only: what is proven on hardware is in"
           % json.loads(OUT_MANIFEST.read_text())["build"])
     print("docs/STATUS.md.")

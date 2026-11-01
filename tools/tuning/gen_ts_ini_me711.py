@@ -89,6 +89,7 @@ import me711_image as _PI  # noqa: E402
 import gen_ts_ui_me711 as UI  # noqa: E402  the model-driven settings UI
 import ts_semantics_me711 as SEM  # noqa: E402  firmware state names
 import gen_ts_ux_me711 as UX  # noqa: E402  the rusEFI-shaped workflows
+import ts_field_help_me711 as HELP  # noqa: E402  [SettingContextHelp]
 import me711_ambient_pressure as AMB  # noqa: E402  the BARO chain
 OUT_VERSIONED = _PI.INI     # the board's file family (hc_board.INI_STEM)
 OUT_FALLBACK = OUT_VERSIONED.with_name(OUT_VERSIONED.stem
@@ -1522,6 +1523,12 @@ DERIVED_CH = [
     ("ambientPressure", _AMB_EXPR, "hPa", _AMB_NOTE),
     ("ambientPressureBar", "{ ambientPressure * 0.001 }", "bar",
      "ambientPressure converted hPa -> bar"),
+    # 2026-11-02 (owner: "the dashboard shows baro 70 kPa on most boards"):
+    # LibreTune's stock dashboards read rusEFI's `baroPressure` (kPa); with no
+    # such channel the tile sat at its 70 kPa minimum. The pressure the fuel
+    # model actually uses (onboard sensor, or its fallback) under that name.
+    ("baroPressure", "{ ambientUsed }", "kPa",
+     "the ambient pressure the fuel model uses, rusEFI's channel name"),
     # A RAIL IS NOT A READING - BUT IT DOES NOT SAY WHICH FAULT IT IS. Near
     # full scale means the SOURCE BEING READ is near full scale, and that is
     # all. Read s5500Idx bit 8 to find out whether the source is even the right
@@ -2787,7 +2794,15 @@ def main() -> int:
     #
     # The offsets come from hcconfig.h through the model, which REFUSES to
     # resolve if the two disagree - see tools/tuning/gen_ts_ui_me711.py.
-    for line in UI.page_lines(ui_fields):
+    page = UI.page_lines(ui_fields)
+    for line in page:
+        w(line)
+    w("")
+    # The "?" text beside every setting (ts_field_help_me711.py): right after
+    # [Constants], as rusEFI's generated files place it - LibreTune attaches
+    # a help line only to a constant it has already read.
+    w("[SettingContextHelp]")
+    for line in HELP.section(ui_fields, page):
         w(line)
     w("")
     w("[OutputChannels]")
@@ -2871,6 +2886,7 @@ def main() -> int:
         ("baroRaw", "Onboard baro sensor raw", "cnt", 0, 1023),
         ("ambientVoltage", "Onboard baro sensor voltage", "V", 0, 5),
         ("ambientUsed", "Ambient pressure used", "kPa", 0, 130),
+        ("baroPressure", "Barometric pressure", "kPa", 50, 110),
         ("ambientAgeSeconds", "Ambient reading age", "s", 0, 3600),
         ("pressureMeasured", "Pressure sensor", "kPa", 0, 400),
         ("densityPressure", "Air density pressure", "kPa", 0, 400),

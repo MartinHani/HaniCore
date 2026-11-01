@@ -110,6 +110,7 @@ unsigned char far hc_etbcal_tune_take(unsigned int *k);
 #define ETB_WHY_ALIGN      28u   /* no bracketed common sample time */
 #define ETB_WHY_CONTROL    29u   /* calibration/control raster missed */
 #define ETB_WHY_NOSAMPLE   30u   /* routed source never completed */
+#define ETB_WHY_AUTHORITY  32u   /* throttle output authority (dbwMaxDutyX10) is 0 */
 #define ETB_WHY_REPEAT     31u   /* autotune: two measurements disagree > 25 % */
 /* Telemetry, see hcetbcal.c ETBV_* */
 unsigned int  far hc_etbcal_value(unsigned char i);

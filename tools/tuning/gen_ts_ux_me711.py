@@ -733,7 +733,10 @@ panel("hcEtbBase", "Base ETB settings", [
     F("dbwRateX10", None, "dbwEnable == 1"),
     F("dbwDeadbandX10", None, "dbwEnable == 1"),
     F("dbwFrictionX10"),
-    F("dbwMaxDutyX10", None, "dbwEnable == 1"),
+    # NOT gated either: AutoCal and every commissioning step drive the bridge
+    # through it with dbwEnable 0, and refuse while it is 0 (OUTPUT AUTHORITY
+    # 0 %) - a hidden field nobody could set (BlackT, 2026-11-01).
+    F("dbwMaxDutyX10"),
     F("dbwMotorDir", None, "dbwEnable == 1"),
     F("dbwBattComp"),
     # NOT gated on dbwEnable: the commissioning procedures own the bridge with
@@ -927,7 +930,8 @@ ipanel("hcPanelEtbCal", 1, [
         "KI LIMITED (PAGE MAX)", "white, black, yellow, black"),
     IND("etbCalResult == 5 && etbCalDetail >= 32768", "-",
         "KI LIMITED (PAGE MAX)", "white, black, yellow, black"),
-    IND("etbCalResult == 2 || etbCalResult == 4 || etbCalResult == 5", "-",
+    # only while the page differs from flash: it stayed lit after the Burn
+    IND("(etbCalResult == 2 || etbCalResult == 4 || etbCalResult == 5) && nvmNotBurned", "-",
         "BURN TO KEEP", "white, black, yellow, black"),
 ])
 

@@ -43,7 +43,8 @@ typedef struct {
     const unsigned char HC_PRESET_MEM *runs;
     unsigned int  n_items;    /* values set (fields x elements), for tools */
     unsigned int  target_id;  /* 0 = any board; else hc_pin_target_id */
-    unsigned char board_default; /* 1 = this board's fresh-page routing */
+    unsigned char board_default; /* 1 = this board's fresh-page routing,
+                                    2 = its fresh-page engine base tune */
     unsigned int  n_bytes;    /* length of runs[] */
 } hc_preset_t;
 
@@ -57,6 +58,10 @@ extern const unsigned char hc_engine_preset_count;
  * Nothing branches on it at runtime and every value it writes stays editable.
  * What it is FOR is the seed: see hc_preset_apply_engine_active(). */
 unsigned char HC_COLD hc_preset_board_default_id(void);
+
+/* THE BOARD'S ENGINE BASE TUNE for a fresh page (owner, 2026-11-02), applied
+ * after the routing above, or 0 if this board declares none. */
+unsigned char HC_COLD hc_preset_fresh_tune_id(void);
 
 /* Apply a preset to the ACTIVE calibration page rather than to DESIRED.
  *

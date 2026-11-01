@@ -1101,9 +1101,13 @@ UNIVERSAL: list[NewField] = [
     NewField("CFG_U_CAM_WINDOW_X10", "u16", 1,
              Meta("CFG_U_CAM_WINDOW_X10", "camWindowX10",
                   "Cam acceptance window", Z, G.TRIGGER_SETUP,
-                  units="deg", scale=0.1, digits=1, lo=10, hi=1800,
+                  units="deg", scale=0.1, digits=1, lo=0, hi=1800,
                   category="Trigger", safety_critical=True,
-                  note="Half-width. An edge further than this from every "
+                  # 0 is what a fresh page holds; the firmware (hctrig_me711.c,
+                  # hc_validation.c) reads anything below 1.0 deg as 30.0 deg.
+                  # A minimum of 1.0 made LibreTune refuse the stored value.
+                  note="0 = 30.0 deg, the default. "
+                       "Half-width. An edge further than this from every "
                        "configured reference is not a reference: it raises "
                        "camError and, once the cycle was synchronised, drops "
                        "sync with CAM_WINDOW. It must be wider than the "

@@ -38,6 +38,21 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+
+# BOARD NAMES AS THE RELEASE FILES SAY THEM (owner, 2026-11-02: "which ECU is
+# ME7.1.1?"): `--board porsche|27t|4f|18t` and HANICORE_BOARD=27t etc. mean
+# the same as the internal names; translated here, before any tool reads them.
+BOARD_ALIASES = {"porsche": "porsche_me711", "27t": "vag_me71_c4",
+                 "4f": "audi_4f_v8", "18t": "vag_me75_dc",
+                 # the ECU part numbers the release files carry
+                 "022906032bt": "porsche_me711", "4b0907551f": "vag_me71_c4",
+                 "4f0910560": "audi_4f_v8", "4b0906018dc": "vag_me75_dc"}
+_hb = os.environ.get("HANICORE_BOARD")
+if _hb and _hb.lower() in BOARD_ALIASES:
+    os.environ["HANICORE_BOARD"] = BOARD_ALIASES[_hb.lower()]
+for _i, _a in enumerate(sys.argv[:-1]):
+    if _a == "--board" and sys.argv[_i + 1].lower() in BOARD_ALIASES:
+        sys.argv[_i + 1] = BOARD_ALIASES[sys.argv[_i + 1].lower()]
 FIRMWARE = ROOT / "firmware"
 PORTABLE = ("config", "engine", "control", "sensors", "diagnostics", "comms",
             "hal", "generated")

@@ -47,7 +47,8 @@ typedef char bias_fits[(sizeof(hc_bias_t)<=TGT_RAM_ETBBIAS_LIMIT)?1:-1];
 #define AT_NOISE_X10       5u      /* relay noise band: +-0.5 % around 50 % */
 #define AT_AMP_MIN        50u
 #define AT_AMP_MAX       300u
-#define AT_AMP_DEFAULT   200u      /* rusEFI autotuneAmplitude = 20         */
+#define AT_AMP_DEFAULT   300u      /* rusEFI uses 20; 30: a strong spring (bench
+                                        M113/VAG body) never reached 50 % at 20 */
 #define AT_WARM            8u
 #define AT_MEASURE        16u
 #define AT_BAND_LO       200u
@@ -1124,6 +1125,14 @@ unsigned char far hc_etbcal_service(unsigned int now_ms, unsigned int rpm,
             unsigned int nv=hc_nvm_state();
             if(nv==HCNV_ST_PENDING || nv==HCNV_ST_ARMED || nv==HCNV_ST_COMMITTING || nv==HCNV_ST_STAGING) {
                 E.res=ETB_RES_FAIL; E.why=ETB_WHY_RUNNING; return 1u;
+            }
+            /* hc_dbw_drive() refuses every step (and latches DBW_F_CFG, a
+               trouble code) while the page allows the bridge no duty - the
+               board default leaves it 0. Say so before the first step: until
+               2026-11-01 AutoCal ran one step, latched, and stopped. */
+            nv = hc_cal_u16(CFG_U_DBW_MAX_DUTY_X10);
+            if (nv == 0u || nv > 1000u) {
+                E.res=ETB_RES_FAIL; E.why=ETB_WHY_AUTHORITY; return 1u;
             }
             E.proc = (unsigned char)((q == 7u) ? ETB_PROC_SWEEP : (q == 1u) ? ETB_PROC_AUTOCAL
                                      : (q == 2u) ? ETB_PROC_AUTOTUNE

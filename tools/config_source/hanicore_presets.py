@@ -76,6 +76,13 @@ class Preset:
     repository cannot source - the rules above do not relax because this one
     is applied automatically. What it buys is that the seed no longer has to
     choose between "invent a pin" and "ship a page that cannot run"."""
+    fresh_tune: bool = False
+    """THE BOARD'S ENGINE BASE TUNE ON A FRESH PAGE (owner, 2026-11-02:
+    "the 2.7T ECU should default to the 2.7T preset, the 018DC and the
+    Porsche to the 1.8T"). Applied right after the board_default routing,
+    so a fresh or fallen-back page is that engine's tune. At most one per
+    `target`; the 4F image (which shares the Porsche's presets) skips it -
+    no engine is assumed on the 4F. Every base tune leaves dbwEnable 0."""
 
 
 V = EvidenceClass.VERIFIED
@@ -1761,6 +1768,19 @@ ENGINE_PRESETS.append(Preset(
                       "terminal moves as the AWT (KL15 3->21, feed 121->3, "
                       "relay drive 21->23) and IAT 85->26 - "
                       "docs/hardware/AWT_HARNESS_ADAPTATION.md.")))
+
+# THE FRESH-PAGE ENGINE TUNE PER BOARD (owner, 2026-11-02): the 2.7T board
+# starts as the 2.7T, the Porsche (and so its preset set) and the ME7.5 DC
+# as the 1.8T. hc_config_manager.c skips it on the 4F image.
+# NOT ENABLED YET (owner, 2026-11-02: ship the release without it): a fresh
+# engine tune makes a freshly flashed ECU fire injectors and coils at the
+# first crank signal - me711_output_safety_test and the fresh-page gates
+# (config_state, preset_apply, preset_validates, target_isolation, dbw_audit,
+# idle_valve) must be brought along first. Then set the flags here:
+_FRESH_TUNES = ()   # ("AUDI_27T_ME71", "VAG_18T_ME711", ME7.5 preset 1)
+for _p in ENGINE_PRESETS:
+    if _p.key in _FRESH_TUNES:
+        _p.fresh_tune = True
 
 # EVERY BASE TUNE LEAVES THE ELECTRONIC THROTTLE OFF (owner, 2026-10-31). A
 # preset never arms a motor: until now the board defaults and the Porsche /

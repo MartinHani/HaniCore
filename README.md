@@ -8,12 +8,12 @@ ordinary KKL (K-line) cable. Every image runs on HaniCore's own boot region:
 it contains no Bosch code. 1.0-dev, not road-ready. Test car: VW/Audi 1.8T,
 drive-by-wire, on the Porsche ECU.
 
-| ECU (`--board`) | hardware | image | proven |
+| ECU (`--board`) | hardware | release files | proven |
 |---|---|---|---|
-| Porsche ME7.1.1 (default) | `0261207696`, C167 40 MHz | `HaniCore_ME711_v102_dev` | **car** (1.8T) and bench (outputs, crank, Burn, OBD update) |
-| Audi 2.7T ME7.1 (`vag_me71_c4`) | `4B0907551F` / `0261206378`, C167CR 24 MHz | `HaniCore_ME71_27T_v102_dev` | bench (outputs, crank to 7500 rpm, Burn, OBD update); ceiling 7800 rpm |
-| Audi 4F 4.2 V8 ME7.1.1 (`audi_4f_v8`) | `0261208363`, C167 40 MHz | `HaniCore_ME711_4F_v102_dev` | experimental: simulator, and a tester's ECU connects |
-| VAG 1.8T ME7.5 (`vag_me75_dc`) | `4B0906018DC` / `0261207636`, C167CR 24 MHz | `HaniCore_ME75_DC_v102_dev` | bench (outputs, crank to 7000 rpm, Burn, OBD update); not yet in a car |
+| Porsche ME7.1.1 (`porsche`, the default) | `0261207696`, C167 40 MHz | `HaniCore_Porsche_022906032BT_<build>` | **car** (1.8T) and bench (outputs, crank, Burn, OBD update) |
+| Audi 2.7T ME7.1 (`27t`) | `4B0907551F` / `0261206378`, C167CR 24 MHz | `HaniCore_27T_4B0907551F_<build>` | bench (outputs, crank to 7500 rpm, Burn, OBD update); ceiling 7800 rpm |
+| Audi 4F 4.2 V8 ME7.1.1 (`4f`) | `0261208363`, C167 40 MHz | `HaniCore_4F_4F0910560_<build>` | experimental: simulator, and a tester's ECU connects |
+| VAG 1.8T ME7.5 (`18t`) | `4B0906018DC` / `0261207636`, C167CR 24 MHz | `HaniCore_18T_4B0906018DC_<build>` | bench (outputs, crank to 7000 rpm, Burn, OBD update); not yet in a car |
 
 ## Features
 
@@ -65,26 +65,26 @@ Keil C166 V7.53 (not included), Python 3.11+, Windows.
 
 ```powershell
 py -m pip install -r requirements.txt
-py tools\build\build_hanicore_me711.py     # image -> bins\hanicore\  (--board <b> for the other ECUs)
-py tools\tuning\gen_ts_ini_me711.py   # matching .ini -> tuning\
-py tests\run_gates.py fast                 # offline checks
+py tools\build\build_hanicore.py --board 4B0907551F    # or --board all
 ```
+
+`--board` is the ECU part number from the table (022906032BT, 4B0907551F,
+4F0910560, 4B0906018DC). It writes `bins\release\HaniCore_27T_4B0907551F_<build>.bin`
+and the `.ini` for exactly that image - the same files as a release.
+Offline checks: `py tests\run_gates.py fast`.
 
 ## Flash
 
-The build writes a full 1 MiB flash image, `bins\hanicore\<image>.bin`. Write
+The image is a full 1 MiB flash image. Write
 it with any ME7 boot-mode tool; do not let the tool correct checksums. A
 full-image flash leaves the calibration store blank.
 
 **Update over the K-line, ECU closed.** The release images take it: the
 first one goes in by boot mode, every later one over cavity 43 or the car's
-diagnostic port, engine stopped. Building your own, build the resident loader
-once, then the image with `--updater` (`<image>_updater.bin`):
+diagnostic port, engine stopped:
 
 ```powershell
-py tools\build\build_loader.py [--board <b>]
-py tools\build\build_hanicore_me711.py [--board <b>] --updater
-py tools\flash\hc_update.py --image bins\hanicore\<image>_updater.bin --port COM3 [--kwp]
+py tools\flash\hc_update.py --image HaniCore_27T_4B0907551F_<build>.bin --port COM3 [--kwp]
 ```
 
 It saves the tune, writes the new image, lets a resident loader install it

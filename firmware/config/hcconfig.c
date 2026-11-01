@@ -476,7 +476,7 @@ static void cal_defaults(void)
     hc_cal_set_u16(CAL_DBW_REVLIM_RANGE, 300u);
     hc_cal_set_u16(CAL_DBW_AUTOCAL_MS, 1000u); /* rusEFI holds each stop 1 s */
     hc_cal_set_u16(CAL_DBW_AUTOCAL_DUTY, 500u);/* 50 %, likewise            */
-    hc_cal_set_u16(CAL_DBW_TUNE_AMP, 200u);    /* 20 % relay amplitude      */
+    hc_cal_set_u16(CAL_DBW_TUNE_AMP, 300u);    /* 30 % relay amplitude      */
 
     /* Pedal to throttle. The default is a straight 1:1 at every engine speed,
        which is exactly what the module did before this map existed - so
