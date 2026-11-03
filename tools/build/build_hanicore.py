@@ -6,7 +6,7 @@ build_hanicore.py - build the firmware for one ECU, the way it is released.
     py tools\build\build_hanicore.py --board all
 
 --board is the ECU part number (022906032BT Porsche, 4B0907551F Audi 2.7T,
-4F0910560 Audi 4F, 4B0906018DC VAG 1.8T ME7.5) or porsche / 27t / 4f / 18t,
+4F0910560 Audi 4F, 4B0906018DC VAG 1.8T ME7.5, 8E0909518AQ Audi A4 B7 1.8T BFB) or porsche / 27t / 4f / 18t / bfb,
 or `all`. Writes bins\release\HaniCore_<board>_<part>_<build id>.bin and the
 .ini for exactly that image. Every image carries the K-line updater: build
 order is the .ini, the resident loader, then the image
@@ -24,7 +24,8 @@ import hcpaths  # noqa: F401,E402  (translates --board aliases / part numbers)
 import hc_board  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
-ORDER = ("porsche_me711", "audi_4f_v8", "vag_me71_c4", "vag_me75_dc")
+ORDER = ("porsche_me711", "audi_4f_v8", "vag_me71_c4", "vag_me75_dc",
+         "vag_me75_bfb")
 
 
 def run(board: str, *cmd: str) -> None:
@@ -56,7 +57,8 @@ def main() -> int:
         boards = (want,)
     else:
         raise SystemExit("--board %s: a part number (022906032BT, 4B0907551F, "
-                         "4F0910560, 4B0906018DC), porsche/27t/4f/18t or all"
+                         "4F0910560, 4B0906018DC, 8E0909518AQ), porsche/27t/4f/18t/bfb "
+                         "or all"
                          % want)
     for b in boards:
         build(b)

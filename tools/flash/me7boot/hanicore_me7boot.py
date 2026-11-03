@@ -285,6 +285,10 @@ def make_diff_patched_tool(tool: Path) -> Path:
 
 def verify_image(args, tool: Path, port: str, image: Path, keep_path: Path | None = None) -> int:
     image_size = image.stat().st_size
+    prefix = getattr(args, "verify_size", None)
+    if prefix:
+        # partial verify: read and compare only the first `prefix` bytes
+        image_size = prefix
 
     if keep_path is not None:
         verify_path = keep_path.resolve()
@@ -307,7 +311,8 @@ def verify_image(args, tool: Path, port: str, image: Path, keep_path: Path | Non
             emit_result(args, "FAIL", operation="verify", code="SIZE_MISMATCH", upstream_state=rc)
             return EXIT_TOOL_FAILED
 
-        expected_hash = sha256_file(image)
+        expected_hash = (hashlib.sha256(image.read_bytes()[:image_size]).hexdigest() if prefix
+                         else sha256_file(image))
         actual_hash = sha256_file(verify_path)
         if expected_hash != actual_hash:
             print("ERROR: VERIFY MISMATCH", file=sys.stderr)
@@ -412,8 +417,16 @@ def cmd_diff_write(args, tool: Path, port: str) -> int:
     merged: Path | None = None
 
     try:
-        print(f"DIFF READ port={port} baud={args.baud} bytes={size}")
-        rc = run_upstream(tool, port, upstream_args_for_read(args.baud, size, current))
+        if args.assume_current:
+            # no pre-read: diff against a file the caller knows is in the ECU
+            # (the readback after the last verified write). A wrong assumption
+            # shows up in the verify readback, never as a silent bad flash.
+            shutil.copyfile(Path(args.assume_current).expanduser(), current)
+            print(f"DIFF ASSUME current flash = {args.assume_current} (no pre-read)")
+            rc = 1
+        else:
+            print(f"DIFF READ port={port} baud={args.baud} bytes={size}")
+            rc = run_upstream(tool, port, upstream_args_for_read(args.baud, size, current))
         if not current.is_file() or current.stat().st_size != size:
             got = current.stat().st_size if current.is_file() else -1
             print(f"ERROR: diff pre-read size mismatch: expected {size}, got {got}", file=sys.stderr)
@@ -529,6 +542,10 @@ def build_parser() -> argparse.ArgumentParser:
     sd.add_argument("--verify-dump", help="keep verification readback in this file (also enables verify)")
     sd.add_argument("--keep-from", type=parse_int, help="keep the ECU's flash from this file offset on "
                     "(HaniCore ME7.1.1 calibration store: 0x70000); must be a sector boundary")
+    sd.add_argument("--assume-current", help="skip the pre-write read: diff against this file, "
+                    "which must be what the ECU holds now (verify afterwards)")
+    sd.add_argument("--verify-size", type=parse_int, help="verify only the first N bytes "
+                    "(e.g. 0x70000: everything below the calibration store)")
     sd.add_argument("--pre-read-dump", help="keep the pre-write read (rollback) in this file")
 
     sv = sub.add_parser("verify", help="full flash readback and SHA-256 compare against image")

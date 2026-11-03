@@ -2342,7 +2342,8 @@ extern volatile unsigned char hc_probe_sink;
 #undef  TGT_EKP_PORT_NO
 #define TGT_EKP_PORT_NO       3u
 
-/* the CC650: CS2, ADDRSEL2 0x4800 / BUSCON2 0x064E (start_me711.a66) */
+/* the CC650: CS2, ADDRSEL2 0x4800 / BUSCON2 0x064E (start_me711.a66;
+   the BFB: 0x064D, see its section at the end of this file) */
 #define TGT_CC650_BASE        0x480000uL
 #define TGT_CC650_WRITES_PER_MS 2u      /* bus writes per 1 ms service      */
 #define TGT_CC650_ANA_MS      10u       /* analog read + output raster      */
@@ -2371,6 +2372,96 @@ extern volatile unsigned char hc_probe_sink;
 #define TGT_DBW_SF_PORT_NO    2
 #else
 #define TGT_HAS_CJ110         0           /* the DC's analog CJ110 only     */
+#endif
+
+/* ================================ THE AUDI A4 B7 1.8T BFB ME7.5 BOARD ====
+ *
+ * 8E0909518AQ / 0261208524 (2026-11-02). The DC's code and port map, but NOT
+ * its clock or bus timing - found on the bench, where the DC's values left this
+ * ECU silent and resetting. MEASURED on the BFB stock read
+ * (audi-a4-b7-1.8t-bfb-163hp.ori.bin, SW 1037372505), by disassembly:
+ *   - CLOCK 32 MHz (the DC: 24 MHz): S0BG = 0x5F beside S0CON = 0x80D1 for the
+ *     10400 baud K-line; a HaniCore image with 0x47 sent at 13889 baud
+ *   - bus: ADDRSEL1 0x3803, ADDRSEL2 0x4800 (the CC650), BUSCON0 0x04AE,
+ *     BUSCON1 0x051C (the DC: 0x040D), BUSCON2 0x064D (the DC: 0x064E)
+ *   - T0/T1/T7/T8 prescaler I = 2 (T01CON 0x424A, T78CON 0x474A) = fCPU/32 =
+ *     1.000 MHz here (0.75 MHz on the DC)
+ *   - ports: DP2 0x3CBF, P2 0xC7BF, P3 0x2FC1, DP3 0x35E0 - the exact values
+ *     quoted above for the DC
+ *   - the 68HC05 supervisor: the DC's protocol (same question bands, the same
+ *     answers) in microseconds; see hcasicstart_dc.inc "THE MONITOR'S CLOCK"
+ * What differs: the ROMSYS variant word at 0x8004 is 0x5C02 (the DC: 0x5BDC)
+ * and the loom is the B7's. The pin map is the DC's UNTIL a pin is proven on
+ * this loom; nothing here is road-ready. No CAN: cluster and ESP will
+ * complain. Identity is overridden so an updater image for one board can
+ * never be taken for the other's.
+ */
+#ifndef TGT_BOARD_VAG_ME75_BFB
+#define TGT_BOARD_VAG_ME75_BFB 0
+#endif
+#if TGT_BOARD_VAG_ME75_BFB
+#undef  TGT_ID
+#define TGT_ID                0x0751      /* ME7.5 BFB, 8E0909518AQ / 0261208524 */
+#undef  TGT_SIGNATURE
+#define TGT_SIGNATURE         "HaniCore ME75BFB 3EF8E9EA"
+#undef  TGT_VERSIONTXT
+#define TGT_VERSIONTXT        "HaniCore V102 DEV / Bosch ME7.5 BFB"
+
+/* THIS ECU RUNS AT 32 MHz, NOT THE 18T's 24 MHz (found on the bench
+ * 2026-11-02). Evidence: the stock BFB read writes S0BG = 0x5F beside
+ * S0CON = 0x80D1 for its 10400 baud K-line [stock 0x0397C4 / 0x0397C8, also
+ * 0x0237FA]: fCPU = 10400 x 32 x 96 = 31.95 MHz; and a HaniCore image sending
+ * with the 24 MHz S0BG = 0x47 came out of the K-line at 13889 baud
+ * (= 32 MHz / (32 x 72)) - a breadcrumb capture, A-H-C-E repeating.
+ *
+ * STAGE 1 (this block): the clock, the ASC0 baud rates and the SSC rate.
+ *   S0BG = fCPU / (32 x baud) - 1 : 10400 -> 0x5F (10417), 124800 -> 0x07
+ *   (125000), 57600 -> 0x10 (58824, +2.1 %), 250000 -> 0x03 (exact).
+ * STAGE 2 (NOT DONE - do not run an engine on this build): the CAPCOM tick
+ * domain. T7 = fCPU / 32 is 1.000 MHz here, but TGT_TICKS_PER_MS_X10,
+ * TGT_TICK_RELOAD, the plan/deadline tick counts and the ~10 sites that
+ * hard-code the 24 MHz board's 0.75 MHz still say 0.75 MHz, so every
+ * tick-measured time is 4/3 of what it should be (an interval comes out 25 %
+ * short). The watchdog window (WDTCON prescaler fCPU/128) is 82 ms, not 109. */
+#undef  TGT_FCPU_HZ
+#define TGT_FCPU_HZ           32000000uL
+#undef  TGT_S0BG
+#define TGT_S0BG              0x10
+#undef  TGT_S0BG_ALT
+#define TGT_S0BG_ALT          0x07          /* 125000 (124800)     */
+#undef  TGT_S0BG_124800
+#define TGT_S0BG_124800       TGT_S0BG_ALT
+#undef  TGT_S0BG_10400
+#define TGT_S0BG_10400        0x5F          /* 32 MHz / (32 x 96)  */
+#undef  TGT_S0BG_250000
+#define TGT_S0BG_250000       0x03          /* 32 MHz / (32 x 4)   */
+#undef  TGT_ASIC_SSCBR
+#define TGT_ASIC_SSCBR        0x000Fu       /* 32 MHz / (2 x 16) = 1 MHz, as 0x0B at 24 */
+
+/* THE TICK DOMAIN, 32 MHz (T0/T1/T7/T8 at fCPU/32 = 1.000 MHz, wrap 65.5 ms).
+ * Everything below is the 24 MHz board's value x 4/3, the same TIME. US_TO_TICKS()
+ * users follow automatically. NOT yet converted (hard-coded 0.75 MHz, listed in
+ * the stage-2 note above): hctrig_me711.c T1 ticks per minute (45e6),
+ * hcengctl711.c (us x 3 / 32), hcnvm.c (x 4/3), hcdeadline_plan711.c (the 0.75
+ * width), hcroutes711.c, hcsched_dry.c (7.5 ticks / 0.01 ms), hcrtmon711.c
+ * (0.1 ms = 75), hcdeadline711.c (125 ticks) - engine timing, not needed to
+ * talk to the ECU, REQUIRED before it runs an engine. */
+#undef  TGT_TICKS_PER_MS_X10
+#define TGT_TICKS_PER_MS_X10  10000UL       /* 1.000 MHz x 10 per ms */
+#undef  TGT_TICK_RELOAD
+#define TGT_TICK_RELOAD       1000u         /* T8 reload for a 1 ms tick */
+#undef  HC_PLAN_HORIZON_TICKS
+#define HC_PLAN_HORIZON_TICKS 4000u         /* 3000 at 0.75 MHz */
+#undef  HC_PLAN_PERIOD_TICKS
+#define HC_PLAN_PERIOD_TICKS  1933u         /* 1450 at 0.75 MHz */
+#undef  TGT_PLAN_DECIM_DT
+#define TGT_PLAN_DECIM_DT     333u          /* 250 */
+#undef  TGT_PLAN_DECIM4_DT
+#define TGT_PLAN_DECIM4_DT    200u          /* 150 */
+#undef  TGT_ASIC_CS_ARM_TICKS
+#define TGT_ASIC_CS_ARM_TICKS 63u           /* the same 63 us */
+#undef  TGT_DBW_PWM_PERIOD
+#define TGT_DBW_PWM_PERIOD    16000         /* 2 kHz at 32 MHz (12000 at 24) */
 #endif
 
 #endif /* HCTARGET_H */

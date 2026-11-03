@@ -75,8 +75,9 @@ import hc_board  # noqa: E402
 # POUT0 / POUT1's cavities (hctarget.h TGT_POUT*_CAV): 115 / 120 on the
 # Porsche, 114 (AGR) / 104 (N75) on the C4 board
 P0, P1 = (114, 104) if hc_board.IS_C4 else (115, 120)
-# PWM counts per second, fCPU / 64: 625 000 at 40 MHz, 375 000 at 24 MHz
-CPS = 375000 if hc_board.IS_C4 else 625000
+# PWM counts per second, fCPU / 64: 625 000 at 40 MHz, 375 000 at 24 MHz,
+# 500 000 at the BFB's 32 MHz - from the board's header, never a literal
+CPS = hc_board.fcpu_hz() // 64
 
 def check(name, ok, detail=""):
     global FAIL

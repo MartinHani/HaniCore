@@ -81,8 +81,46 @@ static unsigned int  mon_end_t1;  /* T1 of the answer's rising edge         */
 #define MON_TX_IDLE 1u            /* driven HIGH, no pulse                  */
 #define MON_TX_FALL 2u            /* compare armed for the falling edge     */
 #define MON_TX_RISE 3u            /* compare armed for the rising edge      */
+#if TGT_BOARD_VAG_ME75_BFB
+#define MON_LEAD_T1 100u          /* 100 us at T1 = 1.000 MHz */
+#else
 #define MON_LEAD_T1 75u           /* 100 us: the falling edge is in the future */
+#endif
 #define MON_SLOT_T1 ((unsigned int)US_TO_TICKS(1500u))   /* slot start -> fall */
+
+/* THE MONITOR'S CLOCK. hcme75mon works in 1.5 MHz ticks. T1 is 0.75 MHz on the
+   24 MHz 18T (fCPU/32), so monitor ticks = T1 << 1. On the 32 MHz BFB T1 is
+   1.000 MHz and no shift gives 1.5 MHz: monitor ticks = T1 x 3/2, kept as an
+   accumulator (a plain 3/2 multiply would break at T1's 16-bit wrap). It is
+   advanced by every T1 reading that reaches the monitor, at least once per
+   ms (monitor_service runs from the 1 ms tick). */
+#if TGT_BOARD_VAG_ME75_BFB
+static unsigned int  mon_acc;       /* monitor-tick clock                    */
+static unsigned int  mon_last;      /* T1 at the last advance                */
+static unsigned char mon_carry;     /* a half tick owed                      */
+static unsigned int mon_clock(unsigned int t1)
+{
+    unsigned int dt = (unsigned int)(t1 - mon_last);
+    unsigned int add = (unsigned int)(dt + (dt >> 1));
+    mon_last = t1;
+    if (dt & 1u) {
+        if (mon_carry) { add++; mon_carry = 0u; } else { mon_carry = 1u; }
+    }
+    mon_acc = (unsigned int)(mon_acc + add);
+    return mon_acc;
+}
+/* a CC5 capture `cap` (taken before the T1 reading `t1`) in monitor ticks */
+#define MON_FROM_CAP(t1, cap, nowmon) \
+    ((unsigned int)((nowmon) - (unsigned int)(((unsigned int)((t1) - (cap))) \
+        + (((unsigned int)((t1) - (cap))) >> 1))))
+#define MON_TO_T1(w)  ((unsigned int)(((unsigned long)(w) * 2uL) / 3uL))
+#define MON_CLOCK_RESET()  do { mon_last = T1; mon_acc = 0u; mon_carry = 0u; } while (0)
+#else
+#define mon_clock(t1)  ((unsigned int)((t1) << TGT_MON_TICK_SHIFT))
+#define MON_FROM_CAP(t1, cap, nowmon) ((unsigned int)((cap) << TGT_MON_TICK_SHIFT))
+#define MON_TO_T1(w)   ((unsigned int)((w) >> TGT_MON_TICK_SHIFT))
+#define MON_CLOCK_RESET()  do { } while (0)
+#endif
 
 /* CCM1 bits 7..4 = CC5: bit 3 of the nibble = T1, mode 011 capture both
    edges, 101 compare mode 1 (toggle on match) [C167CR UM 15] */
@@ -127,13 +165,13 @@ static void outputs_apply(void)
 static void monitor_service(void)
 {
     unsigned int t1 = T1, w;
-    unsigned int now = (unsigned int)(t1 << TGT_MON_TICK_SHIFT);
+    unsigned int now = mon_clock(t1);
 
     if (CC5IR) {
         if (mon_mode == MON_RX) {
             CC5IR = 0;
             hcme75mon_edge(&mon, (unsigned char)MON_PIN,
-                           (unsigned int)(CC5 << TGT_MON_TICK_SHIFT));
+                           MON_FROM_CAP(t1, CC5, now));
         } else if (mon_mode == MON_TX_FALL) {
             CC5IR = 0;                       /* LOW now: arm the rising edge */
             CC5 = mon_end_t1;
@@ -172,13 +210,12 @@ static void monitor_service(void)
         /* the slot's start in T1 through the ELAPSED time: the monitor's
            clock is T1 << shift in 16 bits (it drops T1's top bit), so
            t0 >> shift is not a T1 time - but a 16-bit difference is */
-        now = (unsigned int)(t1 - (unsigned int)(((unsigned int)
-                  (t1 << TGT_MON_TICK_SHIFT) - mon.t0) >> TGT_MON_TICK_SHIFT)
+        now = (unsigned int)(t1 - MON_TO_T1((unsigned int)(mon_clock(t1) - mon.t0))
               + MON_SLOT_T1);
         if ((int)(now - (unsigned int)(t1 + MON_LEAD_T1)) < 0)
             now = (unsigned int)(t1 + MON_LEAD_T1);
         CC5 = now;
-        mon_end_t1 = (unsigned int)(now + (w >> TGT_MON_TICK_SHIFT));
+        mon_end_t1 = (unsigned int)(now + MON_TO_T1(w));
         cc5_mode(CC5_COMPARE_TOG);
         HC_ATOMIC_EXIT(ps);
         mon_mode = MON_TX_FALL;
@@ -238,7 +275,8 @@ void hc_asic_mon_early(void)
     cc5_mode(CC5_CAPTURE_BOTH);
     CC5IC = 0x0000u;                   /* flag polled, never an interrupt   */
     mon_mode = MON_RX;
-    hcme75mon_init(&mon, (unsigned int)(T1 << TGT_MON_TICK_SHIFT));
+    MON_CLOCK_RESET();
+    hcme75mon_init(&mon, mon_clock(T1));
     hc_umkom_answers = 0u;
     hc_umkom_mismatch = 0u;
     hc_asic_mon_on = 1u;

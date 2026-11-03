@@ -10,6 +10,13 @@ import hcpaths  # noqa: F401,E402  (puts every tools/ and tests/ module on sys.p
 import me711_trigger_test as P
 import me711_image as I
 import me711_heartbeat_gap_proof as HB
+import hc_board
+# the planner refuses an OPEN moved later than this many ticks (hctarget.h
+# HC_PLAN_HORIZON_TICKS: 2500 at 1.25 MHz, 3000 at 0.75 MHz, 4000 at the
+# BFB's 1.000 MHz - 4 ms on the 24/32 MHz boards). Taken from the header: a
+# literal 3000 here passed on the 24 MHz board and read as "inside the
+# horizon" on the 32 MHz one.
+HORIZON = hc_board.define_int("HC_PLAN_HORIZON_TICKS")
 # HC_DL_OFF_TICKS x 2: 100 us of software OFF separation on each side, in
 # capture ticks (TPMS = ticks per 10 ms: 250 at 1.25 MHz, 150 on the 2.7T)
 OFF2 = 2 * (HB.TPMS // 100)
@@ -174,13 +181,13 @@ def future_pulse_tests():
     ports=transitions(r);lens=widths(ports)
     check('quiesce retains current CLOSE and refuses the pending next OPEN',
           len(lens)==1 and abs(lens[0]-6250)<=125 and r.dirs()==(0,0,0),str(lens))
-    for overlap, admitted in ((500, True), (3000, False)):
+    for overlap, admitted in ((500, True), (HORIZON + 500, False)):
         r=Rig();first=r.publish(3,1,1000,5000);r.run(2000)
         close=next(r.m.r16(P.sym('hc_dl_q_time')+4*i)
                    for i in range(24) if r.m.r8(P.sym('hc_dl_q_type')+i)&15==4
                    and r.m.r16(P.sym('hc_dl_q_id')+2*i)==first)
         second=r.publish(3,1,(close-overlap)&65535,2000,absolute=True)
-        check('physical-overlap phase adjustment stays inside 2 ms',
+        check('physical-overlap phase adjustment stays inside the planner horizon',
               bool(second)==admitted,str((overlap,second)))
         if admitted:
             start=next(r.m.r16(P.sym('hc_dl_q_time')+4*i)
@@ -262,11 +269,16 @@ def main():
     check('abort during pulse releases physical command',not (r.dirs()[1]&0x70),str(r.log))
     r=Rig(); first=r.publish(3,1,1000,5000)
     check('pending overlap refused',r.publish(3,1,2000,5000)==0)
-    r.run(4000)
+    # run only until the first pulse is ON: the overlap time below (close -
+    # HORIZON - 500) must still be AHEAD of "now". Published as an absolute
+    # 16-bit time, a time already past wraps to ~65 000 ticks ahead and is
+    # admitted as a far-future start (the BFB's larger horizon exposed it:
+    # 4500 ticks before a close at 7250 was already past after run(4000)).
+    r.run(1500)
     close=next(r.m.r16(P.sym('hc_dl_q_time')+4*i)
                for i in range(24) if r.m.r8(P.sym('hc_dl_q_type')+i)&15==4)
     check('active overlap beyond phase-adjustment bound refused',
-          r.publish(3,1,(close-3000)&65535,5000,absolute=True)==0)
+          r.publish(3,1,(close-HORIZON-500)&65535,5000,absolute=True)==0)
     r.run(4000)
     second=r.publish(3,1,1000,5000)
     check('next legal pulse accepted after close/off separation',bool(second))

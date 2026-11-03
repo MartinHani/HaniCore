@@ -184,6 +184,8 @@ void HC_COLD hc_tacho_service(void)
        22.5e6 at 0.75 MHz (the 2.7T board, where it fits from 344 rpm) */
 #if TGT_TICKS_PER_MS_X10 == 12500UL
     q = (rpm < 573u) ? 65000u
+#elif TGT_TICKS_PER_MS_X10 == 10000UL
+    q = (rpm < 462u) ? 65000u           /* 1.000 MHz: 30e6 / 65000 */
 #else
     q = (rpm < 344u) ? 65000u
 #endif

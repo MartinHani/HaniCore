@@ -74,7 +74,7 @@ HDR_MAGIC0 = 0x4348          # 'HC'
 HDR_MAGIC1 = 0x5041          # 'AP'
 HDR_SEAL = 0x5AA5
 BOARD_CODE = {1: "porsche_me711", 2: "vag_me71_c4",
-              3: "audi_4f_v8", 4: "vag_me75_dc"}
+              3: "audi_4f_v8", 4: "vag_me75_dc", 5: "vag_me75_bfb"}
 BOARD_NAME = {v: k for k, v in BOARD_CODE.items()}
 
 # ---- the wire protocol (TS-framed; hcdiag711.c hc_target_cmd_cold) ----------

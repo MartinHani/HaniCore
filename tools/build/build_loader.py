@@ -3,7 +3,7 @@ r"""
 build_loader.py - assemble and link the update loader (firmware/loader/
 hcloader.a66) for one board; write its SA5 image.
 
-    py tools\build\build_loader.py [--board porsche_me711|vag_me71_c4|audi_4f_v8|vag_me75_dc]
+    py tools\build\build_loader.py [--board porsche_me711|vag_me71_c4|audi_4f_v8|vag_me75_dc|vag_me75_bfb]
 
 Output: bins/hanicore/HaniCore_loader_<board>.bin - 64 KiB, file offset 0 =
 CPU 0x820000 (SA5): the 128-slot forwarding table (JMPS 83:N*4, the app's
@@ -31,7 +31,8 @@ SA5 = 0x820000
 LOADER_AT = 0x820200
 APP_VEC_SEG = 0x83
 SETS = {"porsche_me711": "", "audi_4f_v8": ",BOARD_4F",
-        "vag_me71_c4": ",BOARD_C4", "vag_me75_dc": ",BOARD_C4,BOARD_DC"}
+        "vag_me71_c4": ",BOARD_C4", "vag_me75_dc": ",BOARD_C4,BOARD_DC",
+        "vag_me75_bfb": ",BOARD_C4,BOARD_DC,BOARD_BFB"}
 
 
 def run(cmd, cwd):

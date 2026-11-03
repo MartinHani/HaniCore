@@ -137,6 +137,10 @@ unsigned long far hc_deadline_ticks_us_f(unsigned long w)
     ql=(unsigned int)((((unsigned long)(unsigned int)(hi-qh*3u))<<16
                       |(unsigned int)w)/(unsigned int)3u);
     return w+(((unsigned long)qh<<16)|ql);
+#elif TGT_TICKS_PER_MS_X10 == 10000UL
+    /* 32 MHz BFB: 1.000 MHz capture clock, one tick is one us */
+    hi=0u;qh=0u;ql=0u;
+    return w;
 #else
 #error "hc_deadline_ticks_us_f: no conversion for this capture clock"
 #endif
@@ -346,6 +350,8 @@ unsigned long HC_COLD hc_deadline_inj_request(unsigned char mask,unsigned int fu
     unsigned long requested=(unsigned long)fuel+dead,duration=requested+(requested>>2);
 #elif TGT_TICKS_PER_MS_X10 == 7500UL
     unsigned long requested=(unsigned long)fuel+dead,duration=requested-(requested>>2);
+#elif TGT_TICKS_PER_MS_X10 == 10000UL
+    unsigned long requested=(unsigned long)fuel+dead,duration=requested;   /* 1.000 MHz */
 #else
 #error "hc_deadline_inj_request: no conversion for this capture clock"
 #endif
@@ -937,6 +943,8 @@ unsigned char HC_COLD hc_drysched_prime(unsigned int t8)
     /* t8 = capture ticks / 8: 6.4 us at 1.25 MHz, 10.67 us at 0.75 MHz */
 #if TGT_TICKS_PER_MS_X10 == 12500UL
     us=(unsigned int)(((unsigned long)t8*32u)/5u);
+#elif TGT_TICKS_PER_MS_X10 == 10000UL
+    us=(unsigned int)((unsigned long)t8*8u);          /* 1.000 MHz: 8 us */
 #else
     us=(unsigned int)(((unsigned long)t8*32u)/3u);
 #endif

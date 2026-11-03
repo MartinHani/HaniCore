@@ -25,8 +25,8 @@ from __future__ import annotations
 
 import binascii
 
-import hc_board as _HB  # noqa: E402  24 MHz on the 2.7T C4 board
-FCPU = 24_000_000 if _HB.IS_C4 else 40_000_000
+import hc_board as _HB  # noqa: E402
+FCPU = _HB.fcpu_hz()    # 40 MHz Porsche, 24 MHz 2.7T / 18T, 32 MHz BFB - from the header
 
 
 def ecu_baud(s0bg: int) -> float:

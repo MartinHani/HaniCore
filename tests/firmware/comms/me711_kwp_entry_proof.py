@@ -47,8 +47,7 @@ import me711_image as PI                 # noqa: E402
 S0BG, S0CON, P3 = 0xFEB4, 0xFFB0, 0xFFC4
 import hc_board  # noqa: E402
 # S0BG -> nominal rate, per board (hctarget.h; no 115200 on the 24 MHz C4)
-BG_RATE = ({0x0C: 57600, 0x05: 124800, 0x47: 10400} if hc_board.IS_C4
-           else {0x15: 57600, 0x0A: 115200, 0x09: 124800, 0x77: 10400})
+BG_RATE = hc_board.s0bg_rates()      # from this board's header (24/32/40 MHz)
 FAILS = 0
 # the board's own signature prefix (hctarget.h TGT_SIGNATURE)
 SIG = re.search(r'TGT_SIGNATURE\s+"(HaniCore \S+ )',

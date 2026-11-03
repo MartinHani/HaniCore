@@ -1745,6 +1745,31 @@ for _p in ENGINE_PRESETS:
                    "sensor curves, lambda (CJ110) and the 24 MHz CPU choices "
                    "are this board's."}
 
+# THE 1.8T IN THE AUDI A4 B7 (BFB, 8E0909518AQ / 0261208524), 2026-11-02: the
+# same 1.8T engine preset as the AWT's, with the BFB stock read's own injector
+# dead-time curve. Checked against the BFB stock read (docs/ME75_BFB_EVIDENCE.md):
+# KUMSRL raw 88 (the AWT's), KFSZT dwell 10.0/8.0/4.2/3.2/2.9/2.7/2.4/2.0 ms
+# (identical), DLRPIDMAX 80 %, TVPWDK12 0.14 s, DSLGRAD 541.0 / DSLOFS -16.4
+# hPa (identical); the injector flow class holds (the BFB's own car logs give
+# te/rk 0.100-0.106 ms/% against the AWT's KRKTE 0.1049). Only TVUB differs.
+S_BFB = ("BFB stock read audi-a4-b7-1.8t-bfb-163hp.ori.bin (8E0909518AQ, SW "
+         "1037372505): ")
+_bfb_values = dict([_p for _p in ENGINE_PRESETS if _p.ident == 1][0].values)
+_bfb_values["deadtimeVal"] = Value(
+    [1405, 1395, 877, 608, 527, 446, 331, 331], P, S_BFB +
+    "TVUB @0x14E00 raw 527/329/229/167/124 at 7.96/10.00/11.97/14.01/15.98 V "
+    "(file 0x14DFB axis x 0.0704 V), scaled /375 ms as the AWT's TVUB was "
+    "(PROBABLE: the unit is the ME7.5 timer tick, the XDF says 0.004 ms/bit); "
+    "the 8 points are the AWT preset's axis 6/8/10/12/13/14/16/18 V")
+ENGINE_PRESETS.append(Preset(
+    10, "VAG_18T_ME75_BFB", "VAG 1.8T BFB (Audi A4 B7)", "ME75_4B0906018DC",
+    values=_bfb_values,
+    gaps={"bench": "Never run on an ECU. Dead time is the BFB's own but its "
+                   "time unit is PROBABLE, not measured: check short-term trim "
+                   "at idle.",
+          "knock / CAN": "Knock control is off; there is no CAN, so the B7 "
+                         "cluster and ESP will not see the engine."}))
+
 ENGINE_PRESETS.append(Preset(
     9, "VAG_18T_ME71_C4", "VAG 1.8T DBW", "VAG_ME71_C4",
     values=_on_board(_A, _C4_BOARD),

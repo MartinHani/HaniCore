@@ -83,7 +83,7 @@ SET_IMM = 0x0040           # OR immediate that sets ONLY xxIE
 T8_ADDR, T8REL_ADDR, T78CON_ADDR = 0xF052, 0xF056, 0xFF20
 import me711_heartbeat_gap_proof as HB  # noqa: E402
 import hc_board                        # noqa: E402
-FCPU_HZ = 24_000_000 if hc_board.IS_C4 else 40_000_000
+FCPU_HZ = hc_board.fcpu_hz()           # the board's own clock (40 / 24 / 32 MHz)
 TICK_RELOAD = HB.TPMS // 10            # T8 ticks per 1 ms tick (1250 / 750)
 
 

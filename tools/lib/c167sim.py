@@ -44,7 +44,7 @@ IRAM_LO, IRAM_HI = 0x00F200, 0x00FDFF
 # 0xF380 - it never ran on the real ECU. Under HANICORE_BOARD=vag_me71_c4 any
 # access to 0xF200-0xF5FF is a Trap, as loud as the silicon is fatal.
 # the ME7.5 DC (2026-10-28) is a C167CR too - same hole
-if __import__("os").environ.get("HANICORE_BOARD") in ("vag_me71_c4", "vag_me75_dc"):
+if __import__("os").environ.get("HANICORE_BOARD") in ("vag_me71_c4", "vag_me75_dc", "vag_me75_bfb"):
     IRAM_LO = 0x00F600
 NORAM_LO, NORAM_HI = (0x00F200, IRAM_LO - 1) if IRAM_LO > 0x00F200 else (1, 0)
 SFR_LO, SFR_HI = 0x00FE00, 0x00FFFF
