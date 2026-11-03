@@ -26,6 +26,13 @@ ROOT = Path(__file__).resolve().parents[2]
 TDIR = ROOT / "firmware/targets/me711"
 SHARED = ROOT / "firmware"
 import hc_board as _BOARD  # noqa: E402  HANICORE_BOARD selects the 2.7T
+# One T1 tick in microseconds / milliseconds, from THIS board's header
+# (TGT_TICKS_PER_MS_X10: 12500 Porsche 0.8 us, 7500 2.7T/18T 1.333 us, 10000
+# BFB 1.000 us). It was `1.333 if IS_C4 else 0.8`, which is wrong for the BFB.
+_TPMS = _BOARD.define_int("TGT_TICKS_PER_MS_X10")
+_TICK_US = "%.3f" % (10000.0 / _TPMS)
+# the two older boards keep their exact published strings
+_TICK_MS = {12500: "0.0008", 7500: "0.00133333"}.get(_TPMS, "%.8g" % (10.0 / _TPMS))
 OUT = ROOT / "tuning" / _BOARD.INI
 
 # Bases for the S5500 correlation-window sweep.
@@ -1167,7 +1174,7 @@ ADC_NAMES = ["HFM", "TPS1", "IPV", "TPS2", "LS2VK", "UBAT", "LS1VK",
              "DSS", "KNOCK"]
 # V102: separate event intentions, queue admission and commanded GPIO edges.
 for _i,_n in enumerate(["dlPlannedDwell","dlPlannedSpark","dlPlannedOpen","dlPlannedClose","dlExecutedDwell","dlExecutedSpark","dlExecutedOpen","dlExecutedClose","dlArmed","dlSuppressed","dlCancelled","dlClipped","dlRejected","dlLate","dlMaxLateTicks","dlReason","dlRequestedTick","dlCompareTick","dlCommandTick"]):
-    CH.append((1248+2*_i,_n,"U16","ticks" if _i>=14 and _i!=15 else "","CC25 command telemetry; ticks are %s us. Internal timestamps are not physical trace measurements." % ("1.333" if _BOARD.IS_C4 else "0.8")))
+    CH.append((1248+2*_i,_n,"U16","ticks" if _i>=14 and _i!=15 else "","CC25 command telemetry; ticks are %s us. Internal timestamps are not physical trace measurements." % _TICK_US.rstrip("0").rstrip(".")))
 for _b in range(8):
     for _i,_n in enumerate(["FuelUs","DeadUs","RequestedUs","ScheduledUs","DeliveredUs","Owner","Flags"]):
         CH.append((1286+14*_b+2*_i,"inj%d%s"%(_b+1,_n),"U16","us" if _i<5 else "","Last request/admission/command interval for this channel. Flags: 1 ON, 2 clipped, 4 truncated, 8 OFF guard, 16 requested overflow, 32 last request refused. Owner is a ticket, not cylinder phase."))
@@ -3223,7 +3230,7 @@ def main() -> int:
     w("[LoggerDefinition]")
     _rec = [
         ("refTime", "RefTime", 0, 32,
-         "0.00133333" if _BOARD.IS_C4 else "0.0008", "ms"),
+         _TICK_MS, "ms"),
         ("priLevel", "PriLevel", 32, 1, "1", "Flag"),
         ("secLevel", "SecLevel", 33, 1, "1", "Flag"),
         ("trigger", "Trigger", 34, 1, "1", "Flag"),

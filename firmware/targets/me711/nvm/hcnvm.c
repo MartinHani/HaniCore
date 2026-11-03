@@ -2063,6 +2063,8 @@ static unsigned char live_admit(unsigned int now_ms, unsigned int rpm,
            The 2.7T's 0.75 MHz: x 4/3 (horizon_ticks < 32768, fits). */
 #if TGT_TICKS_PER_MS_X10 == 12500UL
         horizon_us = (unsigned int)(horizon_ticks - (horizon_ticks / 5u));
+#elif TGT_TICKS_PER_MS_X10 == 10000UL
+        horizon_us = horizon_ticks;                 /* 1.000 MHz: one tick = 1 us */
 #else
         horizon_us = (unsigned int)(horizon_ticks + (horizon_ticks / 3u));
 #endif

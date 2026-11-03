@@ -128,6 +128,23 @@ BOARDS = {
             "008081008E81810000FC80008EFD800000008100FEFF8100C9A8000039379F00"),
         "first_level": ROOT / "bins/oem/CPU.BIN",
     },
+    # 2026-11-02: the Audi A4 B7 1.8T BFB ME7.5 (8E0909518AQ / 0261208524,
+    # SW 1037372505). The DC's code and hardware (bus, ports and ASIC measured
+    # equal on the stock read), its own ROMSYS variant 0x5C02 and identity.
+    # The ROMSYS header below is the 64 bytes at 0x8000 of the stock read; the
+    # mask ROM's checking scheme for variant 0x5C02 is NOT proven.
+    "vag_me75_bfb": {
+        "bld": "build_me75bfb", "pindesc": "hc_pin_desc_me75_4b0906018dc",
+        "stem": "HaniCore_ME75_BFB_v102_dev",
+        "ini": "hanicore_me75_bfb.ini",
+        "target": "Bosch ME7.5, Audi A4 B7 1.8T BFB (8E0909518AQ / 0261208524)",
+        "boot": "donor",
+        "donor": ROOT / "reference/bfb/8E0909518AQ.bin",
+        "header": b"\x02\x5C",          # ROMSYS +4: variant 0x5C02
+        "romsys_header": bytes.fromhex(
+            "B4D08A00025C0000200000003800000010E58100FFFF8F00FA0000000000FFFF008081008E81810000FC80008EFD800000008100FEFF8100770D01008A698F00"),
+        "first_level": ROOT / "bins/oem/CPU.BIN",
+    },
 }
 
 
@@ -155,9 +172,10 @@ if _ENV_BOARD and BOARD_NAME != _ENV_BOARD:
 if BOARD_NAME not in BOARDS:
     raise SystemExit(f"--board {BOARD_NAME!r}: one of {', '.join(BOARDS)}")
 BOARD = BOARDS[BOARD_NAME]
-IS_DC = BOARD_NAME == "vag_me75_dc"
+IS_BFB = BOARD_NAME == "vag_me75_bfb"
+IS_DC = BOARD_NAME in ("vag_me75_dc", "vag_me75_bfb")   # the BFB is the DC's code
 # the DC builds on the 2.7T branch: every IS_C4 path applies to it as well
-IS_C4 = BOARD_NAME in ("vag_me71_c4", "vag_me75_dc")
+IS_C4 = BOARD_NAME in ("vag_me71_c4", "vag_me75_dc", "vag_me75_bfb")
 IS_4F = BOARD_NAME == "audi_4f_v8"
 DONOR_BOOT = BOARD["boot"] == "donor"
 OWN_BLD = BOARD["bld"] != "build"          # a board with its own build dir
@@ -184,6 +202,14 @@ def board_text(path: Path) -> str:
         m = re.match(r"#\s*if\s+(!?)\s*TGT_BOARD_VAG_ME75_DC\b", s)
         if m:
             stack.append((True, (m.group(1) == "!") != IS_DC))
+            continue
+        # the BFB's own block (end of hctarget.h): without this it was an
+        # ordinary ACTIVE conditional on EVERY board, and its #undef gave the
+        # DC, 2.7T and Porsche manifests the BFB's signature and version text
+        # (me711_identity_proof on the DC build, 2026-11-03)
+        m = re.match(r"#\s*if\s+(!?)\s*TGT_BOARD_VAG_ME75_BFB\b", s)
+        if m:
+            stack.append((True, (m.group(1) == "!") != IS_BFB))
             continue
         # the 4F's `#ifdef TGT_BOARD_AUDI_4F` block (2026-10-29): as an
         # ordinary conditional it was ACTIVE on every board, and its #undef
@@ -354,7 +380,7 @@ _APP_HDR = {                    # hcloader.a66: magic/seal/board word offsets
     "M0": 0x4348, "M1": 0x5041, "SEAL": 0x5AA5,
 }
 _BOARD_CODE = {"porsche_me711": 1, "vag_me71_c4": 2,
-               "audi_4f_v8": 3, "vag_me75_dc": 4}
+               "audi_4f_v8": 3, "vag_me75_dc": 4, "vag_me75_bfb": 5}
 LOADER_BIN = ROOT / "bins/hanicore" / ("HaniCore_loader_%s.bin" % BOARD_NAME)
 if UPDATER:
     ISR_TABLE = CODE_SEG_LO     # the app table at the start of SA6, not SA5
@@ -847,6 +873,7 @@ def write_build_id() -> str:
     (BUILD_DIR / "hc_board.h").write_text(
         "/* WRITTEN BY tools/build/build_hanicore_me711.py - do not edit. */\n"
         + ("#define TGT_BOARD_VAG_ME71_C4 1\n#define TGT_BOARD_VAG_ME75_DC 1\n"
+           + ("#define TGT_BOARD_VAG_ME75_BFB 1\n" if IS_BFB else "")
            if IS_DC else
            "#define TGT_BOARD_VAG_ME71_C4 1\n" if IS_C4 else
            # the 4F: Porsche code, every output enabled as on the Porsche
@@ -933,7 +960,7 @@ def main() -> int:
     # ---- 1. compile and link -------------------------------------------
     import os as _os
     benv = dict(_os.environ, HC_BLD=BOARD["bld"], HC_PINDESC=BOARD["pindesc"],
-                HC_ASET=(",BOARD_C4,BOARD_DC" if IS_DC else ",BOARD_C4" if IS_C4
+                HC_ASET=(",BOARD_C4,BOARD_DC" + (",BOARD_BFB" if IS_BFB else "") if IS_DC else ",BOARD_C4" if IS_C4
                         else ",BOARD_4F" if IS_4F else "")
                         # own boot region: the startup clears ROMEN, so every
                         # vector is fetched from OUR table at flash 0
@@ -1505,7 +1532,7 @@ def main() -> int:
         # its own manifest, and the "not typed" print at the end of main()
         # faithfully read it back, so the build announced the wrong identity
         # through the one line that exists to stop that.
-        "build": ("V102_ME75_DC_DEV" if IS_DC else "V102_ME71_27T_DEV" if IS_C4 else "V102_ME711_4F_DEV"
+        "build": ("V102_ME75_BFB_DEV" if IS_BFB else "V102_ME75_DC_DEV" if IS_DC else "V102_ME71_27T_DEV" if IS_C4 else "V102_ME711_4F_DEV"
                   if IS_4F else _IMG.EXPECTED_BUILD),
         # READ FROM hctarget.h, NEVER RETYPED. This line held the literal
         # "HaniCore V28 TRIGGER COMM" while the header had moved on, and TWO
@@ -1881,7 +1908,8 @@ def main() -> int:
         ini = ROOT / "tuning" / {"porsche_me711": "hanicore_me711.ini",
                                  "audi_4f_v8": "hanicore_me711.ini",
                                  "vag_me71_c4": "hanicore_me71_27t.ini",
-                                 "vag_me75_dc": "hanicore_me75_dc.ini"}[BOARD_NAME]
+                                 "vag_me75_dc": "hanicore_me75_dc.ini",
+                                 "vag_me75_bfb": "hanicore_me75_bfb.ini"}[BOARD_NAME]
         if ini.exists():
             shutil.copyfile(ini, _HB.RELEASE_DIR / (rel + ".ini"))
         print("release: bins/release/%s.bin + .ini" % rel)

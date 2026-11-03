@@ -71,7 +71,9 @@ REQ_M1      EQU     05444H
 RUN_SEG     EQU     038H        ; the copy runs at 0x386000
 RUN_OFF     EQU     06000H
 
-$IF (BOARD_DC)
+$IF (BOARD_BFB)
+BOARD       EQU     5           ; Audi A4 B7 1.8T BFB ME7.5
+$ELSEIF (BOARD_DC)
 BOARD       EQU     4
 $ELSEIF (BOARD_C4)
 BOARD       EQU     2
@@ -91,7 +93,13 @@ HCL_ENTRY       PROC    FAR
         ; startup sets it - it repeats this itself, still before EINIT.
         MOV     BUSCON0,#04AEH
         MOV     ADDRSEL1,#3803H
+$IF (BOARD_BFB)
+        ; the BFB ME7.5's stock value (stock read 0x00DC0E / 0x0AD0D2): one
+        ; wait state more than 0x040D and a lengthened ALE
+        MOV     BUSCON1,#051CH
+$ELSE
         MOV     BUSCON1,#040DH
+$ENDIF
 
         ; ---- the request --------------------------------------------------
         MOV     R13,#REQ0

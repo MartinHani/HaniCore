@@ -136,13 +136,27 @@ $ENDIF
 HC_SYSCON_DONE:
 
         MOV     ADDRSEL1,#3803H
+$IF (BOARD_BFB)
+        ; A4 B7 BFB ME7.5 (0261208524): the stock read writes BUSCON1 = 0x051C
+        ; (external SRAM: one wait state more than 0x040D, lengthened ALE) and
+        ; BUSCON2 = 0x064D (the CC650: one wait state more than the 18T's
+        ; 0x064E), in both startup stages [stock BFB read 0x00DC0E / 0x00DC16
+        ; and 0x0AD0D2 / 0x0AD0DA]. Same values here; the 18T's faster timing
+        ; left this ECU silent on the bench (2026-11-02).
+        MOV     BUSCON1,#051CH
+$ELSE
         MOV     BUSCON1,#040DH
+$ENDIF
 $IF (BOARD_DC)
         ; VAG 1.8T ME7.5 DC: CS2 = the CC650 bus ASIC, 4 KB at 0x480000,
         ; 8-bit demultiplexed, 1 wait state, lengthened ALE
         ; [EXACT TARGET BINARY 4B0906018DC 0x00DBF0 / 0x00DBF4]
         MOV     ADDRSEL2,#4800H
+$IF (BOARD_BFB)
+        MOV     BUSCON2,#064DH
+$ELSE
         MOV     BUSCON2,#064EH
+$ENDIF
 $ELSE
         MOV     ADDRSEL2,#1007H
 $IF (BOARD_C4)

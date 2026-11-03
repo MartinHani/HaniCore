@@ -322,6 +322,8 @@ EXPECTED_BUILD = {
     # 2026-10-28: the VAG 1.8T ME7.5 DC (--board vag_me75_dc), the 2.7T
     # branch with the CC650 + monitor service
     "HaniCore_ME75_DC_v102_dev": "V102_ME75_DC_DEV",
+    # 2026-11-02: the Audi A4 B7 1.8T BFB ME7.5 (--board vag_me75_bfb), the DC's code
+    "HaniCore_ME75_BFB_v102_dev": "V102_ME75_BFB_DEV",
 }.get(__import__("re").sub(
     r"(_ownboot|_boschboot)?(_p0test|_p0srst)?(_updater)?$", "", STEM))
 # 2026-10-29: `<stem>_boschboot` is the same build on the donor's Bosch boot

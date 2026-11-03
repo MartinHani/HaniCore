@@ -219,7 +219,10 @@ class Rig:
         cpu.ip = addr & 0xFFFF
         for i, v in enumerate(args):
             cpu.sr(8 + i, v & 0xFFFF)
-        for _ in range(400_000):
+        # the cap only catches a hang. 400 000 held on the 24/40 MHz boards; a wait in
+        # microseconds costs more instructions on the BFB's 32 MHz CPU, and
+        # hc_etbcal_bias_service there needs more than that (finishes well under 2 M)
+        for _ in range(2_000_000):
             # A far helper can contain this IP in another segment. Only
             # accept the sentinel after the injected call unwinds its stack.
             if (cpu.ip & 0xFFFF) == SENTINEL and cpu.m.sfr[0xFE12] == saved[2]:

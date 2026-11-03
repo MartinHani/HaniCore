@@ -14,6 +14,7 @@ drive-by-wire, on the Porsche ECU.
 | Audi 2.7T ME7.1 (`27t`) | `4B0907551F` / `0261206378`, C167CR 24 MHz | `HaniCore_27T_4B0907551F_<build>` | bench (outputs, crank to 7500 rpm, Burn, OBD update); ceiling 7800 rpm |
 | Audi 4F 4.2 V8 ME7.1.1 (`4f`) | `0261208363`, C167 40 MHz | `HaniCore_4F_4F0910560_<build>` | experimental: simulator, and a tester's ECU connects |
 | VAG 1.8T ME7.5 (`18t`) | `4B0906018DC` / `0261207636`, C167CR 24 MHz | `HaniCore_18T_4B0906018DC_<build>` | bench (outputs, crank to 7000 rpm, Burn, OBD update); not yet in a car |
+| Audi A4 B7 1.8T BFB ME7.5 (`bfb`) | `8E0909518AQ` / `0261208524`, C167CR **32 MHz** | `HaniCore_BFB_8E0909518AQ_<build>` | bench: K-line link up (signature and live data over cavity 43 at 57600) and a firmware update over that line; the OBD port is untried. **Not the 18T's clock or bus timing** (32 MHz, BUSCON1/2 from its stock read). Engine timing converted to the 1 MHz tick but never run; pin map still the 18T's, unproven on this loom; no CAN |
 
 ## Features
 

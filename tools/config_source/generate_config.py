@@ -1302,7 +1302,7 @@ def _board_c4():
 
 def _board_dc():
     import os
-    return os.environ.get("HANICORE_BOARD") == "vag_me75_dc"
+    return os.environ.get("HANICORE_BOARD") in ("vag_me75_dc", "vag_me75_bfb")
 
 
 def _pin_desc():

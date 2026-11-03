@@ -53,7 +53,7 @@ PWMCON0, PWMCON1 = sfr("PWMCON0"), sfr("PWMCON1")
 PP0, PP1, PW0, PW1 = sfr("PP0"), sfr("PP1"), sfr("PW0"), sfr("PW1")
 DP7, P7 = sfr("DP7"), sfr("P7")
 P0, P1 = (114, 104) if hc_board.IS_C4 else (115, 120)
-CPS = 375000 if hc_board.IS_C4 else 625000      # fCPU / 64
+CPS = hc_board.fcpu_hz() // 64                  # fCPU / 64, from the board's header
 
 
 def period(f):

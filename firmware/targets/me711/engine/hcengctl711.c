@@ -1194,6 +1194,8 @@ void far hc_ec_prime_service(void)
        0.75 MHz: us x 3 / 32 (it used the 5 until 2026-10-25) */
 #if TGT_TICKS_PER_MS_X10 == 12500UL
     hc_drysched_prime(DIV32U((unsigned long)us * 5u, 32u));
+#elif TGT_TICKS_PER_MS_X10 == 10000UL
+    hc_drysched_prime(DIV32U((unsigned long)us * 4u, 32u));   /* 1.000 MHz: us / 8 */
 #else
     hc_drysched_prime(DIV32U((unsigned long)us * 3u, 32u));
 #endif
