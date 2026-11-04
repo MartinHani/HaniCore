@@ -263,7 +263,6 @@ UNUSED = {
     "pinGenericPwm": "no generic PWM output exists yet",
     "pinGenericOut": "no generic on/off output exists yet",
     "testPin": "the bench command itself selects the output",
-    "pinVss": "no vehicle speed input is read",
     "trigDecoder": "selects which validation rules apply; the decoder is "
                    "configured by the wheel fields",
     # --- a dead scalar that sat beside the live thing that replaced it
@@ -1016,6 +1015,7 @@ panel("hcMsLaunch", "Launch control", [
     BV("launchSwitchHigh", "launchEnable == 1 && pinLaunch != 255"),
     F("launchRpm", None, "launchEnable == 1"),
     F("launchWindow", None, "launchEnable == 1"),
+    F("launchMaxSpeed", None, "launchEnable == 1"),
     F("launchTps", None, "launchEnable == 1"),
     F("launchCutStart", None, "launchEnable == 1"),
     F("launchCutEnd", None, "launchEnable == 1"),
@@ -2036,7 +2036,6 @@ dialog("hcUnusedSettings", "Stored settings this firmware does not use", [
 panel("hcUnusedIn", "Inputs", [
     F("pinFlex"),
     F("pinBaro"),
-    F("pinVss"),
     F("pinMapSwitch"),
     E("pinGenericAin"),
 ])
@@ -2652,7 +2651,7 @@ SEP = ("SEP", None)
 NOT_USED = " (not used)"
 # tables shown INSIDE a window (with their options), not as a bare grid:
 # gen_ts_ui_me711.table_dialog_lines() emits no separate grid dialog
-EMBEDDED_TABLES = {"boostTgtTbl", "boostDutyTbl", "veTableTbl", "ignMapTbl", "afrMapTbl", "injPhaseTbl"}
+EMBEDDED_TABLES = {"boostTgtTbl", "boostDutyTbl", "veTableTbl", "ignMapTbl", "afrMapTbl", "injPhaseTbl", "knockAmpTbl"}
 
 # THE FUEL MODEL: one dialog that owns every setting deciding how air is
 # estimated - the model, the legacy variant, where the pressure sensor
@@ -2704,35 +2703,353 @@ dialog("hcLoadPolicies", "Fuel model", [
     P("hcLoadModelInfo", "East"),
 ], layout="border", help_topic="hcHelpPressure")
 
+# ==========================================================================
+# 2026-11-03: THE PAGE-EXTENSION WINDOWS (hcxfn711.c). Each new function
+# has its window beside the function it extends; the live values it
+# publishes sit in the same window.
+# ==========================================================================
+panel("hcXEtbSafety", "Throttle safety", [
+    F("etbDevCutPct", "Plate off target: cut above"),
+    F("etbDevCutTime", "...for longer than", "etbDevCutPct > 0"),
+    F("etbPairAction", "Throttle sensor pair fault"),
+    B(),
+    T("#Expected sensor voltages of this throttle body"),
+    E("tpsExpected"),
+    F("tpsExpTol", "AutoCal refuses endpoints further than"),
+    N("Track 1 closed, track 1 open, track 2 closed, track 2 open."),
+])
+rpanel("hcXEtbSafetyLive", 1, ["etbDevMsGauge", "xCutWhyGauge"])
+panel("hcXEtbSafetyGraph", "", [
+    LG("hcXEtbSafetyLG", "Throttle: target, actual, time off target", "South",
+       ["etbTarget", "etbActual", "etbDevMs", "xCutWhy"]),
+])
+dialog("hcXEtbSafetyDlg", "Throttle safety", [
+    P("hcXEtbSafety", "West"),
+    P("hcXEtbSafetyLive", "East"),
+    P("hcXEtbSafetyGraph", "South"),
+], layout="border")
+dialog("hcXEtbShapeDlg", "Throttle response by position", [
+    P("dbwGainCurve"), P("dbwSpeedOpenCurve"), P("dbwSpeedCloseCurve"),
+    P("dbwOverrunCurve"),
+], layout="xAxis")
+
+panel("hcXIdleSpark", "Idle spark first", [
+    F("idleIgnKi", "Spark integral"),
+    F("idleIgnFade", "Fade out after the pedal"),
+    B(),
+    T("#Throttle correctors"),
+    F("idleCorrThr", "When the spark has used"),
+    F("idleCorrPeriod", "Step every", "idleCorrThr > 0"),
+    F("idleCorrStep", "Step", "idleCorrThr > 0"),
+    F("idleCorrMax", "At most", "idleCorrThr > 0"),
+])
+panel("hcXIdleKick", "Kicks, adaptation, anti-stall", [
+    T("#Throttle kicks (rpm below target / step)"),
+    E("idleKickDrop"),
+    E("idleKickStep"),
+    F("idleKickReset", "Taken back above target +"),
+    B(),
+    T("#Idle adaptation"),
+    F("idleAdaptRate", "Learning rate"),
+    F("idleAdaptMax", "At most +/-", "idleAdaptRate > 0"),
+    F("idleAdaptClt", "Only above coolant", "idleAdaptRate > 0"),
+    B(),
+    T("#Anti-stall"),
+    F("stallRpm", "Below target minus"),
+    F("stallGain", "Throttle per 100 rpm", "stallRpm > 0"),
+    F("stallMax", "At most", "stallRpm > 0"),
+])
+rpanel("hcXIdleLive", 1, ["idleSparkX10Gauge", "idleCorrX100Gauge",
+                          "idleKickX10Gauge", "idleAdaptX100Gauge",
+                          "idleAdaptAcX100Gauge", "stallAddX10Gauge"])
+columns("hcXIdleCols", "hcXIdleSpark", "hcXIdleKick", "hcXIdleLive")
+panel("hcXIdleGraph", "", [
+    LG("hcXIdleLG", "Idle: speed vs target, spark and air corrections", "South",
+       ["RPMValue", "idleTarget", "idleSparkX10", "idleCorrX100"]),
+])
+dialog("hcXIdleDlg", "Idle: spark first, kicks, adaptation", [
+    P("hcXIdleCols", "Center"),
+    P("hcXIdleGraph", "South"),
+], layout="border")
+
+panel("hcXStart", "Starting", [
+    T("#Cranking fuel"),
+    F("crankFuelHold", "Full for"),
+    F("crankFuelDecay", "Then reduce over", "crankFuelHold > 0"),
+    F("crankFuelFloor", "Down to", "crankFuelHold > 0"),
+    F("firstRevsAdd", "First revolutions: extra fuel"),
+    F("firstRevsN", "Revolutions", "firstRevsAdd > 0"),
+    F("aseHold", "After-start enrichment: hold"),
+    B(),
+    T("#Start delay for oil pressure"),
+    F("oilStartKpa", "Oil pressure needed"),
+    F("oilStartMax", "Wait at most", "oilStartKpa > 0"),
+    B(),
+    F("wuLambdaEnable", "Warm-up lambda"),
+])
+rpanel("hcXStartLive", 1, ["crankFuelPctGauge", "wuLambdaX1000Gauge"])
+columns("hcXStartCols", "hcXStart", "wuLambdaCurve", "hcXStartLive")
+panel("hcXStartGraph", "", [
+    LG("hcXStartLG", "Start: speed, cranking fuel, oil pressure", "South",
+       ["RPMValue", "crankFuelPct", "oilPressKpa", "wuLambdaX1000"]),
+])
+dialog("hcXStartDlg", "Start: fuel hold, first revolutions, oil", [
+    P("hcXStartCols", "Center"),
+    P("hcXStartGraph", "South"),
+], layout="border")
+
+panel("hcXOverrun", "Overrun cut and closed loop", [
+    T("#Overrun fuel cut"),
+    F("dfcoCutTime", "Fade out over"),
+    F("dfcoRestoreTime", "Fade in over"),
+    F("dfcoRestoreAdd", "First fuel extra", "dfcoRestoreTime > 0"),
+    B(),
+    T("#Lambda sensor saturated after a cut"),
+    F("o2SatLambda", "Saturated above"),
+    F("o2SatRecLambda", "Recovered below", "o2SatLambda > 0"),
+    F("o2SatRecTime", "...for", "o2SatLambda > 0"),
+    F("o2SatTps", "Only below throttle", "o2SatLambda > 0"),
+    B(),
+    T("#Closed loop"),
+    F("stftLeanLock", "No leaning for"),
+    T("P gain: idle / overrun / power / cruise"),
+    E("stftKp"),
+])
+rpanel("hcXOverrunLive", 1, ["dfcoFuelPmGauge", "o2SaturatedGauge",
+                             "stftActiveMsGauge"])
+panel("hcXOverrunGraph", "", [
+    LG("hcXOverrunLG", "Overrun: speed, fuel share, lambda", "South",
+       ["RPMValue", "dfcoFuelPm", "lambdaValue", "o2Saturated"]),
+])
+dialog("hcXOverrunDlg", "Overrun cut and closed-loop extras", [
+    P("hcXOverrun", "West"), P("hcXOverrunLive", "East"),
+    P("hcXOverrunGraph", "South"),
+], layout="border")
+
+panel("hcXKnock", "Knock strength and adaptation", [
+    F("knockAmpEnable", "Retard by knock strength"),
+    B(),
+    F("knockAdaptMode", "Knock adaptation"),
+    F("knockAdaptCyl", "Cylinders knocking together", "knockAdaptMode > 0"),
+    F("knockAdaptAttack", "Learn share of the retard", "knockAdaptMode > 0"),
+    F("knockAdaptDecay", "Given back", "knockAdaptMode > 0"),
+    F("knockAdaptMax", "At most", "knockAdaptMode > 0"),
+    T("Load points (cylinder filling)"),
+    E("knockAdaptLoadAx"),
+])
+rpanel("hcXKnockLive", 1, ["knockStrengthGauge", "knockAdaptX10Gauge"])
+columns("hcXKnockCols", "hcXKnock", "knockAmpTbl", "hcXKnockLive")
+panel("hcXKnockGraph", "", [
+    LG("hcXKnockLG", "Knock: strength, retard, learned retard", "South",
+       ["RPMValue", "knockStrength", "knockRetardMax", "knockAdaptX10"]),
+])
+dialog("hcXKnockDlg", "Knock strength and adaptation", [
+    P("hcXKnockCols", "Center"),
+    P("hcXKnockGraph", "South"),
+], layout="border")
+
+rpanel("hcXBoostLive", 1, ["boostLimitX10Gauge"])
+columns("hcXBoostCols", "boostIMinCurve", "boostIMaxCurve",
+        "boostLimIatCurve", "boostLimCltCurve", "hcXBoostLive")
+panel("hcXBoostGraph", "", [
+    LG("hcXBoostLG", "Boost: pressure, target, ceiling, integrator", "South",
+       ["MAPValue", "boostTarget", "boostLimitX10", "boostIX10"]),
+])
+dialog("hcXBoostDlg", "Boost limits and integrator range", [
+    P("hcXBoostCols", "Center"),
+    P("hcXBoostGraph", "South"),
+], layout="border")
+
+panel("hcXLimp", "Limp mode", [
+    F("limpEnable", "Checks (1 lean, 2 pressure, 4 coolant, 8 knock)"),
+    F("limpThrottle", "Throttle at most", "limpEnable > 0"),
+    B(),
+    F("limpLean", "Lean: target missed by", "limpEnable > 0"),
+    F("limpLeanTps", "Lean: above throttle", "limpEnable > 0"),
+    F("limpLeanTime", "Lean: for", "limpEnable > 0"),
+    F("limpMap", "Manifold pressure above", "limpEnable > 0"),
+    F("limpMapTime", "Pressure: for", "limpEnable > 0"),
+    F("limpClt", "Coolant above", "limpEnable > 0"),
+    F("limpKnock", "Knock retard above", "limpEnable > 0"),
+    F("limpKnockCyl", "...on cylinders", "limpEnable > 0"),
+])
+panel("hcXDtcMask", "Trouble codes", [
+    T("One bit per code, the trouble-code list order."),
+    E("dtcNoLampMask"),
+    E("dtcOffMask"),
+])
+rpanel("hcXLimpLive", 1, ["limpWhyGauge", "xCutWhyGauge"])
+dialog("hcXLimpDlg", "Limp mode", [
+    P("hcXLimp"), P("hcXDtcMask"), P("hcXLimpLive"),
+], layout="xAxis")
+
+panel("hcXTraction", "Traction (engine speed rise)", [
+    F("tcRpmRate", "Engine speed rising faster than"),
+    F("tcRetard", "Retard", "tcRpmRate > 0"),
+    F("tcCut", "Spark cut", "tcRpmRate > 0"),
+    N("Needs Motorsport bit 4. No wheel speeds on these ECUs."),
+])
+rpanel("hcXTractionLive", 1, ["rpmRateGauge", "tractionActiveGauge"])
+panel("hcXTractionGraph", "", [
+    LG("hcXTractionLG", "Traction: speed, rise rate, active, timing", "South",
+       ["RPMValue", "rpmRate", "tractionActive", "ignitionTiming"]),
+])
+dialog("hcXTractionDlg", "Traction control", [
+    P("hcXTraction", "West"), P("hcXTractionLive", "East"),
+    P("hcXTractionGraph", "South"),
+], layout="border")
+
+panel("hcCan", "CAN bus", [
+    F("canEnable", "CAN bus"),
+    F("canVag", "Engine messages", "canEnable > 0"),
+    N("500 kbit/s, pins 58 (CAN L) / 60 (CAN H). Takes effect after a key "
+      "cycle. Sends Motor_1 / 2 / 3 every 10 ms and Motor_5 every 20 ms: "
+      "the cluster shows rpm, coolant, MIL and EPC; the ABS and gearbox see "
+      "an engine ECU. Receives ABS, wheel speeds, gearbox, cluster and "
+      "airbag messages when selected below."),
+    B(),
+    T("#Engine identity (as the stock ECU sends it)"),
+    F("canVers", "CAN version (CANVERS)", "canVag > 0"),
+    F("canEngineCode", "Engine code", "canVag > 0"),
+    F("canGearboxCode", "Gearbox code", "canVag > 0"),
+    F("canEngineType", "Engine type", "canVag > 0"),
+    F("canTorqueNorm", "Torque normalisation", "canVag > 0"),
+    F("canTorqueMax", "Maximum torque", "canVag > 0"),
+    F("canTorqueMaxRpm", "...at", "canVag > 0"),
+    F("canConsumptionNorm", "Normalised consumption", "canVag > 0"),
+    B(),
+    T("#Lamps and consumption"),
+    F("canEpcSource", "EPC lamp on (1 throttle fault, 2 limp)", "canVag > 0"),
+    F("canHotClt", "Coolant lamp above", "canVag > 0"),
+    F("canFuelCorr", "Fuel consumption correction", "canVag > 0"),
+    B(),
+    T("#Receiving"),
+    F("canRxMask", "Receive (1 ABS, 2 wheels, 4 gearbox, 8 cluster, 16 temps, 32 airbag, 64 A/C)", "canEnable > 0"),
+    F("canVssSource", "Vehicle speed from", "canRxMask > 0"),
+    F("canRxTimeout", "Receive timeout", "canRxMask > 0"),
+    F("canCrashCut", "Airbag crash cuts the engine", "canRxMask > 0"),
+    B(),
+    T("#Custom frames (dash / logger: 4 live values each)"),
+    E("canCustomId", "canEnable > 0"),
+    E("canCustomRate", "canEnable > 0"),
+    E("canCustomCh", "canEnable > 0"),
+    F("canCustomLittle", "Byte order (bit 0 frame 1, bit 1 frame 2: 1 = Intel)", "canEnable > 0"),
+    B(),
+    T("#Wideband controller, OBD-II, ABS emulation"),
+    F("canWbFormat", "Wideband controller on CAN", "canEnable > 0"),
+    F("canWbIndex", "Its index (lambda 1; lambda 2 = next)", "canWbFormat > 0"),
+    N("Lambda 1 / 2 read it when their source is External controller over CAN."),
+    F("canObd", "OBD-II over CAN", "canEnable > 0"),
+    F("canAbsEmu", "ABS emulation (NO ABS unit fitted)", "canEnable > 0"),
+])
+rpanel("hcCanLive", 1, ["canStateGauge", "canTxFramesGauge",
+                        "canTxLateGauge", "canBusOffsGauge", "canFuelUlGauge",
+                        "canRxStateGauge", "canRxFramesGauge", "canVssX10Gauge",
+                        "canGearFlagsGauge", "canWheelFLGauge", "canWheelFRGauge",
+                        "canWheelRLGauge", "canWheelRRGauge", "canOilTempGauge",
+                        "canAmbientGauge", "canLambda1Gauge",
+                        "canLambda2Gauge", "canExtGauge", "obdRequestsGauge",
+                        "canObjectsGauge"])
+panel("hcVss", "Vehicle speed and gears", [
+    F("pinVss", "Speed signal pin"),
+    N("2.7T / 1.8T: pin 54 (the VAG harness's speed wire). Porsche / 4F: a "
+      "free cam input (86 / 87) that no camshaft sensor uses. Without a wire, "
+      "the speed comes from CAN (CAN bus > Vehicle speed from)."),
+    F("vssPulsesPerKm", "Pulses per km", "pinVss < 255"),
+    F("vssEdge", "Edge counted", "pinVss < 255"),
+    F("vssFilter", "Smoothing", "pinVss < 255"),
+    F("vssTimeout", "Standing after no pulse for", "pinVss < 255"),
+    B(),
+    T("#Gears (speed per 1000 rpm, 1st first)"),
+    F("gearCount", "Gears"),
+    E("gearSpeed", "gearCount > 0"),
+    F("gearBand", "Gear held within", "gearCount > 0"),
+    F("gearMinSpeed", "No gear below", "gearCount > 0"),
+])
+rpanel("hcVssLive", 1, ["vehicleSpeedGauge", "gearStateGauge",
+                        "speedPer1000Gauge", "vssEdgesGauge"])
+dialog("hcVssDlg", "Vehicle speed and gears", [
+    P("hcVss", "West"), P("hcVssLive", "East"),
+], layout="border")
+
+panel("hcHaldex", "Haldex (Gen1, car without ABS)", [
+    F("haldexMode", "Haldex control"),
+    N("Needs ABS emulation (CAN bus) and a vehicle speed. Refused at run time "
+      "while a real ABS unit is on the bus. Not with an automatic gearbox."),
+    T("#Wanted lock"),
+    E("haldexTpsAx", "haldexMode > 0"),
+    E("haldexTpsLock", "haldexMode > 0"),
+    E("haldexRpmAx", "haldexMode > 0"),
+    E("haldexRpmLimit", "haldexMode > 0"),
+    F("haldexMax", "Lock: at most", "haldexMode > 0"),
+    F("haldexBrakeOpen", "Open on the brake", "haldexMode > 0"),
+    F("haldexLaunch", "Lock during launch", "haldexMode > 0"),
+    B(),
+    T("#Control (modes 1 and 2)"),
+    E("haldexNoLock", "haldexMode > 0 && haldexMode < 3"),
+    E("haldexFullLock", "haldexMode > 0 && haldexMode < 3"),
+    F("haldexKp", "Closed loop P", "haldexMode > 0 && haldexMode < 3"),
+    F("haldexKi", "Closed loop I", "haldexMode > 0 && haldexMode < 3"),
+    F("haldexDeadband", "Deadband", "haldexMode > 0 && haldexMode < 3"),
+    F("haldexFixRpm", "Fixed rpm sent (mode 2)", "haldexMode == 2"),
+])
+rpanel("hcHaldexLive", 1, ["haldexWantGauge", "haldexActualGauge",
+                           "haldexOffsetGauge", "vehicleSpeedGauge",
+                           "canExtGauge"])
+dialog("hcHaldexDlg", "Haldex", [
+    P("hcHaldex", "West"), P("hcHaldexLive", "East"),
+], layout="border")
+
+dialog("hcCanDlg", "CAN bus", [
+    P("hcCan", "West"), P("hcCanLive", "East"),
+], layout="border")
+
+# ==========================================================================
+# THE TOP-LEVEL MENUS (owner, 2026-11-03: grouped by what a tuner works on,
+# like a mature VAG standalone - HaniCore's own names, order and grouping;
+# this replaces the rusEFI-structured menus of V89 UI2). Controller,
+# Diagnostics and Help follow (gen_ts_ini_me711).
+# ==========================================================================
 MENU = [
-    ("&Setup", [
+    ("&Engine", [
         ("hcSetupEngine", "Engine Constants"),
         ("hcSetupTrigger", "Trigger Setup"),
         ("hcTriggerLiveDlg", "Trigger live check"),
         SEP,
         ("hcSetupOutputs", "Outputs"),
+        ("hcIgnOutDlg", "Ignition outputs"),
+    ]),
+
+    ("&Sensors", [
+        ("hcEtbTpsCalDlg", "Calibrate TPS"),
+        ("hcEtbAppCalDlg", "Calibrate pedal sensor"),
+        ("hcSensorMapDlg", "Pressure sensor (MAP)"),
+        ("hcSensorBaroDlg", "Barometric sensor (onboard)"),
+        ("hcSensorCltDlg", "Coolant temperature sensor"),
+        ("hcSensorIatDlg", "Intake air temperature sensor"),
+        ("hcSensorLambdaDlg", "Lambda sensor (wideband)"),
+        ("hcSensorBatteryDlg", "Voltage reading"),
+        ("hcSensorMiscDlg", "MAF input"),
+        ("hcVssDlg", "Vehicle speed and gears"),
         SEP,
-        ("GROUP", "Engine Protection", [
-            ("swProtCommon", "Common Engine Protection"),
-            ("swProtRev", "Rev Limiters"),
-            ("swProtBoost", "Boost Cut"),
-            ("swProtAfr", "AFR Protection"),
-            ("swProtPressure", "Pressure-loss Protection"),
-            ("swProtOilDlg", "Oil Pressure Protection"),
-        ]),
+        ("hcKnockAdvDlg", "Knock sensor calibration"),
+    ]),
+
+    ("&Load", [
+        ("hcLoadPolicies", "Fuel model"),
+        ("hcVeDlg", "VE Table"),
+        ("mapEstimateTblEdit", "Pressure estimate (sensor fault)"),
     ]),
 
     ("&Fuel", [
-        ("hcLoadPolicies", "Fuel model"),
         ("hcFuelInjector", "Injector Characteristics"),
-        ("hcVeDlg", "VE Table"),
         ("hcLambdaTblDlg", "Lambda Target Table"),
         ("hcInjTimingTblDlg", "Injection timing table"),
         SEP,
         ("hcAccelDlg", "Acceleration Enrichment"),
-        ("hcStftDlg", "AFR/O2"),
-        SEP,
-        ("mapEstimateTblEdit", "Pressure estimate (sensor fault)"),
+        ("cltEnrCurve", "Warmup Enrichment"),
+        ("hcStftDlg", "Closed loop (AFR/O2)"),
+        ("hcXOverrunDlg", "Overrun cut and closed-loop extras"),
     ]),
 
     ("&Ignition", [
@@ -2740,79 +3057,82 @@ MENU = [
         ("hcIgnTblDlg", "Spark Table"),
         ("hcDwellDlg", "Dwell settings"),
         ("hcIgnTrimDlg", "Sequential spark trims"),
+        SEP,
+        ("ignCltCorrCurve", "Cold Advance"),
         ("ignIatCorrCurve", "IAT Retard"),
         ("ignBoostCorrCurve", "Boost Retard"),
-        ("ignCltCorrCurve", "Cold Advance"),
-        SEP,
-        ("hcIgnOutDlg", "Ignition outputs"),
+        ("minAdvCurve", "Minimum advance"),
         SEP,
         ("hcKnockDlg", "Knock Settings"),
-        ("hcKnockAdvDlg", "Knock sensor calibration (advanced)"),
+        ("hcXKnockDlg", "Knock strength and adaptation"),
     ]),
 
-    ("&Cranking", [
+    ("&Throttle", [
+        ("hcEtbMain", "Electronic Throttle Body"),
+        ("pedalMapTblEdit", "Pedal target"),
+        ("hcXEtbShapeDlg", "Throttle response by position"),
+        ("hcXEtbSafetyDlg", "Throttle safety"),
+        SEP,
+        ("hcEtbSetupDlg", "Limits and bench test"),
+        ("hcEtbCommissionDlg", "AutoCal results"),
+        ("hcEtbCharacterizeDlg", "Characterization"),
+        ("dbwBiasCurve", "Bias curve (feed forward)"),
+        ("hcEtbCharDetailDlg", "Characterization raw data (developer)"),
+    ]),
+
+    ("&Start / idle", [
         ("hcCrankingDlg", "Cranking Settings"),
         ("primeCurve", "Priming Pulsewidth"),
-        ("cltEnrCurve", "Warmup Enrichment"),
         ("hcAseDlg", "Afterstart Enrichment (ASE)"),
-    ]),
-
-    ("&Idle", [
+        ("hcXStartDlg", "Start: fuel hold, first revolutions, oil"),
+        SEP,
         ("hcIdleDlg", "Idle Control"),
         ("idleTargetCurve", "Idle - RPM targets"),
         ("idleBaseCurve", "Idle - position (throttle or valve)"),
-        SEP,
         ("hcIdleTimingDlg", "Idle Advance Settings"),
+        ("hcXIdleDlg", "Idle: spark first, kicks, adaptation"),
     ]),
 
-    ("&Advanced", [
-        ("hcMotorsportDlg", "Launch Control / Flat Shift"),
+    ("&Boost", [
+        ("hcBoostDlg", "Boost Control"),
+        ("swBoostLoadDlg", "Boost Targets/Duty"),
+        ("boostCltCurve", "Boost duty by coolant"),
+        ("boostIatCurve", "Boost duty by intake air"),
+        ("hcXBoostDlg", "Boost limits and integrator range"),
+    ]),
+
+    ("&Limits", [
+        ("swProtCommon", "Common Engine Protection"),
+        ("swProtRev", "Rev Limiters"),
+        ("swProtBoost", "Boost Cut"),
+        ("swProtAfr", "AFR Protection"),
+        ("swProtPressure", "Pressure-loss Protection"),
+        ("swProtOilDlg", "Oil Pressure Protection"),
+        SEP,
+        ("hcXLimpDlg", "Limp mode"),
+    ]),
+
+    ("&Aux", [
         ("swFuelPumpDlg", "Fuel Pump"),
-        ("hcAlsDlg", "Anti-lag / pit limiter"),
+        ("swTachoDlg", "Tacho Output"),
+        ("swFanDlg", "Thermo Fan"),
+        ("swAcDlg", "Air Conditioning Control"),
+        ("swPrgOutDlg", "Programmable outputs (shift light ...)"),
+        ("hcCanDlg", "CAN bus"),
+        ("hcHaldexDlg", "Haldex"),
+        ("swPressureDlg", "Fuel/Oil pressure"),
         SEP,
         ("GROUP", "VVT", [
             ("hcVvtDlg", "VVT outputs and PID"),
             ("vvtTarget1TblEdit", "VVT cam 1 (intake) target"),
             ("vvtTarget2TblEdit", "VVT cam 2 (exhaust) target"),
         ]),
-        SEP,
-        ("hcBoostDlg", "Boost Control"),
-        ("swBoostLoadDlg", "Boost Targets/Duty"),
-        ("boostCltCurve", "Boost duty by coolant"),
-        ("boostIatCurve", "Boost duty by intake air"),
-        SEP,
-        ("swTachoDlg", "Tacho Output"),
-        ("swFanDlg", "Thermo Fan"),
-        ("swAcDlg", "Air Conditioning Control"),
-        ("swPrgOutDlg", "Programmable outputs"),
-        ("swPressureDlg", "Fuel/Oil pressure"),
-        SEP,
-        ("GROUP", "Electronic throttle (ETB)", [
-            ("hcEtbMain", "Electronic Throttle Body"),
-            ("pedalMapTblEdit", "Pedal target"),
-            ("hcEtbSetupDlg", "Limits and bench test"),
-            ("hcEtbCommissionDlg", "AutoCal results"),
-            ("hcEtbCharacterizeDlg", "Characterization"),
-            ("dbwBiasCurve", "Bias curve (feed forward)"),
-            ("hcEtbCharDetailDlg", "Characterization raw data (developer)"),
-        ]),
     ]),
 
-    # 2026-10-11 (owner): the sensor calibrations in TunerStudio's OWN Tools
-    # menu, as Speeduino does (speeduino.ini: menuDialog = main, menu =
-    # "Tools", "Calibrate TPS" ... "Calibrate AFR Sensor"); TunerStudio merges
-    # a menu called "Tools" into its own. rusEFI has a top-level Sensors
-    # menu instead - the owner chose Speeduino's arrangement.
-    ("Tools", [
-        ("hcEtbTpsCalDlg", "Calibrate TPS"),
-        ("hcEtbAppCalDlg", "Calibrate pedal sensor"),
-        ("hcSensorMapDlg", "Calibrate pressure sensor (MAP)"),
-        ("hcSensorBaroDlg", "Barometric sensor (onboard)"),
-        ("hcSensorCltDlg", "Calibrate coolant temperature sensor"),
-        ("hcSensorIatDlg", "Calibrate intake air temperature sensor"),
-        ("hcSensorLambdaDlg", "Calibrate AFR sensor (wideband)"),
-        ("hcSensorBatteryDlg", "Calibrate voltage reading"),
-        ("hcSensorMiscDlg", "MAF input"),
+    ("Extras", [
+        ("hcMotorsportDlg", "Launch Control / Flat Shift"),
+        ("hcAlsDlg", "Anti-lag / pit limiter"),
+        ("hcXTractionDlg", "Traction control"),
     ]),
 ]
 

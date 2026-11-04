@@ -31,7 +31,7 @@ CONTROLS = [
      "    unsigned int ev = DIV32U((unsigned long)s->alpha * s->film, 1000u);",
      "    unsigned int ev = 0u;"),
     ("as_no_decay", "the after-start never decays",
-     "                              * (unsigned int)(in->as_decay_ms - s->as_ms),",
+     "                              * (unsigned int)(in->as_decay_ms - t),",
      "                              * (unsigned int)(in->as_decay_ms),"),
     ("cut_injects", "a fuel cut still injects",
      "    if (in->cut) {\n        out = 0u;",

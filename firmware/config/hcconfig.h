@@ -66,7 +66,20 @@
  * half changes. TunerStudio sees one flat page and never knows.
  */
 #define HC_CFG_CORE             128     /* scalars, mirrored in near RAM     */
-#define HC_CFG_SIZE             4096    /* must match pageSize in the .ini   */
+#define HC_CFG_SIZE             4480    /* must match pageSize in the .ini   */
+/* THE PAGE EXTENSION (2026-11-03). The 4096-byte page was full to the byte
+   (universal block 1336/1336) when the Ignitron-study functions needed
+   ~250 bytes of settings. The TunerStudio-format protocol carries a 16-bit
+   offset and no page number, so the page simply grows: offsets
+   0..HC_CFG_MAIN-1 are where they always were (header + page contiguous at
+   TGT_RAM_CFG), offsets HC_CFG_MAIN..HC_CFG_SIZE-1 live in their OWN
+   battery-backed SRAM region, TGT_RAM_CFGEXT (DESIRED: TGT_RAM_CFGEXTDES).
+   Every byte access goes through hc_cal_u8()/hc_cal_set_u8() (hcconfig.c),
+   hcfarinline.h's macros or the config manager's DESIRED accessors, which
+   split there; a constant offset still folds to one read. Nothing may index
+   the SRAM page with an offset that can reach HC_CFG_MAIN. */
+#define HC_CFG_MAIN             4096    /* contiguous part at TGT_RAM_CFG    */
+#define HC_CFG_EXT_LEN          (HC_CFG_SIZE - HC_CFG_MAIN)
 
 /* Table geometry. 16x16 is what fits a byte-per-cell map in 256 bytes and is
    what every tuner expects to see. */
@@ -522,7 +535,12 @@ unsigned int  hc_cfg_faults(void);
 #define CFG_UNIVERSAL_SIZE    1336
 
 #define CAL_IGN_MAP           3838      /* u8[256]  advance, 0.5 deg, -20 offset */
-#define CAL_RESERVED          4094      /* to HC_CFG_SIZE - 1               */
+#define CAL_RESERVED          4094      /* to HC_CFG_MAIN - 1               */
+
+/* The extension block (see HC_CFG_MAIN above): generated like the universal
+   block from hanicore_config_def.EXTENSION. */
+#define CFG_EXT_BASE          4096      /* u8[384] generated extension block */
+#define CFG_EXT_SIZE          384
 
 #define DBW_SF_IGNORE         0u
 #define DBW_SF_FAULT_LOW      1u

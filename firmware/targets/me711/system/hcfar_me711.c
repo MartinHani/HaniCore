@@ -46,10 +46,7 @@ unsigned char far hc_hal_capture_channel_f(unsigned char pin)
 {
     return hc_hal_capture_channel(pin);
 }
-unsigned char far hc_hal_out_bindable_f(unsigned int field, unsigned char cav)
-{
-    return hc_hal_out_bindable(field, cav);    /* V95 */
-}
+/* hc_hal_out_bindable_f: defined in hal/hcroutes711.c (far) since 2026-11-04 */
 unsigned int  far hc_hal_ain_f(unsigned char sem)          { return hc_hal_ain(sem); }
 unsigned char far hc_hal_ain_ok_f(unsigned char sem)       { return hc_hal_ain_ok(sem); }
 void far hc_hal_ain_bind_f(unsigned char sem, unsigned char adc_ch)

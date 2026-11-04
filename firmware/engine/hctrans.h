@@ -68,6 +68,8 @@ typedef struct {
     unsigned int tau_ms;      /* film time constant                        */
     unsigned int as_pm;       /* after-start extra at its start, per mille */
     unsigned int as_decay_ms; /* after-start decays to 0 over this         */
+    unsigned int as_hold_ms;  /* ...after being held this long (2026-11-03,
+                                 aseHold; 0 = decay at once as before)      */
 } hctrans_in_t;
 
 void HCTRANS_FAR hctrans_reset(hctrans_t HCTRANS_MEM *s);

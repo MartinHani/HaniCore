@@ -26,7 +26,7 @@ static unsigned int add_sat(unsigned int a, unsigned int b)
     return (a > 65535u - b) ? 65535u : (unsigned int)(a + b);
 }
 
-void HCDTC_FAR hcdtc_step(hcdtc_t HCDTC_MEM *d, const hcdtc_def_t *defs, unsigned char n,
+void HCDTC_FAR hcdtc_step(hcdtc_t HCDTC_MEM *d, const hcdtc_def_t HCDTC_CMEM *defs, unsigned char n,
                           const unsigned int *fail, unsigned int ms,
                           const unsigned int *ff_now)
 {
@@ -77,7 +77,7 @@ void HCDTC_FAR hcdtc_step(hcdtc_t HCDTC_MEM *d, const hcdtc_def_t *defs, unsigne
     d->n_stored = ns;
 }
 
-unsigned int HCDTC_FAR hcdtc_code(const hcdtc_t HCDTC_MEM *d, const hcdtc_def_t *defs,
+unsigned int HCDTC_FAR hcdtc_code(const hcdtc_t HCDTC_MEM *d, const hcdtc_def_t HCDTC_CMEM *defs,
                                   unsigned char n, unsigned char mask,
                                   unsigned char k)
 {
@@ -93,7 +93,7 @@ unsigned int HCDTC_FAR hcdtc_code(const hcdtc_t HCDTC_MEM *d, const hcdtc_def_t 
     return 0u;
 }
 
-void HCDTC_FAR hcdtc_lists(const hcdtc_t HCDTC_MEM *d, const hcdtc_def_t *defs,
+void HCDTC_FAR hcdtc_lists(const hcdtc_t HCDTC_MEM *d, const hcdtc_def_t HCDTC_CMEM *defs,
                            unsigned char n, unsigned int *act,
                            unsigned int *sto, unsigned char k_n)
 {

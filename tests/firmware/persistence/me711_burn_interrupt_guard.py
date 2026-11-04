@@ -68,6 +68,16 @@ def main():
     flash_backed = {0xF160: 'CC16', 0xF172: 'CC25', 0xF174: 'CC26 planner',
                     0xF176: 'CC27 S5500 exchange', 0xF19C: 'S0TB reply',
                     0xF178: 'CC28 tick body'}
+    # 2026-11-04: the vehicle-speed capture (CC14IC 0xFF94) on the boards that
+    # link hc_cc14_isr (TGT_VSS_CC14_PIN: the VAG 2.7T and 1.8T)
+    try:
+        has_cc14 = (' hc_cc14_isr ' in PI.MAP.read_text(errors='replace')
+                    and (a.image is None
+                         or a.image.resolve() == PI.MAP.with_suffix('.bin').resolve()))
+    except OSError:
+        has_cc14 = False
+    if has_cc14:
+        flash_backed[0xFF94] = 'CC14 vehicle speed'
     m=S.Mem(image);c=S.CPU(m,0,0)
     m.w16(0xFE10,0xFC00);m.w16(0xFE12,0xF700);m.w16(0xFF10,0)
     for ic in flash_backed: m.w16(ic,0xF4)

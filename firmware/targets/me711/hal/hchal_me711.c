@@ -891,11 +891,11 @@ unsigned int hc_hal_deadline_ports(unsigned char base, unsigned int which,
            every coil edge cleared P2.8..P2.15 (ON: the latches, OFF: the
            directions) - the fuel pump P2.12 and the bridge enable P2.11
            among them. me711_port_mask_proof reads the image for this. */
-        a = physical;
+        a = (unsigned int)physical & TGT_IGN_P2_MASK;   /* only this board's coils */
         if (on) { P2 &= ~a; DP2 |= a; out_on_ign |= which; }
         else { P2 |= a; DP2 &= ~a; out_on_ign &= (unsigned int)~which; }
     } else {
-        a = (unsigned int)((physical & 7u) << 4); b = physical & 0xF8u;
+        a = (unsigned int)((physical & 7u) << 4); b = (unsigned int)physical & 0xF8u & TGT_INJ_P8_MASK;
         if (on) { P7 &= (unsigned int)~a; P8 &= (unsigned int)~b; DP7 |= a; DP8 |= b; out_on_inj |= which; }
         else { P7 |= a; P8 |= b; DP7 &= (unsigned int)~a; DP8 &= (unsigned int)~b; out_on_inj &= (unsigned int)~which; }
     }
@@ -1424,42 +1424,8 @@ void hc_hal_main_relay_set(unsigned char on)
    TGT_LDR_CAV (hc_hal_out BOOST), the CJ910 main-relay stage is a hardware
    function (MAIN_RELAY_HW, bound = 2). Tacho and the cam solenoids have NO
    output path in this build, so no cavity binds them. */
-unsigned char hc_hal_out_bindable(unsigned int field, unsigned char cav)
-{
-    unsigned char port, bitno;
-
-    if (field == CFG_U_PIN_BOOST) {
-        return (unsigned char)((cav == TGT_LDR_CAV) ? 1u : 0u);
-    }
-    if (field == CFG_U_PIN_MIL) {            /* the ASIC P7.0 lamp stage */
-        return (unsigned char)((cav == TGT_MIL_CAV) ? 1u : 0u);
-    }
-    if (field == CFG_U_PIN_TACHO) {          /* P2.13 / CC13 (hcroutes711) */
-        return (unsigned char)((cav == TGT_TACHO_CAV) ? 1u : 0u);
-    }
-    if (field == CFG_U_PIN_CAM1_SOL || field == CFG_U_PIN_CAM2_SOL) {
-        /* POUT0 / POUT1 (hcvvt711.c) */
-        return (unsigned char)((cav == TGT_POUT0_CAV || cav == TGT_POUT1_CAV
-#ifdef TGT_NWS_ASIC_CAV
-                                || cav == TGT_NWS_ASIC_CAV
-#endif
-                                ) ? 1u : 0u);
-    }
-    if (field == CFG_U_PIN_IDLE_VALVE || field == CFG_U_PIN_IDLE_VALVE2) {
-        /* POUT0 / POUT1 only (hcidle711.c): a valve needs a real PWM unit */
-        return (unsigned char)((cav == TGT_POUT0_CAV || cav == TGT_POUT1_CAV)
-                               ? 1u : 0u);
-    }
-    if (field == CFG_U_PIN_MAIN_RELAY
-        && hc_pin_can(cav, HC_PINCAP_MAIN_RELAY_HW)) {
-        return 1u;
-    }
-    if (field == CFG_U_PIN_FUEL_PUMP || field == CFG_U_PIN_MAIN_RELAY) {
-        hc_hal_port_of(cav, &port, &bitno);
-        return (unsigned char)((port != OP_NONE) ? 1u : 0u);
-    }
-    return 0u;
-}
+/* hc_hal_out_bindable() moved to hal/hcroutes711.c (far code, 2026-11-04:
+   the 1.8T NCODE reserve) - its only caller is the far validator. */
 
 unsigned char hc_hal_main_relay_bound(void)
 {

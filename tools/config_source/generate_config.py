@@ -107,7 +107,12 @@ def coverage(fields, page: int, uni_base: int, uni_size: int) -> list[str]:
     cal_res = named["CAL_RESERVED"].offset if "CAL_RESERVED" in named else None
     if cal_res is None:
         cal_res = _raw_define("CAL_RESERVED")
-    reserved.append(("calReserved", cal_res, page - cal_res))
+    main = _raw_define("HC_CFG_MAIN")
+    reserved.append(("calReserved", cal_res, main - cal_res))
+    ext_base, ext_size = _raw_define("CFG_EXT_BASE"), _raw_define("CFG_EXT_SIZE")
+    ext_used = MODEL.extension_size(ext_base)
+    if ext_size > ext_used:
+        reserved.append(("extReserved", ext_base + ext_used, ext_size - ext_used))
     for name, off, n in reserved:
         for b in range(off, off + n):
             if owner[b] is not None:
@@ -142,7 +147,11 @@ def reserved_arrays(page: int, uni_base: int, uni_size: int):
     used = MODEL.universal_size(uni_base)
     if uni_size > used:
         out.append(("uniReserved", uni_base + used, uni_size - used))
-    out.append(("calReserved", cal_res, page - cal_res))
+    out.append(("calReserved", cal_res, _raw_define("HC_CFG_MAIN") - cal_res))
+    ext_base, ext_size = _raw_define("CFG_EXT_BASE"), _raw_define("CFG_EXT_SIZE")
+    used = MODEL.extension_size(ext_base)
+    if ext_size > used:
+        out.append(("extReserved", ext_base + used, ext_size - used))
     return out
 
 
@@ -219,8 +228,11 @@ def universal_schema(fields, uni_base, uni_size) -> int:
     can never coincide with erased SRAM."""
     parts = ["base=%d" % uni_base, "size=%d" % uni_size,
              "tables=%s" % TABLE_ORDER]      # the VVT targets live here
+    ext_base, ext_size = _raw_define("CFG_EXT_BASE"), _raw_define("CFG_EXT_SIZE")
+    parts.append("ext=%d/%d" % (ext_base, ext_size))
     for f in sorted(fields, key=lambda x: (x.offset, x.slot)):
-        if uni_base <= f.offset < uni_base + uni_size:
+        if (uni_base <= f.offset < uni_base + uni_size
+                or ext_base <= f.offset < ext_base + ext_size):
             parts.append("%s:%d:%s:%d" % (f.slot, f.offset, f.ctype, f.count))
     v = binascii.crc32("|".join(parts).encode("ascii")) & 0xFFFFFFFF
     v = ((v >> 16) ^ (v & 0xFFFF)) & 0xFFFF
@@ -334,10 +346,12 @@ def gen_header(fields, consts, uni_base, uni_size) -> str:
     a("    unsigned int  size;        /* bytes, including array elements     */")
     a("    unsigned char policy;      /* hc_apply_policy_t                   */")
     a("    unsigned char group;       /* hc_apply_group_t                    */")
-    a("    unsigned char flags;       /* HC_FLAG_*                           */")
-    a("    unsigned char elem;        /* bytes per element: 1 or 2           */")
-    a("    unsigned int  pin_needs;   /* HC_PINCAP_* required, 0 if not a pin */")
     a("} hc_cfg_slot_t;")
+    a("/* 2026-11-04: 6 bytes (was 10). The firmware reads offset, size, policy")
+    a("   and group only; the safety / pin flags, the element size and the pin")
+    a("   capability were UI hints carried in NCONST (2.3 KB at 580 fields).")
+    a("   They stay in the model (hanicore_config_def.py) and the generated")
+    a("   .ini / descriptor; the validator checks pins from the descriptor. */")
     a("")
     a("#define HC_CFG_SLOT_COUNT   %du" % len(fields))
     a("extern const hc_cfg_slot_t hc_cfg_slots[HC_CFG_SLOT_COUNT];")
@@ -407,17 +421,9 @@ def gen_source(fields) -> str:
     a("")
     a("const hc_cfg_slot_t hc_cfg_slots[HC_CFG_SLOT_COUNT] = {")
     for f in fields:
-        elem = 1 if f.ctype == "u8" else 2
-        flags = []
-        if f.meta.safety_critical:
-            flags.append("HC_FLAG_SAFETY_CRITICAL")
-        if f.meta.is_pin:
-            flags.append("HC_FLAG_IS_PIN")
-        flag_s = "|".join(flags) if flags else "0u"
-        needs = f.meta.pin_needs if f.meta.is_pin else 0
-        a("    { %4du, %4du, %-19s, HC_GRP_%-18s, %-42s, %du, 0x%04Xu }, /* %s */"
+        a("    { %4du, %4du, %-19s, HC_GRP_%-18s }, /* %s */"
           % (f.offset, f.size, POLICY_C[f.meta.apply], f.meta.group.name,
-             flag_s, elem, needs, f.meta.ts))
+             f.meta.ts))
     a("};")
     a("")
     groups = 0
@@ -664,11 +670,17 @@ def gen_pin_desc(d) -> str:
         m = re.search(r"AN(\d+)", p.hal_resource or "")
         adc = int(m.group(1)) if m else 0xFF
         if (m and (p.hal_resource or "").startswith("ASIC")
-                and d.target_id in ("BOSCH_ME711", "VAG_ME71_C4")):
+                and d.target_id in ("BOSCH_ME711", "VAG_ME71_C4",
+                                    "ME75_4B0906018DC")):
             # V86: the PERIPHERAL ASIC's converter, not this CPU's - see
-            # HC_ADC_ASIC() in hc_pin_descriptor.h. ME7.1.1 only: its HAL
-            # reads ASIC AN0/AN1 from the S5500 frame. The deferred ME7.5
-            # descriptor keeps its V85 encoding byte for byte.
+            # HC_ADC_ASIC() in hc_pin_descriptor.h: the HAL reads ASIC AN0/AN1
+            # from the S5500(-style) window. 2026-11-03: THE ME7.5 TOO. Its
+            # table kept the V85 encoding ("ASIC PXAN1" -> 0x01) after the DC
+            # image went live, so pin 85 (G42 intake air) was routed to CPU
+            # AN1 = TPS1: IAT read the throttle (68 C at a closed throttle,
+            # falling as the throttle opened - testers BlackT / Huurassamaha,
+            # 2026-11-02/03). The DC HAL fills the window from CC650 reg 0x1E
+            # (hcasicstart_dc.inc window_fill, tag 1), so 0xE1 is the path.
             adc = 0xE0 | int(m.group(1))
         routable = bool(p.hal_resource)
         if (d.target_id in ("BOSCH_ME711", "VAG_ME71_C4")
@@ -914,8 +926,14 @@ def _target_expr(target):
 C4_ONLY = "#if HC_PRESET_C4 && !HC_PRESET_DC"
 NOT_C4 = "#if !HC_PRESET_C4"
 DC_ONLY = "#if HC_PRESET_DC"
-# which guards compile IN on each board: 0 Porsche/4F, 1 2.7T, 2 ME7.5 DC
-_GUARD_ON = {0: (NOT_C4,), 1: (C4_ONLY,), 2: (DC_ONLY,)}
+# 2026-11-04: the A4 B7 BFB (PR #1) is the DC's code and descriptor; ITS
+# preset compiles into the BFB image only, so the 18T image is unchanged
+BFB_ONLY = "#if HC_PRESET_BFB"
+# which guards compile IN on each board: 0 Porsche/4F, 1 2.7T, 2 ME7.5 DC,
+# 3 the BFB (the DC's presets + its own)
+_GUARD_ON = {0: (NOT_C4,), 1: (C4_ONLY,), 2: (DC_ONLY,), 3: (DC_ONLY, BFB_ONLY)}
+# presets that belong to one board variant beyond their descriptor
+_KEY_GUARD = {"VAG_18T_ME75_BFB": BFB_ONLY}
 
 
 def _board_guard(target):
@@ -964,6 +982,11 @@ def gen_presets(fields):
     a("#else")
     a("#define HC_PRESET_DC 0")
     a("#endif")
+    a("#if defined(TGT_BOARD_VAG_ME75_BFB) && TGT_BOARD_VAG_ME75_BFB")
+    a("#define HC_PRESET_BFB 1")
+    a("#else")
+    a("#define HC_PRESET_BFB 0")
+    a("#endif")
     a("")
     problems = []
     counts = {}
@@ -1004,7 +1027,7 @@ def gen_presets(fields):
         if problems:
             continue
         a("/* %s */" % pr.name)
-        g = _board_guard(pr.target)
+        g = _KEY_GUARD.get(pr.key) or _board_guard(pr.target)
         if items and g:
             a(g)
         if items:
@@ -1044,12 +1067,12 @@ def gen_presets(fields):
     if problems:
         raise SystemExit("preset generation refused:\n  " + "\n  ".join(problems))
     a("const hc_preset_t hc_engine_presets[] = {")
-    per_board = {0: 0, 1: 0, 2: 0}
+    per_board = {0: 0, 1: 0, 2: 0, 3: 0}
     for pr in PRESETS.ENGINE_PRESETS:
         n = counts[pr.key]
         bd = (1 if getattr(pr, "board_default", False)
               else 2 if getattr(pr, "fresh_tune", False) else 0)
-        g = _board_guard(pr.target)
+        g = _KEY_GUARD.get(pr.key) or _board_guard(pr.target)
         for b in per_board:
             if not g or g in _GUARD_ON[b]:
                 per_board[b] += 1
@@ -1067,7 +1090,9 @@ def gen_presets(fields):
             a("#endif")
     a("};")
     a("")
-    a("#if HC_PRESET_DC")
+    a("#if HC_PRESET_BFB")
+    a("const unsigned char hc_engine_preset_count = %du;" % per_board[3])
+    a("#elif HC_PRESET_DC")
     a("const unsigned char hc_engine_preset_count = %du;" % per_board[2])
     a("#elif HC_PRESET_C4")
     a("const unsigned char hc_engine_preset_count = %du;" % per_board[1])
@@ -1162,7 +1187,7 @@ def universal_ini_lines() -> list[str]:
                        % ((m.ts, t, f.offset, m.units)
                           + ts_scaling(m) + (m.digits,)))
     for name, off, n in reserved_arrays(consts["HC_CFG_SIZE"], uni_base, uni_size):
-        if name == "uniReserved":
+        if name in ("uniReserved", "extReserved"):
             out.append('   %-22s = array,  U08, %4d, [%d], "", 1, 0, 0, 255, 0'
                        % (name, off, n))
     return out
@@ -1302,7 +1327,7 @@ def _board_c4():
 
 def _board_dc():
     import os
-    return os.environ.get("HANICORE_BOARD") == "vag_me75_dc"
+    return os.environ.get("HANICORE_BOARD") in ("vag_me75_dc", "vag_me75_bfb")
 
 
 def _pin_desc():
@@ -1420,6 +1445,9 @@ def main() -> int:
     hdr = {s.name: s.offset for s in slots}
     for f in fields:
         if is_universal(f.slot):
+            eb, es = _raw_define("CFG_EXT_BASE"), _raw_define("CFG_EXT_SIZE")
+            if eb <= f.offset and f.end <= eb + es:
+                continue
             if not (uni_base <= f.offset and f.end <= uni_base + uni_size):
                 problems.append("universal field %s at %d is outside the "
                                 "reservation %d..%d"

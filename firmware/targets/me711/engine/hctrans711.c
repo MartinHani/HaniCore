@@ -101,5 +101,6 @@ unsigned int far hc_trans_fuel(unsigned int base_us, unsigned char cranking,
         in.as_pm = (unsigned int)(curve8(CFG_U_AS_PCT, c_as) * 10u);
     }
     in.as_decay_ms = hc_cal_u16(CFG_U_AS_DECAY_MS);
+    in.as_hold_ms = (unsigned int)(hc_cal_u8(CFG_U_ASE_HOLD) * 100u);   /* aseHold */
     return hctrans_step(&hc_trans, &in);
 }

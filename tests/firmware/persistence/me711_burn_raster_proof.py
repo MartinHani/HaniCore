@@ -63,6 +63,10 @@ def burn(img, mapfile, p3_off):
     probe = HB.Rig(img, entry, tick, echo=True,
                    steps_per_tick=HB.STEPS_PER_TICK)
     probe.run(GAP.BOOT_WARMUP_STEPS)
+    if len(probe.entries) < 2:
+        # the image never reached the supervision service on this rig (a
+        # Porsche control image on another board's rig) - not measurable
+        return None, 0, None, probe.trap or "no supervision service ran"
     first, last = probe.entries[0], probe.entries[-1]
     per_ms = (last[1] - first[1]) / ((last[0] - first[0]) & 0xFFFF)
     ms = lambda n: int(n * per_ms)                              # noqa: E731
@@ -117,7 +121,10 @@ def main():
     print("\n  --- control: the car image 5248F4C9 ---")
     cimg = CONTROL / "HaniCore_ME711_v102_dev.bin"
     cmap = CONTROL / "HaniCore_ME711_v102_dev.M66"
-    if not (cimg.exists() and cmap.exists()):
+    import hc_board as _HB
+    if _HB.BOARD != "porsche_me711":
+        print("  (the control is the Porsche car image - not run on %s)" % _HB.BOARD)
+    elif not (cimg.exists() and cmap.exists()):
         check("the control image is present", False, str(cimg))
     else:
         import hashlib

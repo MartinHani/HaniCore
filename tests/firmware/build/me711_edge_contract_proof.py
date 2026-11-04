@@ -14,7 +14,9 @@ import me711_heartbeat_gap_proof as HB
 TK100 = HB.TPMS // 100   # 100 us in capture ticks (125 at 1.25 MHz, 75 on the 2.7T);
 # edge lateness stays 125 TICKS on both boards (hcdeadline711.c: 4000 CPU clocks)
 def to_us(t):  # hc_deadline_ticks_us_f: the board's ticks -> us, as the firmware rounds
-    return t-(t+4)//5 if HB.TPMS==12500 else t+t//3
+    if HB.TPMS == 12500: return t-(t+4)//5      # 1.25 MHz: x 0.8
+    if HB.TPMS == 10000: return t               # 1.000 MHz (the BFB): one tick is one us
+    return t+t//3                               # 0.75 MHz: x 4/3
 
 def all_routes(r):
     for off,values in [(2551,[96,97,88,89,112,113,24,19]),(2563,[102,103,94,95,110,111,8,7])]:

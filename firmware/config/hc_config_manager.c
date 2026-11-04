@@ -69,6 +69,11 @@ typedef char hc_cfg_crit_between_engine_and_pec[
  * was never compiled by any target.
  */
 #define DESIRED  ((unsigned char huge *)(TGT_EXTRAM_BASE + TGT_RAM_CFGDESIRED))
+/* DESIRED's page extension (hcconfig.h HC_CFG_MAIN). */
+#define DESIREDX ((unsigned char huge *)(TGT_EXTRAM_BASE + TGT_RAM_CFGEXTDES))
+#if (HC_CFG_EXT_LEN > TGT_RAM_CFGEXTDES_LIMIT)
+#error "the page extension does not fit TGT_RAM_CFGEXTDES"
+#endif
 
 unsigned int  hc_cfg_dirty_groups   = 0u;
 unsigned int  hc_cfg_validation     = 0u;
@@ -86,16 +91,19 @@ unsigned char hc_cfg_migrated       = 0u;
 /* Bounded seeded-page access, including one-byte serial reply jobs. */
 unsigned char HC_COLD hc_cfg_mgr_peek_u8(unsigned int off)
 {
-    if (off >= HC_CFG_SIZE) {
-        return 0u;
+    if (off >= HC_CFG_MAIN) {
+        return (off < HC_CFG_SIZE)
+            ? DESIREDX[(unsigned long)(off - HC_CFG_MAIN)] : (unsigned char)0u;
     }
     return DESIRED[(unsigned long)off];
 }
 
 static void des_set_u8(unsigned int off, unsigned char v)
 {
-    if (off < HC_CFG_SIZE) {
+    if (off < HC_CFG_MAIN) {
         DESIRED[(unsigned long)off] = v;
+    } else if (off < HC_CFG_SIZE) {
+        DESIREDX[(unsigned long)(off - HC_CFG_MAIN)] = v;
     }
 }
 
@@ -312,9 +320,9 @@ static void seed_universal_defaults(void)
        references' own defaults where one exists, and OFF where a function
        acts on the engine (closed loop, motorsport). */
     {
-        static const unsigned char mapest_col[8] = {
+        static const unsigned char huge mapest_col[8] = {
             35u, 45u, 55u, 70u, 85u, 95u, 100u, 100u };
-        static const unsigned int prime_mg[8] = {      /* rusEFI primeValues */
+        static const unsigned int huge prime_mg[8] = {      /* rusEFI primeValues */
             800u, 420u, 200u, 105u, 62u, 47u, 45u, 45u };
         unsigned int r;
 
@@ -337,9 +345,9 @@ static void seed_universal_defaults(void)
                            (unsigned int)(prime_mg[i] * 10u));
         }
         {
-            static const unsigned int tps_ax[8] = {
+            static const unsigned int huge tps_ax[8] = {
                 0u, 50u, 100u, 200u, 350u, 500u, 750u, 1000u };
-            static const unsigned int load_ax[8] = {
+            static const unsigned int huge load_ax[8] = {
                 200u, 400u, 600u, 800u, 1000u, 1300u, 1700u, 2200u };
             for (i = 0u; i < 8u; i++) {
                 hc_cal_set_u16((unsigned int)(CFG_U_MAPEST_TPS_AX + 2u * i),
@@ -442,7 +450,7 @@ static void seed_universal_defaults(void)
 void hc_cfg_v102_defaults(void)
 {
     unsigned int i;
-    static const unsigned int defaults[13] = {1013u,50u,250u,3600u,100u,2000u,200u,2500u,200u,600u,100u,300u,1000u};
+    static const unsigned int huge defaults[13] = {1013u,50u,250u,3600u,100u,2000u,200u,2500u,200u,600u,100u,300u,1000u};
     for(i=CFG_U_FUEL_MODEL;i<CFG_U_PRESSURE_REF;i++) hc_cal_set_u8(i,0u);
     for(i=0;i<13u;i++) hc_cal_set_u16((unsigned int)(CFG_U_PRESSURE_REF+2u*i),defaults[i]);
 #if defined(TGT_DEADLINE_EXECUTOR)
@@ -481,7 +489,8 @@ typedef char hc_aux_default_layout[(CFG_U_DWELL_RPM_PCT == AUX0 + 12u
     && CFG_U_PIN_FAN == AUX0 + 52u && CFG_U_PIN_AC_REQ == AUX0 + 55u
     && CFG_U_AC_IDLE_UP_X10 == AUX0 + 58u && CFG_U_GP1_PIN == AUX0 + 64u
     && CFG_U_GP2_PIN == AUX0 + 73u && CFG_U_OILP_DELAY == AUX0 + 82u) ? 1 : -1];
-static const unsigned char aux_defaults[83] = {
+/* HCONST (huge) since 2026-11-03: NCONST relief for the page extension */
+static const unsigned char huge aux_defaults[83] = {
     0x03,0xE8, 0x07,0xD0, 0x0B,0xB8, 0x0F,0xA0, 0x17,0x70, 0x1F,0x40,
                                   /* dwell rpm axis 1000..8000             */
     0,100, 0,100, 0,100, 0,100, 0,100, 0,100,  /* dwell factor 100 %       */
@@ -604,7 +613,7 @@ static void seed_span(unsigned int from, unsigned int to)
         if ((i % HC_SEED_YIELD) == 0u) {
             hcts_target_yield();
         }
-        DESIRED[(unsigned long)i] = hc_cal_u8(i);
+        des_set_u8(i, hc_cal_u8(i));
     }
 }
 

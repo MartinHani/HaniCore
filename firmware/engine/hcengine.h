@@ -186,7 +186,9 @@ extern unsigned int  eng_fuelcut;
 #define ENG_CUT_LIMP     0x0008u   /* engine protection (V97, hclimp)       */
 #define ENG_CUT_LOAD     0x0010u   /* authoritative pressure/model loss    */
 #define ENG_CUT_LEAN     0x0020u   /* qualified persistent lean guard       */
-#define ENG_CUT_ALL      (ENG_CUT_OVERRUN|ENG_CUT_REV|ENG_CUT_BOOST|ENG_CUT_LIMP|ENG_CUT_LOAD|ENG_CUT_LEAN)
+#define ENG_CUT_SAFE     0x0040u   /* fuel AND spark: throttle safety, oil
+                                      start delay (hcxfn711.c, 2026-11-03) */
+#define ENG_CUT_ALL      (ENG_CUT_OVERRUN|ENG_CUT_REV|ENG_CUT_BOOST|ENG_CUT_LIMP|ENG_CUT_LOAD|ENG_CUT_LEAN|ENG_CUT_SAFE)
 
 void eng_init(void);
 

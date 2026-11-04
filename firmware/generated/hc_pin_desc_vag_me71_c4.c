@@ -71,7 +71,7 @@ const hc_pin_desc_t HC_PIN_MEM hc_pin_table[HC_PHYSICAL_PIN_COUNT] = {
     { 0x8000u, 0x0000u, 0u, 0xFFu }, /*  51 LS1VK_MA */
     { 0x0000u, 0x0000u, 0u, 0xFFu }, /*  52 not assigned in the source document */
     { 0x8000u, 0x0000u, 0u, 0xFFu }, /*  53 5V2 */
-    { 0x8000u, 0x0000u, 0u, 0xFFu }, /*  54 VFZG_S */
+    { 0x0004u, 0x0000u, 1u, 0xFFu }, /*  54 VFZG_S */
     { 0x8002u, 0x0000u, 1u, 0xFFu }, /*  55 BTS_S */
     { 0x8002u, 0x0000u, 1u, 0xFFu }, /*  56 BLS_S */
     { 0x8002u, 0x0000u, 1u, 0xFFu }, /*  57 GRASV_S */

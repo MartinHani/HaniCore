@@ -42,6 +42,8 @@ typedef char hc_cel_fits[(sizeof(hccel_t) <= TGT_RAM_CEL_LIMIT) ? 1 : -1];
 #include "hcengctl711.h"     /* the rail pressure sensor (HC_EC.inj_st) */
 #include "hcdtc.h"
 #include "hcdtc711.h"
+#include "hcxfn711.h"     /* 2026-11-03: limp mode, throttle safety */
+#include "hcfarinline.h"  /* hc_cal_u8v */
 
 #define STEP_MS   100u
 #define EVT_HEAL  10000u            /* an event path stays active 10 s      */
@@ -50,10 +52,11 @@ enum {
     P_MAP, P_CLT, P_IAT, P_TPS1, P_TPS2, P_TPS_DIFF, P_APP1, P_APP2,
     P_APP_DIFF, P_BATT, P_ETB_MOTOR, P_ETB_DEV, P_CRANK, P_CAM, P_OVERBOOST,
     P_O2_1, P_O2_2, P_COIL, P_ASIC, P_CONFIG, P_HOT, P_ETB_LIMP,
-    P_KNOCK1, P_KNOCK2, P_VVT1, P_VVT2, P_FUELP, P_N
+    P_KNOCK1, P_KNOCK2, P_VVT1, P_VVT2, P_FUELP,
+    P_LIMP, P_XDEV, P_XPAIR, P_N
 };
 
-static const hcdtc_def_t defs[P_N] = {
+static const hcdtc_def_t HCDTC_CMEM defs[P_N] = {
     { 105u, 1000u, 2000u, HCDTC_MIL},   /* MAP circuit                  */
     { 115u, 1000u, 2000u, HCDTC_MIL},   /* coolant temperature circuit  */
     { 110u, 1000u, 2000u, HCDTC_MIL},   /* intake air temperature       */
@@ -91,7 +94,14 @@ static const hcdtc_def_t defs[P_N] = {
        (injPressMode 3, hcengctl711.c inj_pressure()): no valid reading -
        the compensation falls back to the fixed rail value meanwhile */
     { 190u, 1000u, 2000u, HCDTC_MIL},   /* fuel rail pressure sensor    */
+    /* 2026-11-03 (hcxfn711.c): limp mode (the reason is the limpWhy
+       channel), the plate off target and the throttle-sensor pair - both
+       cut fuel and spark. HaniCore's own P1 range. */
+    {1300u,    0u, EVT_HEAL, HCDTC_MIL},/* limp mode                    */
+    {1304u,    0u, EVT_HEAL, HCDTC_MIL},/* throttle off target: cut     */
+    {1305u,    0u, EVT_HEAL, HCDTC_MIL},/* throttle sensors: engine cut */
 };
+typedef char hc_dtc_paths_fit[(P_N <= HCDTC_MAX) ? 1 : -1];
 
 typedef char hc_dtc_fits[(sizeof(hcdtc_t) <= TGT_RAM_DTC_LIMIT) ? 1 : -1];
 static unsigned char cel_driven;    /* the lamp stage is configured */
@@ -172,6 +182,7 @@ void far hc_dtc_service(unsigned int now_ms)
         hc_knock_clear_faults();
         hc_vvt_clear_faults();
         hc_limp.cut = (unsigned char)(hc_limp.cut & (0xFFu ^ HCLIMP_OIL));
+        hc_x_clear();                          /* knock adaptation, limp */
         if (trg_rpm == 0u && trg_state == TRG_NO_SIGNAL) {
             hc_dbw_clear_faults();
         }
@@ -216,7 +227,25 @@ void far hc_dtc_service(unsigned int now_ms)
     SETF(P_VVT1, hc_vvt_fault(0u) != VVT_F_NONE);
     SETF(P_VVT2, hc_vvt_fault(1u) != VVT_F_NONE);
     SETF(P_FUELP, (HC_EC.inj_st & EC_INJ_SENSOR) != 0u);
+    SETF(P_LIMP, hc_x_limp_why() != 0u);
+    SETF(P_XDEV, hc_x_cut_why() & HCX_CUT_DEV);
+    SETF(P_XPAIR, hc_x_cut_why() & HCX_CUT_PAIR);
 #undef SETF
+    /* a code switched off on the page is never stored (dtcOffMask) */
+    {
+        /* running masks: Keil V7.53 mis-compiles a variable shift
+           (me711_keil_shift_scan) */
+        unsigned char i, b, m = 1u;
+        unsigned int fm = 1u;
+        for (i = 0u; i < (unsigned char)P_N; i++) {
+            if (i == 16u) fm = 1u;
+            b = (unsigned char)hc_cal_u8v((unsigned int)(CFG_U_DTC_OFF + (i >> 3)));
+            if (b & m) fail[i >> 4] &= (unsigned int)~fm;
+            m = (unsigned char)(m << 1);
+            if (m == 0u) m = 1u;
+            fm = (unsigned int)(fm << 1);
+        }
+    }
     last_sync = trg_synclost;
     last_cycle = trg_cycle_lost;
     last_asic = hc_asic_run_timeout;
@@ -226,6 +255,21 @@ void far hc_dtc_service(unsigned int now_ms)
     ff[2] = eng_map_kpa_x10;
     ff[3] = eng_tps_x10;
     hcdtc_step(&hc_dtc, defs, (unsigned char)P_N, fail, ms, ff);
+    /* the lamp per code (dtcNoLampMask): a set bit keeps that code off the
+       lamp. Recomputed over the core's decision. */
+    if (hc_dtc.mil) {
+        unsigned char i, b, m = 1u, mil = 0u;
+        for (i = 0u; i < (unsigned char)P_N; i++) {
+            b = (unsigned char)hc_cal_u8v((unsigned int)(CFG_U_DTC_LAMP + (i >> 3)));
+            if ((hc_dtc.p[i].st & HCDTC_S_ACTIVE) && (defs[i].flags & HCDTC_MIL)
+                && !(b & m)) {
+                mil = 1u;
+            }
+            m = (unsigned char)(m << 1);
+            if (m == 0u) m = 1u;
+        }
+        hc_dtc.mil = mil;
+    }
     /* the lists the telemetry publishes, once per step - not per main-loop
        pass (8 scans per pass cost the loop 16 %: me711_boot_test) */
     hcdtc_lists(&hc_dtc, defs, (unsigned char)P_N, &hc_dtc_list[0],

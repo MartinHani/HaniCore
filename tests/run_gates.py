@@ -84,20 +84,20 @@ def conditions() -> dict:
         # board-independent and proven on the Porsche image;
         # me71_27t_preset_apply_proof covers this board's preset)
         # (the ME7.5 DC builds on the C4 branch: no AWT preset, no CJ120 -
-        # it has the analog CJ110 - 2026-10-29)
+        # it has the analog CJ110 - 2026-10-29; the A4 B7 BFB is the DC's code)
         "awt_preset_absent": IMG.MANIFEST.exists()
-                             and IMG.metadata().get("board") in ("vag_me71_c4", "vag_me75_dc"),
+                             and IMG.metadata().get("board") in ("vag_me71_c4", "vag_me75_dc", "vag_me75_bfb"),
         # the C4 board has no CJ120 (narrowband heaters only, port plan s.3)
         "no_cj120": IMG.MANIFEST.exists()
-                    and IMG.metadata().get("board") in ("vag_me71_c4", "vag_me75_dc"),
+                    and IMG.metadata().get("board") in ("vag_me71_c4", "vag_me75_dc", "vag_me75_bfb"),
         # a gate whose subject is the ME7.5 DC board (CC650 + monitor)
         "not_dc_board": not (IMG.MANIFEST.exists()
-                             and IMG.metadata().get("board") == "vag_me75_dc"),
+                             and IMG.metadata().get("board") in ("vag_me75_dc", "vag_me75_bfb")),
         # a gate whose subject is the S5500 (the ME7.5 DC has the CC650)
-        "dc_board": IMG.MANIFEST.exists() and IMG.metadata().get("board") == "vag_me75_dc",
+        "dc_board": IMG.MANIFEST.exists() and IMG.metadata().get("board") in ("vag_me75_dc", "vag_me75_bfb"),
         "porsche_oem_boot_absent": IMG.MANIFEST.exists() and (
             IMG.metadata().get("boot_region") == "hanicore_owned"
-            or IMG.metadata().get("board") in ("vag_me71_c4", "audi_4f_v8", "vag_me75_dc")),
+            or IMG.metadata().get("board") in ("vag_me71_c4", "audi_4f_v8", "vag_me75_dc", "vag_me75_bfb")),
         "local_corpus_absent": not ((ROOT / "reference").is_dir()
                                     and (hcpaths.OEM_READ).exists()
                                     and (ROOT / "release").is_dir()),

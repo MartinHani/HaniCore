@@ -21,7 +21,10 @@ GEN_H = ROOT / "firmware/generated/hc_config_generated.h"
 CFG_H = ROOT / "firmware/config/hcconfig.h"
 STORE = 0x070000                 # TGT_FLASH_CFG_A 0x870000, file offset
 CELLS, CELL, OFF = 72, 0x2000, 2  # TGT_FLASH_CELLS, _PAGE, _CELL_OFF
-PAGE = 4096
+# the page size the firmware in this tree writes (4480 since the page
+# extension, 2026-11-03); a record of another size is another layout
+PAGE = int(re.search(r"#define\s+HC_CFG_SIZE\s+(\d+)",
+                     CFG_H.read_text(errors="replace")).group(1))
 TAB = [0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50A5, 0x60C6, 0x70E7,
        0x8108, 0x9129, 0xA14A, 0xB16B, 0xC18C, 0xD1AD, 0xE1CE, 0xF1EF]
 

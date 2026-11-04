@@ -776,7 +776,9 @@ def help_for_meta(m, labels, prefix: str = "") -> str:
         for extra in (choices_text(m), range_text(m)):
             if extra:
                 parts.append(extra)
-        parts.append(APPLY_TEXT[m.apply])
+        # a field the firmware reads only at power-up says so in its note
+        if "after a key cycle" not in (m.note or "").lower():
+            parts.append(APPLY_TEXT[m.apply])
         if m.safety_critical:
             parts.append(SAFETY_TEXT)
     text = " ".join(p for p in parts if p)
@@ -798,7 +800,9 @@ def help_lines(fields, constant_names) -> list[str]:
             base, _bit, lbl, opts = UI.BIT_VIEWS[name]
             m = by_ts[base].meta
             txt = "%s. Choices: %s. %s" % (lbl, ", ".join(opts),
-                                           APPLY_TEXT[m.apply])
+                                           "Takes effect after a key cycle."
+                                           if "after a key cycle" in (m.note or "").lower()
+                                           else APPLY_TEXT[m.apply])
             out.append((name, txt.replace('"', "'")))
             continue
         bases = [b for b in UI.ELEMENT_FIELDS

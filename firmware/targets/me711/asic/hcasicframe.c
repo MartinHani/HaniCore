@@ -79,7 +79,7 @@
    and 60; w92..w94 are written by nothing in the C4 image (0 here). The
    Porsche frame sent here before made the real S5500 ignore the startup,
    never ask a monitoring question, and reset MAIN after ~300 ms. */
-static const unsigned short oem_frame[HC_ASICFRAME_WORDS] = {
+static const unsigned short HCAF_HUGE oem_frame[HC_ASICFRAME_WORDS] = {   /* HCONST: NCONST relief 2026-11-03 */
     0x005Fu, 0x003Bu, 0x0000u, 0x0020u, 0x0000u, 0x0000u, 0x0000u, 0x0000u,
     0x0000u, 0x0000u, 0x0000u, 0x0000u, 0x0000u, 0x0000u, 0x0000u, 0x0000u,
     0x0000u, 0x0000u, 0x0000u, 0x0000u, 0x0000u, 0x0000u, 0x0000u, 0x0000u,
@@ -94,7 +94,7 @@ static const unsigned short oem_frame[HC_ASICFRAME_WORDS] = {
     0x006Eu, 0x0000u, 0x0000u, 0x0000u, 0x0000u, 0x0000u, 0x0000u, 0x0000u
 };
 #else
-static const unsigned short oem_frame[HC_ASICFRAME_WORDS] = {
+static const unsigned short HCAF_HUGE oem_frame[HC_ASICFRAME_WORDS] = {   /* HCONST: NCONST relief 2026-11-03 */
     0x0055u, 0x003Bu, 0x0000u, 0x0020u, 0x0000u, 0x0000u, 0x0000u, 0x0000u,
     0x0000u, 0x0000u, 0x0000u, 0x0000u, 0x0000u, 0x0000u, 0x0000u, 0x0000u,
     0x0000u, 0x0000u, 0x0000u, 0x0000u, 0x0000u, 0x0000u, 0x0000u, 0x0000u,
@@ -120,7 +120,7 @@ static unsigned char word_is_unclassified(unsigned int i)
 }
 #endif
 
-unsigned short hc_asicframe_checksum(const unsigned short *frame)
+unsigned short HCAF_FAR hc_asicframe_checksum(const unsigned short *frame)
 {
     unsigned short sum = 0u;
     unsigned int i;
@@ -129,7 +129,7 @@ unsigned short hc_asicframe_checksum(const unsigned short *frame)
     return sum;
 }
 
-unsigned int hc_asic_build_safe_startup_frame(unsigned short *frame)
+unsigned int HCAF_FAR hc_asic_build_safe_startup_frame(unsigned short *frame)
 {
     unsigned int i;
     unsigned int suppressed = 0u;
@@ -165,7 +165,7 @@ unsigned int hc_asic_build_safe_startup_frame(unsigned short *frame)
     return suppressed;
 }
 
-unsigned char hc_asicframe_valid(const unsigned short *frame)
+unsigned char HCAF_FAR hc_asicframe_valid(const unsigned short *frame)
 {
     if (frame[0] != HC_ASICFRAME_HDR0) return 0u;
     if (frame[1] != HC_ASICFRAME_HDR1) return 0u;
@@ -178,7 +178,7 @@ unsigned char hc_asicframe_valid(const unsigned short *frame)
    acceptance test, [BIN] 0x8BE7EC..0x8BE7FC, is exactly this: checksum words
    0..94 and compare against word 95. It does NOT check the reply's header,
    which is why this does not either. */
-unsigned char hc_asicframe_reply_ok(const unsigned short *frame)
+unsigned char HCAF_FAR hc_asicframe_reply_ok(const unsigned short *frame)
 {
     return (unsigned char)(frame[HC_ASICFRAME_CKSUM_WORD]
                            == hc_asicframe_checksum(frame));
@@ -191,7 +191,7 @@ unsigned char hc_asicframe_reply_ok(const unsigned short *frame)
    as a STACK OVERFLOW; the honest fix is not a bigger stack but not needing
    the buffer. The caller streams words straight into the PEC frame and
    accumulates the checksum as it goes. */
-unsigned short hc_asicframe_word(unsigned int i)
+unsigned short HCAF_FAR hc_asicframe_word(unsigned int i)
 {
     if (i >= HC_ASICFRAME_WORDS) return 0u;
     if (i == HC_ASICFRAME_CKSUM_WORD) return 0u;   /* caller supplies the sum */
@@ -202,7 +202,7 @@ unsigned short hc_asicframe_word(unsigned int i)
     return oem_frame[i];
 }
 
-unsigned short hc_asicframe_oem_word(unsigned int i)
+unsigned short HCAF_FAR hc_asicframe_oem_word(unsigned int i)
 {
     return (i < HC_ASICFRAME_WORDS) ? oem_frame[i] : 0u;
 }

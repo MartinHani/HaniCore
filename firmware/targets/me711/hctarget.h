@@ -98,13 +98,13 @@
 
 
 #if !TGT_BOARD_VAG_ME71_C4
-#define TGT_SIGNATURE         "HaniCore ME711 3EF8E9EA"
+#define TGT_SIGNATURE         "HaniCore ME711 BBDC7743"
 #else
 /* A different board's .ini must refuse this ECU and vice versa: the pin
    dropdowns, the descriptor and the defaults differ even where the page
    layout is shared. The signature names the BOARD, not the engine or the
    ECU family (owner, 2026-10-25: some 2.7T cars carry an ME7.1.1). */
-#define TGT_SIGNATURE         "HaniCore ME71C4 3EF8E9EA"
+#define TGT_SIGNATURE         "HaniCore ME71C4 BBDC7743"
 #endif
 /* THE SIGNATURE CARRIES THE PAGE LAYOUT, AND UNTIL V60 IT DID NOT.
 
@@ -157,9 +157,9 @@
    version string does not contain the version in its own output stem, so
    this cannot silently lag a build again. */
 #if !TGT_BOARD_VAG_ME71_C4
-#define TGT_VERSIONTXT        "HaniCore V102 DEV / Bosch ME7.1.1"
+#define TGT_VERSIONTXT        "HaniCore V102 (v1.1) / Bosch ME7.1.1"
 #else
-#define TGT_VERSIONTXT        "HaniCore V102 DEV / Bosch ME7.1 C4"
+#define TGT_VERSIONTXT        "HaniCore V102 (v1.1) / Bosch ME7.1 C4"
 #endif
 #ifdef TGT_BOARD_AUDI_4F
 /* the Audi 4F 4.2 V8 (Porsche code on the 4F's own boot region, every
@@ -167,7 +167,7 @@
    the 64-byte 'V' reply (hcts.c send_text): "(outputs inert)" did not, and
    the build id arrived cut to 5 characters. */
 #undef TGT_VERSIONTXT
-#define TGT_VERSIONTXT        "HaniCore V102 DEV / Bosch ME7.1.1 4F"
+#define TGT_VERSIONTXT        "HaniCore V102 (v1.1) / Bosch ME7.1.1 4F"
 #endif
 /* + " build XXXXXXXX" (TGT_BUILD_SUFFIX): the source hash of THIS image,
    written by tools/build/build_hanicore_me711.py before every compile, so
@@ -344,7 +344,7 @@ void hc_rt_wdt_mark(void);
    rather than assuming: the yield hook services the raster DURING the reply,
    so the worst gap is bounded by the yield period and not by the reply
    length. TGT_RAM_OCH_LIMIT is 1024, so the region has ample room. */
-#define TGT_OCH_SIZE          1664    /* must match ochBlockSize in the .ini; +4 (1660 auxStatus, 1662 oilPressKpa - hcaux711.c, 2026-10-14); +8 (1652..1659 trouble-code masks: stored, active - every code, not four slots); +16 (1636..1651 proposed bias axis); +36 (1600..1635 ETB friction band: midpoint, width, spread per position); +2 (1598 dbwPwmAppliedHz: the frequency the bridge is really switching at); V99 +24 (vehicle-test telemetry 1224..1247: ETB stop decision, lambda dynamics, spark skips, event ring head); V98 +92 (1132..1135 unused, the FAST BLOCK 1136..1199, engine control 1200..1223); V97 +20 (VVT 1112..1131); V97 +96 (knock 1024..1111, OCH2 region; 1016..1023 unused); V97 +6 (wideband reason / CJ120 link 1010..1015); V97 +2 (idle timing 1008); V97 +2 (ignition correction 1006); V97 +2 (check-engine lamp 1004); V97 +12 (transient fuel 992..1003); V97 +18 (sequential state, injection width, fuel per cycle, dead time 974..991); V97 +24 (DBW terms / battery factor / pending faults / commissioning verify 950..973); V97 +78 (lam1IpUa / lam2IpUa 872..875, cam PATTERN 876..891, boost 892..905, idle 906..913, DTC 914..945, limp 946..949); V96 +8 (wideband 850..870, with V95 linkDiag 848); V79 +30 (hcio711); V86 +12 (engine preset apply, 764..775); V90 +4 (ETB calibration 776, overdwell 778); V91 +4 (control CLT 780, 782 overdwell latch); V92 +40 (tooth profile, corrections, cycle, cam 784..804; ETB cal/autotune 806..820; 822 reserved); V93 +40 (ETB procedure telemetry 822..838, wideband/boot/load 840..862) */
+#define TGT_OCH_SIZE          1696    /* must match ochBlockSize in the .ini; 2026-11-04 +32 (1664..1695: vehicle speed / gear, CAN wideband, Haldex, OBD, ABS emulation - TGT_RAM_OCH3); +4 (1660 auxStatus, 1662 oilPressKpa - hcaux711.c, 2026-10-14); +8 (1652..1659 trouble-code masks: stored, active - every code, not four slots); +16 (1636..1651 proposed bias axis); +36 (1600..1635 ETB friction band: midpoint, width, spread per position); +2 (1598 dbwPwmAppliedHz: the frequency the bridge is really switching at); V99 +24 (vehicle-test telemetry 1224..1247: ETB stop decision, lambda dynamics, spark skips, event ring head); V98 +92 (1132..1135 unused, the FAST BLOCK 1136..1199, engine control 1200..1223); V97 +20 (VVT 1112..1131); V97 +96 (knock 1024..1111, OCH2 region; 1016..1023 unused); V97 +6 (wideband reason / CJ120 link 1010..1015); V97 +2 (idle timing 1008); V97 +2 (ignition correction 1006); V97 +2 (check-engine lamp 1004); V97 +12 (transient fuel 992..1003); V97 +18 (sequential state, injection width, fuel per cycle, dead time 974..991); V97 +24 (DBW terms / battery factor / pending faults / commissioning verify 950..973); V97 +78 (lam1IpUa / lam2IpUa 872..875, cam PATTERN 876..891, boost 892..905, idle 906..913, DTC 914..945, limp 946..949); V96 +8 (wideband 850..870, with V95 linkDiag 848); V79 +30 (hcio711); V86 +12 (engine preset apply, 764..775); V90 +4 (ETB calibration 776, overdwell 778); V91 +4 (control CLT 780, 782 overdwell latch); V92 +40 (tooth profile, corrections, cycle, cam 784..804; ETB cal/autotune 806..820; 822 reserved); V93 +40 (ETB procedure telemetry 822..838, wideband/boot/load 840..862) */
 /* V53 grew it by 16 bytes - eight channels - for the reclaim. The store is
    erased at runtime now, and that has never happened on this ECU; a bench
    that cannot see the slice count has no way to tell a slow erase from one
@@ -1050,7 +1050,9 @@ typedef char tgt_plan_cap_pow2[((TGT_PLAN_CAP_N & (TGT_PLAN_CAP_N - 1u)) == 0u) 
 #define TGT_RAM_OCH2          0x1180uL
 #define TGT_RAM_OCH2_LIMIT    0x0280uL
 #define TGT_OCH_SPLIT         1024u
-#if (TGT_OCH_SIZE - TGT_OCH_SPLIT) > TGT_RAM_OCH2_LIMIT
+/* 2026-11-04: OCH2 is full at 1664; the block continues in TGT_RAM_OCH3 */
+#define TGT_OCH_SPLIT2        1664u
+#if (TGT_OCH_SPLIT2 - TGT_OCH_SPLIT) > TGT_RAM_OCH2_LIMIT
 #error "output-channel tail exceeds OCH2 SRAM"
 #endif
 #define TGT_RAM_KNOCK         0x1A00uL
@@ -1095,11 +1097,27 @@ typedef char tgt_plan_cap_pow2[((TGT_PLAN_CAP_N & (TGT_PLAN_CAP_N - 1u)) == 0u) 
 #define TGT_ASICBAD_EXPORT    268u          /* window bytes of the capture
                                                (16 + 118 words); the pass
                                                profile follows at 268 */
-/* FREE (2026-10-28) */
+/* FREE (2026-10-28); 2026-11-03: the CAN bus runtime state (comms/hccan711.c:
+   transmit state, the receive mirrors and their ages), cleared at boot. */
 #define TGT_RAM_SPARE_C       0x2660uL
 #define TGT_RAM_SPARE_C_LIMIT 0x01A0uL
+#define TGT_RAM_CANSTATE         TGT_RAM_SPARE_C
+#define TGT_RAM_CANSTATE_LIMIT   0x0140uL
+/* 2026-11-04: the vehicle-speed input (control/hcvss711.c): the capture
+   interrupt's edge counter + stamp and the speed / gear state */
+#define TGT_RAM_VSS              (TGT_RAM_SPARE_C + 0x0140uL)
+#define TGT_RAM_VSS_LIMIT        0x0020uL
+/* ... and the third output-channel region (offsets 1664..1695, hcts.h
+   OCH_BYTE): written by hcvss711.c / hccan711.c, served as read */
+#define TGT_RAM_OCH3             (TGT_RAM_SPARE_C + 0x0160uL)
+#define TGT_RAM_OCH3_LIMIT       0x0020uL
+#if (0x0160uL + 0x0020uL) > TGT_RAM_SPARE_C_LIMIT
+#error "CAN + VSS + OCH3 overflow SPARE_C"
+#endif
 #define TGT_RAM_FLASHBUF      0x3000uL
-#define TGT_RAM_FLASHBUF_LIMIT 0x1400uL    /* was 0x2000; the Burn
+#define TGT_RAM_FLASHBUF_LIMIT 0x1200uL    /* 0x1400 until 2026-11-03: the record is
+                                              18 + 4480 + 6 = 4504 B; the top 512 B
+                                              went to the preset undo log below */    /* was 0x2000; the Burn
                                               record is ~0x1018 (hcnvm.c
                                               checks REC_LEN against this) -
                                               the top 3 KB is the preset undo
@@ -1318,8 +1336,10 @@ typedef char tgt_plan_cap_pow2[((TGT_PLAN_CAP_N & (TGT_PLAN_CAP_N - 1u)) == 0u) 
    table took the AWT preset to 2284 staged bytes in 41 runs (~2.6 KB of
    log with its index) - past the old 0x0A00 at 0x7600, and '!E' refused
    the preset (me711_v98_engine_proof). */
-#define TGT_RAM_PRESETUNDO       0x4400uL
-#define TGT_RAM_PRESETUNDO_LIMIT 0x0C00uL
+/* 2026-11-03: 0x0E00 at 0x4200 - the page-extension defaults took the 1.8T
+   preset past 0x0C00 of log (me711_preset_apply_proof, HC_VAL_FAULT_SCHEMA). */
+#define TGT_RAM_PRESETUNDO       0x4200uL
+#define TGT_RAM_PRESETUNDO_LIMIT 0x0E00uL
 #if ((TGT_RAM_FLASHBUF + TGT_RAM_FLASHBUF_LIMIT) > TGT_RAM_PRESETUNDO)     || ((TGT_RAM_PRESETUNDO + TGT_RAM_PRESETUNDO_LIMIT) > TGT_RAM_CFGDESIRED)
 #error "preset undo log overlaps the Burn buffer or DESIRED"
 #endif
@@ -1327,8 +1347,24 @@ typedef char tgt_plan_cap_pow2[((TGT_PLAN_CAP_N & (TGT_PLAN_CAP_N - 1u)) == 0u) 
    bytes (rusEFI composite_logger_s, big-endian on the wire). It shared the
    undo log's region until V98r2; it has 0x7600.. to itself now. */
 #define TGT_RAM_TLOG             0x7600uL
-#define TGT_RAM_TLOG_LIMIT       0x0A00uL
+#define TGT_RAM_TLOG_LIMIT       0x0640uL    /* 200 x 8; 0x0A00 until
+                                               2026-11-03 - the unused tail
+                                               is the page extension below */
 #define TGT_TLOG_N               200u
+/* THE CALIBRATION PAGE EXTENSION (2026-11-03, hcconfig.h HC_CFG_MAIN):
+   page offsets 4096..4479, ACTIVE and DESIRED, battery-backed like the page.
+   Taken from the tooth log's never-used tail (it held 200 records of 8 bytes
+   in a 2560-byte reservation). The last 192 bytes are the Ignitron-study
+   functions' runtime state (TGT_RAM_XSTATE). */
+#define TGT_RAM_CFGEXT           0x7C40uL
+#define TGT_RAM_CFGEXT_LIMIT     0x0180uL
+#define TGT_RAM_CFGEXTDES        0x7DC0uL
+#define TGT_RAM_CFGEXTDES_LIMIT  0x0180uL
+#define TGT_RAM_XSTATE           0x7F40uL
+#define TGT_RAM_XSTATE_LIMIT     0x00C0uL
+#if ((TGT_RAM_TLOG + TGT_RAM_TLOG_LIMIT) > TGT_RAM_CFGEXT) || ((TGT_RAM_CFGEXT + TGT_RAM_CFGEXT_LIMIT) > TGT_RAM_CFGEXTDES) || ((TGT_RAM_CFGEXTDES + TGT_RAM_CFGEXTDES_LIMIT) > TGT_RAM_XSTATE) || ((TGT_RAM_XSTATE + TGT_RAM_XSTATE_LIMIT) > TGT_EXTRAM_SIZE)
+#error "tooth log / page extension / extension state overlap"
+#endif
 #if (TGT_TLOG_N * 8u) > TGT_RAM_TLOG_LIMIT
 #error "the tooth log does not fit its region"
 #endif
@@ -2249,6 +2285,12 @@ extern unsigned int adc_raw[];
  * impedance) before anything else runs.
  */
 #define TGT_N_IGN             8
+#ifndef TGT_IGN_P2_MASK
+#define TGT_IGN_P2_MASK       0x00FFu   /* ZUE1..8 = P2.0..P2.7 (Porsche, 2.7T, 4F) */
+#endif
+#ifndef TGT_INJ_P8_MASK
+#define TGT_INJ_P8_MASK       0x00F8u   /* EV4..8 = P8.7..P8.3 */
+#endif
 #define TGT_N_INJ             8
 
 /* ======================================================= the status word ==
@@ -2319,9 +2361,9 @@ extern volatile unsigned char hc_probe_sink;
 #undef  TGT_ID
 #define TGT_ID                0x0750      /* ME7.5 DC, 4B0906018DC / 0261207636 */
 #undef  TGT_SIGNATURE
-#define TGT_SIGNATURE         "HaniCore ME75DC 3EF8E9EA"
+#define TGT_SIGNATURE         "HaniCore ME75DC BBDC7743"
 #undef  TGT_VERSIONTXT
-#define TGT_VERSIONTXT        "HaniCore V102 DEV / Bosch ME7.5 DC"
+#define TGT_VERSIONTXT        "HaniCore V102 (v1.1) / Bosch ME7.5 DC"
 /* the analog CJ110 wideband controller (30345): UA on AN6, LA through the
    CC650 (reg 0x46 bit 0) - hccj110.c; no SPI chip, no Ri */
 #define TGT_HAS_CJ110         1
@@ -2342,7 +2384,8 @@ extern volatile unsigned char hc_probe_sink;
 #undef  TGT_EKP_PORT_NO
 #define TGT_EKP_PORT_NO       3u
 
-/* the CC650: CS2, ADDRSEL2 0x4800 / BUSCON2 0x064E (start_me711.a66) */
+/* the CC650: CS2, ADDRSEL2 0x4800 / BUSCON2 0x064E (start_me711.a66;
+   the BFB: 0x064D, see its section at the end of this file) */
 #define TGT_CC650_BASE        0x480000uL
 #define TGT_CC650_WRITES_PER_MS 2u      /* bus writes per 1 ms service      */
 #define TGT_CC650_ANA_MS      10u       /* analog read + output raster      */
@@ -2365,12 +2408,145 @@ extern volatile unsigned char hc_probe_sink;
    ME7.5 hcdbw.c `sbit SF_PIN = P2 ^ 9`). Until 2026-11-01 the DC read
    P3.15, an unrelated input: the bridge "faulted" the moment AutoCal
    enabled it. */
+/* THE ENGINE OUTPUT PINS THIS BOARD REALLY HAS (2026-11-04). The deadline
+   executor releases "every coil / injector" with physical masks of 0xFF,
+   i.e. P2.0..P2.7 and P8.3..P8.7 - the Porsche's eight of each. On the DC
+   P2.4 is the post-cat heater, P2.5 THE 68HC05 MONITOR LINE, P2.6 KL50, P2.7
+   the thermostat, P8.3..P8.6 inputs. hc_deadline_cancel() at boot released
+   P2.5 in the middle of the first answer whenever the page came from
+   battery SRAM (a short power-off): the monitor reset the CPU every
+   ~116 ms (bench, SRAM log). At runtime any hard abort could do the same. */
+#undef  TGT_IGN_P2_MASK
+#define TGT_IGN_P2_MASK       0x000Fu   /* coils P2.0..P2.3               */
+#undef  TGT_INJ_P8_MASK
+#define TGT_INJ_P8_MASK       0x0080u   /* injector 4 P8.7                */
 #undef  TGT_DBW_SF_PORT_BIT
 #define TGT_DBW_SF_PORT_BIT   9         /* P2.9 <- CJ220 SF */
 #undef  TGT_DBW_SF_PORT_NO
 #define TGT_DBW_SF_PORT_NO    2
 #else
 #define TGT_HAS_CJ110         0           /* the DC's analog CJ110 only     */
+#endif
+
+/* THE VEHICLE-SPEED INPUT (2026-11-04, control/hcvss711.c; research
+   the maintainer's design records).
+   * On the VAG 121-pin boards the speed signal has its own capture unit:
+     cavity 54 (E_F_VFZ / VFZG_S) -> P2.14 / CC14. ME7.1 C4 (2.7T): Bosch
+     me7_port.xls "Belegung ME7.1 (VW) C3/C4" CC14 = VFZ + the 2.7T SSB
+     column (54 = VFZG_S) - PROBABLE. ME7.5 (018DC): the OEM image arms
+     CC14 as a rising-edge capture on T1 (CCM3 0xA900, DP2 leaves P2.14 an
+     input - .scratch/me75-reverse/IO_MAP.md) - EXACT TARGET BINARY. The
+     Porsche / 4F boards wire CC14 to a coding / cam-3 input (iomap), so
+     there the speed input takes a FREE cam capture (86 / 87, the role
+     router in hctrig_me711.c).
+   * The CC14 handler runs at the tick body's level (8) with its own group:
+     no new level, so no new frame in the worst-case nest; it only counts
+     and stamps. It is flash-backed and masked in fl_enter() like the rest. */
+#define TGT_TRAP_CC14INT      0x1E
+#define TGT_ILVL_VSS          8
+#define TGT_GLVL_VSS          2
+#if TGT_BOARD_VAG_ME71_C4 || TGT_BOARD_VAG_ME75_DC
+#define TGT_VSS_CC14_PIN      54u
+#else
+#define TGT_VSS_CC14_PIN      0u          /* no dedicated speed capture      */
+#endif
+
+/* ================================ THE AUDI A4 B7 1.8T BFB ME7.5 BOARD ====
+ *
+ * 8E0909518AQ / 0261208524 (2026-11-02, contributed by David - PR #1,
+ * ported by hand 2026-11-04). The DC's code and port map, but NOT its clock
+ * or bus timing - found on the bench, where the DC's values left this ECU
+ * silent and resetting. MEASURED on the BFB stock read
+ * (audi-a4-b7-1.8t-bfb-163hp.ori.bin, SW 1037372505), by disassembly:
+ *   - CLOCK 32 MHz (the DC: 24 MHz): S0BG = 0x5F beside S0CON = 0x80D1 for the
+ *     10400 baud K-line; a HaniCore image with 0x47 sent at 13889 baud
+ *   - bus: ADDRSEL1 0x3803, ADDRSEL2 0x4800 (the CC650), BUSCON0 0x04AE,
+ *     BUSCON1 0x051C (the DC: 0x040D), BUSCON2 0x064D (the DC: 0x064E)
+ *   - T0/T1/T7/T8 prescaler I = 2 (T01CON 0x424A, T78CON 0x474A) = fCPU/32 =
+ *     1.000 MHz here (0.75 MHz on the DC)
+ *   - ports: DP2 0x3CBF, P2 0xC7BF, P3 0x2FC1, DP3 0x35E0 - the exact values
+ *     quoted above for the DC
+ *   - the 68HC05 supervisor: the DC's protocol (same question bands, the same
+ *     answers) in microseconds; see hcasicstart_dc.inc "THE MONITOR'S CLOCK"
+ * What differs: the ROMSYS variant word at 0x8004 is 0x5C02 (the DC: 0x5BDC)
+ * and the loom is the B7's. The pin map is the DC's UNTIL a pin is proven on
+ * this loom; nothing here is road-ready. Identity is overridden so an
+ * updater image for one board can never be taken for the other's.
+ *
+ * STATE (2026-11-04): the clock, the ASC0 / SSC rates and the CAPCOM tick
+ * domain are converted (every `#if TGT_TICKS_PER_MS_X10 == 12500 ... #else
+ * 0.75 MHz` site has its 10000 branch: hcdeadline_plan711.c x3,
+ * hcengctl711.c, hcroutes711.c, hcnvm.c; hctrig rpm, hcsched_dry and
+ * hcrtmon derive from TGT_TICKS_PER_MS_X10). The ENGINE HAS NEVER RUN on this
+ * board: no spark, injection or throttle has been measured on a BFB. The
+ * watchdog window (WDTCON prescaler fCPU/128) is 82 ms here, not 109.
+ * BOOT: the build composes HaniCore's own boot region from the ROMSYS header
+ * of the stock read; the mask ROM's checking scheme for variant 0x5C02 is
+ * NOT proven on silicon (me75_bfb_boot_proof needs this ECU's own IROM read,
+ * bins/oem/ME75_BFB_IROM.bin). --bosch-boot (the stock read's boot region,
+ * bfb/8E0909518AQ.bin, local only) must never go into a release.
+ */
+#ifndef TGT_BOARD_VAG_ME75_BFB
+#define TGT_BOARD_VAG_ME75_BFB 0
+#endif
+#if TGT_BOARD_VAG_ME75_BFB
+#undef  TGT_ID
+#define TGT_ID                0x0751      /* ME7.5 BFB, 8E0909518AQ / 0261208524 */
+#undef  TGT_SIGNATURE
+#define TGT_SIGNATURE         "HaniCore ME75BFB BBDC7743"
+#undef  TGT_VERSIONTXT
+#define TGT_VERSIONTXT        "HaniCore V102 (v1.1) / Bosch ME7.5 BFB"
+
+/* THIS ECU RUNS AT 32 MHz, NOT THE 18T's 24 MHz (found on the bench
+ * 2026-11-02). Evidence: the stock BFB read writes S0BG = 0x5F beside
+ * S0CON = 0x80D1 for its 10400 baud K-line [stock 0x0397C4 / 0x0397C8, also
+ * 0x0237FA]: fCPU = 10400 x 32 x 96 = 31.95 MHz; and a HaniCore image sending
+ * with the 24 MHz S0BG = 0x47 came out of the K-line at 13889 baud
+ * (= 32 MHz / (32 x 72)) - a breadcrumb capture, A-H-C-E repeating.
+ *
+ * THE LINK RATES. S0BG = fCPU / (32 x baud) - 1: 10400 -> 0x5F (10417),
+ * 124800 -> 0x07 (125000, +0.16 %), 57600 -> 0x10 (58824, +2.1 %),
+ * 250000 -> 0x03 (exact). 57600 is 2.1 % off on this clock (a KKL tolerates
+ * it, but with no margin left for the cable's own error), so this board
+ * BOOTS at 124800 and keeps 57600 as the second rate: the link follows the
+ * host on evidence (hcts.c THE LINK RATE), a host at 57600 still connects
+ * after one retried request. (The tester saw slow value loading in
+ * LibreTune at 57600.) */
+#undef  TGT_FCPU_HZ
+#define TGT_FCPU_HZ           32000000uL
+#undef  TGT_S0BG
+#define TGT_S0BG              0x07          /* 124800 (125000): first   */
+#undef  TGT_S0BG_ALT
+#define TGT_S0BG_ALT          0x10          /* 57600 (58824, +2.1 %)    */
+#undef  TGT_S0BG_124800
+#define TGT_S0BG_124800       0x07
+#undef  TGT_S0BG_10400
+#define TGT_S0BG_10400        0x5F          /* 32 MHz / (32 x 96)  */
+#undef  TGT_S0BG_250000
+#define TGT_S0BG_250000       0x03          /* 32 MHz / (32 x 4)   */
+#undef  TGT_ASIC_SSCBR
+#define TGT_ASIC_SSCBR        0x000Fu       /* 32 MHz / (2 x 16) = 1 MHz, as 0x0B at 24 */
+
+/* THE TICK DOMAIN, 32 MHz (T0/T1/T7/T8 at fCPU/32 = 1.000 MHz, wrap 65.5 ms).
+ * Everything below is the 24 MHz board's value x 4/3, the same TIME.
+ * US_TO_TICKS() users follow automatically; the hard-coded sites have their
+ * 10000 branch (STATE above). */
+#undef  TGT_TICKS_PER_MS_X10
+#define TGT_TICKS_PER_MS_X10  10000UL       /* 1.000 MHz x 10 per ms */
+#undef  TGT_TICK_RELOAD
+#define TGT_TICK_RELOAD       1000u         /* T8 reload for a 1 ms tick */
+#undef  HC_PLAN_HORIZON_TICKS
+#define HC_PLAN_HORIZON_TICKS 4000u         /* 3000 at 0.75 MHz */
+#undef  HC_PLAN_PERIOD_TICKS
+#define HC_PLAN_PERIOD_TICKS  1933u         /* 1450 at 0.75 MHz */
+#undef  TGT_PLAN_DECIM_DT
+#define TGT_PLAN_DECIM_DT     333u          /* 250 */
+#undef  TGT_PLAN_DECIM4_DT
+#define TGT_PLAN_DECIM4_DT    200u          /* 150 */
+#undef  TGT_ASIC_CS_ARM_TICKS
+#define TGT_ASIC_CS_ARM_TICKS 63u           /* the same 63 us */
+#undef  TGT_DBW_PWM_PERIOD
+#define TGT_DBW_PWM_PERIOD    16000         /* 2 kHz at 32 MHz (12000 at 24) */
 #endif
 
 #endif /* HCTARGET_H */

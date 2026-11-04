@@ -50,7 +50,9 @@ def test_the_model_resolves_against_the_firmware_header():
     fields, consts, problems = MODEL.resolve()
     assert problems == [], "\n".join(problems)
     assert len(fields) > 150
-    assert consts["HC_CFG_SIZE"] == 4096
+    # 4096 + the page extension (2026-11-03): 384 bytes at CFG_EXT_BASE
+    assert consts["HC_CFG_SIZE"] == 4480
+    assert GEN._raw_define("HC_CFG_MAIN") == 4096
 
 
 def test_every_firmware_slot_has_metadata_and_the_reverse():
@@ -59,7 +61,7 @@ def test_every_firmware_slot_has_metadata_and_the_reverse():
     entry with no firmware field is a control that writes nowhere."""
     slots, _ = LAYOUT.parse()
     fields, _, _ = MODEL.resolve()
-    slot_names = {s.name for s in slots} - {"CFG_UNIVERSAL_BASE"}
+    slot_names = {s.name for s in slots} - {"CFG_UNIVERSAL_BASE", "CFG_EXT_BASE"}
     model_names = {f.slot for f in fields if not GEN.is_universal(f.slot)}
     assert slot_names == model_names
 
@@ -154,10 +156,13 @@ def test_universal_offsets_are_inside_the_reservation():
     fields, _, _ = MODEL.resolve()
     base = GEN._raw_define("CFG_UNIVERSAL_BASE")
     size = GEN._raw_define("CFG_UNIVERSAL_SIZE")
+    xbase = GEN._raw_define("CFG_EXT_BASE")
+    xsize = GEN._raw_define("CFG_EXT_SIZE")
     for f in fields:
         if not GEN.is_universal(f.slot):
             continue
-        assert base <= f.offset and f.end <= base + size, f.slot
+        assert ((base <= f.offset and f.end <= base + size)
+                or (xbase <= f.offset and f.end <= xbase + xsize)), f.slot
 
 
 # ==========================================================================

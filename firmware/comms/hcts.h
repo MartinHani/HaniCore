@@ -134,7 +134,13 @@
    without the split reads one region, as before. */
 #ifdef TGT_OCH_SPLIT
 #define OCH2  ((unsigned char huge *)(TGT_EXTRAM_BASE + TGT_RAM_OCH2))
+#ifdef TGT_OCH_SPLIT2
+/* 2026-11-04: and a third region from TGT_OCH_SPLIT2 (TGT_RAM_OCH3) */
+#define OCH3  ((unsigned char huge *)(TGT_EXTRAM_BASE + TGT_RAM_OCH3))
+#define OCH_BYTE(o) (((o) < TGT_OCH_SPLIT) ? OCH[o]                                               : ((o) < TGT_OCH_SPLIT2) ? OCH2[(o) - TGT_OCH_SPLIT]                          : OCH3[(o) - TGT_OCH_SPLIT2])
+#else
 #define OCH_BYTE(o) (((o) < TGT_OCH_SPLIT) ? OCH[o] : OCH2[(o) - TGT_OCH_SPLIT])
+#endif
 #else
 #define OCH_BYTE(o) (OCH[o])
 #endif

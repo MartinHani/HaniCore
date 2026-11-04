@@ -36,6 +36,9 @@
 #include "hctrans711.h"    /* transient fuel */
 #include "hcdtc711.h"
 #include "hclimp711.h"
+#include "hcxfn711.h"
+#include "hccan711.h"
+#include "hcvss711.h"
 #include "hckwp_me711.h"      /* VAG/KWP vehicle entry (far) */
 #include "hcrtmon711.h"       /* runtime health record (far) */
 #include "hcserial711.h"      /* PEC6 receive, interrupt transmit */
@@ -1199,6 +1202,9 @@ void main(void)
     hc_trans_init();       /* dry wall film, no after-start */
     hc_dtc_init();         /* no codes, MIL off */
     hc_limp_init();        /* no protection cut */
+    hc_x_init();           /* 2026-11-03 functions: state, no cut */
+    hc_vss_init();         /* vehicle speed input + gears (2026-11-04) */
+    hc_can_init();         /* CAN module: only with canEnable */
     hc_kwp_init();         /* KWP core idle, 5-baud decoder qualifying */
     hc_asic_start_init();
     TGT_ASICX_IC = HC_IC(TGT_ILVL_ASICX, TGT_GLVL_ASICX);   /* hc_asic_isr */
@@ -1470,8 +1476,10 @@ void main(void)
         hc_fuelpump_service(tick_ms,
                             (unsigned char)((io_ro & HC_RO_F_KEYOFF) ? 0u : 1u),
                             trg_rpm, trg_state,
-                            (unsigned char)(cfg_fault_cache != 0u
-                                            ? FP_FAULT_CFG : 0u));
+                            (unsigned char)((cfg_fault_cache != 0u
+                                             ? FP_FAULT_CFG : 0u)
+                                            | (hc_can_crash()
+                                               ? FP_FAULT_RUNTIME : 0u)));
         hc_tacho_service();   /* cavity 37: rpm x cylinders / 120 Hz */
 
         /* THE CLOSED-LOOP THROTTLE. Its permission is hc_dbw_allowed - the
@@ -1491,9 +1499,12 @@ void main(void)
         pass_cp(11u);
         SVC_BEGIN();
         hc_limp_service(tick_ms);   /* engine protection fuel cuts */
+        hc_x_service(tick_ms);      /* throttle safety, limp mode, traction */
         hc_dtc_service(tick_ms);    /* trouble codes + MIL request */
         hc_cel_service(tick_ms,     /* lamp test + MIL (policy only) */
                        (unsigned char)((io_ro & HC_RO_F_KEYOFF) == 0u));
+        hc_vss_service(tick_ms);    /* vehicle speed + gear, 20 ms grid */
+        hc_can_service(tick_ms);    /* VAG engine frames, 10 ms slots */
         SVC_END(svc_other);
         pass_cp(12u);
         hcts_target_yield();          /* the services above are one

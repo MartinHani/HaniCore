@@ -30,6 +30,7 @@
 #include "hcaux711.h"      /* fan, A/C (idle-up), outputs, oil pressure */
 #include "hcsafety.h"
 #include "hcbench.h"
+#include "hcxfn711.h"     /* 2026-11-03: ignition-first idle, kicks, adaptation */
 
 #define STEP_MS 20u
 #define PEDAL_DEFAULT_X10  20u   /* rusEFI idlePidDeactivationTpsThreshold 2 % */
@@ -42,6 +43,9 @@
 typedef struct {
     hcidle_timing_t tim;
     unsigned char   drv;         /* bit0 POUT0, bit1 POUT1: the valve drives it */
+    unsigned char   pad;
+    int             out_x;       /* the idle spark correction in force (P + I,
+                                    faded) - hcxfn711.c, 2026-11-03 */
 } hc_idle711_t;
 typedef char hc_idle711_fits[(sizeof(hc_idle711_t) <= TGT_RAM_IGNIDLE_LIMIT) ? 1 : -1];
 #define IDLE711 (*(hc_idle711_t huge *)(TGT_EXTRAM_BASE + TGT_RAM_IGNIDLE))
@@ -148,6 +152,7 @@ void far hc_idle_init(void)
     IGNIDLE.closed_ms = 0u;          /* ?C_INIT never runs; SRAM keeps junk */
     IGNIDLE.out_x10 = 0;
     IDLE711.drv = 0u;                /* hc_hal_init() released every output */
+    IDLE711.out_x = 0;
     hc_idle_floor_x10 = 0u;
     hc_idle_target_rpm = 0u;
     acc_ms = 0u;
@@ -211,6 +216,15 @@ void far hc_idle_service(unsigned int now_ms)
                                                      : eng_tps_x10;
     in.cranking = eng_cranking;
     hc_idle_floor_x10 = hcidle_step(&hc_idl, &c, &in, ms);
+    /* 2026-11-03 (hcxfn711.c): throttle correctors when the idle spark
+       has used its window, one-shot kicks, the learned offset, anti-stall
+       and the overrun cap - each 0 = off */
+    if (c.enabled) {
+        hc_idle_floor_x10 = hc_x_idle_air(hc_idle_floor_x10, in.target_rpm,
+                                          (unsigned char)(in.pedal_x10 <= c.pedal_x10),
+                                          (unsigned char)((hc_idl.state & HCIDLE_S_CLOSED) != 0u),
+                                          ms);
+    }
     /* anti-lag opens the throttle by its own amount (rusEFI
        ALSEtbAdd) while it is active - hcengctl711.c decides when. */
     if (HC_EC.als) {
@@ -233,10 +247,16 @@ void far hc_idle_service(unsigned int now_ms)
         (void)hcidle_timing_step(&IGNIDLE, &tc,
                                  (unsigned char)(hc_idl.state & HCIDLE_S_CLOSED),
                                  in.rpm, in.target_rpm, ms);
+        /* ignition first: + the integral, faded out on release */
+        IDLE711.out_x = tc.enabled
+            ? hc_x_idle_timing(IGNIDLE.out_x10,
+                               (unsigned char)((hc_idl.state & HCIDLE_S_CLOSED) != 0u),
+                               in.target_rpm, ms)
+            : 0;
     }
 }
 
 int far hc_idle_timing_x10(void)
 {
-    return IGNIDLE.out_x10;
+    return IDLE711.out_x;
 }

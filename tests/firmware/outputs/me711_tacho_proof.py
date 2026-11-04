@@ -69,7 +69,7 @@ def page(tacho):
     AP.set_active(r, AP.off("CFG_U_PIN_TACHO"), tacho, 1)
     r("hc_cfg_mgr_init")
     r("hc_cfg_commit", steps=20_000_000)
-    return bytes(r.m.r8(0x380000 + i) for i in range(12 + 4096))
+    return M.page_snapshot(r)   # main page + the page extension (2026-11-03)
 
 
 P2 = 0xFFC0

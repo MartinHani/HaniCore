@@ -36,6 +36,7 @@
 #include "hctrans711.h"   /* transient fuel, warm-up (far) */
 #include "hcigncorr711.h" /* CLT / IAT timing corrections (far) */
 #include "hcengctl711.h"  /* the engine-control layer (far) */
+#include "hcxfn711.h"     /* 2026-11-03: cranking fuel hold / first revolutions */
 #include "hcload711.h"
 #endif
 #include "hc_airfuel.h"
@@ -626,6 +627,7 @@ static void runtime_tail(unsigned int rpm)
         unsigned int m = hc_cal_curve16(CAL_CRANK_PW_AX, CAL_CRANK_PW_VAL, 8u,
                                         (err & ENG_ERR_CLT) ? CLT_20C_DC
                                                             : eng_clt_dc);
+        m = hc_x_crank_fuel(m);    /* held, then reduced; first revolutions */
         HC_LOAD.base_fuel_x100 = (unsigned long)m * 10uL;
         eng_ti_base_us = hc_af_te_us((unsigned long)m * 10uL, flow);
     } else {

@@ -40,6 +40,7 @@
 #include "hcsched_dry.h"
 #include "hcio711.h"
 #include "hcknock711.h"
+#include "hcxfn711.h"
 
 #define KN HC_KN711
 typedef char hc_kn_fits[(sizeof(hc_kn711_t) <= TGT_RAM_KNOCK_LIMIT) ? 1 : -1];
@@ -50,9 +51,9 @@ typedef char hc_kn_fits[(sizeof(hc_kn711_t) <= TGT_RAM_KNOCK_LIMIT) ? 1 : -1];
 /* [BIN] band code per centre frequency (5,6,7,8,9,10,12,14,16 kHz) and the
    gain code per x2 step; the select code per sensor index [BIN 0x094690:
    C019..C01C = 3, 2, 0, 1]. */
-static const unsigned char band_code[9] = { 8u, 10u, 11u, 12u, 6u, 0u, 2u, 3u, 4u };
-static const unsigned char gain_code[7] = { 0u, 1u, 2u, 3u, 5u, 6u, 7u };
-static const unsigned char sel_code[4]  = { 3u, 2u, 0u, 1u };
+static const unsigned char huge band_code[9] = { 8u, 10u, 11u, 12u, 6u, 0u, 2u, 3u, 4u };
+static const unsigned char huge gain_code[7] = { 0u, 1u, 2u, 3u, 5u, 6u, 7u };
+static const unsigned char huge sel_code[4]  = { 3u, 2u, 0u, 1u };
 
 #define MIN_LEAD_TICKS  US_TO_TICKS(80u)     /* arm at least this far ahead   */
 #define MAX_LEAD_TICKS  30000u               /* 24 ms: T7 compare horizon     */
@@ -376,7 +377,32 @@ static void sample(void)
     in.clt = (signed char)(clt > 127 ? 127 : (clt < -40 ? -40 : clt));
     in.dyn = (unsigned char)(eng_tps_rate > DYN_TPS_RATE
                              || eng_tps_rate < -DYN_TPS_RATE);
-    (void)hcknock_ignition(&KN.k, &KN.cfg, cyl, &in);
+    if (hcknock_ignition(&KN.k, &KN.cfg, cyl, &in)) {
+        /* 2026-11-03 (hcxfn711.c): the retard by knock STRENGTH replaces the
+           fixed step when it is larger, and a knock several cylinders share
+           teaches the adaptation map */
+        unsigned char q = hc_x_knock_q(KN.k.level16[cyl], in.rpm);
+        unsigned char i, n = 0u;
+        if (q > KN.cfg.step_q) {
+            unsigned int r = (unsigned int)(KN.k.ret_q[cyl] + (unsigned char)(q - KN.cfg.step_q));
+            KN.k.ret_q[cyl] = (unsigned char)((r > KN.cfg.max_q) ? KN.cfg.max_q : r);
+        }
+        for (i = 0u; i < KN.geom_n && i < HCKNOCK_CYL; i++) {
+            if (KN.k.ret_q[i] != 0u) n++;
+        }
+        hc_x_knock_learn(q > KN.cfg.step_q ? q : KN.cfg.step_q, n);
+    }
+}
+
+/* cylinders whose knock retard is at least q (limp mode, hcxfn711.c) */
+unsigned char far hc_knock_ncyl(unsigned char q)
+{
+    unsigned char i, n = 0u;
+    if (KN.mode != KN_MODE_ACTIVE || q == 0u) return 0u;
+    for (i = 0u; i < KN.geom_n && i < HCKNOCK_CYL; i++) {
+        if (KN.k.ret_q[i] >= q) n++;
+    }
+    return n;
 }
 
 /* ------------------------------------------------- per-cylinder trim -- */

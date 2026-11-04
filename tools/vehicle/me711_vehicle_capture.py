@@ -207,6 +207,9 @@ class Ini:
         txt = path.read_text(encoding="utf-8", errors="replace")
         m = re.search(r'^\s*signature\s*=\s*"([^"]+)"', txt, re.M)
         self.signature = m.group(1) if m else ""
+        # the page size (4480 since the 2026-11-03 page extension)
+        m = re.search(r"^\s*pageSize\s*=\s*(\d+)", txt, re.M)
+        self.page_size = int(m.group(1)) if m else 4096
         body = txt.split("[OutputChannels]", 1)[1]
         body = re.split(r"^\[", body, maxsplit=1, flags=re.M)[0]
         self.block = int(re.search(r"^\s*ochBlockSize\s*=\s*(\d+)",
@@ -473,9 +476,10 @@ class Link:
     def page_read(self, size=4096, chunk=256):
         out = bytearray()
         for off in range(0, size, chunk):
+            n = min(chunk, size - off)
             body, err, _ = self.request(b"R" + off.to_bytes(2, "big")
-                                        + chunk.to_bytes(2, "big"), 1.0)
-            if body is None or len(body) != chunk:
+                                        + n.to_bytes(2, "big"), 1.0)
+            if body is None or len(body) != n:
                 return None
             out.extend(body)
         return bytes(out)
@@ -640,7 +644,7 @@ class Capture:
         self.event("ECU_ONLINE", signature=sig, version=ver)
         self.fetch_boothist()
         if not (self.dir / "page.bin").exists():
-            page = self.link.page_read()
+            page = self.link.page_read(self.ini.page_size)
             if page:
                 (self.dir / "page.bin").write_bytes(page)
                 self.meta["page_sha256"] = hashlib.sha256(page).hexdigest()

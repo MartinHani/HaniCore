@@ -53,15 +53,17 @@ import c167sim as S  # noqa: E402
 STEMS = {"porsche_me711": "HaniCore_ME711_v102_dev",
          "vag_me71_c4": "HaniCore_ME71_27T_v102_dev",
          "audi_4f_v8": "HaniCore_ME711_4F_v102_dev",
-         "vag_me75_dc": "HaniCore_ME75_DC_v102_dev"}
+         "vag_me75_dc": "HaniCore_ME75_DC_v102_dev",
+         "vag_me75_bfb": "HaniCore_ME75_BFB_v102_dev"}
 BOARD_CODE = {"porsche_me711": 1, "vag_me71_c4": 2,
-              "audi_4f_v8": 3, "vag_me75_dc": 4}
+              "audi_4f_v8": 3, "vag_me75_dc": 4, "vag_me75_bfb": 5}
 # The register bank the first-level boot code leaves at handoff. The C167CR
 # mask ROM hands off with CP at 0xF740 (start_me711.a66: it clears the IRAM
 # from 0xF880 UP and only then switches CP to ?C_MAINREGISTERS, so 0xF740 must
 # survive the clear); the C167CS resets with CP at 0xFC00. Modelling it wrong
 # lets the IRAM clear overwrite the live register bank.
-RESET_CP = {"vag_me71_c4": 0xF740, "vag_me75_dc": 0xF740}.get(BOARD, 0xFC00)
+RESET_CP = {"vag_me71_c4": 0xF740, "vag_me75_dc": 0xF740,
+            "vag_me75_bfb": 0xF740}.get(BOARD, 0xFC00)
 IMAGE = ROOT / "bins/hanicore" / (STEMS[BOARD] + "_updater.bin")
 LOADER = ROOT / "bins/hanicore" / f"HaniCore_loader_{BOARD}.bin"
 MASKROM = ROOT / "bins/oem/CPU.BIN"     # the 05.xx first-level model (build uses it)

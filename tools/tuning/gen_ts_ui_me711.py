@@ -74,6 +74,25 @@ TS_TYPE = GEN.TS_TYPE
 # wants the whole block, and a scalar alias per element is added beside it for
 # the dialog to name.
 ELEMENT_FIELDS = {
+    # 2026-11-03: the page extension (hcxfn711.c)
+    "tpsExpected": (["Track 1 closed", "Track 1 open", "Track 2 closed", "Track 2 open"], None),
+    "idleKickDrop": ("Kick %d: rpm under target", None),
+    "canCustomId": ("Frame %d identifier (0 = off)", None),
+    "gearSpeed": ("Gear %d: speed per 1000 rpm", None),
+    "haldexTpsAx": ("Throttle point %d", None),
+    "haldexTpsLock": ("Wanted lock at throttle point %d", None),
+    "haldexRpmAx": ("Rpm point %d", None),
+    "haldexRpmLimit": ("Lock at most at rpm point %d (0 = no limit)", None),
+    "haldexNoLock": ("Rear slower by for 0 %% lock at rpm point %d", None),
+    "haldexFullLock": ("Rear slower by for 100 %% lock at rpm point %d", None),
+    "canCustomRate": ("Frame %d period", None),
+    "canCustomCh": (["Frame 1 value 1 (channel offset)", "Frame 1 value 2", "Frame 1 value 3", "Frame 1 value 4",
+                     "Frame 2 value 1 (channel offset)", "Frame 2 value 2", "Frame 2 value 3", "Frame 2 value 4"], None),
+    "idleKickStep": ("Kick %d: throttle step", None),
+    "stftKp": (["P gain idle", "P gain overrun", "P gain power", "P gain cruise"], None),
+    "knockAdaptLoadAx": ("Load point %d", None),
+    "dtcNoLampMask": (["No lamp: codes 1-8", "No lamp: codes 9-16", "No lamp: codes 17-24", "No lamp: codes 25-32"], None),
+    "dtcOffMask": (["Disabled: codes 1-8", "Disabled: codes 9-16", "Disabled: codes 17-24", "Disabled: codes 25-32"], None),
     "tdcCylDegX10": ("Cylinder %d TDC", "cylinders"),
     "cylBank": ("Cylinder %d bank", "cylinders"),
     "injChannel": ("Cylinder %d injector channel", "cylinders"),
@@ -335,6 +354,7 @@ SHAPE = {
     "veTable": "[16x16]", "ignMap": "[16x16]", "afrMap": "[16x16]",
     "pedalMap": "[16x16]", "boostDutyMap": "[16x16]",
     "boostTgtMap": "[16x16]",
+    "knockAmpMap": "[4x4]",
 }
 
 
@@ -417,6 +437,11 @@ TABLES = [
     ("boostTgtTbl",    "boostTgtMap",  "boostTgtRpmAx", "RPMValue",
      "boostTgtTpsAx", "TPSValue",
      "Boost target"),
+    # 2026-11-03: the retard per knock by rpm x knock strength
+    # (hcxfn711.c hc_x_knock_q, [strength][rpm])
+    ("knockAmpTbl",    "knockAmpMap",  "knockAmpRpmAx", "RPMValue",
+     "knockAmpAx",    "knockStrength",
+     "Retard per knock by strength"),
 ]
 
 #   (curve id, x field, y field, title, x label, y label)
@@ -474,6 +499,27 @@ CURVES = [
      "Boost coolant multiplier", "Coolant", "Multiplier"),
     ("boostIatCurve", "boostIatAx",   "boostIatMul",
      "Boost intake-air multiplier", "Intake air", "Multiplier"),
+    # 2026-11-03: the page-extension curves (hcxfn711.c)
+    ("minAdvCurve", "minAdvRpmAx", "minAdvVal",
+     "Minimum advance", "RPM", "deg"),
+    ("wuLambdaCurve", "wuLambdaClt", "wuLambdaVal",
+     "Warm-up lambda", "Coolant", "lambda"),
+    ("boostIMinCurve", "boostIRpmAx", "boostIMin",
+     "Boost integrator minimum", "RPM", "% duty taken away"),
+    ("boostIMaxCurve", "boostIRpmAx", "boostIMax",
+     "Boost integrator maximum", "RPM", "% duty added"),
+    ("boostLimIatCurve", "boostLimIatAx", "boostLimIat",
+     "Boost ceiling by intake air", "Intake air", "kPa absolute"),
+    ("boostLimCltCurve", "boostLimCltAx", "boostLimClt",
+     "Boost ceiling by coolant", "Coolant", "kPa absolute"),
+    ("dbwGainCurve", "dbwGainAx", "dbwGainPct",
+     "Throttle gain by position", "Throttle %", "% of the PID gains"),
+    ("dbwSpeedOpenCurve", "dbwSpeedAx", "dbwSpeedOpen",
+     "Throttle opening speed limit", "Throttle %", "% per 10 ms"),
+    ("dbwSpeedCloseCurve", "dbwSpeedAx", "dbwSpeedClose",
+     "Throttle closing speed limit", "Throttle %", "% per 10 ms"),
+    ("dbwOverrunCurve", "dbwOverrunRpmAx", "dbwOverrunMax",
+     "Throttle cap, pedal released", "RPM", "Throttle %"),
 ]
 
 
@@ -537,6 +583,7 @@ TABLE_Y_LABEL = {
     "vvtTarget2Tbl": "Cylinder filling (%)",
     "mapEstimateTbl": "Throttle position (%)",
     "injPhaseTbl": "{bitStringValue(hcLoadAxisList, %s)}" % _FUEL,
+    "knockAmpTbl": "Knock strength (x quiet reference)",
 }
 
 
@@ -557,6 +604,12 @@ CURVE_TRACER = {
     "cltSensAx": "cltRawAsic", "iatSensAx": "iatRawAsic",   # raw ADC counts
     "dbwBiasAx": "etbActual",                     # throttle plate, %
     "ignBoostAx": "boostAboveAmbient",            # charge/MAP - ambient, kPa
+    # 2026-11-03 (page extension)
+    "minAdvRpmAx": "RPMValue", "boostIRpmAx": "RPMValue",
+    "dbwOverrunRpmAx": "RPMValue",
+    "wuLambdaClt": "coolant", "boostLimCltAx": "coolant",
+    "boostLimIatAx": "intake",
+    "dbwGainAx": "etbActual", "dbwSpeedAx": "etbActual",
 }
 
 
@@ -624,8 +677,10 @@ GROUP_TITLE = {
 # Categories in menu order. Anything the model gains later that is not listed
 # lands in "Other", which layout() reports rather than silently dropping.
 CATEGORY_ORDER = ["Engine", "Trigger", "Sensors", "Fuel", "Load and protection", "Ignition", "Knock",
-                  "VVT", "Idle",
-                  "DBW", "Lambda", "Boost", "Motorsport", "Safety", "I/O",
+                  "VVT", "Idle", "Starting", "Overrun and closed loop",
+                  "DBW", "Throttle", "Throttle safety", "Lambda", "Boost",
+                  "Motorsport", "Safety", "Limp mode", "I/O", "CAN bus",
+                  "Haldex", "Vehicle speed",
                   "Controller"]
 
 # Where the firmware is not finished, the dialog says so IN THE DIALOG. These

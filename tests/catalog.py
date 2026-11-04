@@ -79,6 +79,8 @@ FAST = {
     # 2026-10-31: the per-board output and cam-valve gates - two of them were
     # red on the 2.7T / ME7.5 for weeks because no board's set ran them
     "me711_output_binding_proof", "me711_vvt_proof", "me711_idle_valve_proof",
+    "me75_dc_monitor_line_proof",
+    "me711_xfn_proof",   # 2026-11-03 page-extension functions
 }
 
 # TIER 1: the milestone check of the TunerStudio interface against the image
@@ -122,12 +124,18 @@ EXTRA_TAGS = {
                 "me711_irq_priority_proof", "me711_burn_interrupt_guard",
                 "me711_crank_period_atomic_proof", "test_c167sim_irq_nesting",
                 "test_c167sim_bfld", "test_c167sim_vflag"},
+    # 2026-11-03: the CAN bus (comms/hccan711.c, firmware/comms/hccan.c)
+    "can": {"test_hccan_host", "test_hccan2_host", "me711_can_vag_frames_proof",
+            "me711_can_rx_proof", "me711_can_ext_proof"},
+    "vss": {"test_hcvss_host", "me711_vss_proof"},
     "vehicle-tools": {"me711_vehicle_test_test", "me711_log_analyze_test", "me711_vehicle_capture_test",
                       "me711_commission_tools_test", "me711_kwp_connect_test"},
 }
 
 # Gates that legitimately need more than the default 1800 s (measured).
 TIMEOUTS = {
+    "me711_vss_proof": 3600,             # 2026-11-04: two ~7 s engine runs
+    "me711_can_ext_proof": 3600,
     "me711_ts_gap_proof": 9000,
     "me711_flash_bus_proof": 7200,
     "me711_nvm_rotation_proof": 3600,
@@ -178,6 +186,7 @@ SKIP_IF = {
     # 2026-10-29: the ME7.5 DC's own gate, and the S5500 gates it has no
     # subject for (the DC talks to a CC650 bus ASIC, not an S5500)
     "me75_dc_runtime_proof": "not_dc_board",
+    "me75_dc_monitor_line_proof": "not_dc_board",
     "me71_c4_umkom_proof": "dc_board",
     "me711_asic_retry_raster_proof": "dc_board",
     "me711_burn_raster_proof": "dc_board",

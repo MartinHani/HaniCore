@@ -15,6 +15,7 @@
 #include "hc_dbw.h"
 #include "hc_dbw_state.h"
 #include "hcetbcal.h"
+#include "hcxfn711.h"     /* 2026-11-03: endpoint plausibility */
 #include "hcfresh711.h"
 #include "hctrigger.h"
 #define HC_SWEEP_PTR huge
@@ -82,7 +83,8 @@ typedef char bias_fits[(sizeof(hc_bias_t)<=TGT_RAM_ETBBIAS_LIMIT)?1:-1];
    nothing is written. The gains come from the mean of the two. */
 #define AT_AGREE_DIV       4u
 #define VFY_RUN_MAX    22000u
-static const unsigned int vfy_tgt[VFY_STEPS] = { 200u, 600u, 200u, 40u, 150u };
+/* huge: HCONST, not NCONST (the 018DC's NCONST is at its reserve) */
+static const unsigned int huge vfy_tgt[VFY_STEPS] = { 200u, 600u, 200u, 40u, 150u };
 
 typedef struct {
     unsigned char ph, req, res, why, newcal, newtune, on, dir;
@@ -400,7 +402,22 @@ static void evaluate(void)
         finish(ETB_RES_FAIL, ETB_WHY_TRACKS);
         return;
     }
+    /* 2026-11-03: the endpoints must look like THIS body's (tpsExpected,
+       tpsExpTol; hcxfn711.c) - a swapped track, a wrong body or a reversed
+       connector stops here instead of on the road */
+    {
+        unsigned char bad = hc_x_etbcal_check(E.out[0], E.out[1], E.out[2],
+                                              E.out[3]);
+        if (bad != 0u) {
+            E.newcal = 0u;
+            E.detail = (unsigned int)(((unsigned int)bad << 12)
+                                      | (E.out[bad - 1u] & 0x0FFFu));
+            finish(ETB_RES_FAIL, ETB_WHY_EXPECT);
+            return;
+        }
+    }
     E.calok = 1u;
+    hc_x_idle_adapt_clear();          /* a new throttle: learn idle again */
     if (E.proc == ETB_PROC_COMMISSION) {
         /* V93 COMMISSION: the endpoints passed every check, so continue
            straight into the PID autotune. It normalises with the endpoints

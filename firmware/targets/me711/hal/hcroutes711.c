@@ -11,6 +11,7 @@
 #include "hcdeadline_state.h"
 #include "hchal.h"
 #include "hchal_me711.h"
+#include "hc_pin_descriptor.h"
 #define OP_NONE 0u
 #define OP_P2 2u
 #define OP_P7 7u
@@ -184,6 +185,8 @@ void HC_COLD hc_tacho_service(void)
        22.5e6 at 0.75 MHz (the 2.7T board, where it fits from 344 rpm) */
 #if TGT_TICKS_PER_MS_X10 == 12500UL
     q = (rpm < 573u) ? 65000u
+#elif TGT_TICKS_PER_MS_X10 == 10000UL
+    q = (rpm < 462u) ? 65000u           /* 1.000 MHz: 30e6 / 65000 */
 #else
     q = (rpm < 344u) ? 65000u
 #endif
@@ -250,4 +253,44 @@ void HC_COLD hc_tacho_tick(void)
 unsigned char HC_COLD hc_tacho_running(void)
 {
     return TA.on;
+}
+
+/* MOVED HERE from hchal_me711.c (2026-11-04): configuration-time only, its
+   one caller is the far validator; hcfarbridge.h names it
+   hc_hal_out_bindable_f. */
+unsigned char HC_COLD hc_hal_out_bindable(unsigned int field, unsigned char cav)
+{
+    unsigned char port, bitno;
+
+    if (field == CFG_U_PIN_BOOST) {
+        return (unsigned char)((cav == TGT_LDR_CAV) ? 1u : 0u);
+    }
+    if (field == CFG_U_PIN_MIL) {            /* the ASIC P7.0 lamp stage */
+        return (unsigned char)((cav == TGT_MIL_CAV) ? 1u : 0u);
+    }
+    if (field == CFG_U_PIN_TACHO) {          /* P2.13 / CC13 (hcroutes711) */
+        return (unsigned char)((cav == TGT_TACHO_CAV) ? 1u : 0u);
+    }
+    if (field == CFG_U_PIN_CAM1_SOL || field == CFG_U_PIN_CAM2_SOL) {
+        /* POUT0 / POUT1 (hcvvt711.c) */
+        return (unsigned char)((cav == TGT_POUT0_CAV || cav == TGT_POUT1_CAV
+#ifdef TGT_NWS_ASIC_CAV
+                                || cav == TGT_NWS_ASIC_CAV
+#endif
+                                ) ? 1u : 0u);
+    }
+    if (field == CFG_U_PIN_IDLE_VALVE || field == CFG_U_PIN_IDLE_VALVE2) {
+        /* POUT0 / POUT1 only (hcidle711.c): a valve needs a real PWM unit */
+        return (unsigned char)((cav == TGT_POUT0_CAV || cav == TGT_POUT1_CAV)
+                               ? 1u : 0u);
+    }
+    if (field == CFG_U_PIN_MAIN_RELAY
+        && hc_pin_can(cav, HC_PINCAP_MAIN_RELAY_HW)) {
+        return 1u;
+    }
+    if (field == CFG_U_PIN_FUEL_PUMP || field == CFG_U_PIN_MAIN_RELAY) {
+        hc_hal_port_of(cav, &port, &bitno);
+        return (unsigned char)((port != OP_NONE) ? 1u : 0u);
+    }
+    return 0u;
 }

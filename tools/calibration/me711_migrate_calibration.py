@@ -725,9 +725,11 @@ def main() -> int:
         raise SystemExit("the source .ini has no layout in its signature")
     if a.src_page:
         src_page = Path(a.src_page).read_bytes()
-        if len(src_page) != PAGE:
+        _m = re.search(r"^\s*pageSize\s*=\s*(\d+)", src_text, re.M)
+        _want = int(_m.group(1)) if _m else PAGE   # 4480 since 2026-11-03
+        if len(src_page) != _want:
             raise SystemExit("--src-page is %d bytes, not %d"
-                             % (len(src_page), PAGE))
+                             % (len(src_page), _want))
         cell, gen = -1, -1
         print("source: page file %s sha256 %s (layout %08X by the "
               "operator's word: a page file carries no header)"

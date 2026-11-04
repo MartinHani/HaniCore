@@ -30,7 +30,7 @@
    universal_schema(). A literal here meant that adding a field
    left a battery-backed page from the previous firmware looking
    valid, with the new bytes holding whatever SRAM had. */
-#define HC_UNIVERSAL_SCHEMA          0x357Du
+#define HC_UNIVERSAL_SCHEMA          0xCD1Du
 #define HC_UNIVERSAL_MAGIC           0x4855u   /* 'HU' */
 
 /* ------------------------------------------------- layout identity -- */
@@ -39,7 +39,7 @@
    what a stored calibration record carries so that a firmware whose page
    layout has moved REFUSES the record instead of reinterpreting it. See
    layout_id() in tools/config_source/generate_config.py. */
-#define HC_CFG_LAYOUT_ID             0x3EF8E9EAuL
+#define HC_CFG_LAYOUT_ID             0xBBDC7743uL
 
 /* -------------------------------------------------------- apply policy -- */
 /* WHEN a validated change may reach the running engine. SAFETY_CRITICAL
@@ -221,6 +221,41 @@ typedef enum {
 #define HC_INJP_REFERENCED            1u
 #define HC_INJP_FIXED_RAIL            2u
 #define HC_INJP_SENSED                3u
+
+/* EtbPairAction: What a throttle-sensor pair fault does to the engine */
+#define HC_ETB_PAIR_REVLIM            0u
+#define HC_ETB_PAIR_CUT               1u
+
+/* KnockAdaptMode: Knock adaptation */
+#define HC_KADAPT_OFF                 0u
+#define HC_KADAPT_LEARN               1u
+#define HC_KADAPT_APPLY               2u
+
+/* CanVag: Engine messages sent on the CAN bus */
+#define HC_CAN_VAG_OFF                0u
+#define HC_CAN_VAG_PQ34               1u
+
+/* CanVssSource: Where the vehicle speed comes from */
+#define HC_CAN_VSS_NONE               0u
+#define HC_CAN_VSS_ABS                1u
+#define HC_CAN_VSS_FRONT              2u
+#define HC_CAN_VSS_REAR               3u
+#define HC_CAN_VSS_CLUSTER            4u
+
+/* CanWbFormat: Wideband controller message format */
+#define HC_CAN_WB_OFF                 0u
+#define HC_CAN_WB_RUSEFI              1u
+#define HC_CAN_WB_AEM                 2u
+
+/* HaldexMode: Haldex clutch control */
+#define HC_HX_OFF                     0u
+#define HC_HX_EMU_CANCLUSTER          1u
+#define HC_HX_EMU_NONCAN              2u
+#define HC_HX_PASSIVE                 3u
+
+/* VssEdge: Speed signal edge counted */
+#define HC_VSS_FALLING                0u
+#define HC_VSS_RISING                 1u
 
 /* ------------------------------- universal block field offsets -- */
 /* Inside hcconfig.h's CFG_UNIVERSAL_BASE (2502, 1336 bytes reserved).
@@ -551,6 +586,135 @@ typedef enum {
 #define CFG_U_INJ_PRESS_MODE           3833u /* u8 Fuel pressure compensation */
 #define CFG_U_FUEL_REG_KPA             3834u /* u16 Fuel regulator pressure */
 #define CFG_U_FUEL_SENS_KPA            3836u /* u16 Fuel pressure sensor at 4.5 V */
+#define CFG_U_IDLE_ADAPT_CLT           4096u /* u16 Idle adaptation: above */
+#define CFG_U_WU_LAM_CLT               4098u /* u16[6] Warm-up lambda coolant */
+#define CFG_U_BLIM_IAT_AX              4110u /* u16[4] Boost limit intake air */
+#define CFG_U_BLIM_CLT_AX              4118u /* u16[4] Boost limit coolant */
+#define CFG_U_LIMP_CLT                 4126u /* u16 Coolant above */
+#define CFG_U_CAN_MDNORM               4128u /* u16 Torque normalisation (MDNORM) */
+#define CFG_U_CAN_MDMAX                4130u /* u16 Maximum torque */
+#define CFG_U_CAN_NMDMAX               4132u /* u16 Maximum torque at */
+#define CFG_U_CAN_KVNPZ                4134u /* u16 Normalised consumption (KVNPZ) */
+#define CFG_U_CAN_HOT_CLT              4136u /* u16 Coolant lamp above */
+#define CFG_U_CAN_CTX_ID               4138u /* u16[2] Custom frame identifier */
+#define CFG_U_CAN_CTX_CH               4142u /* u16[8] Custom frame value (channel offset) */
+#define CFG_U_VSS_PPK                  4158u /* u16 Pulses per km */
+#define CFG_U_GEAR_V                   4160u /* u16[8] Speed per 1000 rpm */
+#define CFG_U_ETB_DEVCUT_PCT           4176u /* u8 Plate off target: cut above */
+#define CFG_U_ETB_DEVCUT_T             4177u /* u8 Plate off target: for */
+#define CFG_U_ETB_PAIR_ACTION          4178u /* u8 Throttle sensor pair fault */
+#define CFG_U_TPS_EXP                  4179u /* u8[4] Expected throttle sensor voltage */
+#define CFG_U_TPS_EXP_TOL              4183u /* u8 AutoCal endpoint tolerance */
+#define CFG_U_IDLE_IGN_KI              4184u /* u8 Idle spark: integral */
+#define CFG_U_IDLE_IGN_FADE            4185u /* u8 Idle spark: fade out after the pedal */
+#define CFG_U_IDLE_CORR_THR            4186u /* u8 Throttle corrector: spark window used */
+#define CFG_U_IDLE_CORR_PER            4187u /* u8 Throttle corrector: every */
+#define CFG_U_IDLE_CORR_STEP           4188u /* u8 Throttle corrector: step */
+#define CFG_U_IDLE_CORR_MAX            4189u /* u8 Throttle corrector: at most */
+#define CFG_U_IDLE_KICK_DROP           4190u /* u8[3] Throttle kick: rpm below target */
+#define CFG_U_IDLE_KICK_STEP           4193u /* u8[3] Throttle kick: step */
+#define CFG_U_IDLE_KICK_RESET          4196u /* u8 Throttle kick: taken back above target + */
+#define CFG_U_IDLE_ADAPT_RATE          4197u /* u8 Idle adaptation: rate */
+#define CFG_U_IDLE_ADAPT_MAX           4198u /* u8 Idle adaptation: at most +/- */
+#define CFG_U_STALL_RPM                4199u /* u8 Anti-stall: below target - */
+#define CFG_U_STALL_GAIN               4200u /* u8 Anti-stall: throttle per 100 rpm */
+#define CFG_U_STALL_MAX                4201u /* u8 Anti-stall: at most */
+#define CFG_U_MINADV_RPM_AX            4202u /* u8[4] Minimum advance rpm */
+#define CFG_U_MINADV_VAL               4206u /* u8[4] Minimum advance */
+#define CFG_U_CRANK_HOLD               4210u /* u8 Cranking fuel: full for */
+#define CFG_U_CRANK_DECAY              4211u /* u8 Cranking fuel: then reduce over */
+#define CFG_U_CRANK_FLOOR              4212u /* u8 Cranking fuel: down to */
+#define CFG_U_FIRST_REVS_ADD           4213u /* u8 First revolutions: extra fuel */
+#define CFG_U_FIRST_REVS_N             4214u /* u8 First revolutions: count */
+#define CFG_U_ASE_HOLD                 4215u /* u8 After-start: hold for */
+#define CFG_U_WU_LAM_ON                4216u /* u8 Warm-up lambda */
+#define CFG_U_WU_LAM_VAL               4217u /* u8[6] Warm-up lambda */
+#define CFG_U_OILSTART_KPA             4223u /* u8 Start delay: oil pressure needed */
+#define CFG_U_OILSTART_MAX             4224u /* u8 Start delay: at most */
+#define CFG_U_DFCO_CUT_T               4225u /* u8 Fuel cut: fade out over */
+#define CFG_U_DFCO_REST_T              4226u /* u8 Fuel cut end: fade in over */
+#define CFG_U_DFCO_REST_ADD            4227u /* u8 Fuel cut end: first fuel extra */
+#define CFG_U_O2SAT_LAM                4228u /* u8 Sensor saturated after a cut above */
+#define CFG_U_O2SAT_REC                4229u /* u8 Recovered below */
+#define CFG_U_O2SAT_T                  4230u /* u8 Recovered for */
+#define CFG_U_O2SAT_TPS                4231u /* u8 Only below throttle */
+#define CFG_U_STFT_LEAN_LOCK           4232u /* u8 Closed loop: no leaning for */
+#define CFG_U_STFT_KP                  4233u /* u8[4] Closed loop P gain */
+#define CFG_U_KAMP_ON                  4237u /* u8 Retard by knock strength */
+#define CFG_U_KAMP_RPM_AX              4238u /* u8[4] Knock map rpm */
+#define CFG_U_KAMP_AX                  4242u /* u8[4] Knock strength (x quiet reference) */
+#define CFG_U_KAMP_MAP                 4246u /* u8[16] Retard per knock */
+#define CFG_U_KADAPT_MODE              4262u /* u8 Knock adaptation */
+#define CFG_U_KADAPT_CYL               4263u /* u8 Adaptation: cylinders retarding together */
+#define CFG_U_KADAPT_ATTACK            4264u /* u8 Adaptation: learn share of the retard */
+#define CFG_U_KADAPT_DECAY             4265u /* u8 Adaptation: given back */
+#define CFG_U_KADAPT_MAX               4266u /* u8 Adaptation: at most */
+#define CFG_U_KADAPT_LOAD_AX           4267u /* u8[4] Adaptation load (filling) */
+#define CFG_U_BI_RPM_AX                4271u /* u8[6] Boost integrator rpm */
+#define CFG_U_BI_MIN                   4277u /* u8[6] Boost integrator minimum */
+#define CFG_U_BI_MAX                   4283u /* u8[6] Boost integrator maximum */
+#define CFG_U_BLIM_IAT                 4289u /* u8[4] Boost limit by intake air */
+#define CFG_U_BLIM_CLT                 4293u /* u8[4] Boost limit by coolant */
+#define CFG_U_LIMP_ON                  4297u /* u8 Limp mode checks */
+#define CFG_U_LIMP_THR                 4298u /* u8 Limp: throttle at most */
+#define CFG_U_LIMP_LEAN                4299u /* u8 Lean: richer target missed by */
+#define CFG_U_LIMP_LEAN_TPS            4300u /* u8 Lean: above throttle */
+#define CFG_U_LIMP_LEAN_T              4301u /* u8 Lean: for */
+#define CFG_U_LIMP_MAP                 4302u /* u8 Manifold pressure above */
+#define CFG_U_LIMP_MAP_T               4303u /* u8 Pressure: for */
+#define CFG_U_LIMP_KNOCK               4304u /* u8 Knock retard above */
+#define CFG_U_LIMP_KNOCK_CYL           4305u /* u8 on cylinders */
+#define CFG_U_DTC_LAMP                 4306u /* u8[4] No lamp for code */
+#define CFG_U_DTC_OFF                  4310u /* u8[4] Code disabled */
+#define CFG_U_DBWG_AX                  4314u /* u8[4] Gain throttle position */
+#define CFG_U_DBWG_PCT                 4318u /* u8[4] Gain at that position */
+#define CFG_U_DBWS_AX                  4322u /* u8[4] Speed limit position */
+#define CFG_U_DBWS_OPEN                4326u /* u8[4] Opening speed at most */
+#define CFG_U_DBWS_CLOSE               4330u /* u8[4] Closing speed at most */
+#define CFG_U_DBWO_RPM_AX              4334u /* u8[4] Overrun limit rpm */
+#define CFG_U_DBWO_MAX                 4338u /* u8[4] Throttle at most with the pedal released */
+#define CFG_U_TC_RATE                  4342u /* u8 Traction: rpm rise above */
+#define CFG_U_TC_RETARD                4343u /* u8 Traction: retard */
+#define CFG_U_TC_CUT                   4344u /* u8 Traction: spark cut */
+#define CFG_U_CAN_ENABLE               4345u /* u8 CAN bus */
+#define CFG_U_CAN_VAG                  4346u /* u8 Engine messages */
+#define CFG_U_CAN_VERS                 4347u /* u8 CAN version (CANVERS) */
+#define CFG_U_CAN_FMOTC                4348u /* u8 Engine code (FMOTC) */
+#define CFG_U_CAN_CWGC                 4349u /* u8 Gearbox code (CWGC) */
+#define CFG_U_CAN_MOTTYP               4350u /* u8 Engine type (MOTTYP) */
+#define CFG_U_CAN_FUEL_CORR            4351u /* u8 Fuel consumption correction */
+#define CFG_U_CAN_EPC_SRC              4352u /* u8 EPC lamp on */
+#define CFG_U_CAN_RX_MASK              4353u /* u8 Receive */
+#define CFG_U_CAN_VSS_SRC              4354u /* u8 Vehicle speed from */
+#define CFG_U_CAN_RX_TMO               4355u /* u8 Receive timeout */
+#define CFG_U_CAN_CTX_RATE             4356u /* u8[2] Custom frame period */
+#define CFG_U_CAN_CTX_LE               4358u /* u8 Custom frames byte order */
+#define CFG_U_CAN_CRASH_CUT            4359u /* u8 Airbag crash cuts the engine */
+#define CFG_U_CAN_WB_FMT               4360u /* u8 Wideband controller on CAN */
+#define CFG_U_CAN_WB_IDX               4361u /* u8 Wideband controller index */
+#define CFG_U_CAN_OBD                  4362u /* u8 OBD-II over CAN */
+#define CFG_U_CAN_ABS_EMU              4363u /* u8 ABS emulation (no ABS fitted) */
+#define CFG_U_HX_MODE                  4364u /* u8 Haldex control */
+#define CFG_U_HX_TPS_AX                4365u /* u8[4] Lock: throttle */
+#define CFG_U_HX_TPS_LOCK              4369u /* u8[4] Lock: wanted at that throttle */
+#define CFG_U_HX_RPM_AX                4373u /* u8[4] Haldex rpm */
+#define CFG_U_HX_RPM_LIMIT             4377u /* u8[4] Lock: at most at that rpm */
+#define CFG_U_HX_NO_LOCK               4381u /* u8[4] Rear slower by: 0 % lock at that rpm */
+#define CFG_U_HX_FULL_LOCK             4385u /* u8[4] Rear slower by: 100 % lock at that rpm */
+#define CFG_U_HX_MAX                   4389u /* u8 Lock: at most */
+#define CFG_U_HX_BRAKE                 4390u /* u8 Open the clutch on the brake */
+#define CFG_U_HX_LAUNCH                4391u /* u8 Lock during launch control */
+#define CFG_U_HX_KP                    4392u /* u8 Closed loop P */
+#define CFG_U_HX_KI                    4393u /* u8 Closed loop I */
+#define CFG_U_HX_DEADBAND              4394u /* u8 Closed loop deadband */
+#define CFG_U_HX_RPM_FIX               4395u /* u8 Fixed rpm sent (mode 2) */
+#define CFG_U_VSS_EDGE                 4396u /* u8 Edge counted */
+#define CFG_U_VSS_FILTER               4397u /* u8 Smoothing */
+#define CFG_U_VSS_TMO                  4398u /* u8 Standing after no pulse for */
+#define CFG_U_GEAR_N                   4399u /* u8 Gears */
+#define CFG_U_GEAR_BAND                4400u /* u8 Gear held within */
+#define CFG_U_GEAR_MIN                 4401u /* u8 No gear below */
+#define CFG_U_LAUNCH_VMAX              4402u /* u8 Launch: only below */
 
 /* ------------------------------------------------- the slot table -- */
 /* One entry per configuration field, sorted by offset. The config
@@ -561,12 +725,14 @@ typedef struct {
     unsigned int  size;        /* bytes, including array elements     */
     unsigned char policy;      /* hc_apply_policy_t                   */
     unsigned char group;       /* hc_apply_group_t                    */
-    unsigned char flags;       /* HC_FLAG_*                           */
-    unsigned char elem;        /* bytes per element: 1 or 2           */
-    unsigned int  pin_needs;   /* HC_PINCAP_* required, 0 if not a pin */
 } hc_cfg_slot_t;
+/* 2026-11-04: 6 bytes (was 10). The firmware reads offset, size, policy
+   and group only; the safety / pin flags, the element size and the pin
+   capability were UI hints carried in NCONST (2.3 KB at 580 fields).
+   They stay in the model (hanicore_config_def.py) and the generated
+   .ini / descriptor; the validator checks pins from the descriptor. */
 
-#define HC_CFG_SLOT_COUNT   452u
+#define HC_CFG_SLOT_COUNT   581u
 extern const hc_cfg_slot_t hc_cfg_slots[HC_CFG_SLOT_COUNT];
 
 /* Slot covering `off`, or 0 when the byte belongs to a reserved area.
@@ -588,7 +754,7 @@ extern const unsigned int hc_cfg_rpm_zero_groups;
 /* If hcconfig.h moves a field, these stop the BUILD rather than letting
    a generated header describe a page that no longer exists. C89 has no
    static_assert, so this is the negative-array-size idiom. */
-typedef char hc_cfg_assert_page_size[(HC_CFG_SIZE == 4096u) ? 1 : -1];
+typedef char hc_cfg_assert_page_size[(HC_CFG_SIZE == 4480u) ? 1 : -1];
 typedef char hc_cfg_assert_uni_base[(CFG_UNIVERSAL_BASE == 2502u) ? 1 : -1];
 typedef char hc_cfg_assert_uni_size[(CFG_UNIVERSAL_SIZE == 1336u) ? 1 : -1];
 typedef char hc_cfg_assert_uni_fits[(1336u <= CFG_UNIVERSAL_SIZE) ? 1 : -1];

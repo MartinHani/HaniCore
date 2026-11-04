@@ -146,8 +146,29 @@ static void test_after_start(void)
     s.was_crank = 0u;
     hctrans_step(&s, &in);
     assert(s.want >= 49990u && s.want <= 50000u);
+    /* 2026-11-03 aseHold: held 1 s at the start value, then the full decay */
+    hctrans_reset(&s);
+    in = in_of(4000u, 1000u);
+    in.x_pm = 0u;
+    in.as_pm = 500u;
+    in.as_decay_ms = 2000u;
+    in.as_hold_ms = 1000u;
+    in.cranking = 1u;
+    hctrans_step(&s, &in);
+    in.cranking = 0u;
+    in.dt_ms = 100u;
+    for (i = 0u; i < 10u; i++) {          /* 0..0.9 s: held               */
+        hctrans_step(&s, &in);
+        assert(s.as_pm == 500u);
+    }
+    for (i = 0u; i < 11u; i++) {          /* 1.0..2.0 s: decaying         */
+        hctrans_step(&s, &in);
+    }
+    assert(s.as_pm >= 230u && s.as_pm <= 270u);   /* half of the decay */
+    for (i = 0u; i < 12u; i++) hctrans_step(&s, &in);
+    assert(s.as_pm == 0u);
     printf("after-start: +50 %% decays linearly to 0 over 3 s; +150 %% of "
-           "20 ms is 50 ms\n");
+           "20 ms is 50 ms; aseHold holds it first\n");
 }
 
 static void test_bounds(void)

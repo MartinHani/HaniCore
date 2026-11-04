@@ -26,6 +26,13 @@ ROOT = Path(__file__).resolve().parents[2]
 TDIR = ROOT / "firmware/targets/me711"
 SHARED = ROOT / "firmware"
 import hc_board as _BOARD  # noqa: E402  HANICORE_BOARD selects the 2.7T
+# One T1 tick in microseconds / milliseconds, from THIS board's header
+# (TGT_TICKS_PER_MS_X10: 12500 Porsche 0.8 us, 7500 2.7T/18T 1.333 us, 10000
+# BFB 1.000 us). It was `1.333 if IS_C4 else 0.8`, which is wrong for the BFB.
+_TPMS = _BOARD.define_int("TGT_TICKS_PER_MS_X10")
+_TICK_US = "%.3f" % (10000.0 / _TPMS)
+# the two older boards keep their exact published strings
+_TICK_MS = {12500: "0.0008", 7500: "0.00133333"}.get(_TPMS, "%.8g" % (10.0 / _TPMS))
 OUT = ROOT / "tuning" / _BOARD.INI
 
 # Bases for the S5500 correlation-window sweep.
@@ -863,9 +870,9 @@ CH += [
                                     "the table advance (advX10 is the result)"),
     (454,"nvmFailWord","U16","","THE PROGRAMMER'S DIARY. The record word index "
                                 "that would not take, 65535 when none has. "
-                                "The record is 2060 words: 0..8 header, "
-                                "9..2056 the calibration page, 2057 its CRC, "
-                                "2058..2059 the DONE marker"),
+                                "The record is 2252 words: 0..8 header, "
+                                "9..2248 the calibration page, 2249 its CRC, "
+                                "2250..2251 the DONE marker"),
     (456,"nvmFailExp","U16","","the datum that word was given"),
     (458,"nvmFailGot","U16","","the FIRST read the poll gave up on. 65535 here "
                                "AND in nvmFailGot2 means the device was "
@@ -888,7 +895,7 @@ CH += [
                                  "needed"),
     (464,"nvmRetries","U16","","HOW OFTEN THIS HARDWARE REFUSED A PROGRAM "
                                "COMMAND during the last commit. 0 means the "
-                               "device took every one of 2060 words first "
+                               "device took every one of 2252 words first "
                                "time. This is the measurement two failed "
                                "bench Burns could not produce"),
     (466,"nvmPollMin","U16","","the SHORTEST word-program poll of the last "
@@ -1167,7 +1174,7 @@ ADC_NAMES = ["HFM", "TPS1", "IPV", "TPS2", "LS2VK", "UBAT", "LS1VK",
              "DSS", "KNOCK"]
 # V102: separate event intentions, queue admission and commanded GPIO edges.
 for _i,_n in enumerate(["dlPlannedDwell","dlPlannedSpark","dlPlannedOpen","dlPlannedClose","dlExecutedDwell","dlExecutedSpark","dlExecutedOpen","dlExecutedClose","dlArmed","dlSuppressed","dlCancelled","dlClipped","dlRejected","dlLate","dlMaxLateTicks","dlReason","dlRequestedTick","dlCompareTick","dlCommandTick"]):
-    CH.append((1248+2*_i,_n,"U16","ticks" if _i>=14 and _i!=15 else "","CC25 command telemetry; ticks are %s us. Internal timestamps are not physical trace measurements." % ("1.333" if _BOARD.IS_C4 else "0.8")))
+    CH.append((1248+2*_i,_n,"U16","ticks" if _i>=14 and _i!=15 else "","CC25 command telemetry; ticks are %s us. Internal timestamps are not physical trace measurements." % _TICK_US.rstrip("0").rstrip(".")))
 for _b in range(8):
     for _i,_n in enumerate(["FuelUs","DeadUs","RequestedUs","ScheduledUs","DeliveredUs","Owner","Flags"]):
         CH.append((1286+14*_b+2*_i,"inj%d%s"%(_b+1,_n),"U16","us" if _i<5 else "","Last request/admission/command interval for this channel. Flags: 1 ON, 2 clipped, 4 truncated, 8 OFF guard, 16 requested overflow, 32 last request refused. Owner is a ticket, not cylinder phase."))
@@ -1269,9 +1276,67 @@ CH += [(1652, "dtcStoredMask0", "U16", "", "Trouble codes stored since the last 
 # 2026-10-14: the auxiliary functions (hcaux711.c) - the last four bytes.
 CH += [(1660, "auxStatus", "U16", "", "Fan, A/C and programmable outputs: bit0 fan on, 1 A/C requested, 2 A/C relay on, 3 output 1 on, 4 output 2 on, 5 oil pressure reading valid, 6 outputs held (not permitted / bench test), 7 oil sensor configured; bits 8..11 why the A/C relay is off (1 engine not running, 2 rpm, 3 throttle, 4 coolant, 5 delay)"),
        (1662, "oilPressKpa", "U16", "kPa", "Oil pressure (0 while the sensor is unconfigured or its reading invalid)")]
+# 2026-11-03: the page-extension functions (hcxfn711.c publish()) in the
+# retired forensic range 496..531 of the first window.
+CH += [(496, "xCutWhy", "U16", "", "Engine cut by the throttle safety: bit0 plate off target, bit1 throttle sensor pair, bit2 waiting for oil pressure, bit3 limp mode active"),
+       (498, "limpWhy", "U16", "", "Limp mode, latched to the engine stop: bit0 lean, bit1 manifold pressure, bit2 coolant, bit3 knock"),
+       (500, "idleSparkX10", "S16", "deg", "Idle spark correction in force (P + integral, faded out after the pedal)"),
+       (502, "idleCorrX100", "S16", "%", "Idle throttle corrector (the spark ran out of room)"),
+       (504, "idleKickX10", "U16", "%", "Idle throttle kicks in force"),
+       (506, "idleAdaptX100", "S16", "%", "Learned idle throttle offset, A/C off"),
+       (508, "idleAdaptAcX100", "S16", "%", "Learned idle throttle offset, A/C on"),
+       (510, "stallAddX10", "U16", "%", "Anti-stall throttle added"),
+       (512, "crankFuelPct", "U16", "%", "Cranking fuel factor in force (hold / reduce / first revolutions)"),
+       (514, "dfcoFuelPm", "U16", "%", "Overrun cut fade / restore fuel factor"),
+       (516, "o2Saturated", "U16", "", "Lambda saturated after an overrun cut: bit0 bank 1, bit1 bank 2"),
+       (518, "knockAdaptX10", "U16", "deg", "Learned knock retard in the current cell"),
+       (520, "tractionActive", "U16", "", "Traction control acting"),
+       (522, "rpmRate", "S16", "rpm/s", "Engine speed rise rate"),
+       (524, "boostLimitX10", "U16", "kPa", "Boost ceiling from intake air / coolant (0 = none)"),
+       (526, "etbDevMs", "U16", "ms", "Plate off target for"),
+       (528, "wuLambdaX1000", "U16", "", "Warm-up lambda in force (0 = off)"),
+       (530, "stftActiveMs", "U16", "ms", "Closed loop active for"),
+       (532, "knockStrength", "U16", "", "Last knock window / quiet reference (knock strength)")]
+SCALE.update({500: 0.1, 502: 0.01, 504: 0.1, 506: 0.01, 508: 0.01, 510: 0.1,
+              514: 0.1, 518: 0.1, 524: 0.1, 528: 0.001, 532: 0.1})
+# 2026-11-03: the CAN bus (comms/hccan711.c och_c) in the same retired range.
+CH += [(534, "canState", "U16", "", "CAN bus: bit0 module on, bit1 engine messages, bit2 bus-off now, bit3 error warning; high byte the module's status (bits 8..10 last error code, 11 TXOK, 12 RXOK)"),
+       (536, "canTxFrames", "U16", "", "CAN frames handed to the module (wraps)"),
+       (538, "canTxLate", "U16", "", "CAN payloads that waited: the previous frame was still pending (no acknowledge on the bus?)"),
+       (540, "canBusOffs", "U16", "", "CAN bus-off events since the key-on"),
+       (542, "canFuelUl", "U16", "ul", "Fuel consumption counter sent in Motor_5 (15 bit, wraps)"),
+       (544, "canVssX10", "U16", "km/h", "Vehicle speed from CAN (the selected source; 6553.5 = none)"),
+       (546, "canGearFlags", "U16", "", "Gear from the gearbox (low byte: 0 N, 1..5, 6 first, 7 R, 8 sixth, 15 fault); bit 8 brake light (ABS), 9 ESP/ASR switched off, 10 ASR request, 11 MSR request"),
+       (548, "canRxState", "U16", "", "Received and fresh: bit0 Bremse_1, 1 Bremse_3, 2 Getriebe_1, 3 Kombi_1, 4 Kombi_2, 5 Airbag_1, 6 Klima_1; bit 8 airbag crash latched, bit 9 a frame was lost"),
+       (550, "canRxFrames", "U16", "", "CAN frames received (wraps)"),
+       (470, "canWheelFL", "U16", "km/h", "Wheel speed front left (Bremse_3)"),
+       (472, "canWheelFR", "U16", "km/h", "Wheel speed front right (Bremse_3)"),
+       (474, "canWheelRL", "U16", "km/h", "Wheel speed rear left (Bremse_3)"),
+       (604, "canWheelRR", "U16", "km/h", "Wheel speed rear right (Bremse_3)"),
+       (606, "canOilTemp", "U16", "C", "Oil temperature from the cluster (Kombi_2; -1000 = not received)"),
+       (608, "canAmbient", "U16", "C", "Outside temperature from the cluster (Kombi_2; -1000 = not received)")]
+SCALE.update({544: 0.1, 470: 0.1, 472: 0.1, 474: 0.1, 604: 0.1, 606: 0.1, 608: 0.1})
+# 2026-11-04: the third region (1664..1695, TGT_RAM_OCH3): vehicle speed and
+# gear (control/hcvss711.c), CAN wideband / ABS emulation / Haldex / OBD
+# (comms/hccan711.c).
+CH += [(1664, "vehicleSpeed", "U16", "km/h", "Vehicle speed: the speed input (Road speed pin), else the CAN source (6553.5 = none)"),
+       (1666, "gearState", "U16", "", "Detected gear (low byte, 0 = neutral / unknown); bit 8 the speed input is routed, bit 9 it reads a speed"),
+       (1668, "speedPer1000", "U16", "km/h", "Speed per 1000 rpm now - read it in each gear for the gear table"),
+       (1670, "vssEdges", "U16", "", "Speed input: edges counted (wraps) - moves when the wheels turn"),
+       (1672, "canLambda1", "U16", "", "Lambda 1 from the CAN wideband controller (0 = none)"),
+       (1674, "canLambda2", "U16", "", "Lambda 2 from the CAN wideband controller (0 = none)"),
+       (1676, "canExt", "U16", "", "CAN extras: bit0/1 wideband 1/2 fresh, 2 ABS emulation sending, 3 ABS emulation SUSPENDED (a real ABS is on the bus), 4 OBD-II on, 5 Haldex control active, 6 Allrad_1 fresh, 7 not enough CAN objects; high byte Haldex status (0 clutch fault, 1 overtemperature, 2 tension fault, 3 fully open, 4 limp, 5 lamp, 6 speed limit)"),
+       (1678, "obdRequests", "U16", "", "OBD-II requests answered (wraps)"),
+       (1680, "haldexWant", "U16", "%", "Haldex: wanted lock"),
+       (1682, "haldexActual", "U16", "%", "Haldex: lock it reports (Allrad_1)"),
+       (1684, "haldexOffset", "U16", "km/h", "Haldex: emulated rear axle slower by"),
+       (1686, "canObjects", "U16", "", "CAN message objects in use (of 15)")]
+SCALE.update({1664: 0.1, 1668: 0.01, 1672: 0.001, 1674: 0.001, 1680: 0.1, 1682: 0.1,
+              1684: 0.1})
 
 # (raw + translate) * scale, TunerStudio's order: raw is 10*degC + 10000.
-TRANSLATE = {130: -10000.0, 132: -10000.0, 780: -10000.0}   # V91: 780 cltCtrlDc
+TRANSLATE = {130: -10000.0, 132: -10000.0, 780: -10000.0,   # V91: 780 cltCtrlDc
+             606: -10000.0, 608: -10000.0}                 # 2026-11-03: CAN Kombi_2
 for j in range(8):
     TRANSLATE.update({1532+2*j:-1000.0,1548+2*j:-1000.0})
 for j in range(6):
@@ -2420,6 +2485,20 @@ def crosscheck():
     ax_c = (TDIR / "control/hcaux711.c").read_text(errors="replace")
     for m in re.finditer(r"\boch\(\s*(\d+)u\s*,", ax_c):
         fw.add(int(m.group(1)))
+    # 2026-11-03: the page-extension functions (hcxfn711.c) - OCHX(<offset>u, ...)
+    xf_c = (TDIR / "control/hcxfn711.c").read_text(errors="replace")
+    for m in re.finditer(r"\bOCHX\(\s*(\d+)u\s*,", xf_c):
+        fw.add(int(m.group(1)))
+    # 2026-11-03: the CAN bus (comms/hccan711.c) - och_c(<offset>u, ...)
+    cn_c = (TDIR / "comms/hccan711.c").read_text(errors="replace")
+    for m in re.finditer(r"\boch_c\(\s*(\d+)u\s*,", cn_c):
+        fw.add(int(m.group(1)))
+    # 2026-11-04: the third region (TGT_RAM_OCH3) - och3(<offset>u, ...) in
+    # the CAN module and the vehicle-speed module
+    vs_c = (TDIR / "control/hcvss711.c").read_text(errors="replace")
+    for src in (cn_c, vs_c):
+        for m in re.finditer(r"\boch3\(\s*(\d+)u\s*,", src):
+            fw.add(int(m.group(1)))
     # V99: the event ring / vehicle-test telemetry (hcevlog711.c)
     ev_c = (TDIR / "diagnostics/hcevlog711.c").read_text(errors="replace")
     for m in re.finditer(r"\boch_set\(\s*(\d+)u\s*,", ev_c):
@@ -3223,7 +3302,7 @@ def main() -> int:
     w("[LoggerDefinition]")
     _rec = [
         ("refTime", "RefTime", 0, 32,
-         "0.00133333" if _BOARD.IS_C4 else "0.0008", "ms"),
+         _TICK_MS, "ms"),
         ("priLevel", "PriLevel", 32, 1, "1", "Flag"),
         ("secLevel", "SecLevel", 33, 1, "1", "Flag"),
         ("trigger", "Trigger", 34, 1, "1", "Flag"),

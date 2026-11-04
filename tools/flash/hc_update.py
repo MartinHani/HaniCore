@@ -74,7 +74,7 @@ HDR_MAGIC0 = 0x4348          # 'HC'
 HDR_MAGIC1 = 0x5041          # 'AP'
 HDR_SEAL = 0x5AA5
 BOARD_CODE = {1: "porsche_me711", 2: "vag_me71_c4",
-              3: "audi_4f_v8", 4: "vag_me75_dc"}
+              3: "audi_4f_v8", 4: "vag_me75_dc", 5: "vag_me75_bfb"}
 BOARD_NAME = {v: k for k, v in BOARD_CODE.items()}
 
 # ---- the wire protocol (TS-framed; hcdiag711.c hc_target_cmd_cold) ----------
@@ -109,7 +109,20 @@ ST_IDLE, ST_ERASING, ST_READY, ST_WRITING, ST_SEALED, ST_COMMIT, ST_FAILED = ran
 ST_NAME = ("IDLE", "ERASING", "READY", "WRITING", "SEALED", "COMMIT", "FAILED")
 ERR_NAME = ("NONE", "RAM", "VALIDATE (engine not stopped)", "STAGE", "ERASE",
             "PROGRAM", "VERIFY", "RETRIES", "LAYOUT", "FULL", "DEADLINE")
-PAGE = 4096
+PAGE = 4096        # every image before 2026-11-03; the page size is read
+                   # from each image's own .ini (ini_page_size) since the
+                   # page extension made it 4480
+
+
+def ini_page_size(ini_path) -> int:
+    """pageSize of a TunerStudio-format .ini (4096 when unknown)."""
+    import re as _re
+    if ini_path is None:
+        return PAGE
+    m = _re.search(r"^\s*pageSize\s*=\s*(\d+)",
+                   Path(ini_path).read_text(encoding="utf-8", errors="replace"),
+                   _re.M)
+    return int(m.group(1)) if m else PAGE
 SIG_RE = re.compile(rb"(?:rusEFI )?HaniCore (\w+) ([0-9A-F]{8})")
 VER_RE = re.compile(rb"HaniCore V[^\0]*? build ([0-9A-F]{8})")
 
@@ -329,12 +342,13 @@ class Link:
     def status(self) -> dict:
         return decode_status(self.och(UPD_OCH, UPD_OCH_LEN))
 
-    def page_read(self) -> bytes:
+    def page_read(self, size: int = PAGE) -> bytes:
         out = bytearray()
-        for off in range(0, PAGE, 256):
-            blob = self.retry(b"R" + off.to_bytes(2, "big") + (256).to_bytes(2, "big"),
-                              256, timeout_s=3.0)
-            if len(blob) != 256:
+        for off in range(0, size, 256):
+            n = min(256, size - off)
+            blob = self.retry(b"R" + off.to_bytes(2, "big") + n.to_bytes(2, "big"),
+                              n, timeout_s=3.0)
+            if len(blob) != n:
                 raise LinkError("page read @%d short" % off)
             out += blob
         return bytes(out)
@@ -719,7 +733,7 @@ def wait_reboot(k: Link, build: str, auto_s=30.0, cycle_s=300.0, say=print,
 
 
 def diff_runs(have: bytes, want: bytes, limit: int = 16):
-    diff = [i for i in range(PAGE) if have[i] != want[i]]
+    diff = [i for i in range(len(want)) if have[i] != want[i]]
     runs, i = [], 0
     while i < len(diff):
         j = i
@@ -740,7 +754,7 @@ def restore_page(k: Link, want: bytes, ini_text: str, say=print,
     page can come back intact from the battery-backed RAM while no flash
     record of the new layout exists yet (bench 2026-10-30: nvmSource 0x0101,
     generation 0) - a battery disconnect would then lose the tune."""
-    have = k.page_read()
+    have = k.page_read(len(want))
     diff, runs = diff_runs(have, want)
     res = {"bytes_differing": len(diff), "burned": False}
     if not diff and not force_burn:
@@ -750,7 +764,7 @@ def restore_page(k: Link, want: bytes, ini_text: str, say=print,
         for off, n in runs:
             k.page_write(off, want[off:off + n])
         time.sleep(0.5)
-    if k.page_read() != want:
+    if k.page_read(len(want)) != want:
         raise SystemExit("page read-back differs from the restored page - NOT burning")
     ch = och_channels(ini_text)
     val = int.from_bytes(k.och(ch["cfgValidation"][0], 2), "big")
@@ -848,7 +862,7 @@ def update_over_serial(args, app) -> int:
             if args.fast and getattr(k, "base_baud", 0) >= 124800:
                 u.go_fast()
         # ---- 1. save the tune, always, before anything is written ---------
-        page_before = k.page_read()
+        page_before = k.page_read(ini_page_size(old_ini))
         (out / "page_before.bin").write_bytes(page_before)
         (out / "identity.json").write_text(json.dumps({
             "ecu_signature": sig, "ecu_version": ver,
@@ -878,7 +892,7 @@ def update_over_serial(args, app) -> int:
             while time.monotonic() - t_w < args.watch_boot:
                 try:
                     src = int.from_bytes(k.och(12, 2), "big")
-                    pg = k.page_read()
+                    pg = k.page_read(ini_page_size(new_ini))
                 except LinkError:
                     continue
                 h = hashlib.sha256(pg).hexdigest()[:12]
@@ -896,7 +910,7 @@ def update_over_serial(args, app) -> int:
             say("--no-restore: the saved page is in %s" % out)
         else:
             new_text = new_ini.read_text(encoding="utf-8", errors="replace")
-            base = k.page_read()
+            base = k.page_read(ini_page_size(new_ini))
             (out / "page_after_update.bin").write_bytes(base)
             if same_layout:
                 want = page_before

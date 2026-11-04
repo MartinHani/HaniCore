@@ -124,9 +124,16 @@ unsigned int HCTRANS_FAR hctrans_step(hctrans_t HCTRANS_MEM *s,
             s->was_crank = 0u;
             s->as_ms = 0u;
         }
-        if (s->as_ms < in->as_decay_ms) {
+        if (s->as_ms < in->as_hold_ms) {
+            s->as_pm = in->as_pm;               /* held at its start value */
+            {
+                unsigned int n = (unsigned int)(s->as_ms + in->dt_ms);
+                s->as_ms = (n < s->as_ms) ? 0xFFFFu : n;
+            }
+        } else if ((unsigned int)(s->as_ms - in->as_hold_ms) < in->as_decay_ms) {
+            unsigned int t = (unsigned int)(s->as_ms - in->as_hold_ms);
             s->as_pm = DIV32U((unsigned long)in->as_pm
-                              * (unsigned int)(in->as_decay_ms - s->as_ms),
+                              * (unsigned int)(in->as_decay_ms - t),
                               in->as_decay_ms);
             {
                 unsigned int n = (unsigned int)(s->as_ms + in->dt_ms);

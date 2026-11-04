@@ -102,4 +102,5 @@ unsigned char far hc_knock_faults(void);
    is still bad latches again after its diagnosis count */
 void far hc_knock_clear_faults(void);
 
+unsigned char far hc_knock_ncyl(unsigned char q);   /* 2026-11-03 */
 #endif

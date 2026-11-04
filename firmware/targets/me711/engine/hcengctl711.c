@@ -37,6 +37,8 @@
 #include "hcdeadline711.h"
 #include "hcevlog711.h"
 #include "hcaux711.h"        /* the rail pressure sensor */
+#include "hcxfn711.h"        /* 2026-11-03 functions (fade, lambda, spark) */
+#include "hcvss711.h"        /* 2026-11-04 vehicle speed (launch condition) */
 
 #define T1_PER_MS  ((unsigned int)(TGT_TICKS_PER_MS_X10 / 10uL))   /* 1250 */
 /* 32/16 unsigned division, quotient bounded to 16 bits by every caller. */
@@ -57,7 +59,8 @@ typedef char hc_ec_fits[(sizeof(hc_ec_t) <= TGT_RAM_ENGCTL_LIMIT) ? 1 : -1];
  * firingOrder values (hanicore_config_def.ENUM_FIRING_ORDER), and
  * tools/me711_engctl_proof.py checks this table against both that enum and
  * rusEFI's own source. */
-static const unsigned char fo_tab[] = {
+/* HCONST (huge) since 2026-11-03: NCONST relief for the page extension */
+static const unsigned char huge fo_tab[] = {
     8,  2, 1, 2,
     10, 3, 1, 2, 3,
     24, 3, 1, 3, 2,
@@ -461,9 +464,14 @@ static void dfco_update(unsigned int rpm)
              && E.dfco_cond_ms >= (unsigned int)(hc_cal_u8(CFG_U_DFCO_DELAY)
                                                  * 100u));
     E.since_dfco_ms = E.dfco ? 0u : sat_add(E.since_dfco_ms, E.dt_ms);
-    eng_fuelcut = (unsigned int)((eng_fuelcut & ~ENG_CUT_OVERRUN)
-                                 | (E.dfco ? ENG_CUT_OVERRUN : 0u));
-    if(E.dfco) hc_deadline_fuel_cut();
+    /* 2026-11-03: the fuel fades out over dfcoCutTime before the cut is a
+       hard cut (hcxfn711.c; 0 = at once, as before) */
+    {
+        unsigned char hard = hc_x_dfco(E.dfco, E.dt_ms);
+        eng_fuelcut = (unsigned int)((eng_fuelcut & ~ENG_CUT_OVERRUN)
+                                     | (hard ? ENG_CUT_OVERRUN : 0u));
+        if (hard) hc_deadline_fuel_cut();
+    }
 }
 
 /* ============================================================ motorsport */
@@ -485,9 +493,12 @@ static void motorsport_update(unsigned int rpm)
     if ((ms & 0x0001u) && sw_deb(0u, sw(CFG_U_PIN_LAUNCH, 1u))) {
         unsigned int lrpm = hc_cal_u16(CFG_U_LAUNCH_RPM);
         unsigned int win = (unsigned int)(hc_cal_u8(CFG_U_LAUNCH_WINDOW) * 10u);
+        unsigned int vmax = (unsigned int)(hc_cal_u8v(CFG_U_LAUNCH_VMAX) * 10u);
+        unsigned int vs = hc_vss_x10();
         now |= 1u;
         if (intent != 0xFFFFu && lrpm != 0u
-            && intent > (unsigned int)(hc_cal_u8(CFG_U_LAUNCH_TPS) * 10u)) {
+            && intent > (unsigned int)(hc_cal_u8(CFG_U_LAUNCH_TPS) * 10u)
+            && (vmax == 0u || vs == 0xFFFFu || vs <= vmax)) {
             if (rpm >= lrpm) {
                 E.launch = 2u;                         /* launch           */
             } else if (rpm + win >= lrpm) {
@@ -572,6 +583,9 @@ static void motorsport_update(unsigned int rpm)
         now |= 8u;
     }
     E.sw_last = now;
+    if (hc_x_tc_skip() > skip) {
+        skip = hc_x_tc_skip();       /* traction (motorsport bit 4) */
+    }
     E.skip = skip;
 }
 
@@ -674,6 +688,9 @@ static void stft_bank(unsigned char b, unsigned int lam, unsigned char learn,
     /* d(adj) = err * dt / tau, in 1/16 per mille: |err| <= 500, dt <= 200,
        x16 -> 1.6e6; / tau >= 100 -> <= 16000: fits. */
     step = DIV32U((unsigned long)(unsigned int)(mag * 16u) * E.dt_ms, tau);
+    if (err < 0 && hc_x_stft_lean_locked()) {
+        return;                       /* no leaning yet (stftLeanLock) */
+    }
     a = E.stft_acc[b];
     a = (err < 0) ? (int)(a - (int)step) : (int)(a + (int)step);
     if (a > lim_hi) a = lim_hi;
@@ -741,9 +758,24 @@ static void stft_update(unsigned int rpm, unsigned int load_x10)
         if (lam[b] != 0u && !inr && st == EC_STFT_ACTIVE) {
             st = EC_STFT_LAMBDA;
         }
-        stft_bank(b, lam[b], (unsigned char)(learn && ok && !nbhold),
-                  E.stft_region);
-        E.stft_pm[b] = (int)(E.stft_acc[b] / 16);
+        {
+            /* 2026-11-03: a sensor saturated lean after an overrun cut is
+               not learned from until it recovers (hcxfn711.c) */
+            unsigned char sat = hc_x_o2_sat(b, lam[b], E.dt_ms);
+            unsigned char l = (unsigned char)(learn && ok && !nbhold && !sat);
+            stft_bank(b, lam[b], l, E.stft_region);
+            E.stft_pm[b] = (int)(E.stft_acc[b] / 16);
+            if (l) {
+                /* the proportional part (stftKp), inside the region's limits */
+                int pp = (int)(E.stft_pm[b] + hc_x_stft_p(E.stft_region,
+                               (int)lam[b] - (int)E.lambda_x1000));
+                int hi = (int)(hc_cal_u8v((unsigned int)(CFG_U_STFT_ADD + E.stft_region)) * 10u);
+                int lo = -(int)(hc_cal_u8v((unsigned int)(CFG_U_STFT_REMOVE + E.stft_region)) * 10u);
+                if (pp > hi) pp = hi;
+                if (pp < lo) pp = lo;
+                E.stft_pm[b] = pp;
+            }
+        }
     }
     if (lam[0] == 0u && lam[1] == 0u) {
         st = EC_STFT_LAMBDA;
@@ -803,6 +835,8 @@ unsigned int far hc_ec_target_lambda(unsigned int rpm, unsigned int fuel_load)
     /* lambda x 1000 = cell / 147; a 0 cell would be lambda 0 - refuse it */
     E.lambda_x1000 = (cell == 0u) ? 1000u
                    : DIV32U((unsigned long)(unsigned int)cell * 1000u, 147u);
+    /* warm-up lambda: the richer of the table and the coolant curve */
+    E.lambda_x1000 = hc_x_lambda(E.lambda_x1000);
     return E.lambda_x1000;
 }
 
@@ -950,6 +984,7 @@ void far hc_ec_pre(unsigned int rpm)
     dfco_update(rpm);
     motorsport_update(rpm);
     revlimit_update();
+    hc_x_pre(rpm, E.dt_ms);
 }
 
 unsigned int far hc_ec_map_ctrl(void)
@@ -999,6 +1034,8 @@ int far hc_ec_spark(int base_x10, unsigned char cranking)
     if (E.als) {
         a = (int)(a + (int)hc_cal_u16(CFG_U_ANTILAG_RETARD_X10));
     }
+    /* knock adaptation, traction retard, minimum advance (2026-11-03) */
+    a = hc_x_spark(a);
     /* Launch and flat shift set the timing outright (rusEFI: they return
        from getRunningAdvance). 0 means "no timing change". */
     if (E.launch != 0u && hc_cal_u16(CFG_U_LAUNCH_RETARD_X10) != 0u) {
@@ -1063,6 +1100,16 @@ unsigned int far hc_ec_fuel(unsigned int te_us)
     }
     if (pm < 500) pm = 500;
     if (pm > 2000) pm = 2000;
+    /* the overrun cut's fade out / fade in with its first-fuel extra
+       (hcxfn711.c, per mille; 1000 when not fading) */
+    {
+        unsigned int x = hc_x_fuel_pm();
+        if (x != 1000u) {
+            if (x > 2000u) x = 2000u;
+            pm = (int)DIV32U((unsigned long)(unsigned int)pm * x, 1000u);
+            if (pm > 2000) pm = 2000;
+        }
+    }
     E.fuel_pm = (unsigned int)pm;
     if (te_us > 30000u) {
         te_us = 30000u;           /* x2000/1000 must stay inside 60000 */
@@ -1194,6 +1241,8 @@ void far hc_ec_prime_service(void)
        0.75 MHz: us x 3 / 32 (it used the 5 until 2026-10-25) */
 #if TGT_TICKS_PER_MS_X10 == 12500UL
     hc_drysched_prime(DIV32U((unsigned long)us * 5u, 32u));
+#elif TGT_TICKS_PER_MS_X10 == 10000UL
+    hc_drysched_prime(DIV32U((unsigned long)us * 4u, 32u));   /* 1.000 MHz: us / 8 */
 #else
     hc_drysched_prime(DIV32U((unsigned long)us * 3u, 32u));
 #endif

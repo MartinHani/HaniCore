@@ -2929,6 +2929,35 @@ class ResolvedField:
         return self.offset + self.size
 
 
+# ==========================================================================
+# THE PAGE EXTENSION (2026-11-03): offsets 4096..4479 (hcconfig.h
+# CFG_EXT_BASE / CFG_EXT_SIZE, HC_CFG_MAIN). Same rules as the universal
+# block: slot names CFG_U_*, laid out in order, u16 even-aligned. The fields
+# themselves are appended by tools/config_source/hanicore_ext_fields.py.
+# ==========================================================================
+EXTENSION: list[NewField] = []
+
+
+def extension_layout(base: int) -> list[NewField]:
+    cursor = base
+    for f in EXTENSION:
+        if _SIZE[f.ctype] == 2 and cursor % 2:
+            raise SystemExit(
+                "extension block: %s would land on an odd offset (%d). Add a "
+                "declared pad field before it." % (f.slot, cursor))
+        f.offset = cursor
+        cursor += _SIZE[f.ctype] * f.count
+    return EXTENSION
+
+
+def extension_size(base: int) -> int:
+    extension_layout(base)
+    if not EXTENSION:
+        return 0
+    return (EXTENSION[-1].offset + _SIZE[EXTENSION[-1].ctype] * EXTENSION[-1].count
+            - base)
+
+
 def universal_layout(base: int) -> list[NewField]:
     """Assign offsets to the universal block. u16/s16 are even-aligned, and a
     pad that has to exist is a declared field, never an unowned byte."""
@@ -2962,10 +2991,11 @@ def resolve() -> tuple[list[ResolvedField], dict[str, int], list[str]]:
     out: list[ResolvedField] = []
 
     base = by_name.get("CFG_UNIVERSAL_BASE")
-    universal_slots = {f.slot for f in UNIVERSAL}
+    ext = by_name.get("CFG_EXT_BASE")
+    universal_slots = {f.slot for f in UNIVERSAL} | {f.slot for f in EXTENSION}
 
     for s in slots:
-        if s.name == "CFG_UNIVERSAL_BASE":
+        if s.name in ("CFG_UNIVERSAL_BASE", "CFG_EXT_BASE"):
             continue
         m = meta_by_slot.pop(s.name, None)
         if m is None:
@@ -2999,6 +3029,22 @@ def resolve() -> tuple[list[ResolvedField], dict[str, int], list[str]]:
                 continue
             out.append(ResolvedField(f.slot, f.offset, f.ctype, f.count,
                                      f.meta, False))
+
+    if EXTENSION:
+        if ext is None:
+            problems.append("extension fields exist but hcconfig.h has no "
+                            "CFG_EXT_BASE")
+        else:
+            need = extension_size(ext.offset)
+            if need > ext.size:
+                problems.append("the extension block needs %d bytes but "
+                                "CFG_EXT_BASE reserves %d" % (need, ext.size))
+            for f in extension_layout(ext.offset):
+                if f.meta is None:
+                    problems.append("extension field %s has no metadata" % f.slot)
+                    continue
+                out.append(ResolvedField(f.slot, f.offset, f.ctype, f.count,
+                                         f.meta, False))
 
     out.sort(key=lambda f: f.offset)
 
@@ -3044,3 +3090,9 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+# The Ignitron-study fields (2026-11-03) live in their own file so this one
+# stays readable; add() appends to EXTENSION.
+import hanicore_ext_fields  # noqa: E402
+hanicore_ext_fields.add(sys.modules[__name__])

@@ -31,12 +31,15 @@
 #ifdef __C166__
 #define HCDTC_FAR far
 #define HCDTC_MEM huge        /* the state lives in external SRAM */
+#define HCDTC_CMEM huge       /* the code table lives in HCONST (2026-11-03) */
 #else
 #define HCDTC_FAR
 #define HCDTC_MEM
+#define HCDTC_CMEM
 #endif
 
-#define HCDTC_MAX   26u
+#define HCDTC_MAX   32u   /* 26 until 2026-11-03: path 27 (P0190) was
+                                never evaluated; the masks carry 32 */
 #define HCDTC_MIL   0x01u          /* definition flag: lights the MIL       */
 
 typedef struct {
@@ -69,11 +72,11 @@ typedef struct {
 void HCDTC_FAR hcdtc_clear(hcdtc_t HCDTC_MEM *d);
 /* n paths (<= HCDTC_MAX); fail[] one bit per path (bit i of word i/16);
    ff_now[] the freeze-frame values of this moment */
-void HCDTC_FAR hcdtc_step(hcdtc_t HCDTC_MEM *d, const hcdtc_def_t *defs, unsigned char n,
+void HCDTC_FAR hcdtc_step(hcdtc_t HCDTC_MEM *d, const hcdtc_def_t HCDTC_CMEM *defs, unsigned char n,
                           const unsigned int *fail, unsigned int ms,
                           const unsigned int *ff_now);
 /* the k-th code with any of the status bits in `mask`, 0 when none */
-unsigned int HCDTC_FAR hcdtc_code(const hcdtc_t HCDTC_MEM *d, const hcdtc_def_t *defs,
+unsigned int HCDTC_FAR hcdtc_code(const hcdtc_t HCDTC_MEM *d, const hcdtc_def_t HCDTC_CMEM *defs,
                                   unsigned char n, unsigned char mask,
                                   unsigned char k);
 /* THE PUBLISHED LISTS IN ONE PASS: the first `k_n` ACTIVE codes into act[]
@@ -81,7 +84,7 @@ unsigned int HCDTC_FAR hcdtc_code(const hcdtc_t HCDTC_MEM *d, const hcdtc_def_t 
    hcdtc_code() 2 x k_n times, at the cost of ONE walk of the paths - the
    eight separate scans cost a whole millisecond of the main loop on the
    C167 (me711_preset_gap_proof, V97). */
-void HCDTC_FAR hcdtc_lists(const hcdtc_t HCDTC_MEM *d, const hcdtc_def_t *defs,
+void HCDTC_FAR hcdtc_lists(const hcdtc_t HCDTC_MEM *d, const hcdtc_def_t HCDTC_CMEM *defs,
                            unsigned char n, unsigned int *act,
                            unsigned int *sto, unsigned char k_n);
 

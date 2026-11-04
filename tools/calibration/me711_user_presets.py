@@ -47,7 +47,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools" / "lib"))
 import hcpaths as HCP  # noqa: E402
 
-PAGE = 4096
+PAGE = int(__import__("re").search(                 # 4480 since 2026-11-03
+    r"#define\s+HC_CFG_SIZE\s+(\d+)",
+    (Path(__file__).resolve().parents[2] / "firmware/config/hcconfig.h")
+    .read_text(errors="replace")).group(1))
 FORMAT = "hanicore-user-preset/1"
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._()+-]{0,39}$")
 # The configuration manager stages every written byte with a bounded undo log

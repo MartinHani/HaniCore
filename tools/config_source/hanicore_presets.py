@@ -1745,6 +1745,34 @@ for _p in ENGINE_PRESETS:
                    "sensor curves, lambda (CJ110) and the 24 MHz CPU choices "
                    "are this board's."}
 
+# THE 1.8T IN THE AUDI A4 B7 (BFB, 8E0909518AQ / 0261208524), 2026-11-02: the
+# same 1.8T engine preset as the AWT's, with the BFB stock read's own injector
+# dead-time curve. Checked against the BFB stock read (the maintainer's design notes):
+# KUMSRL raw 88 (the AWT's), KFSZT dwell 10.0/8.0/4.2/3.2/2.9/2.7/2.4/2.0 ms
+# (identical), DLRPIDMAX 80 %, TVPWDK12 0.14 s, DSLGRAD 541.0 / DSLOFS -16.4
+# hPa (identical); the injector flow class holds (the BFB's own car logs give
+# te/rk 0.100-0.106 ms/% against the AWT's KRKTE 0.1049). Only TVUB differs.
+S_BFB = ("BFB stock read audi-a4-b7-1.8t-bfb-163hp.ori.bin (8E0909518AQ, SW "
+         "1037372505): ")
+_bfb_values = dict([_p for _p in ENGINE_PRESETS if _p.ident == 1][0].values)
+_bfb_values["deadtimeVal"] = Value(
+    [1405, 1395, 877, 608, 527, 446, 331, 331], P, S_BFB +
+    "TVUB @0x14E00 raw 527/329/229/167/124 at 7.96/10.00/11.97/14.01/15.98 V "
+    "(file 0x14DFB axis x 0.0704 V), scaled /375 ms as the AWT's TVUB was. "
+    "UNIT QUESTION - PROBABLE, NOT MEASURED: the /375 scaling comes from the "
+    "AWT's 24 MHz ECU (its TVUB tick); this stock ECU runs at 32 MHz, so its "
+    "TVUB tick may differ by 4/3 (dead times 4/3 too long or right). Check "
+    "short-term trim at idle on the car before trusting it. The 8 points are "
+    "the AWT preset's axis 6/8/10/12/13/14/16/18 V")
+ENGINE_PRESETS.append(Preset(
+    10, "VAG_18T_ME75_BFB", "VAG 1.8T BFB (Audi A4 B7)", "ME75_4B0906018DC",
+    values=_bfb_values,
+    gaps={"bench": "Never run on an ECU. Dead time is the BFB's own but its "
+                   "time unit is PROBABLE, not measured: check short-term trim "
+                   "at idle.",
+          "knock / CAN": "Knock control is off; there is no CAN, so the B7 "
+                         "cluster and ESP will not see the engine."}))
+
 ENGINE_PRESETS.append(Preset(
     9, "VAG_18T_ME71_C4", "VAG 1.8T DBW", "VAG_ME71_C4",
     values=_on_board(_A, _C4_BOARD),
@@ -1792,6 +1820,228 @@ for _p in ENGINE_PRESETS:
     if _p.ident != 0:                    # CUSTOM populates nothing by design
         _p.values.setdefault("dbwEnable", _DBW_OFF)
         assert _p.values["dbwEnable"].value == 0, _p.key
+
+# THE PAGE-EXTENSION FUNCTIONS (2026-11-03, hcxfn711.c). The owner's
+# Ignitron study is a REFERENCE: none of these numbers is taken from it.
+# Every value is HaniCore's own and says where it comes from; a function
+# without evidence for its numbers ships OFF (0) - its page window explains
+# what it does when switched on.
+_J = P     # judgement: a starting point for a tuner, not a measurement
+_X_ALL = {
+    # ---- 1 throttle safety (owner's numbers, 2026-11-02 brief) ----
+    "etbDevCutPct": Value(20, V, "owner 2026-11-02: plate more than 20 % off "
+                          "target for more than 0.5 s cuts fuel and spark"),
+    "etbDevCutTime": Value(50, V, "owner 2026-11-02: 0.50 s"),
+    "etbPairAction": Value(1, V, "owner 2026-11-02: a throttle-sensor pair "
+                           "fault under motor control stops the engine"),
+    # ---- 2 idle (judgement; only acts with closed-loop idle) ----
+    "idleIgnKi": Value(10, _J, "1.0 deg/s per 100 rpm: settles a 50 rpm "
+                       "error in ~2 s inside the idle spark window"),
+    "idleIgnFade": Value(30, _J, "0.30 s: about two revolutions at 800 rpm "
+                         "x 3 - no step in torque when the pedal is touched"),
+    "idleCorrThr": Value(70, _J, "70 % of the spark window used -> move air"),
+    "idleCorrPeriod": Value(20, _J, "0.20 s: slower than the spark loop"),
+    "idleCorrStep": Value(5, _J, "0.05 % throttle per step"),
+    "idleCorrMax": Value(30, _J, "3.0 %: the corrector never replaces the "
+                         "idle air curve"),
+    "idleKickDrop": Value([6, 12, 20], _J, "60 / 120 / 200 rpm under target"),
+    "idleKickStep": Value([3, 6, 10], _J, "0.3 / 0.6 / 1.0 % throttle"),
+    "idleKickReset": Value(5, _J, "taken back 50 rpm above target"),
+    "idleAdaptRate": Value(1, _J, "0.01 %/s: a leak is learned over minutes"),
+    "idleAdaptMax": Value(20, _J, "+/-2.0 % throttle"),
+    "idleAdaptClt": Value(10750, _J, "75 C: a warm engine only"),
+    "stallRpm": Value(15, _J, "150 rpm under the idle target"),
+    "stallGain": Value(20, _J, "2.0 % throttle per 100 rpm under"),
+    "stallMax": Value(50, _J, "5.0 % at most"),
+    # ---- 3 starting ----
+    "crankFuelHold": Value(30, _J, "3.0 s of full cranking fuel"),
+    "crankFuelDecay": Value(50, _J, "then over 5.0 s"),
+    "crankFuelFloor": Value(60, _J, "to 60 %: a long crank stops wetting"),
+    "firstRevsAdd": Value(25, _J, "+25 % for the first revolutions"),
+    "firstRevsN": Value(3, _J, "3 revolutions after sync"),
+    "aseHold": Value(10, _J, "after-start held 1.0 s before it decays"),
+    "wuLambdaEnable": Value(0, V, "off: the warm-up enrichment curve is the "
+                            "base tunes' cold fuel; switching to a lambda "
+                            "target is the tuner's choice"),
+    "wuLambdaClt": Value([9800, 10000, 10200, 10400, 10600, 10700], _J,
+                         "-20 / 0 / 20 / 40 / 60 / 70 C"),
+    "wuLambdaVal": Value([30, 34, 40, 48, 56, 60], _J,
+                         "lambda 0.85 / 0.87 / 0.90 / 0.94 / 0.98 / 1.00"),
+    # ---- 4 overrun and closed loop ----
+    "dfcoCutTime": Value(20, _J, "fuel faded out over 0.20 s"),
+    "dfcoRestoreTime": Value(20, _J, "and back in over 0.20 s"),
+    "dfcoRestoreAdd": Value(10, _J, "+10 % on the first fuel after the cut"),
+    "o2SatLambda": Value(30, _J, "lambda above 1.30 right after a cut = "
+                         "the sensor is still full of air"),
+    "o2SatRecLambda": Value(10, _J, "recovered below 1.10"),
+    "o2SatRecTime": Value(15, _J, "for 1.5 s"),
+    "o2SatTps": Value(15, _J, "below 15 % throttle"),
+    "stftLeanLock": Value(15, _J, "no leaning for 1.5 s after the closed "
+                          "loop starts"),
+    "stftKp": Value([0, 0, 10, 10], _J, "P 0.10 %/% on power and cruise; idle "
+                    "and overrun integral only"),
+    # ---- 5 knock (MONITOR presets: the map is used once ACTIVE) ----
+    "knockAmpEnable": Value(0, V, "off: knock control is MONITOR until a car "
+                            "log calibrates it (CLAUDE.md 8)"),
+    "knockAmpRpmAx": Value([20, 35, 50, 65], _J, "2000..6500 rpm"),
+    "knockAmpAx": Value([15, 20, 30, 40], _J, "1.5..4.0 x the quiet reference"),
+    "knockAmpMap": Value([6, 6, 6, 6, 8, 8, 8, 8, 10, 10, 10, 10,
+                          14, 14, 12, 12], _J,
+                         "1.5 / 2.0 / 2.5 / 3.5 deg by strength (the fixed "
+                         "step is 2.25 deg, Bosch KRFKN)"),
+    "knockAdaptMode": Value(0, V, "off until knock control is ACTIVE"),
+    "knockAdaptCyl": Value(2, _J, "two cylinders knocking together"),
+    "knockAdaptAttack": Value(50, _J, "learn half of the retard"),
+    "knockAdaptDecay": Value(5, _J, "0.5 deg per minute given back"),
+    "knockAdaptMax": Value(24, _J, "6.0 deg"),
+    "knockAdaptLoadAx": Value([20, 40, 60, 80], _J, "40..160 % filling"),
+    # ---- 6 boost ----
+    "boostIRpmAx": Value([20, 30, 40, 50, 60, 70], _J, "2000..7000 rpm"),
+    "boostIMin": Value([20, 20, 20, 20, 20, 20], _J, "the integral may take "
+                       "20 % duty away"),
+    "boostIMax": Value([30, 30, 30, 25, 25, 25], _J, "and add 30 % (25 % at "
+                       "high rpm where the turbine is fast)"),
+    "boostLimIatAx": Value([10400, 10600, 10800, 11000], _J, "40..100 C"),
+    "boostLimIat": Value([125, 120, 100, 80], _J, "250 / 240 / 200 / 160 kPa "
+                         "absolute: hot charge, less boost"),
+    "boostLimCltAx": Value([10000, 10600, 11050, 11150], _J,
+                           "0 / 60 / 105 / 115 C"),
+    "boostLimClt": Value([85, 125, 125, 80], _J, "170 kPa cold, 250 warm, "
+                         "160 overheating"),
+    # ---- 7 limp mode ----
+    "limpEnable": Value(6, _J, "pressure + coolant; lean waits for a "
+                        "qualified wideband, knock for ACTIVE knock control"),
+    "limpThrottle": Value(30, _J, "30 % throttle in limp mode"),
+    "limpLean": Value(15, _J, "0.15 leaner than the target"),
+    "limpLeanTps": Value(50, _J, "above 50 % throttle"),
+    "limpLeanTime": Value(20, _J, "for 2.0 s"),
+    "limpMap": Value(130, _J, "260 kPa: above any base tune's boost target "
+                     "and the 250 kPa overboost cut's neighbourhood"),
+    "limpMapTime": Value(10, _J, "for 1.0 s"),
+    "limpClt": Value(11150, _J, "115 C"),
+    "limpKnock": Value(24, _J, "6 deg"),
+    "limpKnockCyl": Value(3, _J, "on 3 cylinders"),
+    # ---- 8 throttle response (only with DBW enabled) ----
+    "dbwSpeedAx": Value([3, 10, 50, 100], _J, "plate position %"),
+    "dbwSpeedClose": Value([10, 30, 60, 60], _J, "1 % per 10 ms into the "
+                           "closed stop (spring + motor on plastic gears)"),
+    "dbwOverrunRpmAx": Value([8, 15, 25, 40], _J, "800..4000 rpm"),
+    "dbwOverrunMax": Value([70, 45, 30, 30], _J, "7.0 / 4.5 / 3.0 % with "
+                           "the pedal released"),
+    # ---- 9 traction (off: motorsport bit 4 is the switch) ----
+    "tcRetard": Value(5, _J, "5 deg while the rpm runs away"),
+    "tcCut": Value(30, _J, "30 % spark cut"),
+}
+# THE BODY: the VAG DV-E5 as the AWT car's own Grab read it (2026-09-27,
+# track 1 cavity 92 rising 102 -> 954, track 2 cavity 84 falling 919 -> 71
+# counts) in 0.02 V.
+_X_DVE5 = {
+    "tpsExpected": Value([25, 233, 225, 17], V,
+                         "AWT car Grab 2026-09-27: 0.50 / 4.66 / 4.49 / 0.35 V"),
+    "tpsExpTol": Value(25, V, "owner 2026-11-02: refuse endpoints more than "
+                       "0.5 V from the body's"),
+}
+# THE 1.8T START (owner 2026-11-02: "set the start maps so the 1.8T base map
+# is right"; a tester's 1.8T started poorly). Ignitron's start maps were the
+# REFERENCE they were checked against - no number taken from them:
+#   cranking fuel = the stoichiometric charge of one 1.8T cylinder at a
+#     cranking fill of 65 % (445 cc, air density at min(coolant, 50 C)) x a
+#     vaporisation factor that doubles every 15 C below 30 C (1.05 + 0.45 x
+#     2^((30-T)/15), capped at 4.5). Ignitron's cranking enrichment lands
+#     within 10 % of that factor from -10 to 30 C.
+#   after-start: held 2 s and decaying over 12 s - the 5 s decay before
+#     ended the extra while the port walls were still wetting.
+#   good teeth before sync: owner 2026-11-02, the firmware minimum (2) - the
+#     first gap after 2 teeth syncs, a revolution sooner than 6.
+_START_18T_AX = [9700, 9900, 10100, 10300, 10500, 10700, 10900, 11100]
+_START_18T = {
+    "crankPwAx": Value(_START_18T_AX, _J, "-30..110 C, 20 C steps"),
+    "crankPwVal": Value([1287, 1033, 536, 344, 264, 241, 232, 228], _J,
+                        "0.1 mg/cyl: 28.6 mg stoich at -30 C x 4.5 ... "
+                        "21.5 mg x 1.06 at 110 C (model above)"),
+    "aseHold": Value(20, _J, "after-start held 2.0 s"),
+    "asDecayMs": Value(15000, _J, "then decays over 15 s: the port walls "
+                       "keep wetting longer than the 5 s decay lasted"),
+    "trigMinTeeth": Value(2, V, "owner 2026-11-02: sync on the first gap "
+                          "after 2 good teeth (firmware minimum) - faster start"),
+    "revLimit": Value(7000, V, "owner 2026-11-03: 7000 rpm (Ignitron's 1.8T base "
+                      "file 6800 soft / 7000 hard). CPU: 4 cylinders at 7000 = "
+                      "28 000 events/min, fewer than the 2.7T's 6 at 6000 "
+                      "(36 000) on the same 24 MHz C167 - runtime_stress"),
+    "crankRpmMax": Value(550, _J, "cranking until 550 rpm (was the generic "
+                         "400): a cold 1.8T's first firings flare past 400 "
+                         "and dropped to running fuel too early"),
+    # COLD FUEL, re-split (owner 2026-11-02: Ignitron's start/warm-up is
+    # tested on the 1.8T). Long-term warm-up was richer than a tested 1.8T
+    # cold engine needs (+40 % at 0 C), the after-start extra weaker. Ours:
+    # a warm-up that ends at 70 C and a larger after-start that decays.
+    # Product (short term, at the end of cranking) -30/0/20 C = 3.0 / 2.0 /
+    # 1.5 x; long term 1.50 / 1.30 / 1.20 x. Cross-check: Ignitron's
+    # startup x warm-up-lambda lands within 10 % of both at -30..40 C.
+    "cltEnrVal": Value([150, 143, 136, 130, 125, 120, 115, 110, 106, 103,
+                        101, 100, 100, 100, 100, 100], _J,
+                       "-30..120 C: +50 % -> none from 80 C"),
+    "asPct": Value([100, 90, 75, 55, 38, 25, 17, 12, 9, 6, 4, 3, 3, 3, 3, 3],
+                   _J, "-30..120 C after-start extra, decaying (above)"),
+    # IDLE: the owner's car idled warm at 852 rpm on 2.6 % throttle
+    # (the maintainer's records, 221 rows) - kept; the
+    # cold side opened further: the earlier cold points let a cold engine
+    # idle on too little air (Ignitron's tested cold idle throttle is ~8 %).
+    "idleTargetAx": Value([9800, 10000, 10200, 10400, 10600, 10800, 11000,
+                           11200], _J, "-20..120 C"),
+    "idleTargetVal": Value([1250, 1200, 1150, 1050, 900, 850, 850, 850], _J,
+                           "850 warm (the car's 852), 1200 at 0 C"),
+    "idleBaseVal": Value([75, 68, 52, 37, 30, 26, 26, 26], _J,
+                         "-20..120 C: 2.6 % warm (car), 6.8 % at 0 C"),
+    # TIMING CORRECTIONS - there was none on the 1.8T. A charge-cooled
+    # turbo engine sees 60..80 C intake air on boost; hot air and an
+    # overheating head knock earlier. Ignitron retards to about -6 deg by
+    # 70 C IAT and -6 deg at 120 C coolant.
+    "ignIatCorr": Value([0, 0, 0, 0, -10, -30, -50, -70], _J,
+                        "-20..120 C IAT: -1 deg at 60 C .. -7 deg at 120 C"),
+    "ignCltCorr": Value([0] * 14 + [-20, -50], _J,
+                        "-2 deg at 110 C, -5 deg at 120 C coolant"),
+}
+# THE CAN IDENTITY OF THE STOCK 1.8T (2026-11-03, comms/hccan711.c). CAN stays
+# OFF (canEnable 0): the tuner switches it on for a car whose cluster / ABS /
+# gearbox are on the bus. The identity is the stock ME7.5 1.8T's.
+_S_A2L75 = ("SAME-FAMILY ECU REFERENCE: reference/a2l_me75_x505p/24HGCM8g.A2L + "
+            ".hex (.scratch/can-bus/a2l_me75_24HGCM8g_can_values.txt)")
+_CAN_18T = {
+    "canEnable": Value(0, V, "off until the tuner enables it for the car"),
+    "canVag": Value(1, P, "the VAG engine messages once CAN is on"),
+    "canVers": Value(10, P, _S_A2L75 + ": CANVERS 10 (v4.0.2)"),
+    "canEngineCode": Value(34, P, _S_A2L75 + ": FMOTC 34 (that image's "
+                           "car; 38 is the longitudinal code - check the car)"),
+    "canGearboxCode": Value(15, P, "FR CAN 51.570 gearbox table: 15 = manual"),
+    "canEngineType": Value(4, P, _S_A2L75 + ": MOTTYP 0x04 (petrol, turbo, "
+                           "4 cylinders)"),
+    "canTorqueNorm": Value(400, P, _S_A2L75 + ": MDNORM 400 Nm"),
+    "canTorqueMax": Value(230, P, _S_A2L75 + ": MDMAXKBI 230 Nm (the 132 kW "
+                          "variant)"),
+    "canTorqueMaxRpm": Value(2000, P, _S_A2L75 + ": NMAXKBI 2000 rpm"),
+    "canConsumptionNorm": Value(780, P, _S_A2L75 + ": KVNPZ 780"),
+    "canEpcSource": Value(3, _J, "EPC on a throttle fault and in limp mode, "
+                          "as the stock E-gas lamp"),
+    "canHotClt": Value(11200, _J, "coolant lamp above 120 C"),
+}
+for _p in ENGINE_PRESETS:
+    if _p.key.startswith("VAG_18T_"):
+        for _k, _v in _CAN_18T.items():
+            _p.values.setdefault(_k, _v)
+for _p in ENGINE_PRESETS:
+    if _p.key.startswith("VAG_18T_") or _p.key.startswith("AUDI_27T_"):
+        for _k, _v in _X_ALL.items():
+            _p.values.setdefault(_k, _v)
+    if _p.key.startswith("VAG_18T_"):
+        for _k, _v in _X_DVE5.items():
+            _p.values.setdefault(_k, _v)
+        for _k, _v in _START_18T.items():
+            _p.values[_k] = _v          # replaces the generic start values
+# The 2.7T presets carry NO expected endpoints (tpsExpTol 0 = no check): the
+# only 2.7T body measured is the bench's, which read track 1 FALLING
+# (920 -> 67, 2026-11-02) - the opposite of the AWT car's cavity 92. Its
+# own car must be measured first.
 
 # --------------------------------------------------------------------------
 # Component presets.

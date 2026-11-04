@@ -304,8 +304,8 @@ sbit DBW_DIRD = DP7 ^ TGT_DBW_DIR_PORT_BIT;
    thing that drives a wrong pin. */
 static void publish_pin(unsigned char mode, unsigned char ch)
 {
-    static const unsigned char inj_port[8] = { 7, 7, 7, 8, 8, 8, 8, 8 };
-    static const unsigned char inj_bit[8]  = { 6, 5, 4, 7, 6, 5, 4, 3 };
+    static const unsigned char huge inj_port[8] = { 7, 7, 7, 8, 8, 8, 8, 8 };
+    static const unsigned char huge inj_bit[8]  = { 6, 5, 4, 7, 6, 5, 4, 3 };
 
     hcb_conn_pin = 0u;
     if (ch == 0u && (mode == HC_TEST_COIL || mode == HC_TEST_INJECTOR)) {

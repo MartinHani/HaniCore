@@ -75,9 +75,10 @@ def output_binding_rule():
     bound = set(re.findall(r"CFG_U_PIN_\w+", m.group(1))) if m else set()
     # ... and the fields it binds with a direct call (main relay, idle valve)
     bound |= set(re.findall(r"hc_hal_out_bindable\((CFG_U_PIN_\w+)", val))
-    hal = (ROOT / "firmware/targets/me711/hal/hchal_me711.c"
-           ).read_text(errors="replace")
-    m = re.search(r"unsigned char hc_hal_out_bindable\(unsigned int field,"
+    # hchal_me711.c until 2026-11-04, hcroutes711.c (far) since
+    hal = "".join((ROOT / "firmware/targets/me711/hal" / n).read_text(errors="replace")
+                  for n in ("hchal_me711.c", "hcroutes711.c"))
+    m = re.search(r"unsigned char (?:HC_COLD )?hc_hal_out_bindable\(unsigned int field,"
                   r"[^)]*\)\s*\{(.*?)\n\}", hal, re.S)
     body = m.group(1) if m else ""
     driven = set(re.findall(r"field == (CFG_U_PIN_\w+)", body))

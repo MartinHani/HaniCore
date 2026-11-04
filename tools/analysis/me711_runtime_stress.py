@@ -97,8 +97,13 @@ class Stress:
         # 115200 = half the byte time of the image's 57600 model.
         r.byte_ticks //= baud_div
         r.byte_steps = r.byte_ticks * r.steps_per_tick
-        for i, b in enumerate(page):
+        # header + the 4096-byte main page, then (2026-11-03 page extension)
+        # the ACTIVE + DESIRED extension blocks at TGT_RAM_CFGEXT: the stored
+        # checksum covers them, so a page without them fails at boot.
+        for i, b in enumerate(page[:PAGE_MAIN]):
             r.mem.w8(0x380000 + i, b)
+        for i, b in enumerate(page[PAGE_MAIN:]):
+            r.mem.w8(0x380000 + RAM_CFGEXT + i, b)
         self.cpu, self.mem = r.cpu, r.mem
         # --- trap identification: step() runs past the vector, so record it
         cpu = self.cpu
@@ -335,6 +340,10 @@ class Stress:
                 self.t1_last = t
                 if self.next_edge is not None and self.t1_ext >= self.next_edge:
                     self.crank_edge(rpm_fn, t_base)
+                # ---- an extra input (2026-11-04: the vehicle-speed pulse
+                # train) - a gate sets edge_hook(t1_ext) ----
+                if getattr(self, "edge_hook", None) is not None:
+                    self.edge_hook(self.t1_ext)
                 # ---- CJ220 status flag P3.15: no bridge fault ----
                 sfr[0xFFC4] = sfr.get(0xFFC4, 0) | 0x8000
                 # ---- main-CPU ADC: ADST starts, ~10 us conversion ----
@@ -694,25 +703,51 @@ def build_27t_page(dbw=True, edits=()):
     if os.environ.get("HANICORE_STRESS_INJ"):   # A/B runs of the strategy
         edits = list(edits) + [("CFG_U_INJ_STRATEGY",
                                 int(os.environ["HANICORE_STRESS_INJ"]), 1)]
-    for name, v, width in edits:          # experiments (prof / A-B runs)
-        AP.set_active(r, AP.off(name), v, width)
+    for e in edits:                       # experiments (prof / A-B runs)
+        name, v, width = e[:3]
+        idx = e[3] if len(e) > 3 else 0   # an array element (2026-11-04)
+        AP.set_active(r, AP.off(name) + idx * width, v, width)
     r("hc_cfg_mgr_init")
     r("hc_cfg_commit", steps=20_000_000)
-    blob = bytes(r.m.r8(0x380000 + i) for i in range(12 + 4096))
+    blob = page_snapshot(r)
     o = AP.off("CFG_U_DISPLACEMENT_CC")
     assert (blob[12 + o] << 8) | blob[13 + o] == (1781 if _HBD.IS_DC else 2671), "displacement lost"
     return blob
 
 
-def build_board_page(dbw=True):
+# The battery-backed calibration as the stress rig restores it: header +
+# HC_CFG_MAIN bytes at TGT_RAM_CFG, then the ACTIVE + DESIRED page-extension
+# blocks (TGT_RAM_CFGEXT, 2 x 0x180) - hctarget.h, 2026-11-03.
+PAGE_MAIN = 12 + 4096
+RAM_CFGEXT = 0x7C40
+EXT_BYTES = 0x300
+
+
+def page_snapshot(r) -> bytes:
+    return (bytes(r.m.r8(0x380000 + i) for i in range(PAGE_MAIN))
+            + bytes(r.m.r8(0x380000 + RAM_CFGEXT + i) for i in range(EXT_BYTES)))
+
+
+def build_board_page(dbw=True, edits=()):
     """A runnable engine page for the board under test: the AWT page on the
     Porsche board, the Audi 2.7T page on the C4 board (whose image carries
     no AWT preset). For gates that need A running engine, not THE AWT."""
     import hc_board
-    return build_27t_page(dbw=dbw) if hc_board.IS_C4 else build_awt_page(dbw=dbw)
+    return (build_27t_page(dbw=dbw, edits=edits) if hc_board.IS_C4
+            else build_awt_page(dbw=dbw, edits=edits))
 
 
-def build_awt_page(dbw=True):
+def build_engine_page(dbw=True, edits=()):
+    """2026-11-04: the page builder a gate on ANY board should use - the
+    2.7T preset page on the 2.7T and the 1.8T ME7.5 (build_27t_page knows
+    the DC), the AWT page on the Porsche and the 4F."""
+    import hc_board
+    if hc_board.IS_DC:
+        return build_27t_page(dbw=dbw, edits=edits)
+    return build_board_page(dbw=dbw, edits=edits)
+
+
+def build_awt_page(dbw=True, edits=()):
     """The AWT preset page as battery-backed SRAM bytes (header + 4096):
     APPLY preset 3, a Burn's commit (RESTART fields into ACTIVE), and two
     TEST-ONLY edits: rev limit 9900 (the run goes to 9600) and, with dbw,
@@ -731,9 +766,13 @@ def build_awt_page(dbw=True):
     AP.install_test_fuel(r)
     if dbw:
         AP.set_active(r, AP.off("CAL_DBW_ENABLE"), 1)
+    for e in edits:                       # 2026-11-04: as build_27t_page
+        name, v, width = e[:3]
+        idx = e[3] if len(e) > 3 else 0
+        AP.set_active(r, AP.off(name) + idx * width, v, width)
     r("hc_cfg_mgr_init")
     r("hc_cfg_commit", steps=20_000_000)
-    blob = bytes(r.m.r8(0x380000 + i) for i in range(12 + 4096))
+    blob = page_snapshot(r)
     o = AP.off("CFG_U_DISPLACEMENT_CC")
     assert (blob[12 + o] << 8) | blob[13 + o] == 1781, "displacement lost"
     assert blob[12 + AP.off("CFG_TRIG_SOURCE")] == 1, "preset disabled capture timer"

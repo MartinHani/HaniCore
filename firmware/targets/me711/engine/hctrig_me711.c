@@ -63,6 +63,9 @@
 #include "hccam.h"
 #include "hcknock711.h"
 #include "hcvvt711.h"
+#include "hc_pin_descriptor.h"
+#include "hcvss711.h"
+extern unsigned int hc_tick_ms;
 #include <intrins.h>
 
 #define TRG_MAX_CAM_REFS   8u
@@ -227,11 +230,25 @@ static unsigned int  g_cam1_mask, g_cam2_mask;  /* P2 bits of the cam roles   */
 #define ROLE_CRANK 1u
 #define ROLE_CAM1  2u
 #define ROLE_CAM2  3u
+/* 2026-11-04: the vehicle-speed input on a capture no position input uses
+   (Porsche / 4F: 86 / 87). The ISR only counts and stamps (VSS_REC). */
+#define ROLE_VSS   4u
 static unsigned char g_role[TGT_CAPCH_COUNT];
+/* the speed input's CCMOD nibble: HC_VSS_CCM in external SRAM
+   (hcvss711.h) - near RAM is at its reserve */
+#define g_vss_ccm HC_VSS_CCM
+
+/* THE SPEED RECORDER (control/hcvss711.c reads it): edge count + the
+   millisecond of the last edge. Words written at one level only (12 for a
+   cam channel, 8 for CC14 - never both in one image), read by the main loop
+   with a re-read check. External SRAM: near RAM is at its floor. */
+#define HC_VSSR (*(hc_vss_rec_t huge *)(TGT_EXTRAM_BASE + TGT_RAM_VSS))
+#define VSS_REC() do { HC_VSSR.n = (unsigned int)(HC_VSSR.n + 1u);                                 HC_VSSR.ms = hc_tick_ms; } while (0)
 
 /* The CCMOD nibble each channel must be programmed with, by role. */
 static unsigned int role_ccm(unsigned char role)
 {
+    if (role == ROLE_VSS) return g_vss_ccm;
     return (role == ROLE_CRANK) ? g_crank_ccm : g_cam_ccm;
 }
 
@@ -247,6 +264,8 @@ static unsigned int role_ic(unsigned char role)
     if (role == ROLE_CAM1) {
         return HC_IC(TGT_ILVL_CAM, TGT_GLVL_CAM1);
     }
+    /* ROLE_VSS takes cam 2's pair: it is only assigned to a cam capture
+       when cam 2 is not in use (both cams on CC8 + CC9 leave no channel) */
     return HC_IC(TGT_ILVL_CAM, TGT_GLVL_CAM2);
 }
 
@@ -278,6 +297,16 @@ static void roles_resolve(void)
             }
         }
     }
+    /* THE SPEED INPUT takes a cam capture only when no position input has
+       it (hc_validation.c refuses the conflict; hcvss711.c resolves which).
+       CC14 (TGT_VSS_CC14_PIN) is armed by hc_vss_arm(), not here. */
+#if !TGT_VSS_CC14_PIN
+    /* (only where the board has no speed capture of its own: Porsche / 4F) */
+    ch = hc_vss_cam_channel();
+    if (ch < (unsigned char)TGT_CAPCH_COUNT && g_role[ch] == ROLE_NONE) {
+        g_role[ch] = ROLE_VSS;
+    }
+#endif
 }
 
 static unsigned int have_edge, last_t, prev1, prev2, good_teeth;
@@ -484,11 +513,17 @@ static void trigger_hw(unsigned int on)
                                   | (role_ccm(g_role[TGT_CAPCH_CC9]) << 4));
             CC9IC = role_ic(g_role[TGT_CAPCH_CC9]);
         }
+#if TGT_VSS_CC14_PIN
+        hc_vss_arm(1u);          /* CC14 / cavity 54 (hcvss711.c, far) */
+#endif
         hc_hal_trig_arm();
     } else {
         CC15IC = 0; CC8IC = 0; CC9IC = 0;
         CCM3 = (unsigned int)(CCM3 & 0x0FFFu);
         CCM2 = (unsigned int)(CCM2 & 0xFF00u);
+#if TGT_VSS_CC14_PIN
+        hc_vss_arm(0u);
+#endif
         hc_hal_trig_disarm();
     }
     source_live = on;
@@ -541,6 +576,7 @@ static unsigned long geometry_read(void)
     /* 0 = falling, 1 = rising. Bit 3 of the nibble keeps T1 as the source. */
     g_crank_ccm = (unsigned int)(cfg_u8(CFG_TRIG_EDGE) ? 0x9u : 0xAu);
     g_cam_ccm = (unsigned int)(cfg_u8(CFG_CAM_EDGE) ? 0x9u : 0xAu);
+    g_vss_ccm = (unsigned int)(hc_cal_u8(CFG_U_VSS_EDGE) ? 0x9u : 0xAu);
     g_cam_on = (unsigned int)(cfg_u8(CFG_CAM_ENABLE) != 0u);
 
     g_cam_refs = hc_cal_u8(CFG_U_CAM_REFS);
@@ -1313,6 +1349,11 @@ void hc_cc8_isr(void) interrupt TGT_TRAP_CC8INT using CRANKBANK
         return;
     } else if (role == ROLE_CAM2) {
         cam_edge(2u, CC8);
+#if !TGT_VSS_CC14_PIN
+    } else if (role == ROLE_VSS) {
+        VSS_REC();
+        return;
+#endif
     }
     if (hc_tlog_on) tlog_role(role, CC8);
 }
@@ -1331,9 +1372,24 @@ void hc_cc9_isr(void) interrupt TGT_TRAP_CC9INT using CRANKBANK
         return;
     } else if (role == ROLE_CAM1) {
         cam_edge(1u, CC9);
+#if !TGT_VSS_CC14_PIN
+    } else if (role == ROLE_VSS) {
+        VSS_REC();
+        return;
+#endif
     }
     if (hc_tlog_on) tlog_role(role, CC9);
 }
+
+#if TGT_VSS_CC14_PIN
+/* THE SPEED CAPTURE (CC14, cavity 54): count and stamp, nothing else. Level
+   TGT_ILVL_VSS (= the tick body's 8, its own group): no new level. */
+void hc_cc14_isr(void) interrupt TGT_TRAP_CC14INT using TICKBANK
+{
+    HC_PROBE_CLAIM(TGT_TRAP_CC14INT);
+    VSS_REC();
+}
+#endif
 
 /* THE KNOCK MEASUREMENT WINDOW, MF = P8.0 (CC195 pin 27, the ME7.1.1 schematic).
  *

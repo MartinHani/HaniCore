@@ -15,7 +15,7 @@ extern unsigned int adc_raw[];
 #define PHYS_NONE 0xFFu
 #define S5500_N 16u
 #define WIN_RAW(i) (((unsigned int huge *)(TGT_EXTRAM_BASE + TGT_RAM_S5500WIN))[(i)])
-static const unsigned char PHYS[HC_AIN_COUNT] = {
+static const unsigned char huge PHYS[HC_AIN_COUNT] = {
     TGT_ADC_BATT_CH,      /* HC_AIN_VBAT      AN5  UBAT                     */
     HC_ADC_ASIC(0),       /* HC_AIN_CLT       ASIC AN0  TMOT, cavity 93     */
     HC_ADC_ASIC(1),       /* HC_AIN_IAT       ASIC AN1  TANS, cavity 26     */

@@ -44,11 +44,14 @@ DTC_TEXT = {
     2125: "Pedal sensor 2",
     2135: "Throttle position 1/2 mismatch",
     2138: "Pedal sensor 1/2 mismatch",
+    1300: "Limp mode",
+    1304: "Throttle off target - engine cut",
+    1305: "Throttle sensors disagree - engine cut",
 }
 
 _DTC_C = (ROOT / "firmware/targets/me711/diagnostics/hcdtc711.c"
           ).read_text(encoding="utf-8", errors="replace")
-_DTC_DEFS = re.search(r"static const hcdtc_def_t defs\[P_N\] = \{(.*?)\n\};",
+_DTC_DEFS = re.search(r"static const hcdtc_def_t (?:HCDTC_CMEM )?defs\[P_N\] = \{(.*?)\n\};",
                       _DTC_C, re.S)
 if not _DTC_DEFS:
     raise SystemExit("hcdtc711.c: defs[P_N] table not found")
@@ -94,6 +97,9 @@ DTC_CAUSE = {
     2125: "pedal track 2 wiring",
     2135: "TPS 1/2 disagree: calibrate / wiring",
     2138: "pedal 1/2 disagree: Grab / wiring",
+    1300: "see Limp mode: lean, pressure, hot, knock",
+    1304: "throttle sticks, ice, motor or wiring",
+    1305: "TPS wiring or throttle body",
 }
 _uncaused = sorted(set(DTC_CODES) - set(DTC_CAUSE))
 if _uncaused:
@@ -114,6 +120,7 @@ DTC_REASON = {
     2100: ("hcDtcDbwList", "dtcDbwWhy"),
     2110: ("hcDtcDbwList", "dtcDbwWhy"),
     2119: ("hcDtcDbwList", "dtcDbwWhy"),
+    1300: ("hcLimpWhyList", "limpWhyFirst"),
 }
 
 # The derived channels behind them: the FIRST latched bit of a mask, as an
@@ -145,6 +152,8 @@ DTC_DERIVED = [
      "the first coil the over-dwell watch holds off (hcDtcCoilList)"),
     ("dtcKnockWhy", _first("knockSelFault", [0x100 << i for i in range(4)]),
      "the first knock sensor whose diagnosis latched (hcDtcKnockList)"),
+    ("limpWhyFirst", _first("limpWhy", [1, 2, 4, 8]),
+     "the first limp-mode check that tripped (hcLimpWhyList)"),
 ]
 DTC_LISTS = [
     ("hcDtcDbwList", ["-"] + [t for _, t in _DBW_BITS]),
@@ -152,6 +161,8 @@ DTC_LISTS = [
                                for i in range(8)]),
     ("hcDtcKnockList", ["-"] + ["sensor %d signal out of range" % (i + 1)
                                 for i in range(4)]),
+    ("hcLimpWhyList", ["-", "leaner than the target", "manifold pressure high",
+                       "coolant hot", "knock retard on several cylinders"]),
 ]
 
 

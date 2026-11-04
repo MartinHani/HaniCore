@@ -23,12 +23,17 @@
 
 #define HCFB_PAGE ((unsigned char huge *)(TGT_EXTRAM_BASE + TGT_RAM_CFG \
                                           + HC_CFG_HDR_LEN))
+/* page offsets HC_CFG_MAIN.. (hcconfig.h, the page extension) */
+#define HCFB_XPAGE ((unsigned char huge *)(TGT_EXTRAM_BASE + TGT_RAM_CFGEXT))
 #undef hc_cal_u8
 #undef hc_cal_u16
 #define hc_cal_u8(off)                                                     \
     (((unsigned int)(off) < HC_CFG_CORE) ? hc_cfg[(unsigned int)(off)]    \
-     : (((unsigned int)(off) < HC_CFG_SIZE)                               \
-        ? HCFB_PAGE[(unsigned int)(off)] : (unsigned char)0u))
+     : (((unsigned int)(off) < HC_CFG_MAIN)                               \
+        ? HCFB_PAGE[(unsigned int)(off)]                                  \
+        : (((unsigned int)(off) < HC_CFG_SIZE)                            \
+           ? HCFB_XPAGE[(unsigned int)(off) - HC_CFG_MAIN]                \
+           : (unsigned char)0u)))
 #define hc_cal_u16(off)                                                    \
     ((unsigned int)(((unsigned int)hc_cal_u8(off) << 8)                   \
                     | (unsigned int)hc_cal_u8((unsigned int)(off) + 1u)))

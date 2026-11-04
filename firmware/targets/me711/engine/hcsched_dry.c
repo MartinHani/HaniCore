@@ -1441,7 +1441,10 @@ void hc_drysched_overdwell_service(unsigned int now)
         eng_fuelcut = (unsigned int)((eng_fuelcut & ~ENG_CUT_REV)
                                      | ((rev_cut && mode != 0u) ? ENG_CUT_REV
                                                                 : 0u));
-        dry_rev_spark_cut = (unsigned char)(rev_cut && mode != 1u);
+        /* ENG_CUT_SAFE (hcxfn711.c) stops the SPARK too: a throttle that
+           cannot be trusted, or a start waiting for oil pressure */
+        dry_rev_spark_cut = (unsigned char)((rev_cut && mode != 1u)
+                                            || (eng_fuelcut & ENG_CUT_SAFE));
     }
     /* The independent CC25 max-dwell edge owns release. */
     if (eng_fuelcut & DRY_FUEL_CUTS) hc_deadline_fuel_cut();

@@ -21,6 +21,7 @@
 #include "hcengine.h"
 #include "hcldr.h"
 #include "hcboost711.h"
+#include "hcxfn711.h"     /* 2026-11-03: limits, integrator range, limp */
 #include "hcdeadline711.h"
 #include "hcload711.h"
 
@@ -118,6 +119,8 @@ unsigned int far hc_boost_service(unsigned int now_ms, unsigned char keyoff)
     hc_ldr_target_x10 = (unsigned int)hc_cal_map(CAL_BOOST_TGT_MAP, CAL_BOOST_TGT_RPM_AX,
                                                  CAL_BOOST_TGT_TPS_AX, trg_rpm,
                                                  eng_tps_x10) * 10u;
+    /* ceilings by intake air / coolant (boostLimIat / boostLimClt) */
+    hc_ldr_target_x10 = hc_x_boost_target(hc_ldr_target_x10);
 
     in.rpm = trg_rpm;
     in.tps_x10 = eng_tps_x10;
@@ -125,11 +128,14 @@ unsigned int far hc_boost_service(unsigned int now_ms, unsigned char keyoff)
     in.map_ok = (unsigned char)((eng_sensor_err & ENG_ERR_MAP) == 0u);
     in.enabled = (unsigned char)(hc_cal_u8(CAL_BOOST_ENABLE) == 1u
         && !(eng_fuelcut & (ENG_CUT_LOAD|ENG_CUT_LEAN))
-        && (hc_cal_u8(CFG_U_FUEL_MODEL)==0u || hc_cal_u8(CFG_U_PRESSURE_ROLE)!=0u));
+        && (hc_cal_u8(CFG_U_FUEL_MODEL)==0u || hc_cal_u8(CFG_U_PRESSURE_ROLE)!=0u)
+        && !hc_x_boost_off());          /* limp mode: turbo off */
     in.keyoff = keyoff;
     in.open_x10 = open;
     in.target_x10 = hc_ldr_target_x10;
+    hc_x_boost_ilim(&hc_ldr.integ100);  /* the integrator range by rpm */
     (void)hcldr_step(&hc_ldr, &c, &in);
+    hc_x_boost_ilim(&hc_ldr.integ100);
 
     /* this module's own bit of the shared cut word (see hcengine.c) */
     eng_fuelcut = (unsigned int)((eng_fuelcut & ~ENG_CUT_BOOST)

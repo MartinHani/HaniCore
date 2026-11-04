@@ -82,7 +82,7 @@ static unsigned int adc_to_cv(unsigned int raw)
                            * 10uL) / 1023uL);
 }
 
-static const unsigned char rst_och_map[] = {
+static const unsigned char huge rst_och_map[] = {
     RST_BOOTS, RST_RESET_RAW, RST_STAGE, RST_PREV_STAGE, RST_PREV_MS,
     RST_PREV_LOOP, RST_PREV_FIRSTVEC, RST_PREV_LASTVEC, RST_PREV_TRAP,
     RST_PREV_TRAP_MS, RST_PREV_WDT_COUNT, RST_PREV_MARKER, RST_PREV_TGT0,
@@ -579,20 +579,31 @@ static void pub_tail(void)
 
 static unsigned char pub_stage;
 
+/* 2026-11-03: THE FAST BLOCK EVERY THIRD PASS. With one slice per main-loop
+   pass (~10 ms on the bench) the eleven-slice cycle took ~135 ms, so the
+   tuning core (rpm, MAP, TPS, lambda, timing - hc_ec_publish, io part 0)
+   changed ~7 times a second: LibreTune polling at 20 Hz drew stairs (bench
+   2.7T at 124800 baud, the 1 ms tick moved every 2-3 replies by 124..160 ms).
+   Part 0 now runs in every third slice: the core refreshes every ~30-40 ms,
+   the rest of the block every ~16 passes. No slice does more than before. */
 unsigned char far hc_diag_publish_step(void)
 {
     switch (pub_stage) {
     case 0u: pub_platform(); break;
-    case 1u: pub_runtime(); break;
-    case 2u: pub_live(); break;
-    case 3u: hc_io_publish(io_boost_req, 0u); break;
-    case 4u: hc_io_publish(io_boost_req, 1u); break;
-    case 5u: hc_io_publish(io_boost_req, 2u); break;
-    case 6u: hc_io_publish(io_boost_req, 3u); break;   /* 2026-10-12 */
-    case 7u: hc_io_publish(io_boost_req, 4u); break;
-    case 8u: hc_io_publish(io_boost_req, 5u); break;
-    case 9u: hc_io_publish(io_boost_req, 6u); break;
-    case 10u: pub_rstlog(); break;
+    case 1u: hc_io_publish(io_boost_req, 0u); break;
+    case 2u: pub_runtime(); break;
+    case 3u: pub_live(); break;
+    case 4u: hc_io_publish(io_boost_req, 0u); break;
+    case 5u: hc_io_publish(io_boost_req, 1u); break;
+    case 6u: hc_io_publish(io_boost_req, 2u); break;
+    case 7u: hc_io_publish(io_boost_req, 0u); break;
+    case 8u: hc_io_publish(io_boost_req, 3u); break;   /* 2026-10-12 */
+    case 9u: hc_io_publish(io_boost_req, 4u); break;
+    case 10u: hc_io_publish(io_boost_req, 0u); break;
+    case 11u: hc_io_publish(io_boost_req, 5u); break;
+    case 12u: hc_io_publish(io_boost_req, 6u); break;
+    case 13u: hc_io_publish(io_boost_req, 0u); break;
+    case 14u: pub_rstlog(); break;
     default:
         pub_tail();
         pub_stage = 0u;
@@ -652,16 +663,24 @@ void far hc_preset_cmd_service_cold(void)
             put16(774, tick_ms);
             put16(770, 1u);
             /* Publication never clears sensor/bridge/supply fault latches. */
+            /* 2026-11-03: STORED BY THE ECU ITSELF (tester BlackT: PID and
+               pedal values lost at a power cycle). These values were measured
+               here, not typed: LibreTune only re-reads them, sees nothing it
+               changed and has no reason to Burn. Commit DESIRED and burn it
+               when the engine has stood still for 0.5 s - a Burn's own
+               deferred path (hc_cfg_mgr_burn_defer). */
+            (void)hc_cfg_mgr_burn_defer();
         }
         /* THE AUTOTUNE'S GAINS, the same way: DESIRED through the
-           config manager, TunerStudio told to re-read, nothing burned and
-           dbwEnable untouched. */
+           config manager, TunerStudio told to re-read, stored at the stop
+           (2026-11-03) and dbwEnable untouched. */
         if (hc_etbcal_tune_take(e)) {
             hc_cfg_mgr_write_u16(CAL_DBW_KP, e[0]);
             hc_cfg_mgr_write_u16(CAL_DBW_KI, e[1]);
             hc_cfg_mgr_write_u16(CAL_DBW_KD, e[2]);
             put16(774, tick_ms);
             put16(770, 1u);
+            (void)hc_cfg_mgr_burn_defer();     /* stored by the ECU (above) */
         }
     }
     if (req == 0u) {
@@ -1350,6 +1369,7 @@ void far hc_target_cmd_cold(unsigned char *p, unsigned int n)
                 v = ENG_GRAB_PASS_SAME;
                 put16(774, tick_ms);
                 put16(770, 1u);
+                (void)hc_cfg_mgr_burn_defer(); /* stored by the ECU (AutoCal) */
             }
 
             /* Packed the way every other status word on this ECU is: low byte

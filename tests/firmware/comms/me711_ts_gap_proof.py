@@ -236,7 +236,9 @@ def transaction(name, rx, settle_steps, run_steps, nop_yield=False,
     rig.run(run_steps)
 
     if not rig.entries:
-        return None, 0, None, rig.trap or "no supervision service ran"
+        # five values like the normal return (it returned four: the caller's
+        # unpack crashed the whole gate instead of reporting the run)
+        return None, 0, None, rig.trap or "no supervision service ran", None
 
     # What tick_ms was when the request went in - measured, not assumed.
     inj_tick = min(rig.entries, key=lambda e: abs(e[1] - settle_steps))[0]
@@ -554,11 +556,18 @@ def main() -> int:
         _w, _n, _c, _t, ref_instr = transaction(
             "V27A reference", b"S", SETTLE, window(40),
             img_path=ref.with_suffix(".bin"), map_path=ref.with_suffix(".M66"))
-        ratio = worst_ordinary / ref_instr if ref_instr else 0.0
-        check("ordinary transactions: no more than 2x the pre-config-layer "
-              "reference",
-              ratio <= 2.0,
-              f"{worst_ordinary} vs {ref_instr} instructions = {ratio:.2f}x")
+        if ref_instr is None:
+            # The V27A reference is a Porsche ME7.1.1 image: on another board's
+            # rig it never reaches a supervision service. Not checked - said
+            # so, not passed as 0.0x.
+            print("  (V27A reference does not run on this board - the relative "
+                  "bound is not checked)")
+        else:
+            ratio = worst_ordinary / ref_instr
+            check("ordinary transactions: no more than 2x the pre-config-layer "
+                  "reference",
+                  ratio <= 2.0,
+                  f"{worst_ordinary} vs {ref_instr} instructions = {ratio:.2f}x")
         # AND THE COMMIT, ON ITS OWN TERMS. It is allowed to cost more than a
         # signature request - it stages 4096 bytes, validates them, programs
         # 2060 words through a RAM-resident writer, reads the DONE marker back
@@ -567,8 +576,8 @@ def main() -> int:
         # ~44k instructions = 4.4 ms; the measured commit is well under that
         # and a doubling of commit work would fail here before it failed the
         # absolute bound.
-        if worst_burn is not None:
-            bratio = worst_burn / ref_instr if ref_instr else 0.0
+        if worst_burn is not None and ref_instr is not None:
+            bratio = worst_burn / ref_instr
             check("the flash COMMIT: no more than 5x that reference",
                   bratio <= 5.0,
                   f"{worst_burn} vs {ref_instr} instructions = {bratio:.2f}x")
@@ -581,7 +590,11 @@ def main() -> int:
     # that deadline to the prior start and must remove the cumulative slip.
     v25 = ROOT / "bins/hanicore/HaniCore_ME711_A1146_mainrelay_v25.bin"
     v25_map = ROOT / "bins/hanicore/HaniCore_ME711_A1146_mainrelay_v25.M66"
-    if v25.exists() and v25_map.exists():
+    import hc_board as _HB   # V25 / V27A are Porsche ME7.1.1 images: they
+    _porsche = _HB.BOARD == "porsche_me711"  # run on the Porsche board's rig only
+    if not _porsche:
+        print("  (V25 cadence control is a Porsche image - not run on %s)" % _HB.BOARD)
+    if _porsche and v25.exists() and v25_map.exists():
         old_worst, old_ntx, old_cadence, old_trap, _oi = transaction(
             "V25 cadence control", page_request(0, page), SETTLE,
             window(page + 7), img_path=v25, map_path=v25_map)

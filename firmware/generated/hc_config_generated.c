@@ -9,458 +9,587 @@
 #include "hc_config_generated.h"
 
 const hc_cfg_slot_t hc_cfg_slots[HC_CFG_SLOT_COUNT] = {
-    {    0u,    2u, HC_APPLY_RESTART   , HC_GRP_GENERAL           , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* cfgVersion */
-    {    2u,    1u, HC_APPLY_RESTART   , HC_GRP_ENGINE_SETUP      , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* cylinders */
-    {    3u,    1u, HC_APPLY_RESTART   , HC_GRP_ENGINE_SETUP      , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* strokes */
-    {    4u,   16u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP      , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* tdcCylDegX10 */
-    {   20u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP     , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* syTeeth */
-    {   22u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP     , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* syGap */
-    {   23u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP     , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* trigEdge */
-    {   24u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP     , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* trigGapRatioX10 */
-    {   26u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP     , 0u                                        , 1u, 0x0000u }, /* trigMinTeeth */
-    {   27u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP     , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* trigTimeoutMs */
-    {   28u,    2u, HC_APPLY_RESTART   , HC_GRP_ENGINE_SETUP      , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* revMax */
-    {   30u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP      , 0u                                        , 2u, 0x0000u }, /* revMin */
-    {   32u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP     , 0u                                        , 1u, 0x0000u }, /* camEnable */
-    {   33u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP     , 0u                                        , 1u, 0x0000u }, /* camEdge */
-    {   34u,    8u, HC_APPLY_RPM_ZERO  , HC_GRP_INJECTOR_ROUTING  , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* injChannel */
-    {   42u,    8u, HC_APPLY_RPM_ZERO  , HC_GRP_IGNITION_ROUTING  , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* ignChannel */
-    {   50u,    2u, HC_APPLY_LIVE      , HC_GRP_ENGINE_SETUP      , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* revLimit */
-    {   52u,    2u, HC_APPLY_LIVE      , HC_GRP_ENGINE_SETUP      , 0u                                        , 2u, 0x0000u }, /* crankRpmMax */
-    {   54u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES            , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* dwellMsX100 */
-    {   56u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* injDeadtimeUs */
-    {   58u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* injStartDegX10 */
-    {   60u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES            , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* ignAdvanceDegX10 */
-    {   62u,    2u, HC_APPLY_LIVE      , HC_GRP_SENSOR_ROUTING    , 0u                                        , 2u, 0x0000u }, /* adcBattFsDv */
-    {   64u,    2u, HC_APPLY_LIVE      , HC_GRP_SENSOR_ROUTING    , 0u                                        , 2u, 0x0000u }, /* cltPullupOhm */
-    {   66u,    2u, HC_APPLY_LIVE      , HC_GRP_SENSOR_ROUTING    , 0u                                        , 2u, 0x0000u }, /* iatPullupOhm */
-    {   68u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_GENERAL           , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* outputsArmedCfg */
-    {   69u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* cfgFlags */
-    {   70u,    2u, HC_APPLY_LIVE      , HC_GRP_TRIGGER_SETUP     , 0u                                        , 2u, 0x0000u }, /* simRpm */
-    {   72u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP     , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* trigSource */
-    {   73u,    1u, HC_APPLY_LIVE      , HC_GRP_RELAY_SETUP       , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* mainRelayModeCfg */
-    {   74u,    2u, HC_APPLY_LIVE      , HC_GRP_RELAY_SETUP       , 0u                                        , 2u, 0x0000u }, /* mainRelayGraceMs */
-    {   76u,    1u, HC_APPLY_LIVE      , HC_GRP_RELAY_SETUP       , 0u                                        , 1u, 0x0000u }, /* tachoScale */
-    {   77u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* pad77 */
-    {   78u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* ignBoostAx */
-    {   94u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* ignBoostCorr */
-    {  128u,  512u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* veTable */
-    {  640u,   32u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* fuelRpmAx */
-    {  672u,   32u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* fuelLoadAx */
-    {  704u,   32u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* ignRpmAx */
-    {  736u,   32u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* ignLoadAx */
-    {  768u,  256u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* afrMap */
-    { 1024u,   32u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* cltEnrAx */
-    { 1056u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* cltEnrVal */
-    { 1072u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* crankPwAx */
-    { 1088u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* crankPwVal */
-    { 1104u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* dwellBattAx */
-    { 1120u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* dwellBattVal */
-    { 1136u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* deadtimeVal */
-    { 1152u,   32u, HC_APPLY_LIVE      , HC_GRP_SENSOR_ROUTING    , 0u                                        , 2u, 0x0000u }, /* cltSensAx */
-    { 1184u,   32u, HC_APPLY_LIVE      , HC_GRP_SENSOR_ROUTING    , 0u                                        , 2u, 0x0000u }, /* cltSensVal */
-    { 1216u,    2u, HC_APPLY_LIVE      , HC_GRP_SENSOR_ROUTING    , 0u                                        , 2u, 0x0000u }, /* mapSensOff */
-    { 1218u,    2u, HC_APPLY_LIVE      , HC_GRP_SENSOR_ROUTING    , 0u                                        , 2u, 0x0000u }, /* mapSensGrd */
-    { 1220u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP         , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* tps1Min */
-    { 1222u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP         , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* tps1Max */
-    { 1224u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP         , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* tps2Min */
-    { 1226u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP         , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* tps2Max */
-    { 1228u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP         , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* pedal1Min */
-    { 1230u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP         , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* pedal1Max */
-    { 1232u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP         , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* pedal2Min */
-    { 1234u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP         , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* pedal2Max */
-    { 1236u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP      , 0u                                        , 1u, 0x0000u }, /* loadSource */
-    { 1237u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_INJECTOR_ROUTING  , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* injModeLegacy */
-    { 1238u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 2u, 0x0000u }, /* fuelPumpPrimeMs */
-    { 1240u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP         , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* dbwEnable */
-    { 1241u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING    , 0u                                        , 1u, 0x0000u }, /* iatChannel */
-    { 1242u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP         , 0u                                        , 2u, 0x0000u }, /* dbwKp */
-    { 1244u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP         , 0u                                        , 2u, 0x0000u }, /* dbwKi */
-    { 1246u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP         , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* dbwDevX10 */
-    { 1248u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP         , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* dbwDevMs */
-    { 1250u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP         , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* dbwLimpX10 */
-    { 1252u,    2u, HC_APPLY_LIVE      , HC_GRP_SENSOR_ROUTING    , 0u                                        , 2u, 0x0000u }, /* iatDefault */
-    { 1254u,   32u, HC_APPLY_LIVE      , HC_GRP_SENSOR_ROUTING    , 0u                                        , 2u, 0x0000u }, /* iatSensAx */
-    { 1286u,   32u, HC_APPLY_LIVE      , HC_GRP_SENSOR_ROUTING    , 0u                                        , 2u, 0x0000u }, /* iatSensVal */
-    { 1318u,    2u, HC_APPLY_LIVE      , HC_GRP_SENSOR_ROUTING    , 0u                                        , 2u, 0x0000u }, /* baroDefault */
-    { 1320u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP         , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* dbwSfMode */
-    { 1322u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP         , 0u                                        , 2u, 0x0000u }, /* dbwKd */
-    { 1324u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP         , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* dbwMinX10 */
-    { 1326u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP         , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* dbwMaxX10 */
-    { 1328u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP         , 0u                                        , 2u, 0x0000u }, /* dbwRevlimRpm */
-    { 1330u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP         , 0u                                        , 2u, 0x0000u }, /* dbwRevlimRange */
-    { 1332u,   16u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP         , 0u                                        , 2u, 0x0000u }, /* dbwBiasAx */
-    { 1348u,   16u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP         , 0u                                        , 2u, 0x0000u }, /* dbwBiasVal */
-    { 1364u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP         , 0u                                        , 2u, 0x0000u }, /* dbwAutocalMs */
-    { 1366u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP         , 0u                                        , 2u, 0x0000u }, /* dbwAutocalDuty */
-    { 1368u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP         , 0u                                        , 2u, 0x0000u }, /* dbwTuneAmp */
-    { 1370u,  256u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* pedalMap */
-    { 1626u,   32u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* pedalRpmAx */
-    { 1658u,   32u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* pedalAx */
-    { 1690u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING    , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* boostEnable */
-    { 1691u,    1u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 1u, 0x0000u }, /* boostMode */
-    { 1692u,  256u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* boostDutyMap */
-    { 1948u,   32u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* boostRpmAx */
-    { 1980u,   32u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* boostTpsAx */
-    { 2012u,  256u, HC_APPLY_LIVE      , HC_GRP_TABLES            , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* boostTgtMap */
-    { 2268u,   32u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* boostTgtRpmAx */
-    { 2300u,   32u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* boostTgtTpsAx */
-    { 2332u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 2u, 0x0000u }, /* boostKp */
-    { 2334u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 2u, 0x0000u }, /* boostKi */
-    { 2336u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 2u, 0x0000u }, /* boostKd */
-    { 2338u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 2u, 0x0000u }, /* boostMinRpm */
-    { 2340u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 2u, 0x0000u }, /* boostMinTpsX10 */
-    { 2342u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 2u, 0x0000u }, /* boostFreqHz */
-    { 2344u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* boostCutKpa */
-    { 2346u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* boostCutHyst */
-    { 2348u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* boostCltAx */
-    { 2364u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* boostCltMul */
-    { 2380u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* boostIatAx */
-    { 2396u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* boostIatMul */
-    { 2412u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* accelThreshX10 */
-    { 2414u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* accelGain */
-    { 2416u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* accelDecayMs */
-    { 2418u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* overrunRpm */
-    { 2420u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* overrunTpsX10 */
-    { 2422u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* overrunResume */
-    { 2424u,    1u, HC_APPLY_LIVE      , HC_GRP_ENGINE_SETUP      , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* revlimMode */
-    { 2425u,    1u, HC_APPLY_LIVE      , HC_GRP_ENGINE_SETUP      , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* revlimPattern */
-    { 2426u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 1u, 0x0000u }, /* idleEnable */
-    { 2427u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* idlePad */
-    { 2428u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* idleTargetAx */
-    { 2444u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* idleTargetVal */
-    { 2460u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* idleBaseAx */
-    { 2476u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* idleBaseVal */
-    { 2492u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 2u, 0x0000u }, /* idleKp */
-    { 2494u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 2u, 0x0000u }, /* idleKi */
-    { 2496u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 2u, 0x0000u }, /* idleRangeX10 */
-    { 2498u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 2u, 0x0000u }, /* idleRpmBand */
-    { 2500u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING    , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* pwmInvert */
-    { 2501u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* pwmPad */
-    { 2502u,    2u, HC_APPLY_RESTART   , HC_GRP_GENERAL           , 0u                                        , 2u, 0x0000u }, /* uMagic */
-    { 2504u,    2u, HC_APPLY_RESTART   , HC_GRP_GENERAL           , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* uSchema */
-    { 2506u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 2u, 0x0000u }, /* uGeneration */
-    { 2508u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 2u, 0x0000u }, /* uCrc */
-    { 2510u,    2u, HC_APPLY_RESTART   , HC_GRP_ENGINE_SETUP      , 0u                                        , 2u, 0x0000u }, /* displacementCc */
-    { 2512u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP      , 0u                                        , 1u, 0x0000u }, /* enginePreset */
-    { 2513u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_INJECTOR_ROUTING  , 0u                                        , 1u, 0x0000u }, /* injectorPreset */
-    { 2514u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_IGNITION_ROUTING  , 0u                                        , 1u, 0x0000u }, /* coilPreset */
-    { 2515u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING    , 0u                                        , 1u, 0x0000u }, /* mapSensorPreset */
-    { 2516u,   12u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP      , 0u                                        , 1u, 0x0000u }, /* cylBank */
-    { 2528u,    8u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP      , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* tdcCylExtDegX10 */
-    { 2536u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_INJECTOR_ROUTING  , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* injStrategy */
-    { 2537u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_IGNITION_ROUTING  , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* ignStrategy */
-    { 2538u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP     , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* syncMode */
-    { 2539u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP     , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* trigDecoder */
-    { 2540u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP     , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* trigAngleX10 */
-    { 2542u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP     , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* camRefs */
-    { 2543u,    1u, HC_APPLY_LIVE      , HC_GRP_TRIGGER_SETUP     , 0u                                        , 1u, 0x0000u }, /* camPad */
-    { 2544u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP     , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* camRefX10 */
-    { 2546u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP     , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* camWindowX10 */
-    { 2548u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP     , HC_FLAG_SAFETY_CRITICAL|HC_FLAG_IS_PIN    , 1u, 0x0018u }, /* pinCrank */
-    { 2549u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP     , HC_FLAG_SAFETY_CRITICAL|HC_FLAG_IS_PIN    , 1u, 0x0010u }, /* pinCam1 */
-    { 2550u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP     , HC_FLAG_SAFETY_CRITICAL|HC_FLAG_IS_PIN    , 1u, 0x0010u }, /* pinCam2 */
-    { 2551u,   12u, HC_APPLY_RPM_ZERO  , HC_GRP_INJECTOR_ROUTING  , HC_FLAG_SAFETY_CRITICAL|HC_FLAG_IS_PIN    , 1u, 0x0080u }, /* injPin */
-    { 2563u,   12u, HC_APPLY_RPM_ZERO  , HC_GRP_IGNITION_ROUTING  , HC_FLAG_SAFETY_CRITICAL|HC_FLAG_IS_PIN    , 1u, 0x0100u }, /* ignPin */
-    { 2575u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING    , HC_FLAG_IS_PIN                            , 1u, 0x0001u }, /* pinMap */
-    { 2576u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING    , HC_FLAG_IS_PIN                            , 1u, 0x0001u }, /* pinBaro */
-    { 2577u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING    , HC_FLAG_IS_PIN                            , 1u, 0x0001u }, /* pinClt */
-    { 2578u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING    , HC_FLAG_IS_PIN                            , 1u, 0x0001u }, /* pinIat */
-    { 2579u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP         , HC_FLAG_SAFETY_CRITICAL|HC_FLAG_IS_PIN    , 1u, 0x0001u }, /* pinTps1 */
-    { 2580u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP         , HC_FLAG_SAFETY_CRITICAL|HC_FLAG_IS_PIN    , 1u, 0x0001u }, /* pinTps2 */
-    { 2581u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP         , HC_FLAG_SAFETY_CRITICAL|HC_FLAG_IS_PIN    , 1u, 0x0001u }, /* pinApp1 */
-    { 2582u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP         , HC_FLAG_SAFETY_CRITICAL|HC_FLAG_IS_PIN    , 1u, 0x0001u }, /* pinApp2 */
-    { 2583u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING    , HC_FLAG_IS_PIN                            , 1u, 0x0001u }, /* pinVbat */
-    { 2584u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING    , HC_FLAG_SAFETY_CRITICAL|HC_FLAG_IS_PIN    , 1u, 0x0001u }, /* pinOilPress */
-    { 2585u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING    , HC_FLAG_IS_PIN                            , 1u, 0x0001u }, /* pinFuelPress */
-    { 2586u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING    , HC_FLAG_IS_PIN                            , 1u, 0x0004u }, /* pinFlex */
-    { 2587u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING    , HC_FLAG_IS_PIN                            , 1u, 0x0005u }, /* pinMaf */
-    { 2588u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING    , HC_FLAG_IS_PIN                            , 1u, 0x0001u }, /* pinLambda1 */
-    { 2589u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING    , HC_FLAG_IS_PIN                            , 1u, 0x0001u }, /* pinLambda2 */
-    { 2590u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_RELAY_SETUP       , HC_FLAG_SAFETY_CRITICAL|HC_FLAG_IS_PIN    , 1u, 0x0400u }, /* pinMainRelay */
-    { 2591u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING    , HC_FLAG_SAFETY_CRITICAL|HC_FLAG_IS_PIN    , 1u, 0x0400u }, /* pinFuelPump */
-    { 2592u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING    , HC_FLAG_IS_PIN                            , 1u, 0x0020u }, /* pinTacho */
-    { 2593u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING    , HC_FLAG_SAFETY_CRITICAL|HC_FLAG_IS_PIN    , 1u, 0x0040u }, /* pinBoost */
-    { 2594u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING    , HC_FLAG_IS_PIN                            , 1u, 0x0040u }, /* pinCam1Sol */
-    { 2595u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING    , HC_FLAG_IS_PIN                            , 1u, 0x0040u }, /* pinCam2Sol */
-    { 2596u,    8u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING    , HC_FLAG_IS_PIN                            , 1u, 0x0001u }, /* pinGenericAin */
-    { 2604u,    8u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING    , HC_FLAG_SAFETY_CRITICAL|HC_FLAG_IS_PIN    , 1u, 0x0040u }, /* pinGenericPwm */
-    { 2612u,    8u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING    , HC_FLAG_SAFETY_CRITICAL|HC_FLAG_IS_PIN    , 1u, 0x0020u }, /* pinGenericOut */
-    { 2620u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP         , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* tpsCorrelation */
-    { 2621u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP         , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* appCorrelation */
-    { 2622u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP         , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* tpsTolX10 */
-    { 2624u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP         , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* appTolX10 */
-    { 2626u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING    , 0u                                        , 2u, 0x0000u }, /* lambda1CylMask */
-    { 2628u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING    , 0u                                        , 2u, 0x0000u }, /* lambda2CylMask */
-    { 2630u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING    , 0u                                        , 1u, 0x0000u }, /* lambda1Source */
-    { 2631u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING    , 0u                                        , 1u, 0x0000u }, /* lambda1Bank */
-    { 2632u,    1u, HC_APPLY_LIVE      , HC_GRP_SENSOR_ROUTING    , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* lambda1AuthPct */
-    { 2633u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING    , 0u                                        , 1u, 0x0000u }, /* lambda2Source */
-    { 2634u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING    , 0u                                        , 1u, 0x0000u }, /* lambda2Bank */
-    { 2635u,    1u, HC_APPLY_LIVE      , HC_GRP_SENSOR_ROUTING    , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* lambda2AuthPct */
-    { 2636u,    2u, HC_APPLY_LIVE      , HC_GRP_ENGINE_SETUP      , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* stoichAfrX100 */
-    { 2638u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_INJECTOR_ROUTING  , 0u                                        , 2u, 0x0000u }, /* injFlowCcMin */
-    { 2640u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_INJECTOR_ROUTING  , 0u                                        , 2u, 0x0000u }, /* injRefPressureKpa */
-    { 2642u,    2u, HC_APPLY_LIVE      , HC_GRP_IGNITION_ROUTING  , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* crankingDwellMsX100 */
-    { 2644u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_MOTORSPORT        , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* motorsportEnable */
-    { 2646u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_MOTORSPORT        , HC_FLAG_SAFETY_CRITICAL|HC_FLAG_IS_PIN    , 1u, 0x0002u }, /* pinLaunch */
-    { 2647u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_MOTORSPORT        , HC_FLAG_SAFETY_CRITICAL|HC_FLAG_IS_PIN    , 1u, 0x0002u }, /* pinFlatShift */
-    { 2648u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_MOTORSPORT        , HC_FLAG_SAFETY_CRITICAL|HC_FLAG_IS_PIN    , 1u, 0x0002u }, /* pinAntiLag */
-    { 2649u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_MOTORSPORT        , HC_FLAG_SAFETY_CRITICAL|HC_FLAG_IS_PIN    , 1u, 0x0002u }, /* pinPitLimiter */
-    { 2650u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_MOTORSPORT        , HC_FLAG_IS_PIN                            , 1u, 0x0002u }, /* pinMapSwitch */
-    { 2651u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_MOTORSPORT        , HC_FLAG_IS_PIN                            , 1u, 0x0004u }, /* pinVss */
-    { 2652u,    2u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT        , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* launchRpm */
-    { 2654u,    2u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT        , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* launchRetardDegX10 */
-    { 2656u,    2u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT        , 0u                                        , 2u, 0x0000u }, /* flatShiftArmRpm */
-    { 2658u,    2u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT        , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* flatShiftCutMs */
-    { 2660u,    2u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT        , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* antiLagRetardDegX10 */
-    { 2662u,    1u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT        , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* antiLagFuelPct */
-    { 2663u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* msPad */
-    { 2664u,    2u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT        , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* pitLimiterRpm */
-    { 2666u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* oilPressMinKpa */
-    { 2668u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 2u, 0x0000u }, /* oilPressMinRpm */
-    { 2670u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* cltMaxDegX10 */
-    { 2672u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_GENERAL           , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* testMode */
-    { 2673u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_GENERAL           , HC_FLAG_SAFETY_CRITICAL|HC_FLAG_IS_PIN    , 1u, 0x0000u }, /* testPin */
-    { 2674u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* testValue */
-    { 2676u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* testTimeoutMs */
-    { 2678u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* s5500WindowBase */
-    { 2679u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP         , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* dbwMotorDir */
-    { 2680u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING    , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* fuelPumpMode */
-    { 2681u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* lambdaHeatPolicy */
-    { 2682u,    2u, HC_APPLY_LIVE      , HC_GRP_RELAY_SETUP       , 0u                                        , 2u, 0x0000u }, /* mainRelayHoldMs */
-    { 2684u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP         , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* dbwMaxDutyX10 */
-    { 2686u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP         , 0u                                        , 2u, 0x0000u }, /* dbwRateX10 */
-    { 2688u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP         , 0u                                        , 2u, 0x0000u }, /* dbwDeadbandX10 */
-    { 2690u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES            , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* timingModeCfg */
-    { 2691u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* ignPad */
-    { 2692u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES            , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* fixedTimingX10 */
-    { 2694u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP     , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* camPhaseMode */
-    { 2695u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP     , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* camPhaseLevel */
-    { 2696u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP     , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* camPhaseAngleX10 */
-    { 2698u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP     , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* camPhaseConfirm */
-    { 2699u,    1u, HC_APPLY_LIVE      , HC_GRP_TRIGGER_SETUP     , 0u                                        , 1u, 0x0000u }, /* camPhasePad */
-    { 2700u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP     , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* cam1Pattern */
-    { 2701u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP     , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* cam2Pattern */
-    { 2702u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP     , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* cam2RefX10 */
-    { 2704u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP     , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* camToothTol */
-    { 2705u,    1u, HC_APPLY_LIVE      , HC_GRP_TRIGGER_SETUP     , 0u                                        , 1u, 0x0000u }, /* camPatPad */
-    { 2706u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 2u, 0x0000u }, /* boostClMinKpa */
-    { 2708u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 2u, 0x0000u }, /* boostIBand */
-    { 2710u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 2u, 0x0000u }, /* idlePedalX10 */
-    { 2712u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 2u, 0x0000u }, /* idleStartMs */
-    { 2714u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 2u, 0x0000u }, /* cltLimpRpm */
-    { 2716u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 2u, 0x0000u }, /* etbLimpRpm */
-    { 2718u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 2u, 0x0000u }, /* injDutyInstX10 */
-    { 2720u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 2u, 0x0000u }, /* injDutySustX10 */
-    { 2722u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 2u, 0x0000u }, /* injDutySustMs */
-    { 2724u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 2u, 0x0000u }, /* floodClearX10 */
-    { 2726u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP         , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* dbwFaultDebounceMs */
-    { 2728u,    1u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP         , 0u                                        , 1u, 0x0000u }, /* dbwBattComp */
-    { 2729u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING    , HC_FLAG_IS_PIN                            , 1u, 0x0040u }, /* pinIdleValve */
-    { 2730u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_INJECTOR_ROUTING  , 0u                                        , 1u, 0x0000u }, /* injTimingMode */
-    { 2731u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING    , HC_FLAG_IS_PIN                            , 1u, 0x0040u }, /* pinIdleValve2 */
-    { 2732u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* transEnable */
-    { 2733u,    1u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 1u, 0x0000u }, /* idleValveFreq */
-    { 2734u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* asDecayMs */
-    { 2736u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* wwXPct */
-    { 2752u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* wwTau */
-    { 2768u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* asPct */
-    { 2784u,   32u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* ignCltCorr */
-    { 2816u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* ignIatAx */
-    { 2832u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* ignIatCorr */
-    { 2848u,    1u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 1u, 0x0000u }, /* idleTimingEnable */
-    { 2849u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 1u, 0x0000u }, /* idleActuator */
-    { 2850u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 2u, 0x0000u }, /* idleTimingKp */
-    { 2852u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 2u, 0x0000u }, /* idleTimingMinX10 */
-    { 2854u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 2u, 0x0000u }, /* idleTimingMaxX10 */
-    { 2856u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 2u, 0x0000u }, /* idleTimingSoftMs */
-    { 2858u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 2u, 0x0000u }, /* idleDashX10 */
-    { 2860u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 2u, 0x0000u }, /* idleDashHoldMs */
-    { 2862u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 2u, 0x0000u }, /* idleDashDecayMs */
-    { 2864u,    1u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 1u, 0x0000u }, /* celEnable */
-    { 2865u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING    , HC_FLAG_IS_PIN                            , 1u, 0x0020u }, /* pinMil */
-    { 2866u,    1u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 1u, 0x0000u }, /* celTestEnable */
-    { 2867u,    1u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 1u, 0x0000u }, /* celPad */
-    { 2868u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 2u, 0x0000u }, /* celTestOnMs */
-    { 2870u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING    , 0u                                        , 2u, 0x0000u }, /* celTestGapMs */
-    { 2872u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* knockMode */
-    { 2873u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* knockBand */
-    { 2874u,    4u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* knockGain */
-    { 2878u,    8u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* knockSensor */
-    { 2886u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* knockRpmAx */
-    { 2902u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* knockWinStart */
-    { 2918u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* knockWinLen */
-    { 2934u,   12u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* knockKefRpm */
-    { 2946u,    6u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* knockKef */
-    { 2952u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* knockKefDyn */
-    { 2953u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* knockTp */
-    { 2954u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* knockTpDyn */
-    { 2955u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* knockLoadMin */
-    { 2956u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* knockRpmMin */
-    { 2958u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* knockCltMin */
-    { 2960u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* knockRefInit */
-    { 2962u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* knockReapplyMs */
-    { 2964u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* knockDiagRpm */
-    { 2966u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* knockRefMin */
-    { 2968u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* knockRefMax */
-    { 2970u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* knockLearn */
-    { 2971u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* knockStopN */
-    { 2972u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* knockStepQ */
-    { 2973u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* knockMaxQ */
-    { 2974u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* knockSafeQ */
-    { 2975u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* knockDiagN */
-    { 2976u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* vvtMode */
-    { 2978u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* vvtInvert */
-    { 2980u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* vvtFreqHz */
-    { 2982u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* vvtMinRpm */
-    { 2984u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* vvtMinClt */
-    { 2986u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* vvtDelayMs */
-    { 2988u,    4u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* vvtKp */
-    { 2992u,    4u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* vvtKi */
-    { 2996u,    4u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* vvtKd */
-    { 3000u,    4u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* vvtDutyMin */
-    { 3004u,    4u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* vvtDutyMax */
-    { 3008u,    4u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* vvtDutyOn */
-    { 3012u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* vvtErrMax */
-    { 3014u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* vvtErrMs */
-    { 3016u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* vvtFbMs */
-    { 3018u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* vvtRpmAx */
-    { 3034u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* vvtLoadAx */
-    { 3050u,  128u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* vvtTarget1 */
-    { 3178u,  128u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* vvtTarget2 */
-    { 3306u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP      , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* firingOrder */
-    { 3307u,    1u, HC_APPLY_LIVE      , HC_GRP_ENGINE_SETUP      , 0u                                        , 1u, 0x0000u }, /* alphaNUseIat */
-    { 3308u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* ignLoadMode */
-    { 3309u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* lambdaLoadMode */
-    { 3310u,   32u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* lambdaRpmAx */
-    { 3342u,   32u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* lambdaLoadAx */
-    { 3374u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* mapEstRpmAx */
-    { 3390u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* mapEstTpsAx */
-    { 3406u,   64u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* mapEstimate */
-    { 3470u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* primeMgX10 */
-    { 3486u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* primeDelay */
-    { 3487u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* dfcoDelay */
-    { 3488u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* dfcoMinClt */
-    { 3490u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* dfcoMapMax */
-    { 3491u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* dfcoRetard */
-    { 3492u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* dfcoRamp */
-    { 3493u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* stftEnable */
-    { 3494u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* stftStartDelay */
-    { 3495u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* stftDeadband */
-    { 3496u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* stftMinClt */
-    { 3498u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* stftIdleRpm */
-    { 3500u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* stftOverrunLoad */
-    { 3501u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* stftPowerLoad */
-    { 3502u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* stftLambdaMin */
-    { 3503u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* stftLambdaMax */
-    { 3504u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* stftAfterDfco */
-    { 3505u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* stftAfterAe */
-    { 3506u,    4u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* stftMaxAdd */
-    { 3510u,    4u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* stftMaxRemove */
-    { 3514u,    4u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* stftTimeConst */
-    { 3518u,    1u, HC_APPLY_LIVE      , HC_GRP_ENGINE_SETUP      , 0u                                        , 1u, 0x0000u }, /* revLimitHyst */
-    { 3519u,    1u, HC_APPLY_LIVE      , HC_GRP_ENGINE_SETUP      , 0u                                        , 1u, 0x0000u }, /* revLimitSoftRetard */
-    { 3520u,    1u, HC_APPLY_LIVE      , HC_GRP_ENGINE_SETUP      , 0u                                        , 1u, 0x0000u }, /* revLimitSoftFuel */
-    { 3521u,    1u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT        , 0u                                        , 1u, 0x0000u }, /* msSwitchInvert */
-    { 3522u,    1u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT        , 0u                                        , 1u, 0x0000u }, /* launchTps */
-    { 3523u,    1u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT        , 0u                                        , 1u, 0x0000u }, /* launchWindow */
-    { 3524u,    1u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT        , 0u                                        , 1u, 0x0000u }, /* launchCutStart */
-    { 3525u,    1u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT        , 0u                                        , 1u, 0x0000u }, /* launchCutEnd */
-    { 3526u,    1u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT        , 0u                                        , 1u, 0x0000u }, /* launchFuelAdd */
-    { 3527u,    1u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT        , 0u                                        , 1u, 0x0000u }, /* flatShiftTps */
-    { 3528u,    1u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT        , 0u                                        , 1u, 0x0000u }, /* flatShiftCutPct */
-    { 3529u,    1u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT        , 0u                                        , 1u, 0x0000u }, /* alsTpsMax */
-    { 3530u,    2u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT        , 0u                                        , 2u, 0x0000u }, /* flatShiftTimingX10 */
-    { 3532u,    2u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT        , 0u                                        , 2u, 0x0000u }, /* alsRpmMin */
-    { 3534u,    2u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT        , 0u                                        , 2u, 0x0000u }, /* alsRpmMax */
-    { 3536u,    2u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT        , 0u                                        , 2u, 0x0000u }, /* alsCltMin */
-    { 3538u,    2u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT        , 0u                                        , 2u, 0x0000u }, /* alsCltMax */
-    { 3540u,    1u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT        , 0u                                        , 1u, 0x0000u }, /* alsCutPct */
-    { 3541u,    1u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT        , 0u                                        , 1u, 0x0000u }, /* alsThrottle */
-    { 3542u,    1u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT        , 0u                                        , 1u, 0x0000u }, /* alsMaxTime */
-    { 3543u,    1u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT        , 0u                                        , 1u, 0x0000u }, /* rotIdleCut */
-    { 3544u,    1u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT        , 0u                                        , 1u, 0x0000u }, /* rotIdleTps */
-    { 3545u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* injPhaseMode */
-    { 3546u,    2u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT        , 0u                                        , 2u, 0x0000u }, /* rotIdleRpm */
-    { 3548u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* etbIdleRange */
-    { 3549u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* v98Pad */
-    { 3550u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* injPhaseRpmAx */
-    { 3566u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* injPhaseLoadAx */
-    { 3582u,  128u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* injPhaseTable */
-    { 3710u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP      , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* fuelModel */
-    { 3711u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP      , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* pressureRole */
-    { 3712u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP      , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* densityPolicy */
-    { 3713u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP      , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* ambientSource */
-    { 3714u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP      , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* ambientCorrection */
-    { 3715u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP      , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* fuelUseIat */
-    { 3716u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP      , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* leanGuardEnable */
-    { 3717u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP      , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* lambdaPhysicalQualified */
-    { 3718u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP      , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* pressureGuardEnable */
-    { 3719u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP      , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* v102Pad */
-    { 3720u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP      , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* densityReference */
-    { 3722u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP      , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* chargeBlendStart */
-    { 3724u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP      , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* chargeBlendFull */
-    { 3726u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP      , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* ambientMaxAge */
-    { 3728u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP      , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* pressureMaxAge */
-    { 3730u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP      , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* pressureGuardRpm */
-    { 3732u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP      , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* pressureGuardTps */
-    { 3734u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP      , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* leanGuardRpm */
-    { 3736u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP      , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* leanGuardTps */
-    { 3738u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP      , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* leanGuardCharge */
-    { 3740u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP      , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* leanGuardDeviation */
-    { 3742u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP      , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* leanGuardPersist */
-    { 3744u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP      , HC_FLAG_SAFETY_CRITICAL                   , 2u, 0x0000u }, /* leanGuardRecovery */
-    { 3746u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP         , 0u                                        , 2u, 0x0000u }, /* dbwPwmHz */
-    { 3748u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP         , 0u                                        , 2u, 0x0000u }, /* dbwFrictionX10 */
-    { 3750u,   12u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* dwellRpmAx */
-    { 3762u,   12u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 2u, 0x0000u }, /* dwellRpmPct */
-    { 3774u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 2u, 0x0000u }, /* oilSensLoMv */
-    { 3776u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 2u, 0x0000u }, /* oilSensHiMv */
-    { 3778u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 2u, 0x0000u }, /* oilSensHiKpa */
-    { 3780u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 2u, 0x0000u }, /* gp1ThrA */
-    { 3782u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 2u, 0x0000u }, /* gp1ThrB */
-    { 3784u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 2u, 0x0000u }, /* gp2ThrA */
-    { 3786u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 2u, 0x0000u }, /* gp2ThrB */
-    { 3788u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 2u, 0x0000u }, /* fanOnTemp */
-    { 3790u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 2u, 0x0000u }, /* fanOffTemp */
-    { 3792u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 2u, 0x0000u }, /* acMaxClt */
-    { 3794u,    8u, HC_APPLY_LIVE      , HC_GRP_TABLES            , 0u                                        , 1u, 0x0000u }, /* ignTrim */
-    { 3802u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING    , HC_FLAG_SAFETY_CRITICAL|HC_FLAG_IS_PIN    , 1u, 0x0020u }, /* pinFan */
-    { 3803u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* fanWithAc */
-    { 3804u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* fanStoppedOff */
-    { 3805u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING    , HC_FLAG_SAFETY_CRITICAL|HC_FLAG_IS_PIN    , 1u, 0x0002u }, /* pinAcRequest */
-    { 3806u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING    , HC_FLAG_SAFETY_CRITICAL|HC_FLAG_IS_PIN    , 1u, 0x0020u }, /* pinAcClutch */
-    { 3807u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* acRequestActive */
-    { 3808u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* acIdleUpX10 */
-    { 3809u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* acIdleRpm */
-    { 3810u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* acMinRpm */
-    { 3811u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* acMaxRpm */
-    { 3812u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* acMaxTps */
-    { 3813u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* acDelay */
-    { 3814u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING    , HC_FLAG_SAFETY_CRITICAL|HC_FLAG_IS_PIN    , 1u, 0x0020u }, /* pinGp1 */
-    { 3815u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* gp1SrcA */
-    { 3816u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* gp1OpA */
-    { 3817u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* gp1HystA */
-    { 3818u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* gp1SrcB */
-    { 3819u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* gp1OpB */
-    { 3820u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* gp1HystB */
-    { 3821u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* gp1Logic */
-    { 3822u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* gp1Delay */
-    { 3823u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING    , HC_FLAG_SAFETY_CRITICAL|HC_FLAG_IS_PIN    , 1u, 0x0020u }, /* pinGp2 */
-    { 3824u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* gp2SrcA */
-    { 3825u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* gp2OpA */
-    { 3826u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* gp2HystA */
-    { 3827u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* gp2SrcB */
-    { 3828u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* gp2OpB */
-    { 3829u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* gp2HystB */
-    { 3830u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* gp2Logic */
-    { 3831u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , 0u                                        , 1u, 0x0000u }, /* gp2Delay */
-    { 3832u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL           , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* oilPressDelay */
-    { 3833u,    1u, HC_APPLY_LIVE      , HC_GRP_INJECTOR_ROUTING  , 0u                                        , 1u, 0x0000u }, /* injPressMode */
-    { 3834u,    2u, HC_APPLY_LIVE      , HC_GRP_INJECTOR_ROUTING  , 0u                                        , 2u, 0x0000u }, /* fuelRegKpa */
-    { 3836u,    2u, HC_APPLY_LIVE      , HC_GRP_INJECTOR_ROUTING  , 0u                                        , 2u, 0x0000u }, /* fuelSensorKpa */
-    { 3838u,  256u, HC_APPLY_LIVE      , HC_GRP_TABLES            , HC_FLAG_SAFETY_CRITICAL                   , 1u, 0x0000u }, /* ignMap */
+    {    0u,    2u, HC_APPLY_RESTART   , HC_GRP_GENERAL            }, /* cfgVersion */
+    {    2u,    1u, HC_APPLY_RESTART   , HC_GRP_ENGINE_SETUP       }, /* cylinders */
+    {    3u,    1u, HC_APPLY_RESTART   , HC_GRP_ENGINE_SETUP       }, /* strokes */
+    {    4u,   16u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP       }, /* tdcCylDegX10 */
+    {   20u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP      }, /* syTeeth */
+    {   22u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP      }, /* syGap */
+    {   23u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP      }, /* trigEdge */
+    {   24u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP      }, /* trigGapRatioX10 */
+    {   26u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP      }, /* trigMinTeeth */
+    {   27u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP      }, /* trigTimeoutMs */
+    {   28u,    2u, HC_APPLY_RESTART   , HC_GRP_ENGINE_SETUP       }, /* revMax */
+    {   30u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP       }, /* revMin */
+    {   32u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP      }, /* camEnable */
+    {   33u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP      }, /* camEdge */
+    {   34u,    8u, HC_APPLY_RPM_ZERO  , HC_GRP_INJECTOR_ROUTING   }, /* injChannel */
+    {   42u,    8u, HC_APPLY_RPM_ZERO  , HC_GRP_IGNITION_ROUTING   }, /* ignChannel */
+    {   50u,    2u, HC_APPLY_LIVE      , HC_GRP_ENGINE_SETUP       }, /* revLimit */
+    {   52u,    2u, HC_APPLY_LIVE      , HC_GRP_ENGINE_SETUP       }, /* crankRpmMax */
+    {   54u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* dwellMsX100 */
+    {   56u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* injDeadtimeUs */
+    {   58u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* injStartDegX10 */
+    {   60u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* ignAdvanceDegX10 */
+    {   62u,    2u, HC_APPLY_LIVE      , HC_GRP_SENSOR_ROUTING     }, /* adcBattFsDv */
+    {   64u,    2u, HC_APPLY_LIVE      , HC_GRP_SENSOR_ROUTING     }, /* cltPullupOhm */
+    {   66u,    2u, HC_APPLY_LIVE      , HC_GRP_SENSOR_ROUTING     }, /* iatPullupOhm */
+    {   68u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_GENERAL            }, /* outputsArmedCfg */
+    {   69u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* cfgFlags */
+    {   70u,    2u, HC_APPLY_LIVE      , HC_GRP_TRIGGER_SETUP      }, /* simRpm */
+    {   72u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP      }, /* trigSource */
+    {   73u,    1u, HC_APPLY_LIVE      , HC_GRP_RELAY_SETUP        }, /* mainRelayModeCfg */
+    {   74u,    2u, HC_APPLY_LIVE      , HC_GRP_RELAY_SETUP        }, /* mainRelayGraceMs */
+    {   76u,    1u, HC_APPLY_LIVE      , HC_GRP_RELAY_SETUP        }, /* tachoScale */
+    {   77u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* pad77 */
+    {   78u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* ignBoostAx */
+    {   94u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* ignBoostCorr */
+    {  128u,  512u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* veTable */
+    {  640u,   32u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* fuelRpmAx */
+    {  672u,   32u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* fuelLoadAx */
+    {  704u,   32u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* ignRpmAx */
+    {  736u,   32u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* ignLoadAx */
+    {  768u,  256u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* afrMap */
+    { 1024u,   32u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* cltEnrAx */
+    { 1056u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* cltEnrVal */
+    { 1072u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* crankPwAx */
+    { 1088u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* crankPwVal */
+    { 1104u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* dwellBattAx */
+    { 1120u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* dwellBattVal */
+    { 1136u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* deadtimeVal */
+    { 1152u,   32u, HC_APPLY_LIVE      , HC_GRP_SENSOR_ROUTING     }, /* cltSensAx */
+    { 1184u,   32u, HC_APPLY_LIVE      , HC_GRP_SENSOR_ROUTING     }, /* cltSensVal */
+    { 1216u,    2u, HC_APPLY_LIVE      , HC_GRP_SENSOR_ROUTING     }, /* mapSensOff */
+    { 1218u,    2u, HC_APPLY_LIVE      , HC_GRP_SENSOR_ROUTING     }, /* mapSensGrd */
+    { 1220u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP          }, /* tps1Min */
+    { 1222u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP          }, /* tps1Max */
+    { 1224u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP          }, /* tps2Min */
+    { 1226u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP          }, /* tps2Max */
+    { 1228u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP          }, /* pedal1Min */
+    { 1230u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP          }, /* pedal1Max */
+    { 1232u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP          }, /* pedal2Min */
+    { 1234u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP          }, /* pedal2Max */
+    { 1236u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP       }, /* loadSource */
+    { 1237u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_INJECTOR_ROUTING   }, /* injModeLegacy */
+    { 1238u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING     }, /* fuelPumpPrimeMs */
+    { 1240u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP          }, /* dbwEnable */
+    { 1241u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING     }, /* iatChannel */
+    { 1242u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP          }, /* dbwKp */
+    { 1244u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP          }, /* dbwKi */
+    { 1246u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP          }, /* dbwDevX10 */
+    { 1248u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP          }, /* dbwDevMs */
+    { 1250u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP          }, /* dbwLimpX10 */
+    { 1252u,    2u, HC_APPLY_LIVE      , HC_GRP_SENSOR_ROUTING     }, /* iatDefault */
+    { 1254u,   32u, HC_APPLY_LIVE      , HC_GRP_SENSOR_ROUTING     }, /* iatSensAx */
+    { 1286u,   32u, HC_APPLY_LIVE      , HC_GRP_SENSOR_ROUTING     }, /* iatSensVal */
+    { 1318u,    2u, HC_APPLY_LIVE      , HC_GRP_SENSOR_ROUTING     }, /* baroDefault */
+    { 1320u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP          }, /* dbwSfMode */
+    { 1322u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP          }, /* dbwKd */
+    { 1324u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP          }, /* dbwMinX10 */
+    { 1326u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP          }, /* dbwMaxX10 */
+    { 1328u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP          }, /* dbwRevlimRpm */
+    { 1330u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP          }, /* dbwRevlimRange */
+    { 1332u,   16u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP          }, /* dbwBiasAx */
+    { 1348u,   16u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP          }, /* dbwBiasVal */
+    { 1364u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP          }, /* dbwAutocalMs */
+    { 1366u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP          }, /* dbwAutocalDuty */
+    { 1368u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP          }, /* dbwTuneAmp */
+    { 1370u,  256u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* pedalMap */
+    { 1626u,   32u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* pedalRpmAx */
+    { 1658u,   32u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* pedalAx */
+    { 1690u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING     }, /* boostEnable */
+    { 1691u,    1u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING     }, /* boostMode */
+    { 1692u,  256u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* boostDutyMap */
+    { 1948u,   32u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* boostRpmAx */
+    { 1980u,   32u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* boostTpsAx */
+    { 2012u,  256u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* boostTgtMap */
+    { 2268u,   32u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* boostTgtRpmAx */
+    { 2300u,   32u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* boostTgtTpsAx */
+    { 2332u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING     }, /* boostKp */
+    { 2334u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING     }, /* boostKi */
+    { 2336u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING     }, /* boostKd */
+    { 2338u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING     }, /* boostMinRpm */
+    { 2340u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING     }, /* boostMinTpsX10 */
+    { 2342u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING     }, /* boostFreqHz */
+    { 2344u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING     }, /* boostCutKpa */
+    { 2346u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING     }, /* boostCutHyst */
+    { 2348u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* boostCltAx */
+    { 2364u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* boostCltMul */
+    { 2380u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* boostIatAx */
+    { 2396u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* boostIatMul */
+    { 2412u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* accelThreshX10 */
+    { 2414u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* accelGain */
+    { 2416u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* accelDecayMs */
+    { 2418u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* overrunRpm */
+    { 2420u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* overrunTpsX10 */
+    { 2422u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* overrunResume */
+    { 2424u,    1u, HC_APPLY_LIVE      , HC_GRP_ENGINE_SETUP       }, /* revlimMode */
+    { 2425u,    1u, HC_APPLY_LIVE      , HC_GRP_ENGINE_SETUP       }, /* revlimPattern */
+    { 2426u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING     }, /* idleEnable */
+    { 2427u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* idlePad */
+    { 2428u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* idleTargetAx */
+    { 2444u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* idleTargetVal */
+    { 2460u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* idleBaseAx */
+    { 2476u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* idleBaseVal */
+    { 2492u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING     }, /* idleKp */
+    { 2494u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING     }, /* idleKi */
+    { 2496u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING     }, /* idleRangeX10 */
+    { 2498u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING     }, /* idleRpmBand */
+    { 2500u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING     }, /* pwmInvert */
+    { 2501u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* pwmPad */
+    { 2502u,    2u, HC_APPLY_RESTART   , HC_GRP_GENERAL            }, /* uMagic */
+    { 2504u,    2u, HC_APPLY_RESTART   , HC_GRP_GENERAL            }, /* uSchema */
+    { 2506u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* uGeneration */
+    { 2508u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* uCrc */
+    { 2510u,    2u, HC_APPLY_RESTART   , HC_GRP_ENGINE_SETUP       }, /* displacementCc */
+    { 2512u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP       }, /* enginePreset */
+    { 2513u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_INJECTOR_ROUTING   }, /* injectorPreset */
+    { 2514u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_IGNITION_ROUTING   }, /* coilPreset */
+    { 2515u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING     }, /* mapSensorPreset */
+    { 2516u,   12u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP       }, /* cylBank */
+    { 2528u,    8u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP       }, /* tdcCylExtDegX10 */
+    { 2536u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_INJECTOR_ROUTING   }, /* injStrategy */
+    { 2537u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_IGNITION_ROUTING   }, /* ignStrategy */
+    { 2538u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP      }, /* syncMode */
+    { 2539u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP      }, /* trigDecoder */
+    { 2540u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP      }, /* trigAngleX10 */
+    { 2542u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP      }, /* camRefs */
+    { 2543u,    1u, HC_APPLY_LIVE      , HC_GRP_TRIGGER_SETUP      }, /* camPad */
+    { 2544u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP      }, /* camRefX10 */
+    { 2546u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP      }, /* camWindowX10 */
+    { 2548u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP      }, /* pinCrank */
+    { 2549u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP      }, /* pinCam1 */
+    { 2550u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP      }, /* pinCam2 */
+    { 2551u,   12u, HC_APPLY_RPM_ZERO  , HC_GRP_INJECTOR_ROUTING   }, /* injPin */
+    { 2563u,   12u, HC_APPLY_RPM_ZERO  , HC_GRP_IGNITION_ROUTING   }, /* ignPin */
+    { 2575u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING     }, /* pinMap */
+    { 2576u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING     }, /* pinBaro */
+    { 2577u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING     }, /* pinClt */
+    { 2578u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING     }, /* pinIat */
+    { 2579u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP          }, /* pinTps1 */
+    { 2580u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP          }, /* pinTps2 */
+    { 2581u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP          }, /* pinApp1 */
+    { 2582u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP          }, /* pinApp2 */
+    { 2583u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING     }, /* pinVbat */
+    { 2584u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING     }, /* pinOilPress */
+    { 2585u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING     }, /* pinFuelPress */
+    { 2586u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING     }, /* pinFlex */
+    { 2587u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING     }, /* pinMaf */
+    { 2588u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING     }, /* pinLambda1 */
+    { 2589u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING     }, /* pinLambda2 */
+    { 2590u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_RELAY_SETUP        }, /* pinMainRelay */
+    { 2591u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING     }, /* pinFuelPump */
+    { 2592u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING     }, /* pinTacho */
+    { 2593u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING     }, /* pinBoost */
+    { 2594u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING     }, /* pinCam1Sol */
+    { 2595u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING     }, /* pinCam2Sol */
+    { 2596u,    8u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING     }, /* pinGenericAin */
+    { 2604u,    8u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING     }, /* pinGenericPwm */
+    { 2612u,    8u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING     }, /* pinGenericOut */
+    { 2620u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP          }, /* tpsCorrelation */
+    { 2621u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP          }, /* appCorrelation */
+    { 2622u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP          }, /* tpsTolX10 */
+    { 2624u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP          }, /* appTolX10 */
+    { 2626u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING     }, /* lambda1CylMask */
+    { 2628u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING     }, /* lambda2CylMask */
+    { 2630u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING     }, /* lambda1Source */
+    { 2631u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING     }, /* lambda1Bank */
+    { 2632u,    1u, HC_APPLY_LIVE      , HC_GRP_SENSOR_ROUTING     }, /* lambda1AuthPct */
+    { 2633u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING     }, /* lambda2Source */
+    { 2634u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_SENSOR_ROUTING     }, /* lambda2Bank */
+    { 2635u,    1u, HC_APPLY_LIVE      , HC_GRP_SENSOR_ROUTING     }, /* lambda2AuthPct */
+    { 2636u,    2u, HC_APPLY_LIVE      , HC_GRP_ENGINE_SETUP       }, /* stoichAfrX100 */
+    { 2638u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_INJECTOR_ROUTING   }, /* injFlowCcMin */
+    { 2640u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_INJECTOR_ROUTING   }, /* injRefPressureKpa */
+    { 2642u,    2u, HC_APPLY_LIVE      , HC_GRP_IGNITION_ROUTING   }, /* crankingDwellMsX100 */
+    { 2644u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_MOTORSPORT         }, /* motorsportEnable */
+    { 2646u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_MOTORSPORT         }, /* pinLaunch */
+    { 2647u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_MOTORSPORT         }, /* pinFlatShift */
+    { 2648u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_MOTORSPORT         }, /* pinAntiLag */
+    { 2649u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_MOTORSPORT         }, /* pinPitLimiter */
+    { 2650u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_MOTORSPORT         }, /* pinMapSwitch */
+    { 2651u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_MOTORSPORT         }, /* pinVss */
+    { 2652u,    2u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT         }, /* launchRpm */
+    { 2654u,    2u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT         }, /* launchRetardDegX10 */
+    { 2656u,    2u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT         }, /* flatShiftArmRpm */
+    { 2658u,    2u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT         }, /* flatShiftCutMs */
+    { 2660u,    2u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT         }, /* antiLagRetardDegX10 */
+    { 2662u,    1u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT         }, /* antiLagFuelPct */
+    { 2663u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* msPad */
+    { 2664u,    2u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT         }, /* pitLimiterRpm */
+    { 2666u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* oilPressMinKpa */
+    { 2668u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* oilPressMinRpm */
+    { 2670u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* cltMaxDegX10 */
+    { 2672u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_GENERAL            }, /* testMode */
+    { 2673u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_GENERAL            }, /* testPin */
+    { 2674u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* testValue */
+    { 2676u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* testTimeoutMs */
+    { 2678u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* s5500WindowBase */
+    { 2679u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP          }, /* dbwMotorDir */
+    { 2680u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING     }, /* fuelPumpMode */
+    { 2681u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_GENERAL            }, /* lambdaHeatPolicy */
+    { 2682u,    2u, HC_APPLY_LIVE      , HC_GRP_RELAY_SETUP        }, /* mainRelayHoldMs */
+    { 2684u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP          }, /* dbwMaxDutyX10 */
+    { 2686u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP          }, /* dbwRateX10 */
+    { 2688u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP          }, /* dbwDeadbandX10 */
+    { 2690u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* timingModeCfg */
+    { 2691u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* ignPad */
+    { 2692u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* fixedTimingX10 */
+    { 2694u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP      }, /* camPhaseMode */
+    { 2695u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP      }, /* camPhaseLevel */
+    { 2696u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP      }, /* camPhaseAngleX10 */
+    { 2698u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP      }, /* camPhaseConfirm */
+    { 2699u,    1u, HC_APPLY_LIVE      , HC_GRP_TRIGGER_SETUP      }, /* camPhasePad */
+    { 2700u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP      }, /* cam1Pattern */
+    { 2701u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP      }, /* cam2Pattern */
+    { 2702u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP      }, /* cam2RefX10 */
+    { 2704u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_TRIGGER_SETUP      }, /* camToothTol */
+    { 2705u,    1u, HC_APPLY_LIVE      , HC_GRP_TRIGGER_SETUP      }, /* camPatPad */
+    { 2706u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING     }, /* boostClMinKpa */
+    { 2708u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING     }, /* boostIBand */
+    { 2710u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING     }, /* idlePedalX10 */
+    { 2712u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING     }, /* idleStartMs */
+    { 2714u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* cltLimpRpm */
+    { 2716u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* etbLimpRpm */
+    { 2718u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* injDutyInstX10 */
+    { 2720u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* injDutySustX10 */
+    { 2722u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* injDutySustMs */
+    { 2724u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* floodClearX10 */
+    { 2726u,    2u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP          }, /* dbwFaultDebounceMs */
+    { 2728u,    1u, HC_APPLY_LIVE      , HC_GRP_DBW_SETUP          }, /* dbwBattComp */
+    { 2729u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING     }, /* pinIdleValve */
+    { 2730u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_INJECTOR_ROUTING   }, /* injTimingMode */
+    { 2731u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING     }, /* pinIdleValve2 */
+    { 2732u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* transEnable */
+    { 2733u,    1u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING     }, /* idleValveFreq */
+    { 2734u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* asDecayMs */
+    { 2736u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* wwXPct */
+    { 2752u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* wwTau */
+    { 2768u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* asPct */
+    { 2784u,   32u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* ignCltCorr */
+    { 2816u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* ignIatAx */
+    { 2832u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* ignIatCorr */
+    { 2848u,    1u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING     }, /* idleTimingEnable */
+    { 2849u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING     }, /* idleActuator */
+    { 2850u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING     }, /* idleTimingKp */
+    { 2852u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING     }, /* idleTimingMinX10 */
+    { 2854u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING     }, /* idleTimingMaxX10 */
+    { 2856u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING     }, /* idleTimingSoftMs */
+    { 2858u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING     }, /* idleDashX10 */
+    { 2860u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING     }, /* idleDashHoldMs */
+    { 2862u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING     }, /* idleDashDecayMs */
+    { 2864u,    1u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING     }, /* celEnable */
+    { 2865u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING     }, /* pinMil */
+    { 2866u,    1u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING     }, /* celTestEnable */
+    { 2867u,    1u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING     }, /* celPad */
+    { 2868u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING     }, /* celTestOnMs */
+    { 2870u,    2u, HC_APPLY_LIVE      , HC_GRP_OUTPUT_ROUTING     }, /* celTestGapMs */
+    { 2872u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* knockMode */
+    { 2873u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* knockBand */
+    { 2874u,    4u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* knockGain */
+    { 2878u,    8u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* knockSensor */
+    { 2886u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* knockRpmAx */
+    { 2902u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* knockWinStart */
+    { 2918u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* knockWinLen */
+    { 2934u,   12u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* knockKefRpm */
+    { 2946u,    6u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* knockKef */
+    { 2952u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* knockKefDyn */
+    { 2953u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* knockTp */
+    { 2954u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* knockTpDyn */
+    { 2955u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* knockLoadMin */
+    { 2956u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* knockRpmMin */
+    { 2958u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* knockCltMin */
+    { 2960u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* knockRefInit */
+    { 2962u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* knockReapplyMs */
+    { 2964u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* knockDiagRpm */
+    { 2966u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* knockRefMin */
+    { 2968u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* knockRefMax */
+    { 2970u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* knockLearn */
+    { 2971u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* knockStopN */
+    { 2972u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* knockStepQ */
+    { 2973u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* knockMaxQ */
+    { 2974u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* knockSafeQ */
+    { 2975u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* knockDiagN */
+    { 2976u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* vvtMode */
+    { 2978u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* vvtInvert */
+    { 2980u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* vvtFreqHz */
+    { 2982u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* vvtMinRpm */
+    { 2984u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* vvtMinClt */
+    { 2986u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* vvtDelayMs */
+    { 2988u,    4u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* vvtKp */
+    { 2992u,    4u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* vvtKi */
+    { 2996u,    4u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* vvtKd */
+    { 3000u,    4u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* vvtDutyMin */
+    { 3004u,    4u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* vvtDutyMax */
+    { 3008u,    4u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* vvtDutyOn */
+    { 3012u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* vvtErrMax */
+    { 3014u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* vvtErrMs */
+    { 3016u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* vvtFbMs */
+    { 3018u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* vvtRpmAx */
+    { 3034u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* vvtLoadAx */
+    { 3050u,  128u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* vvtTarget1 */
+    { 3178u,  128u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* vvtTarget2 */
+    { 3306u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP       }, /* firingOrder */
+    { 3307u,    1u, HC_APPLY_LIVE      , HC_GRP_ENGINE_SETUP       }, /* alphaNUseIat */
+    { 3308u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* ignLoadMode */
+    { 3309u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* lambdaLoadMode */
+    { 3310u,   32u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* lambdaRpmAx */
+    { 3342u,   32u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* lambdaLoadAx */
+    { 3374u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* mapEstRpmAx */
+    { 3390u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* mapEstTpsAx */
+    { 3406u,   64u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* mapEstimate */
+    { 3470u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* primeMgX10 */
+    { 3486u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* primeDelay */
+    { 3487u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* dfcoDelay */
+    { 3488u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* dfcoMinClt */
+    { 3490u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* dfcoMapMax */
+    { 3491u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* dfcoRetard */
+    { 3492u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* dfcoRamp */
+    { 3493u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* stftEnable */
+    { 3494u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* stftStartDelay */
+    { 3495u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* stftDeadband */
+    { 3496u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* stftMinClt */
+    { 3498u,    2u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* stftIdleRpm */
+    { 3500u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* stftOverrunLoad */
+    { 3501u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* stftPowerLoad */
+    { 3502u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* stftLambdaMin */
+    { 3503u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* stftLambdaMax */
+    { 3504u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* stftAfterDfco */
+    { 3505u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* stftAfterAe */
+    { 3506u,    4u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* stftMaxAdd */
+    { 3510u,    4u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* stftMaxRemove */
+    { 3514u,    4u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* stftTimeConst */
+    { 3518u,    1u, HC_APPLY_LIVE      , HC_GRP_ENGINE_SETUP       }, /* revLimitHyst */
+    { 3519u,    1u, HC_APPLY_LIVE      , HC_GRP_ENGINE_SETUP       }, /* revLimitSoftRetard */
+    { 3520u,    1u, HC_APPLY_LIVE      , HC_GRP_ENGINE_SETUP       }, /* revLimitSoftFuel */
+    { 3521u,    1u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT         }, /* msSwitchInvert */
+    { 3522u,    1u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT         }, /* launchTps */
+    { 3523u,    1u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT         }, /* launchWindow */
+    { 3524u,    1u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT         }, /* launchCutStart */
+    { 3525u,    1u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT         }, /* launchCutEnd */
+    { 3526u,    1u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT         }, /* launchFuelAdd */
+    { 3527u,    1u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT         }, /* flatShiftTps */
+    { 3528u,    1u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT         }, /* flatShiftCutPct */
+    { 3529u,    1u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT         }, /* alsTpsMax */
+    { 3530u,    2u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT         }, /* flatShiftTimingX10 */
+    { 3532u,    2u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT         }, /* alsRpmMin */
+    { 3534u,    2u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT         }, /* alsRpmMax */
+    { 3536u,    2u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT         }, /* alsCltMin */
+    { 3538u,    2u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT         }, /* alsCltMax */
+    { 3540u,    1u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT         }, /* alsCutPct */
+    { 3541u,    1u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT         }, /* alsThrottle */
+    { 3542u,    1u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT         }, /* alsMaxTime */
+    { 3543u,    1u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT         }, /* rotIdleCut */
+    { 3544u,    1u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT         }, /* rotIdleTps */
+    { 3545u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* injPhaseMode */
+    { 3546u,    2u, HC_APPLY_LIVE      , HC_GRP_MOTORSPORT         }, /* rotIdleRpm */
+    { 3548u,    1u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* etbIdleRange */
+    { 3549u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* v98Pad */
+    { 3550u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* injPhaseRpmAx */
+    { 3566u,   16u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* injPhaseLoadAx */
+    { 3582u,  128u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* injPhaseTable */
+    { 3710u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP       }, /* fuelModel */
+    { 3711u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP       }, /* pressureRole */
+    { 3712u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP       }, /* densityPolicy */
+    { 3713u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP       }, /* ambientSource */
+    { 3714u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP       }, /* ambientCorrection */
+    { 3715u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP       }, /* fuelUseIat */
+    { 3716u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP       }, /* leanGuardEnable */
+    { 3717u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP       }, /* lambdaPhysicalQualified */
+    { 3718u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP       }, /* pressureGuardEnable */
+    { 3719u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP       }, /* v102Pad */
+    { 3720u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP       }, /* densityReference */
+    { 3722u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP       }, /* chargeBlendStart */
+    { 3724u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP       }, /* chargeBlendFull */
+    { 3726u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP       }, /* ambientMaxAge */
+    { 3728u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP       }, /* pressureMaxAge */
+    { 3730u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP       }, /* pressureGuardRpm */
+    { 3732u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP       }, /* pressureGuardTps */
+    { 3734u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP       }, /* leanGuardRpm */
+    { 3736u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP       }, /* leanGuardTps */
+    { 3738u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP       }, /* leanGuardCharge */
+    { 3740u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP       }, /* leanGuardDeviation */
+    { 3742u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP       }, /* leanGuardPersist */
+    { 3744u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_ENGINE_SETUP       }, /* leanGuardRecovery */
+    { 3746u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP          }, /* dbwPwmHz */
+    { 3748u,    2u, HC_APPLY_RPM_ZERO  , HC_GRP_DBW_SETUP          }, /* dbwFrictionX10 */
+    { 3750u,   12u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* dwellRpmAx */
+    { 3762u,   12u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* dwellRpmPct */
+    { 3774u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* oilSensLoMv */
+    { 3776u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* oilSensHiMv */
+    { 3778u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* oilSensHiKpa */
+    { 3780u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* gp1ThrA */
+    { 3782u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* gp1ThrB */
+    { 3784u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* gp2ThrA */
+    { 3786u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* gp2ThrB */
+    { 3788u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* fanOnTemp */
+    { 3790u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* fanOffTemp */
+    { 3792u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* acMaxClt */
+    { 3794u,    8u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* ignTrim */
+    { 3802u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING     }, /* pinFan */
+    { 3803u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* fanWithAc */
+    { 3804u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* fanStoppedOff */
+    { 3805u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING     }, /* pinAcRequest */
+    { 3806u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING     }, /* pinAcClutch */
+    { 3807u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* acRequestActive */
+    { 3808u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* acIdleUpX10 */
+    { 3809u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* acIdleRpm */
+    { 3810u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* acMinRpm */
+    { 3811u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* acMaxRpm */
+    { 3812u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* acMaxTps */
+    { 3813u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* acDelay */
+    { 3814u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING     }, /* pinGp1 */
+    { 3815u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* gp1SrcA */
+    { 3816u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* gp1OpA */
+    { 3817u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* gp1HystA */
+    { 3818u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* gp1SrcB */
+    { 3819u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* gp1OpB */
+    { 3820u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* gp1HystB */
+    { 3821u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* gp1Logic */
+    { 3822u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* gp1Delay */
+    { 3823u,    1u, HC_APPLY_RPM_ZERO  , HC_GRP_OUTPUT_ROUTING     }, /* pinGp2 */
+    { 3824u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* gp2SrcA */
+    { 3825u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* gp2OpA */
+    { 3826u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* gp2HystA */
+    { 3827u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* gp2SrcB */
+    { 3828u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* gp2OpB */
+    { 3829u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* gp2HystB */
+    { 3830u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* gp2Logic */
+    { 3831u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* gp2Delay */
+    { 3832u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* oilPressDelay */
+    { 3833u,    1u, HC_APPLY_LIVE      , HC_GRP_INJECTOR_ROUTING   }, /* injPressMode */
+    { 3834u,    2u, HC_APPLY_LIVE      , HC_GRP_INJECTOR_ROUTING   }, /* fuelRegKpa */
+    { 3836u,    2u, HC_APPLY_LIVE      , HC_GRP_INJECTOR_ROUTING   }, /* fuelSensorKpa */
+    { 3838u,  256u, HC_APPLY_LIVE      , HC_GRP_TABLES             }, /* ignMap */
+    { 4096u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* idleAdaptClt */
+    { 4098u,   12u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* wuLambdaClt */
+    { 4110u,    8u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* boostLimIatAx */
+    { 4118u,    8u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* boostLimCltAx */
+    { 4126u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* limpClt */
+    { 4128u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* canTorqueNorm */
+    { 4130u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* canTorqueMax */
+    { 4132u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* canTorqueMaxRpm */
+    { 4134u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* canConsumptionNorm */
+    { 4136u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* canHotClt */
+    { 4138u,    4u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* canCustomId */
+    { 4142u,   16u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* canCustomCh */
+    { 4158u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* vssPulsesPerKm */
+    { 4160u,   16u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* gearSpeed */
+    { 4176u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* etbDevCutPct */
+    { 4177u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* etbDevCutTime */
+    { 4178u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* etbPairAction */
+    { 4179u,    4u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* tpsExpected */
+    { 4183u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* tpsExpTol */
+    { 4184u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* idleIgnKi */
+    { 4185u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* idleIgnFade */
+    { 4186u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* idleCorrThr */
+    { 4187u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* idleCorrPeriod */
+    { 4188u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* idleCorrStep */
+    { 4189u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* idleCorrMax */
+    { 4190u,    3u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* idleKickDrop */
+    { 4193u,    3u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* idleKickStep */
+    { 4196u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* idleKickReset */
+    { 4197u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* idleAdaptRate */
+    { 4198u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* idleAdaptMax */
+    { 4199u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* stallRpm */
+    { 4200u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* stallGain */
+    { 4201u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* stallMax */
+    { 4202u,    4u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* minAdvRpmAx */
+    { 4206u,    4u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* minAdvVal */
+    { 4210u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* crankFuelHold */
+    { 4211u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* crankFuelDecay */
+    { 4212u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* crankFuelFloor */
+    { 4213u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* firstRevsAdd */
+    { 4214u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* firstRevsN */
+    { 4215u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* aseHold */
+    { 4216u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* wuLambdaEnable */
+    { 4217u,    6u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* wuLambdaVal */
+    { 4223u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* oilStartKpa */
+    { 4224u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* oilStartMax */
+    { 4225u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* dfcoCutTime */
+    { 4226u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* dfcoRestoreTime */
+    { 4227u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* dfcoRestoreAdd */
+    { 4228u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* o2SatLambda */
+    { 4229u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* o2SatRecLambda */
+    { 4230u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* o2SatRecTime */
+    { 4231u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* o2SatTps */
+    { 4232u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* stftLeanLock */
+    { 4233u,    4u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* stftKp */
+    { 4237u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* knockAmpEnable */
+    { 4238u,    4u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* knockAmpRpmAx */
+    { 4242u,    4u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* knockAmpAx */
+    { 4246u,   16u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* knockAmpMap */
+    { 4262u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* knockAdaptMode */
+    { 4263u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* knockAdaptCyl */
+    { 4264u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* knockAdaptAttack */
+    { 4265u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* knockAdaptDecay */
+    { 4266u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* knockAdaptMax */
+    { 4267u,    4u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* knockAdaptLoadAx */
+    { 4271u,    6u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* boostIRpmAx */
+    { 4277u,    6u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* boostIMin */
+    { 4283u,    6u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* boostIMax */
+    { 4289u,    4u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* boostLimIat */
+    { 4293u,    4u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* boostLimClt */
+    { 4297u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* limpEnable */
+    { 4298u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* limpThrottle */
+    { 4299u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* limpLean */
+    { 4300u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* limpLeanTps */
+    { 4301u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* limpLeanTime */
+    { 4302u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* limpMap */
+    { 4303u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* limpMapTime */
+    { 4304u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* limpKnock */
+    { 4305u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* limpKnockCyl */
+    { 4306u,    4u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* dtcNoLampMask */
+    { 4310u,    4u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* dtcOffMask */
+    { 4314u,    4u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* dbwGainAx */
+    { 4318u,    4u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* dbwGainPct */
+    { 4322u,    4u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* dbwSpeedAx */
+    { 4326u,    4u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* dbwSpeedOpen */
+    { 4330u,    4u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* dbwSpeedClose */
+    { 4334u,    4u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* dbwOverrunRpmAx */
+    { 4338u,    4u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* dbwOverrunMax */
+    { 4342u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* tcRpmRate */
+    { 4343u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* tcRetard */
+    { 4344u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* tcCut */
+    { 4345u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* canEnable */
+    { 4346u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* canVag */
+    { 4347u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* canVers */
+    { 4348u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* canEngineCode */
+    { 4349u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* canGearboxCode */
+    { 4350u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* canEngineType */
+    { 4351u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* canFuelCorr */
+    { 4352u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* canEpcSource */
+    { 4353u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* canRxMask */
+    { 4354u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* canVssSource */
+    { 4355u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* canRxTimeout */
+    { 4356u,    2u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* canCustomRate */
+    { 4358u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* canCustomLittle */
+    { 4359u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* canCrashCut */
+    { 4360u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* canWbFormat */
+    { 4361u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* canWbIndex */
+    { 4362u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* canObd */
+    { 4363u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* canAbsEmu */
+    { 4364u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* haldexMode */
+    { 4365u,    4u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* haldexTpsAx */
+    { 4369u,    4u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* haldexTpsLock */
+    { 4373u,    4u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* haldexRpmAx */
+    { 4377u,    4u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* haldexRpmLimit */
+    { 4381u,    4u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* haldexNoLock */
+    { 4385u,    4u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* haldexFullLock */
+    { 4389u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* haldexMax */
+    { 4390u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* haldexBrakeOpen */
+    { 4391u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* haldexLaunch */
+    { 4392u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* haldexKp */
+    { 4393u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* haldexKi */
+    { 4394u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* haldexDeadband */
+    { 4395u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* haldexFixRpm */
+    { 4396u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* vssEdge */
+    { 4397u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* vssFilter */
+    { 4398u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* vssTimeout */
+    { 4399u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* gearCount */
+    { 4400u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* gearBand */
+    { 4401u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* gearMinSpeed */
+    { 4402u,    1u, HC_APPLY_LIVE      , HC_GRP_GENERAL            }, /* launchMaxSpeed */
 };
 
 /* Apply groups that contain at least one RPM_ZERO field. A group not in
@@ -474,7 +603,7 @@ const hc_cfg_slot_t *hc_cfg_slot_at(unsigned int off)
 
     /* Strictly bounded: the table is sorted by offset and the window
        halves every pass, so this cannot run longer than 9 iterations
-       for 452 slots. No recursion, no allocation, safe from a task or
+       for 581 slots. No recursion, no allocation, safe from a task or
        from an interrupt. */
     while (lo < hi) {
         unsigned int mid = lo + ((hi - lo) >> 1);

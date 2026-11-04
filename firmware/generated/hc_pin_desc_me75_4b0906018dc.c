@@ -71,7 +71,7 @@ const hc_pin_desc_t HC_PIN_MEM hc_pin_table[HC_PHYSICAL_PIN_COUNT] = {
     { 0x0000u, 0x0000u, 0u, 0xFFu }, /*  51 not assigned in the source document */
     { 0x0000u, 0x0000u, 0u, 0xFFu }, /*  52 not assigned in the source document */
     { 0x8000u, 0x8000u, 0u, 0xFFu }, /*  53 5 V sensor supply */
-    { 0x0000u, 0x0000u, 0u, 0xFFu }, /*  54 not assigned in the source document */
+    { 0x0004u, 0x0000u, 1u, 0xFFu }, /*  54 vehicle speed */
     { 0x0000u, 0x0000u, 0u, 0xFFu }, /*  55 not assigned in the source document */
     { 0x0000u, 0x0000u, 0u, 0xFFu }, /*  56 not assigned in the source document */
     { 0x0000u, 0x0000u, 0u, 0xFFu }, /*  57 not assigned in the source document */
@@ -102,7 +102,7 @@ const hc_pin_desc_t HC_PIN_MEM hc_pin_table[HC_PHYSICAL_PIN_COUNT] = {
     { 0x800Cu, 0x800Cu, 1u, 0xFFu }, /*  82 G28+ crank */
     { 0x0000u, 0x0000u, 0u, 0xFFu }, /*  83 not assigned in the source document */
     { 0x0001u, 0x0001u, 1u, 0x03u }, /*  84 J338 p4 throttle 2 */
-    { 0x8001u, 0x8001u, 1u, 0x01u }, /*  85 G42 intake air */
+    { 0x8001u, 0x8001u, 1u, 0xE1u }, /*  85 G42 intake air */
     { 0x0014u, 0x0014u, 1u, 0xFFu }, /*  86 G40 cam */
     { 0x0000u, 0x0000u, 0u, 0xFFu }, /*  87 not assigned in the source document */
     { 0x00A0u, 0x00A0u, 1u, 0xFFu }, /*  88 N33 injector, firing index 3 */

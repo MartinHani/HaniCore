@@ -128,10 +128,10 @@ void HC_COLD hc_cal_defaults711(void)
        Stored as a measured curve rather than a formula, because that is what a
        tuner can correct against a thermometer without recompiling anything. */
     {
-        static const unsigned int cnt[CAL_AXIS_N] = {
+        static const unsigned int huge cnt[CAL_AXIS_N] = {
              40u,  70u, 110u, 160u, 220u, 300u, 390u, 480u,
             570u, 660u, 740u, 810u, 870u, 920u, 960u, 1000u };
-        static const int deg[CAL_AXIS_N] = {
+        static const int huge deg[CAL_AXIS_N] = {
             150, 130, 110,  95,  85,  75,  65,  55,
              45,  35,  25,  15,   5, -10, -25, -40 };
 
@@ -199,8 +199,8 @@ void HC_COLD hc_cal_defaults711(void)
      * Stored with a +1000 offset because the page has no signed type and the
      * negative half of this curve is the important half. */
     {
-        static const unsigned int bias_ax[8]  = { 0, 10, 50, 70, 140, 650, 660, 1000 };
-        static const int          bias_val[8] = { -150, -150, -100, 0, 190, 200, 260, 280 };
+        static const unsigned int huge bias_ax[8]  = { 0, 10, 50, 70, 140, 650, 660, 1000 };
+        static const int huge          bias_val[8] = { -150, -150, -100, 0, 190, 200, 260, 280 };
 
         for (i = 0; i < 8u; i++) {
             hc_cal_set_u16((unsigned int)(CAL_DBW_BIAS_AX + 2u * i), bias_ax[i]);
@@ -376,7 +376,7 @@ void HC_COLD hc_cfg_defaults711(void)
 {
     unsigned int i;
     /* cylinder order, 0.1 degree: cyl1, cyl2, cyl3, cyl4 */
-    static const unsigned int awt_tdc[4] = { 0u, 5400u, 1800u, 3600u };
+    static const unsigned int huge awt_tdc[4] = { 0u, 5400u, 1800u, 3600u };
 
     for (i = 0; i < HC_CFG_CORE; i++) {
         hc_cfg[i] = 0;
@@ -421,7 +421,7 @@ void HC_COLD hc_cfg_defaults711(void)
        backwards puts fuel and spark in the wrong cylinder, which is why it is
        written out rather than computed. */
     {
-        static const unsigned char awt_chan[4] = { 0, 3, 1, 2 };
+        static const unsigned char huge awt_chan[4] = { 0, 3, 1, 2 };
 
         for (i = 0; i < HC_MAX_CYL; i++) {
             hc_cfg[CFG_INJ_CHANNEL + i] = (i < 4) ? awt_chan[i] : 0xFF;

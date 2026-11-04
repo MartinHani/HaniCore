@@ -67,6 +67,8 @@ NON_LAYOUT = {
     "CAL_TEMP_BIAS",
     # the universal block's own size, stated beside its base
     "CFG_UNIVERSAL_SIZE",
+    # the page extension's size (2026-11-03), stated beside its base
+    "CFG_EXT_SIZE",
 }
 
 

@@ -44,7 +44,7 @@ if errorlevel 1 goto fail
 "%KEIL_BIN%\C166.EXE" asic\hcasic.c MOD167 SMALL RENAMECLASS(NDATA0=XNDATA0) OBJECT(%HC_BLD%\hcasic.obj) PRINT(%HC_BLD%\hcasic.lst) INCDIR(%INC%)
 if errorlevel 1 goto fail
 
-"%KEIL_BIN%\C166.EXE" asic\hcasicframe.c MOD167 SMALL OBJECT(%HC_BLD%\hcasicframe.obj) PRINT(%HC_BLD%\hcasicframe.lst) INCDIR(%INC%)
+"%KEIL_BIN%\C166.EXE" asic\hcasicframe.c MOD167 MEDIUM RENAMECLASS(NDATA0=XNDATA0) OBJECT(%HC_BLD%\hcasicframe.obj) PRINT(%HC_BLD%\hcasicframe.lst) INCDIR(%INC%)
 if errorlevel 1 goto :fail
 
 if errorlevel 1 goto :fail
@@ -164,6 +164,9 @@ rem V97: engine protection - the pure core and its ME7.1.1 module - FAR code
 "%KEIL_BIN%\C166.EXE" %FW%\control\hclimp.c MOD167 MEDIUM RENAMECLASS(NDATA0=XNDATA0) OBJECT(%HC_BLD%\hclimp.obj) PRINT(%HC_BLD%\hclimp.lst) INCDIR(%INC%)
 if errorlevel 1 goto :fail
 "%KEIL_BIN%\C166.EXE" control\hclimp711.c MOD167 MEDIUM DEFINE(HC_FAR_BRIDGE) RENAMECLASS(NDATA0=XNDATA0) OBJECT(%HC_BLD%\hclimp711.obj) PRINT(%HC_BLD%\hclimp711.lst) INCDIR(%INC%)
+"%KEIL_BIN%\C166.EXE" control\hcxfn711.c MOD167 MEDIUM DEFINE(HC_FAR_BRIDGE) RENAMECLASS(NDATA0=XNDATA0) OBJECT(%HC_BLD%\hcxfn711.obj) PRINT(%HC_BLD%\hcxfn711.lst) INCDIR(%INC%)
+"%KEIL_BIN%\C166.EXE" comms\hccan711.c MOD167 MEDIUM DEFINE(HC_FAR_BRIDGE) RENAMECLASS(NDATA0=XNDATA0) OBJECT(%HC_BLD%\hccan711.obj) PRINT(%HC_BLD%\hccan711.lst) INCDIR(%INC%)
+"%KEIL_BIN%\C166.EXE" control\hcvss711.c MOD167 MEDIUM DEFINE(HC_FAR_BRIDGE) RENAMECLASS(NDATA0=XNDATA0) OBJECT(%HC_BLD%\hcvss711.obj) PRINT(%HC_BLD%\hcvss711.lst) INCDIR(%INC%)
 if errorlevel 1 goto :fail
 rem V93: ETB endpoint calibration + PID autotune - FAR code, thunks via hcfarbridge.h
 "%KEIL_BIN%\C166.EXE" control\hcetbcal.c MOD167 MEDIUM DEFINE(HC_FAR_BRIDGE) RENAMECLASS(NDATA0=XNDATA0) OBJECT(%HC_BLD%\hcetbcal.obj) PRINT(%HC_BLD%\hcetbcal.lst) INCDIR(%INC%)

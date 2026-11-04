@@ -44,7 +44,7 @@ IRAM_LO, IRAM_HI = 0x00F200, 0x00FDFF
 # 0xF380 - it never ran on the real ECU. Under HANICORE_BOARD=vag_me71_c4 any
 # access to 0xF200-0xF5FF is a Trap, as loud as the silicon is fatal.
 # the ME7.5 DC (2026-10-28) is a C167CR too - same hole
-if __import__("os").environ.get("HANICORE_BOARD") in ("vag_me71_c4", "vag_me75_dc"):
+if __import__("os").environ.get("HANICORE_BOARD") in ("vag_me71_c4", "vag_me75_dc", "vag_me75_bfb"):
     IRAM_LO = 0x00F600
 NORAM_LO, NORAM_HI = (0x00F200, IRAM_LO - 1) if IRAM_LO > 0x00F200 else (1, 0)
 SFR_LO, SFR_HI = 0x00FE00, 0x00FFFF
@@ -94,6 +94,7 @@ IC_TRAP = {
                     #         cannot be identified
     0xFF88: 0x18,   # CC8IC
     0xFF8A: 0x19,   # CC9IC
+    0xFF94: 0x1E,   # CC14IC  vehicle-speed capture (2026-11-04, VAG boards)
     0xFF96: 0x1F,   # CC15IC
     # The SSC nodes. PROVEN from the OEM ME7.1.1 second-level vector table: slot
     # 0x2E points at 0x8234E0, the OEM's own SSC receive ISR, so on this part
@@ -183,6 +184,7 @@ CC_CHAN = {
     8:  (0xFE90, 0xFF88, "T0"),    # P2.8  cam,   NWDG
     9:  (0xFE92, 0xFF8A, "T0"),    # P2.9  cam 2, NWDG2
     13: (0xFE9A, 0xFF92, "T0"),    # P2.13 tacho TN (compare mode 1, 2026-10-11)
+    14: (0xFE9C, 0xFF94, "T0"),    # P2.14 vehicle speed (2026-11-04, VAG)
     15: (0xFE9E, 0xFF96, "T0"),    # P2.15 crank, KWDG
 }
 
@@ -283,11 +285,111 @@ class Mem:
         # take an hour.
         self.fl_erase_work = 120000
 
+        # ------------------------------------- the on-chip CAN module ----
+        #
+        # 2026-11-03 (comms/hccan711.c). The C167CR CAN registers sit at
+        # 0xEF00..0xEFFF inside the XBUS window this model otherwise treats
+        # as RAM. What a driver depends on is modelled, nothing else:
+        #   * a message object's control register (MCR, offset 0/1 of each
+        #     0x10 block) is written in 2-bit pairs: 10 sets the flag, 01
+        #     resets it, 11 (and 00) leave it - so a read never returns the
+        #     write mask, as plain RAM would;
+        #   * with the module out of INIT, an object that is valid, a
+        #     transmit object (MCFG.DIR) and gets TXRQ set while CPUUPD is
+        #     not set "sends": the frame (ID from UAR, DLC from MCFG, the
+        #     data bytes) is recorded with can_clock() and TXRQ resets, as
+        #     on an acknowledged bus. No arbitration, no errors, no receive.
+        self.can = bytearray(0x100)
+        for n in range(1, 16):
+            self.can[0x10 * n] = 0x55
+            self.can[0x10 * n + 1] = 0x55
+        self.can_tx = []
+        self.can_clock = lambda: 0
+
+    def _can_w8(self, a: int, v: int) -> None:
+        off = a - 0xEF00
+        if off >= 0x10 and (off & 0x0F) in (0, 1):
+            old = self.can[off]
+            new = 0
+            for k in range(4):
+                pair = (v >> (2 * k)) & 3
+                field = (old >> (2 * k)) & 3
+                if pair in (1, 2):
+                    field = pair
+                new |= field << (2 * k)
+            self.can[off] = new
+            if off & 1:                                   # the high byte
+                base = off & ~0x0F
+                lo, hi = self.can[base], self.can[base + 1]
+                init = self.can[0] & 1
+                msgval = (lo >> 6) & 3 == 2
+                txrq = (hi >> 4) & 3 == 2
+                cpuupd = (hi >> 2) & 3 == 2
+                tx_obj = self.can[base + 6] & 0x08
+                if not init and msgval and txrq and not cpuupd and tx_obj:
+                    ident = self._can_ident(base)
+                    dlc = min(8, self.can[base + 6] >> 4)
+                    data = bytes(self.can[base + 7: base + 7 + dlc])
+                    self.can_tx.append((self.can_clock(), ident, dlc, data))
+                    self.can[base + 1] = (hi & ~0x30) | 0x10      # TXRQ reset
+                    self.can[1] |= 0x08                           # TXOK
+            return
+        self.can[off] = v
+
+    def _can_ident(self, base: int) -> int:
+        """The object's identifier: 11-bit, or 29-bit when MCFG.XTD (bit 2)
+        is set (UAR = ID28..21 | ID20..13 << 8, LAR = ID12..5 | ID4..0 << 11,
+        C167CR UM section 18)."""
+        uar = self.can[base + 2] | (self.can[base + 3] << 8)
+        if self.can[base + 6] & 0x04:
+            lar = self.can[base + 4] | (self.can[base + 5] << 8)
+            return (((uar & 0xFF) << 21) | ((uar >> 8) << 13)
+                    | ((lar & 0xFF) << 5) | (lar >> 11))
+        return ((uar & 0xFF) << 3) | ((uar >> 13) & 7)
+
+    def can_inject(self, ident: int, data: bytes, ext: bool = False) -> bool:
+        """A frame arrives from the bus: the first valid RECEIVE object whose
+        11-bit identifier matches takes it (data, DLC), NEWDAT is set, and
+        MSGLST too if NEWDAT was still set (the CPU had not read the last one).
+        Returns whether an object took it - with no match the module ignores
+        the frame, as the hardware does (all-care masks)."""
+        for n in range(1, 16):
+            base = 0x10 * n
+            lo, hi = self.can[base], self.can[base + 1]
+            if (lo >> 6) & 3 != 2 or self.can[base + 6] & 0x08:
+                continue                                  # not valid / transmit
+            if bool(self.can[base + 6] & 0x04) != ext:
+                continue                                  # 11-bit vs 29-bit
+            mine = self._can_ident(base)
+            if n == 15 and not ext:
+                # the last object has its own mask (C1UMLM): don't-care bits
+                umlm = self.can[0x0C] | (self.can[0x0D] << 8)
+                mask = ((umlm & 0xFF) << 3) | ((umlm >> 13) & 7)
+                if (mine & mask) != (ident & mask):
+                    continue
+                # the module stores the received identifier in the object
+                self.can[base + 2] = (ident >> 3) & 0xFF
+                self.can[base + 3] = (self.can[base + 3] & 0x1F) | ((ident & 7) << 5)
+            elif mine != ident:
+                continue
+            if (hi & 3) == 2:                             # NEWDAT still set
+                hi = (hi & ~0x0C) | 0x08                  # MSGLST set
+            hi = (hi & ~0x03) | 0x02                      # NEWDAT set
+            self.can[base + 1] = hi
+            dlc = min(8, len(data))
+            self.can[base + 6] = (self.can[base + 6] & 0x0F) | (dlc << 4)
+            self.can[base + 7: base + 7 + dlc] = bytes(data[:dlc])
+            self.can[1] |= 0x10                           # RXOK
+            return True
+        return False
+
     def r8(self, a: int) -> int:
         a &= 0xFFFFFF
         if NORAM_LO <= a <= NORAM_HI:
             raise Trap("read from 0x%06X - no RAM there on the C167CR" % a)
         if LRAM_LO <= a <= LRAM_HI:
+            if a >= 0xEF00:                     # the CAN module (above)
+                return self.can[a - 0xEF00]
             return self.lram[a - LRAM_LO]
         if IRAM_LO <= a <= IRAM_HI:
             return self.iram[a - IRAM_LO]
@@ -358,6 +460,9 @@ class Mem:
         if NORAM_LO <= a <= NORAM_HI:
             raise Trap("write to 0x%06X - no RAM there on the C167CR" % a)
         if LRAM_LO <= a <= LRAM_HI:
+            if a >= 0xEF00:                     # the CAN module
+                self._can_w8(a, v)
+                return
             self.lram[a - LRAM_LO] = v
             return
         if IRAM_LO <= a <= IRAM_HI:
@@ -664,7 +769,7 @@ class CPU:
               16: (0xFF22, 0),
               23: (0xFF26, 12), 28: (0xFF2A, 0), 29: (0xFF2A, 4),
               30: (0xFF2A, 8),
-              8: (0xFF56, 0), 9: (0xFF56, 4), 13: (0xFF58, 4),
+              8: (0xFF56, 0), 9: (0xFF56, 4), 13: (0xFF58, 4), 14: (0xFF58, 8),
               15: (0xFF58, 12)}
 
     def cc_timebase(self, channel, declared):

@@ -740,12 +740,16 @@ class Link:
             return None, "length %d != %d" % (len(body), cnt), ms
         return body, err, ms
 
-    def page(self, size=4096, chunk=256):
+    page_size = 4096        # set from the .ini (4480 since 2026-11-03)
+
+    def page(self, size=None, chunk=256):
+        size = size or self.page_size
         out = bytearray()
         for off in range(0, size, chunk):
+            n = min(chunk, size - off)
             body, err, _ = self.request(b"R" + off.to_bytes(2, "big")
-                                        + chunk.to_bytes(2, "big"), 1.0, 2)
-            if body is None or len(body) != chunk:
+                                        + n.to_bytes(2, "big"), 1.0, 2)
+            if body is None or len(body) != n:
                 return None
             out.extend(body)
         return bytes(out)
@@ -1259,6 +1263,7 @@ class Ecu:
         self.version = link.text(b"V", 3) or ""
         self.ini_path = VC.pick_ini(self.sig, self.version, ini_override)
         self.ini = VC.Ini(self.ini_path)
+        link.page_size = self.ini.page_size
         self.block = self.ini.block
         self.ring_base = self.block + EXT_RING
         self.lists = self._lists()

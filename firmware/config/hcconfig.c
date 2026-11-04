@@ -30,6 +30,11 @@ unsigned int  hc_ram_bad;
  * 32-bit pointer in a register pair.
  */
 #define RAM  ((unsigned char huge *)(TGT_EXTRAM_BASE + TGT_RAM_CFG))
+/* Page offsets HC_CFG_MAIN.. (hcconfig.h, the page extension). */
+#define XRAM ((unsigned char huge *)(TGT_EXTRAM_BASE + TGT_RAM_CFGEXT))
+#if (HC_CFG_EXT_LEN > TGT_RAM_CFGEXT_LIMIT)
+#error "the page extension does not fit TGT_RAM_CFGEXT"
+#endif
 
 /* Header, kept OUTSIDE the TunerStudio page. If the checksum lived inside the
    page, every TunerStudio write would invalidate it. */
@@ -77,7 +82,7 @@ static unsigned int cfg_sum(void)
         s = (unsigned int)((s << 1) | (s >> 15));   /* rotate, so order counts */
         s = (unsigned int)(s + hc_cfg[i]);
     }
-    for (i = HC_CFG_CORE; i < HC_CFG_SIZE; i++) {
+    for (i = HC_CFG_CORE; i < HC_CFG_MAIN; i++) {
         /* THE SUPERVISION YIELD, every 256 bytes. MEASURED, not stylistic:
            this loop is 4096 huge-pointer reads with a 32-bit address add on
            each one, and hc_cfg_commit() - which every TunerStudio Burn calls -
@@ -93,6 +98,14 @@ static unsigned int cfg_sum(void)
         s = (unsigned int)((s << 1) | (s >> 15));
         s = (unsigned int)(s + RAM[HDR_LEN + (unsigned long)i]);
     }
+    /* the page extension: the same sum, carried on */
+    for (i = 0u; i < (unsigned int)HC_CFG_EXT_LEN; i++) {
+        if ((i & 0x00FFu) == 0u) {
+            hcts_target_yield();
+        }
+        s = (unsigned int)((s << 1) | (s >> 15));
+        s = (unsigned int)(s + XRAM[(unsigned long)i]);
+    }
     return s;
 }
 
@@ -100,7 +113,7 @@ static unsigned int cfg_sum(void)
    and count the mismatches. Deliberately does NOT use the configuration area:
    it runs before the configuration is loaded and must not destroy a good one,
    so it works in a scratch window past the header and the page. */
-#define PROBE_OFF   (HDR_LEN + (unsigned long)HC_CFG_SIZE)
+#define PROBE_OFF   (HDR_LEN + (unsigned long)HC_CFG_MAIN)
 #define PROBE_LEN   256u
 
 /* ONE BYTE, and it is in the SRAM rather than in near RAM ON PURPOSE.
@@ -123,7 +136,7 @@ static unsigned int cfg_sum(void)
    so this guard uses the UNCAST constants they are built from. It does not
    restate a single number: HC_CFG_HDR_LEN, HC_CFG_SIZE, PROBE_LEN and
    TGT_RAM_CFG_LIMIT are all still the only definitions. */
-#if ((HC_CFG_HDR_LEN + HC_CFG_SIZE + PROBE_LEN + 1) > TGT_RAM_CFG_LIMIT)
+#if ((HC_CFG_HDR_LEN + HC_CFG_MAIN + PROBE_LEN + 1) > TGT_RAM_CFG_LIMIT)
 #error "the calibration page, its probe and the persistence flag do not fit"
 #endif
 
@@ -786,8 +799,9 @@ unsigned char hc_cal_u8(unsigned int off)
     if (off < HC_CFG_CORE) {
         return hc_cfg[off];
     }
-    if (off >= HC_CFG_SIZE) {
-        return 0;
+    if (off >= HC_CFG_MAIN) {
+        return (off < HC_CFG_SIZE)
+            ? XRAM[(unsigned long)(off - HC_CFG_MAIN)] : (unsigned char)0u;
     }
     return RAM[HDR_LEN + (unsigned long)off];
 }
@@ -798,8 +812,10 @@ void hc_cal_set_u8(unsigned int off, unsigned char v)
         hc_cfg[off] = v;
         return;
     }
-    if (off < HC_CFG_SIZE) {
+    if (off < HC_CFG_MAIN) {
         RAM[HDR_LEN + (unsigned long)off] = v;
+    } else if (off < HC_CFG_SIZE) {
+        XRAM[(unsigned long)(off - HC_CFG_MAIN)] = v;
     }
 }
 

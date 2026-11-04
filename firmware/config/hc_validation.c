@@ -950,6 +950,34 @@ unsigned int hc_validate(unsigned char src)
             bad(CFG_U_PIN_CAM2);
             f |= HC_VAL_FAULT_PIN_CONFLICT;
         }
+#ifdef TGT_VSS_CC14_PIN
+        {
+            /* THE VEHICLE-SPEED INPUT (2026-11-04, hctrig_me711.c ROLE_VSS /
+               CC14): the VAG boards' own speed capture (cavity 54), or a cam
+               capture that no position input uses. Anything else would be a
+               setting that silently measures nothing. */
+            unsigned char v = rd8(CFG_U_PIN_VSS);
+            if (TGT_VSS_CC14_PIN != 0u && !HC_PIN_IS_UNASSIGNED(v)
+                && v != (unsigned char)TGT_VSS_CC14_PIN) {
+                /* the 2.7T / ME7.5 boards: their own speed capture only */
+                bad(CFG_U_PIN_VSS);
+                f |= HC_VAL_FAULT_PIN_CAP;
+            } else if (!HC_PIN_IS_UNASSIGNED(v)
+                && !(TGT_VSS_CC14_PIN != 0u && v == (unsigned char)TGT_VSS_CC14_PIN)) {
+                unsigned char vc = hc_hal_capture_channel(v);
+                if (vc != TGT_CAPCH_CC8 && vc != TGT_CAPCH_CC9) {
+                    bad(CFG_U_PIN_VSS);
+                    f |= HC_VAL_FAULT_PIN_CAP;
+                } else if ((!HC_PIN_IS_UNASSIGNED(p) && hc_hal_capture_channel(p) == vc)
+                           || (!HC_PIN_IS_UNASSIGNED(c1) && hc_hal_capture_channel(c1) == vc)
+                           || (!HC_PIN_IS_UNASSIGNED(c2) && hc_hal_capture_channel(c2) == vc)) {
+                    bad(CFG_U_PIN_VSS);
+                    f |= HC_VAL_FAULT_PIN_CONFLICT;
+                }
+            }
+            f |= claim(c, v, CFG_U_PIN_VSS);
+        }
+#endif
     }
     {
         /* Analog sensors. One table, so adding a sensor is one line and can

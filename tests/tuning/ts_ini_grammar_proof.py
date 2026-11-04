@@ -402,8 +402,8 @@ MUTATIONS = [
     ("an eighth field on a FrontPage indicator - THE LATENT V34 DEFECT",
      lambda t: _eighth_field_on_first_frontpage_indicator(t)),
     ("a page keyword carrying more values than there are pages",
-     lambda t: t.replace("   pageSize       = 4096" + NL,
-                         "   pageSize       = 4096, 4096" + NL, 1)),
+     lambda t: t.replace("   pageSize       = 4480" + NL,
+                         "   pageSize       = 4480, 4480" + NL, 1)),
 ]
 
 

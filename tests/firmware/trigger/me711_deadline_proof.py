@@ -10,6 +10,13 @@ import hcpaths  # noqa: F401,E402  (puts every tools/ and tests/ module on sys.p
 import me711_trigger_test as P
 import me711_image as I
 import me711_heartbeat_gap_proof as HB
+import hc_board
+# the planner refuses an OPEN moved later than this many ticks (hctarget.h
+# HC_PLAN_HORIZON_TICKS: 2500 at 1.25 MHz, 3000 at 0.75 MHz, 4000 at the
+# BFB's 1.000 MHz - 4 ms on the 24/32 MHz boards). Taken from the header: a
+# literal 3000 here passed on the 24 MHz board and read as "inside the
+# horizon" on the 32 MHz one.
+HORIZON = hc_board.define_int("HC_PLAN_HORIZON_TICKS")
 # HC_DL_OFF_TICKS x 2: 100 us of software OFF separation on each side, in
 # capture ticks (TPMS = ticks per 10 ms: 250 at 1.25 MHz, 150 on the 2.7T)
 OFF2 = 2 * (HB.TPMS // 100)
@@ -174,13 +181,13 @@ def future_pulse_tests():
     ports=transitions(r);lens=widths(ports)
     check('quiesce retains current CLOSE and refuses the pending next OPEN',
           len(lens)==1 and abs(lens[0]-6250)<=125 and r.dirs()==(0,0,0),str(lens))
-    for overlap, admitted in ((500, True), (3000, False)):
+    for overlap, admitted in ((500, True), (HORIZON + 500, False)):
         r=Rig();first=r.publish(3,1,1000,5000);r.run(2000)
         close=next(r.m.r16(P.sym('hc_dl_q_time')+4*i)
                    for i in range(24) if r.m.r8(P.sym('hc_dl_q_type')+i)&15==4
                    and r.m.r16(P.sym('hc_dl_q_id')+2*i)==first)
         second=r.publish(3,1,(close-overlap)&65535,2000,absolute=True)
-        check('physical-overlap phase adjustment stays inside 2 ms',
+        check('physical-overlap phase adjustment stays inside the planner horizon',
               bool(second)==admitted,str((overlap,second)))
         if admitted:
             start=next(r.m.r16(P.sym('hc_dl_q_time')+4*i)
@@ -262,11 +269,16 @@ def main():
     check('abort during pulse releases physical command',not (r.dirs()[1]&0x70),str(r.log))
     r=Rig(); first=r.publish(3,1,1000,5000)
     check('pending overlap refused',r.publish(3,1,2000,5000)==0)
-    r.run(4000)
+    # run only until the first pulse is ON: the overlap time below (close -
+    # HORIZON - 500) must still be AHEAD of "now". Published as an absolute
+    # 16-bit time, a time already past wraps to ~65 000 ticks ahead and is
+    # admitted as a far-future start (the BFB's larger horizon exposed it:
+    # 4500 ticks before a close at 7250 was already past after run(4000)).
+    r.run(1500)
     close=next(r.m.r16(P.sym('hc_dl_q_time')+4*i)
                for i in range(24) if r.m.r8(P.sym('hc_dl_q_type')+i)&15==4)
     check('active overlap beyond phase-adjustment bound refused',
-          r.publish(3,1,(close-3000)&65535,5000,absolute=True)==0)
+          r.publish(3,1,(close-HORIZON-500)&65535,5000,absolute=True)==0)
     r.run(4000)
     second=r.publish(3,1,1000,5000)
     check('next legal pulse accepted after close/off separation',bool(second))
@@ -334,13 +346,27 @@ def main():
     a=r.publish(3,1,1000,5000);b=r.publish(3,2,1500,5000)
     r.publish(4,2,2000,a);r.run(4000)
     check('token rollover skips zero and stale token cannot close new owner',a==0xffff and b==1 and bool(r.dirs()[2]&0x80),str(r.log))
+    # The board's own pins (hctarget.h TGT_INJ_P8_MASK / TGT_IGN_P2_MASK): on
+    # the 4-cylinder ME7.5 P8.3..P8.6 are inputs and P2.4..P2.7 carry the
+    # post-cat heater, THE 68HC05 MONITOR LINE (P2.5), KL50 and the thermostat
+    # (bench 2026-11-04). A channel the board does not have is refused and
+    # drives nothing.
+    p8,p2=hc_board.define_int('TGT_INJ_P8_MASK'),hc_board.define_int('TGT_IGN_P2_MASK')
     for ch in range(1,9):
         r=Rig();r.m.w8(P.sym('trg_state')&0xffff,0)
         admitted=r.call('hc_deadline_bench_start',7,ch,1250);r.idle()
         actual=r.dirs();want=(0,1<<(7-ch),0) if ch<=3 else (0,0,1<<(11-ch))
+        if ch>3 and not (1<<(11-ch))&p8:
+            check(f'bench injector driver {ch} refused - not on this board',not admitted and actual==(0,0,0),str((admitted,actual)))
+            continue
         check(f'bench injector driver {ch} exact port direction',admitted and actual==want,str(actual))
         r.run(3000)
         check(f'bench injector driver {ch} releases during task stall',r.dirs()==(0,0,0) and r.m.r16(DIAG+250)==1,str(r.dirs()))
+    for ch in range(1,9):
+        if (1<<(ch-1))&p2: continue
+        r=Rig();r.m.w8(P.sym('trg_state')&0xffff,0);d0=r.dirs()[0]
+        admitted=r.call('hc_deadline_bench_start',6,ch,1250);r.idle()
+        check(f'bench coil driver {ch} refused - P2.{ch-1} is not a coil here',not admitted and r.dirs()[0]==d0,str((admitted,hex(r.dirs()[0]))))
     print(f'{checks-fails}/{checks} PASS')
     return int(bool(fails))
 

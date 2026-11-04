@@ -593,6 +593,18 @@ void far hc_nvm_stage_payload_end(void);
  * arrives loses precisely the session this whole design exists to keep. */
 #define HCNV_PROG_CHUNK  1u
 #define HCNV_PASS_US      2500u
+/* 2026-11-03 (owner: "speed the 2.7T Burn up"): WITH THE ENGINE STOPPED the
+ * pass may keep the loop up to 8 ms. Measured on the bench 2.7T (24 MHz,
+ * 9ED76477): a standstill Burn of the 4504-byte record replied at 5.98 s
+ * against the 6000 ms deadline - 2252 words in 2252 admitted windows, ~2.4 ms
+ * of wall time per word for an 11 us flash program. The time was the 2.5 ms
+ * pass budget against an ~8 ms main loop, not the flash. Between every word
+ * the loop already runs hcts_target_yield() (the 10 ms raster and the
+ * watchdog, tick-gated), so a supervision deadline waits at most one word;
+ * with rpm 0 and no edges the throttle loop has let go for the Burn
+ * (hc_etbcal_burn_hold) and nothing time-critical remains in the loop. A
+ * TURNING engine keeps HCNV_PASS_US. */
+#define HCNV_PASS_STOPPED_US  8000u
 
 /* ----------------------------------------- HOW LONG ONE WORD MAY BE POLLED
  *
@@ -1259,8 +1271,14 @@ static unsigned char cell_header_gen(unsigned int which, unsigned long *gen)
 {
     unsigned char huge *p = CELL_PTR(which);
 
-    if (be32(p, REC_MAGIC) != NVM_REC_MAGIC
-        || be32(p, REC_COMMIT) != NVM_REC_COMMIT) {
+    *gen = 0uL;
+    if (be32(p, REC_MAGIC) != NVM_REC_MAGIC) {
+        return 0u;
+    }
+    if (be32(p, REC_COMMIT) != NVM_REC_COMMIT) {
+        /* not committed where THIS page size puts the marker: *gen carries
+           the record's own length for nvm_scan() (another layout) */
+        *gen = (unsigned long)be16(p, REC_LENGTH);
         return 0u;
     }
     *gen = be32(p, REC_GEN);
@@ -1328,6 +1346,15 @@ static void nvm_scan(void)
             continue;
         }
         if (!cell_header_gen(i, &gen)) {
+            /* A RECORD OF ANOTHER PAGE SIZE is not damage (bench DC,
+               2026-11-04): an OBD update keeps the store across a page-layout
+               change, and the old 4096-byte records' commit marker is not
+               where a 4480-byte firmware looks for it. Reporting them as
+               HCNV_ERR_STAGE lit "PERSISTENCE ERROR" after every such update
+               while the right record was in use. */
+            if ((unsigned int)gen != 0u && (unsigned int)gen != (unsigned int)HC_CFG_SIZE) {
+                continue;
+            }
             /* Not blank and not even a committed header: an interrupted write
                or a half-erased sector. W_REJECT IS A SECTOR MASK - it was
                `1u << i` over sixteen cells, and with eighty that shift is
@@ -2063,6 +2090,8 @@ static unsigned char live_admit(unsigned int now_ms, unsigned int rpm,
            The 2.7T's 0.75 MHz: x 4/3 (horizon_ticks < 32768, fits). */
 #if TGT_TICKS_PER_MS_X10 == 12500UL
         horizon_us = (unsigned int)(horizon_ticks - (horizon_ticks / 5u));
+#elif TGT_TICKS_PER_MS_X10 == 10000UL
+        horizon_us = horizon_ticks;                 /* 1.000 MHz: one tick = 1 us */
 #else
         horizon_us = (unsigned int)(horizon_ticks + (horizon_ticks / 3u));
 #endif
@@ -2191,6 +2220,9 @@ static void fl_enter(void)
 #endif
     unsigned int cc7, cc8, cc9, cc15, cc16, cc25, t8, s0r, s0e, ssct, sscr, ssce;
     unsigned int cc26, s0tb, cc27, cc28;
+#if TGT_VSS_CC14_PIN
+    unsigned int cc14;                  /* the speed capture (2026-11-04) */
+#endif
     unsigned int pending_before;
     unsigned int pending_after;
     unsigned char pec_in_flight = (unsigned char)(SSCBSY != 0);
@@ -2209,6 +2241,9 @@ static void fl_enter(void)
     cc16 = CC16IC; cc25 = CC25IC;
     cc26 = TGT_PLAN_IC; s0tb = S0TBIC; cc27 = TGT_ASICX_IC;
     cc28 = TGT_SLOWTICK_IC;
+#if TGT_VSS_CC14_PIN
+    cc14 = CC14IC;
+#endif
     s0r = S0RIC; s0e = S0EIC;
     ssct = SSCTIC; sscr = SSCRIC; ssce = SSCEIC;
     pending_before = (unsigned int)(((cc7 & 0x80u) ? 1u : 0u)
@@ -2243,6 +2278,10 @@ static void fl_enter(void)
     /* the S5500 exchange level (CC27, requested by the tick, 2026-10-13)
        and the tick's body (CC28, requested by T8, 2026-10-28) */
     HCNV_IE_OFF(TGT_ASICX_IC); HCNV_IE_OFF(TGT_SLOWTICK_IC);
+#if TGT_VSS_CC14_PIN
+    /* the vehicle-speed capture (hctrig_me711.c hc_cc14_isr) */
+    HCNV_IE_OFF(CC14IC);
+#endif
     /* ASC0 receive/error requests enter the flash-backed first-level vector
        path even where the Bosch boot block owns their final handler. */
 #if HC_UPDATER
@@ -2335,6 +2374,9 @@ static void fl_enter(void)
     HCNV_IE_BACK(S0TBIC, s0tb);
     HCNV_IE_BACK(T8IC,   t8);
     HCNV_IE_BACK(TGT_SLOWTICK_IC, cc28);
+#if TGT_VSS_CC14_PIN
+    HCNV_IE_BACK(CC14IC, cc14);
+#endif
     HCNV_IE_BACK(S0RIC,  s0r);
     HCNV_IE_BACK(S0EIC,  s0e);
     HCNV_IE_BACK(SSCTIC, ssct);
@@ -2747,7 +2789,7 @@ static void nvm_commit(unsigned int now_ms, unsigned int rpm,
                        unsigned char page_stable)
 {
     unsigned int target;
-    unsigned int t0;
+    unsigned int t0, budget;
     unsigned int r;
     unsigned int tries;
 
@@ -2934,10 +2976,38 @@ static void nvm_commit(unsigned int now_ms, unsigned int rpm,
      * path still returns immediately, because that boundary IS a safety
      * property and is documented where it is taken. */
     t0 = (unsigned int)T7;
+    /* 2026-11-03: the pass budget, longer with the engine stopped */
+    budget = (rpm == 0u && trig_turning == 0u)
+             ? (unsigned int)US_TO_TICKS(HCNV_PASS_STOPPED_US) : 0u;
     for (;;) {
         if (!live_admit(now_ms, rpm, trig_turning, outputs_busy, page_stable)) {
-            if (SRAMB(NVM_LIVE)[L_ADMISSION] == (unsigned char)HCNV_ADMIT_DEADLINE) {
+            unsigned char why = SRAMB(NVM_LIVE)[L_ADMISSION];
+            if (why == (unsigned char)HCNV_ADMIT_DEADLINE) {
                 nvm_fail(HCNV_ERR_DEADLINE);
+                return;
+            }
+            /* 2026-11-03: WITH THE ENGINE STOPPED, AN ASIC OR PEC REFUSAL
+               WAITS INSIDE THE PASS. The supervision frame (every 10 ms,
+               1.9 ms on the wire, refused 1 ms ahead) ended the pass, and
+               the next pass came a whole main loop (~8 ms) later: about four
+               words per 10 ms - the 6.0 s Burn on the bench 2.7T. Here the
+               platform is served (the tick starts and the PEC finishes the
+               frame - the frame still goes first) and the word asks again,
+               within the stopped budget. A turning engine returns as always. */
+            if (budget != 0u
+                && (why == (unsigned char)HCNV_ADMIT_ASIC
+                    || why == (unsigned char)HCNV_ADMIT_PEC)
+                && (unsigned int)((unsigned int)T7 - t0) < budget) {
+                /* WITHOUT THE CLAIM for two ticks: the 1 ms tick starts the
+                   frame only while no word holds the claim, and re-asking
+                   at once collided with it - the frame slipped a tick
+                   (me711_burn_raster_proof 11.01 ms vs 10.02 ms). */
+                unsigned int w0 = hc_tick_ms;
+                while ((unsigned int)(hc_tick_ms - w0) < 2u
+                       && (unsigned int)((unsigned int)T7 - t0) < budget) {
+                    hcts_target_yield();
+                }
+                continue;
             }
             return;
         }
@@ -3010,7 +3080,7 @@ static void nvm_commit(unsigned int now_ms, unsigned int rpm,
             return;
         }
         if ((unsigned int)((unsigned int)T7 - t0)
-            >= (unsigned int)US_TO_TICKS(HCNV_PASS_US)) {
+            >= (budget ? budget : (unsigned int)US_TO_TICKS(HCNV_PASS_US))) {
             return;
         }
         /* Round again - and the next word takes its OWN fresh admission at

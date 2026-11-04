@@ -52,8 +52,7 @@ S0BG, S0CON = 0xFEB4, 0xFFB0
 import hc_board  # noqa: E402
 # S0BG -> nominal rate, per board (hctarget.h): the 2.7T's 24 MHz reaches
 # 57600 (0x0C) and 124800 (0x05) but not 115200 (HCKLINE_NO_115200)
-RATE = ({0x0C: 57600, 0x05: 124800} if hc_board.IS_C4
-        else {0x15: 57600, 0x0A: 115200, 0x09: 124800})
+RATE = {k: v for k, v in hc_board.s0bg_rates().items() if v != 10400}   # from this board's header
 FAILS = 0
 
 

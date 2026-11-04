@@ -106,12 +106,14 @@ void far hc_deadline_bench_port_f(unsigned char type, unsigned char mask, unsign
     unsigned int m=mask;   /* widen first: ~ on a char is CPLB, low byte only */
 #define BENCH_PW(a,mm) { port=(unsigned int volatile *)(a); m=(mm);         if(on) { *port&=~m;port[1]|=m; } else { *port|=m;port[1]&=~m; } }
     if(type==HC_DL_BENCH_ALL) {   /* P2.0-7 coils, P7.4-6 + P8.3-7 injectors */
-        BENCH_PW(0xFFC0u,0x00FFu) BENCH_PW(0xFFD0u,0x0070u) BENCH_PW(0xFFD4u,0x00F8u)
+        /* the board's own pins only (hctarget.h TGT_IGN_P2_MASK): on the DC
+           P2.5 is the 68HC05 monitor line */
+        BENCH_PW(0xFFC0u,TGT_IGN_P2_MASK) BENCH_PW(0xFFD0u,0x0070u) BENCH_PW(0xFFD4u,TGT_INJ_P8_MASK)
         return;
     }
-    if(type==HC_DL_BENCH_IGN) port=(unsigned int volatile *)0xFFC0u;
+    if(type==HC_DL_BENCH_IGN) { port=(unsigned int volatile *)0xFFC0u; m&=TGT_IGN_P2_MASK; }
     else if(type==HC_DL_BENCH_INJ) port=(unsigned int volatile *)0xFFD0u;
-    else port=(unsigned int volatile *)0xFFD4u;
+    else { port=(unsigned int volatile *)0xFFD4u; m&=TGT_INJ_P8_MASK; }
     if(on) { *port&=~m;port[1]|=m; }
     else { *port|=m;port[1]&=~m; }
 }

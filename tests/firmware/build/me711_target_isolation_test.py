@@ -129,9 +129,15 @@ def guarded_out():
     presets on the Porsche (#if HC_PRESET_C4), the Porsche ones on the C4.
     2026-10-31: three boards - the ME7.5 DC carries only its own."""
     import hc_board
-    off = {"porsche": ("#if HC_PRESET_C4 && !HC_PRESET_DC", "#if HC_PRESET_DC"),
-           "c4": ("#if !HC_PRESET_C4", "#if HC_PRESET_DC"),
-           "dc": ("#if !HC_PRESET_C4", "#if HC_PRESET_C4 && !HC_PRESET_DC")}[
+    # 2026-11-04: the A4 B7 BFB's own preset (#if HC_PRESET_BFB) is out of
+    # every image but the BFB's
+    off = {"porsche": ("#if HC_PRESET_C4 && !HC_PRESET_DC", "#if HC_PRESET_DC",
+                       "#if HC_PRESET_BFB"),
+           "c4": ("#if !HC_PRESET_C4", "#if HC_PRESET_DC", "#if HC_PRESET_BFB"),
+           "dc": ("#if !HC_PRESET_C4", "#if HC_PRESET_C4 && !HC_PRESET_DC",
+                  "#if HC_PRESET_BFB"),
+           "bfb": ("#if !HC_PRESET_C4", "#if HC_PRESET_C4 && !HC_PRESET_DC")}[
+        "bfb" if getattr(hc_board, "IS_BFB", False) else
         "dc" if hc_board.IS_DC else "c4" if hc_board.IS_C4 else "porsche"]
     out, guard = set(), None
     for ln in (SHARED / "generated/hc_presets.c").read_text(errors="replace").splitlines():
@@ -208,6 +214,16 @@ def main() -> int:
     # ------------------------------------------------- the native preset
     for pid, _items, n, tid, _bd in ps:
         if tid != this_target or n == 0:
+            continue
+        if pid in absent:
+            # 2026-11-04: a variant's own preset on the SAME descriptor (the
+            # A4 B7 BFB's id 10 on the 18T's) is compiled out of the sibling's
+            # image: not in it at all - 1 'no such preset', nothing written
+            r = boot()
+            before = snapshot(r)
+            rc = apply_preset(r, pid, n)
+            check("preset %d (target 0x%04X, another variant's) is not in this image"
+                  % (pid, tid), rc == 1 and before == snapshot(r), "return code %d" % rc)
             continue
         r = boot()
         before = snapshot(r)

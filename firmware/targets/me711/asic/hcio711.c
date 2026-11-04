@@ -95,6 +95,7 @@
 #include "hcconfig.h"
 #include "hc_config_generated.h"
 #include "hcio711.h"
+#include "hccan711.h"
 #include "hcengctl711.h"
 #include "hcdeadline711.h"
 #include "hcload711.h"
@@ -1215,6 +1216,9 @@ unsigned int far hc_io_lambda(unsigned char b)
     }
     if (src == HC_LAMBDA_NARROWBAND) {
         return lam_nb(b);
+    }
+    if (src == HC_LAMBDA_CAN) {
+        return hc_can_lambda(b);          /* comms/hccan711.c, 2026-11-04 */
     }
     return (wb[b].valid == 1u) ? wb[b].lambda : 0u;
 }

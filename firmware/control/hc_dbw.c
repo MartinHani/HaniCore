@@ -29,6 +29,12 @@
 #include "hcfresh711.h"
 #include "hcetbcal.h"         /* the target's far calibration module */
 extern unsigned int hc_idle_floor_x10;   /* hcidle711.c (ME7.1.1) */
+/* hcxfn711.c (far, 2026-11-03): limp throttle cap, movement speed by
+   position, PID gain by position */
+unsigned int far hc_x_dbw_want(unsigned int want_x10);
+unsigned int far hc_x_dbw_slew(unsigned int prev_x10, unsigned int next_x10,
+                               unsigned int step_ms);
+unsigned int far hc_x_dbw_gain(unsigned int pos_x10);
 #else
 #define dbw_cal_u16 hc_cal_u16
 #define dbw_cal_u8 hc_cal_u8
@@ -562,7 +568,7 @@ static void sensor_fault(unsigned int bits, unsigned int now_ms)
 static void dbw_step(unsigned int now_ms, unsigned int rpm, unsigned char armed)
 {
     unsigned int f, tol, lo, hi, want, maxd, rate, dead, sb;
-    unsigned int raw1, raw2, pair_ms;
+    unsigned int raw1, raw2, pair_ms, prev_t, gpct;
     unsigned char ok1, ok2, corr, sf, entry, ovr;
     long p, i, d, out, mag;
     int err, step;
@@ -860,6 +866,7 @@ static void dbw_step(unsigned int now_ms, unsigned int rpm, unsigned char armed)
 #endif
     }
 
+    want = hc_x_dbw_want(want);          /* limp mode: throttle at most */
     lo = hc_cal_u16(CAL_DBW_MIN_X10);
     hi = hc_cal_u16(CAL_DBW_MAX_X10);
     if (want < lo) {
@@ -885,6 +892,7 @@ static void dbw_step(unsigned int now_ms, unsigned int rpm, unsigned char armed)
         D.tgt_ramped = D.t1;
     }
     D.requested = want;
+    prev_t = D.tgt_ramped;
     if (rate != 0u && (!ovr || (D.ovr & 0x8000u))) {
         step = (int)(((unsigned long)rate * (unsigned long)DBW_STEP_MS)
                      / 1000uL);
@@ -900,6 +908,10 @@ static void dbw_step(unsigned int now_ms, unsigned int rpm, unsigned char armed)
         }
     } else {
         D.tgt_ramped = want;
+    }
+    if (!ovr) {
+        /* the movement speed by position (dbwSpeedOpen/Close) */
+        D.tgt_ramped = hc_x_dbw_slew(prev_t, D.tgt_ramped, DBW_STEP_MS);
     }
     D.tgt = D.tgt_ramped;
 
@@ -929,6 +941,10 @@ static void dbw_step(unsigned int now_ms, unsigned int rpm, unsigned char armed)
 #endif
 
     p = (long)err * (long)dbw_cal_u16(CAL_DBW_KP) / GAIN_DIV;
+    gpct = hc_x_dbw_gain(D.act);         /* 100 = as the page's gains */
+    if (gpct != 100u) {
+        p = p * (long)gpct / 100L;
+    }
 
     /* ANTI-WINDUP, TWO WAYS. The integrator is clamped to INTEG_MAX, and it
        does not accumulate at all while the output is saturated in the same
@@ -947,6 +963,9 @@ static void dbw_step(unsigned int now_ms, unsigned int rpm, unsigned char armed)
                    * (long)DBW_STEP_MS + D.irem;
         i = num / (GAIN_DIV * 1000L);
         D.irem = num - i * (GAIN_DIV * 1000L);
+        if (gpct != 100u) {
+            i = i * (long)gpct / 100L;
+        }
     }
     #if defined(TGT_ETBCAL_FAR)
     if (D.integral_allowed &&

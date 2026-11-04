@@ -481,7 +481,7 @@ def main() -> int:
     # the interrupt-request bit set is what kicks PEC0 into moving word 0.
     print()
     print("--- the ASIC handshake, against a modelled ASIC ---")
-    if os.environ.get("HANICORE_BOARD") == "vag_me75_dc":
+    if os.environ.get("HANICORE_BOARD") in ("vag_me75_dc", "vag_me75_bfb"):
         # the ME7.5 DC has no S5500 and no SSC frame: its CC650 + 68HC05
         # monitor service is tests/firmware/asic/me75_dc_runtime_proof.py
         print("  SKIP: the ME7.5 DC has no S5500 (see me75_dc_runtime_proof)")

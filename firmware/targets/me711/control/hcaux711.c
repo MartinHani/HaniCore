@@ -257,7 +257,7 @@ unsigned char far hc_aux_oil_ok(void)
     return (unsigned char)((A.status & AUX_S_OIL_OK) != 0u);
 }
 
-static const unsigned int pin_off[4] = {
+static const unsigned int huge pin_off[4] = {
     CFG_U_PIN_FAN, CFG_U_PIN_AC_CLUTCH, CFG_U_GP1_PIN, CFG_U_GP2_PIN
 };
 

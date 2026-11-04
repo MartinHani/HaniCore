@@ -274,7 +274,7 @@ static unsigned int sup_live;   /* outputs ON at the previous supervision */
    new dwell is seen through hc_rt_ign_fresh, an injector's through its
    ticket, so a short OFF between two scans cannot carry an age over */
 static unsigned char sup_pend;
-static const unsigned char sup_limit[16]={
+static const unsigned char huge sup_limit[16]={
     HC_RT_COIL_MS,HC_RT_COIL_MS,HC_RT_COIL_MS,HC_RT_COIL_MS,
     HC_RT_COIL_MS,HC_RT_COIL_MS,HC_RT_COIL_MS,HC_RT_COIL_MS,
     HC_RT_INJ_MS,HC_RT_INJ_MS,HC_RT_INJ_MS,HC_RT_INJ_MS,

@@ -133,11 +133,17 @@ def static_checks():
 
 def executed_checks():
     r = T.boot()
-    try:
-        T.sym("hc_hal_out_bindable")
-        have = True
-    except SystemExit:
-        have = False
+    # near in hchal_me711.c until 2026-11-04, far (hcroutes711.c, the far
+    # bridge's _f name) since: either is the same function
+    fn = None
+    for name in ("hc_hal_out_bindable", "hc_hal_out_bindable_f"):
+        try:
+            T.sym(name)
+            fn = name
+            break
+        except SystemExit:
+            pass
+    have = fn is not None
     ck("the image has hc_hal_out_bindable()", have)
     if have:
         # What the validator ACCEPTS: the HAL drives it there (bindable)
@@ -153,7 +159,7 @@ def executed_checks():
         diff = {}
         for ts, slot in FIELDS.items():
             got = {c for c in range(1, 122)
-                   if (r.callb("hc_hal_out_bindable", off(slot), c) & 0xFF)
+                   if (r.callb(fn, off(slot), c) & 0xFF)
                    and any(r.callb("hc_pin_can", c, need) & 0xFF
                            for need in cap[ts])}
             if got != GC.out_bind_cavities()[ts]:

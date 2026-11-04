@@ -1056,6 +1056,13 @@ _ME75_ROWS: list[tuple[int, str, int, EvidenceClass, str, str]] = [
     (90, "G28- crank", PinCap.VR_IN | PinCap.SPECIAL_LOCKED, V, "CJ910", "crank return"),
     (86, "G40 cam", PinCap.HALL_IN | PinCap.FREQ_IN, V, "P2.8/CC8",
      "sensor takes +5 V from D141, not from the ECU pin"),
+    # 2026-11-04: the vehicle-speed input. The OEM image arms CC14 as a
+    # rising-edge capture on T1 and leaves P2.14 an input (CCM3 0xA900,
+    # DP2 0x3CBF - .scratch/me75-reverse/IO_MAP.md, EXACT TARGET BINARY);
+    # the cavity is the VAG harness's speed pin 54 (rusEFI hellen121vag:
+    # 54 = VSS) - the cavity is PROBABLE, the CPU resource is not.
+    (54, "vehicle speed", PinCap.FREQ_IN, EvidenceClass.PROBABLE, "P2.14/CC14",
+     "CC14 capture; harness pin 54 (VAG)"),
     (29, "G70 air mass", PinCap.AIN, V, "P5.0/AN0",
      "settled 2026-10-28 (.scratch/me75-reverse/IO_MAP.md, EXACT TARGET "
      "BINARY): the DC stores AN0 where the X505P stores uhfm_w - analog, "
@@ -1190,6 +1197,9 @@ _C4_ROUTES = {
          "SSB E_T_PHA1; FR NWDG CC8IO"),
     87: ("PHA2 - camshaft position 2", PinCap.HALL_IN | PinCap.FREQ_IN, "P2.9/CC9",
          "SSB E_T_PHA2; FR NWDG2 CC9IO"),
+    # 2026-11-04: the vehicle-speed input (firmware TGT_VSS_CC14_PIN)
+    54: ("VFZG - vehicle speed signal", PinCap.FREQ_IN, "P2.14/CC14",
+         "SSB E_F_VFZ (VFZG_S); me7_port.xls ME7.1 C3/C4 CC14 = VFZ"),
     117: ("ESBM+ - throttle motor +", PinCap.DBW_HBRIDGE | _LK, "P7.2/POUT2",
           "SSB A_T_ESBM+; FR DVE1 POUT2; BOM S8100 CJ220"),
     118: ("ESBM- - throttle motor -", PinCap.DBW_HBRIDGE | _LK, "P7.7/CC31",
@@ -1302,6 +1312,7 @@ def build_vag_me71_c4() -> HwDescriptor:
 # cavities whose function differs on this board
 FRIENDLY_CAVITY_NAMES_C4 = dict(FRIENDLY_CAVITY_NAMES)
 FRIENDLY_CAVITY_NAMES_C4.update({
+    54: "Vehicle speed signal",
     85: "Intake air temperature",
     100: "EGR position input (spare 0-5 V)",
     70: "Front O2 sensor 1 signal",
@@ -1317,6 +1328,7 @@ FRIENDLY_CAVITY_NAMES_C4.update({
 FRIENDLY_CAVITY_NAMES_DC = {
     82: "Crankshaft position", 90: "Crankshaft position -",
     86: "Camshaft position", 29: "MAF sensor", 101: "Charge air pressure",
+    54: "Vehicle speed signal",
     93: "Coolant temperature", 85: "Intake air temperature",
     17: "Spare temperature input", 26: "Battery voltage",
     106: "Knock sensor 2", 107: "Knock sensor 1",

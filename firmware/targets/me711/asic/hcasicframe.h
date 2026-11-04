@@ -8,6 +8,18 @@
 #ifndef HCASICFRAME_H
 #define HCASICFRAME_H
 
+/* 2026-11-03: a FAR module (MOD167 MEDIUM) - NCODE relief, the DC release
+   was below its 3072-byte near-code reserve. Only the startup frame build
+   (hcasicstart.c, boot) and the host test call it. */
+#ifndef HCAF_FAR
+#ifdef __C166__
+#define HCAF_FAR  far
+#define HCAF_HUGE huge     /* the OEM frame table: HCONST (NCONST relief) */
+#else
+#define HCAF_FAR
+#define HCAF_HUGE
+#endif
+#endif
 #define HC_ASICFRAME_WORDS       96u
 #define HC_ASICFRAME_CKSUM_WORD  95u     /* additive sum of words 0..94 */
 
@@ -42,23 +54,23 @@
    default policy that is 0, because the frame the ASIC validates has to be
    the frame the OEM sends - see the long comment in hcasicframe.c for why
    zeroing fields is the LESS safe option here. */
-unsigned int  hc_asic_build_safe_startup_frame(unsigned short *frame);
+unsigned int  HCAF_FAR hc_asic_build_safe_startup_frame(unsigned short *frame);
 
 /* The additive checksum over words 0..94. */
-unsigned short hc_asicframe_checksum(const unsigned short *frame);
+unsigned short HCAF_FAR hc_asicframe_checksum(const unsigned short *frame);
 
 /* Header and checksum well-formed? */
-unsigned char hc_asicframe_valid(const unsigned short *frame);
+unsigned char HCAF_FAR hc_asicframe_valid(const unsigned short *frame);
 
 /* Does a received reply pass MAIN's own acceptance test? [BIN] 0x8BE7EC:
    checksum words 0..94 and compare against word 95. Nothing else. */
-unsigned char hc_asicframe_reply_ok(const unsigned short *frame);
+unsigned char HCAF_FAR hc_asicframe_reply_ok(const unsigned short *frame);
 
 /* One word of the frame under the current policy. Streaming beats buffering
    here: a 96-word local array is 192 bytes against a 250-byte system stack. */
-unsigned short hc_asicframe_word(unsigned int i);
+unsigned short HCAF_FAR hc_asicframe_word(unsigned int i);
 
 /* The OEM value for one word, for diffing offline. */
-unsigned short hc_asicframe_oem_word(unsigned int i);
+unsigned short HCAF_FAR hc_asicframe_oem_word(unsigned int i);
 
 #endif

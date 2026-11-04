@@ -38,7 +38,8 @@ sys.path.insert(0, str(ROOT / "tools" / "lib"))
 import hcpaths  # noqa: F401,E402
 import c167sim as S  # noqa: E402
 
-BOARDS = {"porsche_me711": 1, "vag_me71_c4": 2, "audi_4f_v8": 3, "vag_me75_dc": 4}
+BOARDS = {"porsche_me711": 1, "vag_me71_c4": 2, "audi_4f_v8": 3, "vag_me75_dc": 4,
+          "vag_me75_bfb": 5}
 BOARD = os.environ.get("HANICORE_BOARD", "porsche_me711")
 if "--board" in sys.argv:
     BOARD = sys.argv[sys.argv.index("--board") + 1]

@@ -58,7 +58,12 @@ ROOT = Path(__file__).resolve().parents[3]
 # eighty cells, so it was checking the CODE sector for blank calibration cells.
 from me711_nvm_geometry import GEO
 CELL0, PAGE, CELLS = GEO.file_base, GEO.page, GEO.cells
-OFF, BODY, REC_LEN = GEO.off, GEO.body, 4120
+# the record: 18-byte header + the page (HC_CFG_SIZE, 4480 since the
+# 2026-11-03 page extension) + CRC + DONE - from hcconfig.h, not a literal
+import re as _re  # noqa: E402
+_CFG_SIZE = int(_re.search(r"#define\s+HC_CFG_SIZE\s+(\d+)",
+    (Path(__file__).resolve().parents[3] / "firmware/config/hcconfig.h").read_text()).group(1))
+OFF, BODY, REC_LEN = GEO.off, GEO.body, 18 + _CFG_SIZE + 6
 REC_WORDS = REC_LEN // 2
 
 # The persistence test byte the operator card uses (Diagnostics -> Calibration

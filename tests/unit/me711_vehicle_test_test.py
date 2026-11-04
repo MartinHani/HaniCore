@@ -68,6 +68,7 @@ import me711_vehicle_test as VT        # noqa: E402
 # bump left this suite testing the channel map of a stale .ini.
 import me711_image as IMG                # noqa: E402
 INI = IMG.INI  # both boards: <stem>.ini (hanicore_me711_v102_dev / hanicore_me71_27t_v102_dev)
+PAGE_N = VC.Ini(Path(INI)).page_size     # 4480 since the 2026-11-03 page extension
 CHECKS = FAILS = 0
 
 
@@ -101,7 +102,7 @@ class FakeEcu:
         self.rx = bytearray()
         self.kwp_stage = 0
         self.och = bytearray(self.block + VT.EXT_WITNESS + 128)
-        self.page = bytes(4096)
+        self.page = bytes(PAGE_N)
         self.sig = ini.signature
         self.etb = None              # (sub, reads left)
         self.drop = 0                # replies to drop (dropout)
@@ -344,7 +345,7 @@ class CarEcu(FakeEcu):
         import types
         self.C = VT.Ecu.constants(types.SimpleNamespace(ini_path=INI,
                                                         _consts=None))
-        self.page = bytearray(4096)
+        self.page = bytearray(PAGE_N)
         for n, v in (("cylinders", 4), ("injStrategy", 1), ("ignStrategy", 1),
                      ("syncMode", 2), ("lambda1Source", 1), ("dbwEnable", 0),
                      ("camPhaseLevel", 0), ("injFlowCcMin", 301)):
@@ -357,7 +358,7 @@ class CarEcu(FakeEcu):
         self.engine, self.t_state = "off", 0.0
         self.pedal_fn, self.t_pedal = (lambda t: 0.0), 0.0
         self.burns, self.cmds = 0, []
-        self.burned = bytes(4096)
+        self.burned = bytes(PAGE_N)
         self.cut_logged = False
         self.clt = 60.0
         for n, v in (("VBatt", 138), ("battDv", 138), ("intake", 10250),
