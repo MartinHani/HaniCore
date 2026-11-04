@@ -5,7 +5,7 @@
 HaniCore replaces the factory software of a Bosch ME7 ECU with a configurable
 engine controller, tuned with [LibreTune](#tuning-app-libretune) over an
 ordinary KKL (K-line) cable. Every image runs on HaniCore's own boot region:
-it contains no Bosch code. 1.0-dev, not road-ready. Test car: VW/Audi 1.8T,
+it contains no Bosch code. v1.1, development, not road-ready. Test car: VW/Audi 1.8T,
 drive-by-wire, on the Porsche ECU.
 
 | ECU (`--board`) | hardware | release files | proven |
@@ -14,7 +14,7 @@ drive-by-wire, on the Porsche ECU.
 | Audi 2.7T ME7.1 (`27t`) | `4B0907551F` / `0261206378`, C167CR 24 MHz | `HaniCore_27T_4B0907551F_<build>` | bench (outputs, crank to 7500 rpm, Burn, OBD update); ceiling 7800 rpm |
 | Audi 4F 4.2 V8 ME7.1.1 (`4f`) | `0261208363`, C167 40 MHz | `HaniCore_4F_4F0910560_<build>` | experimental: simulator, and a tester's ECU connects |
 | VAG 1.8T ME7.5 (`18t`) | `4B0906018DC` / `0261207636`, C167CR 24 MHz | `HaniCore_18T_4B0906018DC_<build>` | bench (outputs, crank to 7000 rpm, Burn, OBD update); not yet in a car |
-| Audi A4 B7 1.8T BFB ME7.5 (`bfb`) | `8E0909518AQ` / `0261208524`, C167CR **32 MHz** | none yet - build it yourself (`--board bfb`); not in a release until its boot region is proven | bench (a contributor's ECU): K-line link up (signature and live data over cavity 43) and a firmware update over that line; the OBD port is untried. **Not the 18T's clock or bus timing** (32 MHz, BUSCON1/2 from its stock read); the K-line boots at 124800. Engine timing converted to the 1 MHz tick but never run; pin map still the 18T's, unproven on this loom; CAN bit timing for 32 MHz not yet seen on a bus. the maintainer's design notes |
+| Audi A4 B7 1.8T BFB ME7.5 (`bfb`) | `8E0909518AQ` / `0261208524`, C167CR **32 MHz** | `HaniCore_BFB_8E0909518AQ_<build>` (experimental) | bench (a contributor's ECU): K-line link up (signature and live data over cavity 43) and a firmware update over that line; the OBD port is untried. **Not the 18T's clock or bus timing** (32 MHz, BUSCON1/2 from its stock read); the K-line boots at 124800. Engine timing converted to the 1 MHz tick but never run; pin map still the 18T's, unproven on this loom; CAN bit timing for 32 MHz not yet seen on a bus. the maintainer's design notes |
 
 ## Features
 
@@ -30,6 +30,15 @@ drive-by-wire, on the Porsche ECU.
 * cable throttle: idle air valve (2- or 3-wire) on a PWM output, single-track
   TPS (simulator only so far)
 * sensors: coolant, charge pressure, onboard baro, throttle, pedal, battery
+* vehicle speed input and gear detection (gear by speed per 1000 rpm)
+* CAN bus (off by default): VAG engine messages (Motor_1/2/3/5/6), receive
+  (brake, speed, A/C), two custom frames, wideband over CAN, OBD-II on CAN,
+  ABS emulation and Haldex control for a car without them
+* throttle safety: fuel and spark cut when the plate leaves its target or the
+  TPS pair disagrees; limp mode (lean, MAP, coolant, knock)
+* idle, start, overrun and DFCO extras (spark integral, kicks, adaptation,
+  anti-stall, cranking hold/decay, fade in/out), knock adaptation, traction
+  by rpm rise, launch below a set speed
 * Burn in the car, main relay and run-on, fuel pump, tacho output
 * tuning over the K-line, direct (cavity 43) or the car's diagnostic port
 * firmware update over the same K-line, ECU closed, tune kept (below)
@@ -40,8 +49,11 @@ drive-by-wire, on the Porsche ECU.
 
 * knock control (the monitor runs; no calibration yet)
 * VVT, launch, flat shift, anti-lag, check-engine lamp: simulator only
+* CAN: simulator only - the bench ECU's controller runs, but it has not
+  talked to another node on a real bus yet
+* vehicle speed, knock adaptation, limp mode, throttle safety cut:
+  simulator only
 * outputs 5–8 and the second wideband bank: unused on a 4-cylinder
-* no CAN
 * the K-line update on the 4F: not tried on hardware (bench-proven on the
   Porsche, the 2.7T and the 1.8T ME7.5)
 
@@ -139,19 +151,18 @@ an `.ini` for another page layout refuse to match.
 
 | resource | size | used | free |
 |---|---|---|---|
-| near code (one 64 KiB segment) | 64 512 B | 58 622 B | 5 890 B (3 072 kept as reserve) |
-| far code | 183 984 B | 119 022 B | 64 962 B |
-| constants (near + huge) | 12 608 B | 10 116 B | 2 492 B |
-| internal RAM (near data) | — | — | 194 B |
-| on-chip XRAM | — | — | 95 B |
+| near code (one 64 KiB segment) | 64 512 B | 59 444 B | 5 068 B (3 072 kept as reserve) |
+| far code | 167 600 B | 152 002 B | 15 598 B |
+| constants (near + huge) | 28 992 B | 10 609 B | 18 383 B |
+| internal RAM (near data) | — | — | 10 B |
+| on-chip XRAM | — | — | 134 B |
 | user / system stack (worst case) | 512 / 634 B | — | ≤ 85 % (build gate) |
-| external SRAM | 32 KiB | — | 2 648 B spare |
-| calibration page | 4 096 B | 4 091 B | 5 B |
-| live data block | 1 664 B | 1 578 B | 86 B |
-| flash: calibration store | 576 KiB | 72 records of 8 KiB | — |
-| flash, `--updater` image | — | resident loader 64 KiB, staging 256 KiB, store 40 records | — |
+| external SRAM | 32 KiB | — | 760 B spare |
+| calibration page | 4 480 B (4 096 + 384 extension) | 4 091 + 200 B | 189 B (extension) |
+| live data block | 1 696 B | — | — |
+| flash | 1 MiB | code, resident loader 64 KiB, update staging 256 KiB | calibration store: 40 records of 8 KiB |
 
-Porsche release image, 2026-10-30. Code space is not the limit; the
+1.8T ME7.5 (4B0906018DC) image, 2026-11-04. Code space is not the limit; the
 calibration page and RAM are.
 
 ## Safety
