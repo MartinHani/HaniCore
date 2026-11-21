@@ -243,7 +243,7 @@ ENUM_KNOCK_SENSOR = ConfigEnum("KnockSensor", [
 # V97: VVT (hcvvt711.c + firmware/control/hcvvt.c)
 ENUM_VVT_MODE = ConfigEnum("VvtMode", [
     (0, "VVT_OFF", "Off"),
-    (1, "VVT_SWITCH", "On/off adjuster - target > 0 = solenoid ON"),
+    (1, "VVT_SWITCH", "On/off adjuster - solenoid ON when target > 0"),
     (2, "VVT_CLOSED", "Closed loop on the measured cam position"),
 ], "Cam phase control")
 
@@ -327,7 +327,7 @@ ENUM_CAM_PHASE = ConfigEnum("CamPhaseMethod", [
 ENUM_CAM_PATTERN = ConfigEnum("CamPattern", [
     (0, "CAMPAT_NONE", "None"),
     (1, "CAMPAT_SINGLE", "Single tooth per cycle"),
-    (2, "CAMPAT_EQUAL", "Equal teeth, count = camRefs"),
+    (2, "CAMPAT_EQUAL", "Equal teeth, count from camRefs"),
     (3, "CAMPAT_QUICKSTART", "Bosch quick-start (VAG 1.8T 20V)"),
     (4, "CAMPAT_HONDA_K_4P1", "Honda K exhaust 4+1"),
     (5, "CAMPAT_BARRA_3P1", "Ford Barra 3+1"),
@@ -347,7 +347,7 @@ ENUM_TRIG_DECODER = ConfigEnum("TriggerDecoder", [
 
 ENUM_TRACK_CORR = ConfigEnum("TrackCorrelation", [
     (0, "TRACK_OPPOSITE", "Opposite after calibration (both min < max)"),
-    (1, "TRACK_SAME", "Same after calibration - use with Grab (min = closed)"),
+    (1, "TRACK_SAME", "Same after calibration - use with Grab (min is closed)"),
     (2, "TRACK_SCALED", "Same direction, different scale/offset"),
 ], "Dual-track correlation model for TPS and APP. Do NOT assume opposite: it "
    "is true of the ME7.5 pair and is not a law.")

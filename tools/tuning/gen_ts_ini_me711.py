@@ -4159,6 +4159,14 @@ def main() -> int:
     L = public_och_comments([line.rstrip() for line in L])
     L_dev = L
     L = user_project(L_dev)
+    # 2026-11-22: LibreTune reads "N=label" in a bits option as an index
+    # prefix and dropped everything before an '=' ("(min = closed)" showed
+    # "closed)"). No option text may carry one.
+    _bad_opts = [ln.split("=")[0].strip() for ln in L
+                 if re.match(r"\s*\w+\s*=\s*bits\s*,", ln)
+                 and any("=" in o for o in re.findall(r'"([^"]*)"', ln.split("]", 1)[-1]))]
+    if _bad_opts:
+        raise SystemExit("bits option text contains '=' (LibreTune cuts it): %s" % _bad_opts)
     OUT.write_text("\n".join(L) + "\n", encoding="ascii", newline="\n")
     OUT_VERSIONED.write_text("\n".join(L) + "\n", encoding="ascii", newline="\n")
     print(f"wrote {OUT}")

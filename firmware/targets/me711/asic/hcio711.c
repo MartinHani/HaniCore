@@ -931,6 +931,12 @@ void far hc_io_lambda_service(unsigned int ms, unsigned int ua1,
             wb[0].fcode = (unsigned char)(cj110.fcode == HCCJ110_F_NOSIG ? HCWB_F_NO_SIGNAL
                           : cj110.fcode == HCCJ110_F_CHIP ? HCWB_F_CHIP : HCWB_F_NONE);
             lam_status = (unsigned int)((lam_status & ~1u) | (cj110.valid ? 1u : 0u));
+            /* the reason, as the CJ120 path sets it (it stayed 0 = VALID) */
+            wb[0].why = (unsigned char)(cj110.valid ? HCWB_WHY_VALID
+                : cj110.st == HCCJ110_ST_FAULT ? HCWB_WHY_FAULT
+                : cj110.st != HCCJ110_ST_MEASURE ? HCWB_WHY_CAL
+                : !allow ? (vbatt_dv < 110u ? HCWB_WHY_SUPPLY : HCWB_WHY_ENGINE)
+                : HCWB_WHY_RAMP);
             wb_ur_raw[b] = ur1;
             continue;
         }
@@ -1241,6 +1247,20 @@ unsigned int far hc_io_lambda(unsigned char b)
     return (wb[b].valid == 1u) ? wb[b].lambda : 0u;
 }
 
+/* WHY a bank's lambda is not a measurement, for the SOURCE the page names
+   (2026-11-22: the reason came from the on-board wideband code for every
+   source, so a bank set to Off / external analog / CAN / narrowband - or any
+   bank on a board without a wideband chip - read 0 = VALID with no sensor). */
+static unsigned char lam_why(unsigned char b)
+{
+    unsigned char src = IO_PAGE[b ? CFG_U_LAM2_SRC : CFG_U_LAM1_SRC];
+    if (src == HC_LAMBDA_OFF) return HCWB_WHY_OFF;
+    if (src == HC_LAMBDA_INTERNAL_LSU)
+        return (TGT_HAS_CJ120 || (TGT_HAS_CJ110 && b == 0u)) ? wb[b].why : HCWB_WHY_OFF;
+    return hc_io_lambda(b) != 0u ? HCWB_WHY_VALID : HCWB_WHY_OFF;
+}
+
+
 /* Stricter eligibility for protection; does not change V101 acquisition or
    closed-loop fuel behavior. A cached lambda alone cannot establish freshness. */
 unsigned int far hc_io_lambda_protection(unsigned char b)
@@ -1411,7 +1431,7 @@ void far hc_io_publish(unsigned int boost_req_x10, unsigned char part)
     /* WHY each bank's lambda is withheld (HCWB_WHY_*), and the chips'
        link: exchanges refused (reset / wrong answer / no answer) and SSC
        exchanges that never completed - saturated at 255 per byte */
-    och16(1010u, (unsigned int)(wb[0].why | ((unsigned int)wb[1].why << 8)));
+    och16(1010u, (unsigned int)(lam_why(0u) | ((unsigned int)lam_why(1u) << 8)));
     och16(1012u, (unsigned int)(sat(cj_err[0], 255u)
                                 | (sat(cj_err[1], 255u) << 8)));
     och16(1014u, (unsigned int)(sat(cj_tmo[0], 255u)

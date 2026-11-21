@@ -137,7 +137,7 @@ ELEMENT_FIELDS = {
 # (`bits, U32, off, [n:n]` per flag). The page keeps one u16/u8 with its
 # documented bits; each view is a switch a tuner reads by name.
 #   alias: (page field, bit, label, labels)
-_POL = ["Active low (closed to ground = on)", "Active high (open = on)"]
+_POL = ["Active low (on when closed to ground)", "Active high (on when open)"]
 BIT_VIEWS = {
     "launchEnable": ("motorsportEnable", 0, "Launch control", ["Off", "On"]),
     "flatShiftEnable": ("motorsportEnable", 1, "Flat shift", ["Off", "On"]),
