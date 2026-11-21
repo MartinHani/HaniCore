@@ -54,7 +54,7 @@ def worker():
 def main():
     if '--worker' in sys.argv:worker();return 0
     rows=[]
-    for stem in ('HaniCore_ME711_v101_dev','HaniCore_ME711_v102_dev'):
+    for stem in ('HaniCore_ME711_v101_dev','HaniCore_ME711_dev'):
         env=dict(os.environ,HANICORE_ME711_STEM=stem)
         p=subprocess.run([sys.executable,__file__,'--worker'],env=env,capture_output=True,text=True)
         if p.returncode:print(p.stdout,p.stderr);return 1

@@ -17,14 +17,14 @@ def main():
     target=ROOT/'firmware/targets/me711/hctarget.h'
     original=target.read_bytes();assert b'#define TGT_ETB_DIAGNOSTIC_BENCH    0' in original
     saved=Path(tempfile.mkdtemp(prefix='hc_sweep_generic_'))
-    files=list((ROOT/'bins/hanicore').glob('HaniCore_ME711_v102_dev.*'))
+    files=list((ROOT/'bins/hanicore').glob('HaniCore_ME711_dev.*'))
     for p in files:shutil.copy2(p,saved/p.name)
     try:
         target.write_bytes(original.replace(b'#define TGT_ETB_DIAGNOSTIC_BENCH    0',b'#define TGT_ETB_DIAGNOSTIC_BENCH    1'))
         proc=subprocess.run([sys.executable,str(ROOT/'tools/build/build_hanicore_me711.py')],cwd=ROOT,capture_output=True,text=True)
         (a.out/'bench_build.log').write_text(proc.stdout+proc.stderr)
         if proc.returncode:raise RuntimeError('Bench build failed; see bench_build.log')
-        stem=ROOT/'bins/hanicore/HaniCore_ME711_v102_dev'
+        stem=ROOT/'bins/hanicore/HaniCore_ME711_dev'
         image=bytearray(stem.with_suffix('.bin').read_bytes());image[0x60000:]=old[0x60000:]
         assert bytes(image[0x60000:])==old[0x60000:]
         dest=a.out/'HaniCore_ME711_etb_characterization_bench.bin';dest.write_bytes(image)
@@ -32,7 +32,7 @@ def main():
         manifest=json.loads(stem.with_suffix('.json').read_text());manifest.update(sha256=sha(image),bench_only=True,normal_dbw_inhibited=True,calibration_journal_sha256=sha(old[0x60000:]),calibration_journal_unchanged=True)
         dest.with_suffix('.json').write_text(json.dumps(manifest,indent=2))
         for suffix in ('','_forensic','_userdefined_fallback'):
-            shutil.copy2(ROOT/f'tuning/hanicore_me711_v102_dev{suffix}.ini',a.out/f'hanicore_me711_etb_characterization_bench{suffix}.ini')
+            shutil.copy2(ROOT/f'tuning/hanicore_me711_dev{suffix}.ini',a.out/f'hanicore_me711_etb_characterization_bench{suffix}.ini')
         print('Frozen bench candidate',dest,'SHA256',sha(image),flush=True)
         print('Existing journal preserved byte-for-byte; no calibration Burn.',flush=True)
     finally:

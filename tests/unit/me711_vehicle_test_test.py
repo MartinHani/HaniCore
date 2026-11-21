@@ -54,6 +54,7 @@ import shutil
 import sys
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -67,7 +68,7 @@ import me711_vehicle_test as VT        # noqa: E402
 # (tools/lib/me711_image.py). It was hardcoded to the V99 name, so a version
 # bump left this suite testing the channel map of a stale .ini.
 import me711_image as IMG                # noqa: E402
-INI = IMG.INI  # both boards: <stem>.ini (hanicore_me711_v102_dev / hanicore_me71_27t_v102_dev)
+INI = IMG.INI  # both boards: <stem>.ini (hanicore_me711_dev / hanicore_me71_27t_dev)
 PAGE_N = VC.Ini(Path(INI)).page_size     # 4480 since the 2026-11-03 page extension
 CHECKS = FAILS = 0
 
@@ -88,13 +89,18 @@ class FakeEcu:
     (echo only), 'kwp' (needs the 5-baud entry first), and KWP faults."""
 
     def __init__(self, mode="ok", kwp_fault=None, crc_every=0,
-                 bad_rates=()):
+                 bad_rates=(), refuse_rates=()):
         ini = VC.Ini(INI)
         self.ini = ini
         self.block = ini.block
         self.mode = mode
         self.kwp_fault = kwp_fault
         self.bad_rates = bad_rates   # GOFAST rates the "cluster" cannot carry
+        # GOFAST rates the ECU REFUSES (7F B1 12: the DC / 2.7T have no
+        # 115200); the session stays open and ignores a 5-baud address
+        self.refuse_rates = refuse_rates
+        self.in_session = False
+        self.entered = False         # 'kwp': a GOFAST opened the line
         self.crc_every = crc_every
         self.n_reply = 0
         self.baud = 115200
@@ -168,6 +174,8 @@ class FakeEcu:
     def five_baud(self, addr):
         self.baud = 10400
         self.rx.clear()
+        if self.in_session:
+            return                            # an open session: no sync
         if self.mode in ("kwp", "ok") \
                 and self.kwp_fault not in ("noinit", "noslow") \
                 and addr == 0x01:
@@ -192,6 +200,8 @@ class FakeEcu:
             if self.mode == "ok":
                 self.ecu_rate = self.baud     # the ECU follows the host
             return
+        if self.mode == "kwp" and not self.entered:
+            return              # a line that only the vehicle entry opens
         self.ts(data)
 
     def kwp(self, data):
@@ -213,6 +223,13 @@ class FakeEcu:
         elif svc[:1] == b"\xB1":
             if self.kwp_fault == "gofast":
                 return
+            if {1: 10400, 2: 57600, 3: 124800, 4: 115200}.get(
+                    svc[1:2][0] if svc[1:2] else 0) in self.refuse_rates:
+                reply(b"\x7F\xB1\x12")
+                self.in_session = True
+                return
+            self.in_session = False
+            self.entered = True
             reply(b"\xF1")
             if self.kwp_fault != "after":
                 self.ecu_rate = {1: 10400, 2: 57600, 3: 124800,
@@ -289,6 +306,95 @@ class FakeEcu:
                 self.etb = None
                 return
             self.etb = (sub, left - 1)
+
+
+class CutEcu(FakeEcu):
+    """The car's line: after `after_writes` requests it carries nothing (the
+    host hears only its own echo) until the host has been silent `quiet_s`."""
+
+    def __init__(self, after_writes, quiet_s):
+        super().__init__("kwp", refuse_rates=(115200,))
+        self.after_writes, self.quiet_s = after_writes, quiet_s
+        self.writes = 0
+        self.closed = False
+        self.t_last = 0.0
+        self.t_cut = None
+        self.t_back = None
+        self.closed_writes = 0
+
+    def _open(self):
+        if self.closed and time.monotonic() - self.t_last >= self.quiet_s:
+            self.closed = False
+            self.t_back = time.monotonic()
+        return not self.closed
+
+    def write(self, data: bytes):
+        if self.t_cut is None and not self.kwp_stage and self.entered:
+            self.writes += 1            # writes IN the session (2026-11-06:
+                                        # the direct probes before it don't)
+            if self.writes > self.after_writes:
+                self.closed = True
+                self.t_cut = time.monotonic()
+                self.t_last = self.t_cut
+        if not self._open():
+            self.t_last = time.monotonic()
+            self.closed_writes += 1
+            self.rx += data
+            return
+        super().write(data)
+
+    def five_baud(self, addr):
+        if not self._open():
+            self.t_last = time.monotonic()
+            return
+        super().five_baud(addr)
+
+    def wakeup(self):
+        if not self._open():
+            self.t_last = time.monotonic()
+            return
+        super().wakeup()
+
+
+class ClusterEcu(FakeEcu):
+    """The 018DC car's line (2026-11-05 logs): a reply longer than `long_ms`
+    on the wire closes the line `delay_s` later (3.0 s at 10400 in the car);
+    closed, the host hears only its echo until a 5-baud 0x01 entry."""
+
+    def __init__(self, long_ms=60.0, delay_s=0.5):
+        super().__init__("kwp", refuse_rates=(115200,))
+        self.long_ms, self.delay_s = long_ms, delay_s
+        self.close_at = None
+        self.closed = False
+        self.cuts = 0
+        self.longest = 0
+
+    def _check(self):
+        if self.close_at is not None and time.monotonic() >= self.close_at:
+            self.close_at = None
+            self.closed = True
+            self.cuts += 1
+
+    def write(self, data: bytes):
+        self._check()
+        if self.closed:
+            self.rx += data
+            return
+        before = len(self.rx) + len(data)
+        super().write(data)
+        n = len(self.rx) - before
+        if n > 0 and not self.kwp_stage:
+            self.longest = max(self.longest, n)
+            if n * 10000.0 / float(self.baud) > self.long_ms                     and self.close_at is None:
+                self.close_at = time.monotonic() + self.delay_s
+
+    def five_baud(self, addr):
+        self._check()
+        if addr == 0x01:
+            self.closed = False
+            self.close_at = None
+            self.in_session = False
+        super().five_baud(addr)
 
 
 class Args:
@@ -712,7 +818,7 @@ def guided_checks(tmp):
           st2["done"])
     print("G5 the ECU names its image; the preflight compares it with the kit")
     man = {"build_id": "1A2B3C4D", "sha256": "050cc11e" + "0" * 56}
-    base = "HaniCore V102 DEV / Bosch ME7.1.1"
+    base = "HaniCore V1.2-dev / Bosch ME7.1.1"
     ok = VT.image_identity(base + " build 1A2B3C4D", man)
     bad = VT.image_identity(base + " build 99999999", man)
     old = VT.image_identity(base, man)
@@ -872,8 +978,68 @@ def main() -> int:
         check("K5 every byte on the line recorded (kline_bytes.csv)",
               any(r["stage"].startswith("5-baud") and r["rx"] == "55ef8f"
                   for r in rows)
-              and sum(r["stage"].startswith("kwp GOFAST") for r in rows) >= 3,
+              # 115200 then 57600 (57600 before 124800 since 2026-11-04)
+              and sum(r["stage"].startswith("kwp GOFAST") for r in rows) >= 2,
               len(rows))
+        # K6 (2026-11-04, 018DC car): 115200 REFUSED (7F B1 12). The open
+        # session ignores a new 5-baud address, so the next rate must be
+        # asked in it - the car's logger re-entered and never connected.
+        ecu = FakeEcu("kwp", refuse_rates=(115200,))
+        out = tmp / "k6" / "s"
+        rc = VT.run(Args(out, kline=True), open_port=lambda b: ecu,
+                    stdin_q=Answers(["s"]))
+        summ = (out / "summary.txt").read_text()
+        check("K6 GOFAST 115200 refused -> 124800 in the same session -> PASS",
+              rc == 0 and "KWP 5-baud -> 124800" in summ,
+              [l for l in summ.splitlines() if "KLINE" in l][:2])
+        # K7 (2026-11-05, 018DC car): THE LINE CUTS. It closes during a session,
+        # stays closed while the host keeps talking, opens after silence. The
+        # logger must stop talking, re-enter once, and come back at its rate.
+        ecu = CutEcu(after_writes=40, quiet_s=1.5)
+        out = tmp / "k7" / "s"
+        t0 = time.monotonic()
+        rc = VT.run(Args(out, runtime=True, duration=14.0), open_port=lambda b: ecu,
+                    stdin_q=Answers(["s"]))
+        con = (out / "console.log").read_text()
+        check("K7 a cut line: reconnected, at the session's rate, not 10400",
+              "RECONNECTED" in con and ecu.baud == 124800, (ecu.baud, ecu.closed_writes))
+        check("K7 ... without hammering the closed line (at most 8 requests)",
+              0 < ecu.closed_writes <= 8, ecu.closed_writes)
+        check("K7 ... in under 8 s", ecu.t_back is not None
+              and ecu.t_back - ecu.t_cut < 8.0,
+              None if ecu.t_back is None else round(ecu.t_back - ecu.t_cut, 1))
+        # K8 (2026-11-06, 018DC car): A LONG REPLY CUTS THE LINE ~3 s later
+        # (the cluster). Through the OBD socket no read may ask for more than
+        # ~25 ms on the wire, TunerStudio's longest; control: without the cap
+        # the same session is cut.
+        ecu = ClusterEcu()
+        out = tmp / "k8" / "s"
+        rc = VT.run(Args(out, runtime=True, duration=6.0), open_port=lambda b: ecu,
+                    stdin_q=Answers(["s"]))
+        check("K8 OBD reads are short (<= 256 B at 124800): the line is never cut",
+              ecu.cuts == 0 and 0 < ecu.longest <= 256 + 7, (ecu.cuts, ecu.longest))
+        cap = VT.Link.read_cap
+        VT.Link.read_cap = lambda self: None
+        try:
+            ecu = ClusterEcu()
+            out = tmp / "k8c" / "s"
+            VT.run(Args(out, runtime=True, duration=6.0), open_port=lambda b: ecu,
+                   stdin_q=Answers(["s"]))
+        finally:
+            VT.Link.read_cap = cap
+        check("K8 control: whole-block reads on the same line ARE cut",
+              ecu.cuts >= 1 and ecu.longest > 1000, (ecu.cuts, ecu.longest))
+        # K9 (2026-11-06 night): OVER OBD DIRECT COMES FIRST - plugin 2.3.0's
+        # AUTO order, which held OBD; every car session that died had been
+        # entered by 5-baud. An ECU that would answer both ways gets no 5-baud.
+        ecu = FakeEcu("ok")
+        out = tmp / "k9" / "s"
+        rc = VT.run(Args(out, kline=True), open_port=lambda b: ecu,
+                    stdin_q=Answers(["s"]))
+        summ = (out / "summary.txt").read_text()
+        check("K9 OBD path: DIRECT first, no 5-baud when DIRECT answers",
+              rc == 0 and "direct" in summ and not ecu.entered,
+              [l for l in summ.splitlines() if "K-line" in l][:1])
         ecu = FakeEcu("kwp", bad_rates=(115200, 124800, 57600))
         out = tmp / "k5b" / "s"
         rc = VT.run(Args(out, kline=True), open_port=lambda b: ecu,

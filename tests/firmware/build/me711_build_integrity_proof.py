@@ -87,7 +87,7 @@ def run_generator():
     detect by comparing them.
 
     MEASURED: a test harness rewrote the config source, regenerated, restored
-    the source byte-identically, regenerated again - and `revMax 7123`, a
+    the source byte-identically, regenerated again - and `displacementCc 7123`, a
     value that exists in no config source, survived in hc_presets.c and was
     COMPILED INTO AN IMAGE. Deleting __pycache__ and regenerating removed it.
     """
@@ -166,15 +166,18 @@ def main() -> int:
     # Both were wrong, for the same reason: the generator emits presets in the
     # order 2, 4, 3 - not by id - so "the row I edited" was archaeology, and
     # one run was additionally confounded by the generated file being stale to
-    # begin with. 7123 is a revMax no preset uses, so its appearance in the
+    # begin with. 7123 is a displacementCc no preset uses, so its appearance in the
     # generated output is unambiguous and needs no knowledge of row order.
     SENTINEL = b"7123"
     try:
         had_before = SENTINEL + b"u" in gen_before
-        edited = src_before.replace(b'"revMax": Value(7500', b'"revMax": Value(7123', 1)
+        # displacementCc, an ENGINE value: since 2026-10-31 _on_board() replaces a
+        # preset's revMax with the board's CPU limit, so a revMax edit never
+        # reached hc_presets.c and this check failed on every board
+        edited = src_before.replace(b'"displacementCc": Value(1781', b'"displacementCc": Value(7123', 1)
         check("the sentinel is not already in the generated output",
               not had_before and edited != src_before,
-              "revMax 7123 is unused, and the edit applied")
+              "displacementCc 7123 is unused, and the edit applied")
         PRESETS_SRC.write_bytes(edited)
         run_generator()
         now = PRESETS_GEN.read_bytes()

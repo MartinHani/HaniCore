@@ -55,8 +55,6 @@ TGT = ROOT / "firmware/targets/me711"
 CFG_H = ROOT / "firmware/config/hcconfig.h"
 GEN_H = ROOT / "firmware/generated/hc_config_generated.h"
 
-PAYLOAD = 4096
-REC_LEN = 4120
 DONE = b"DONE"
 SENTINEL = 0x0002
 
@@ -114,6 +112,9 @@ def hexdefn(path, name):
 LAYOUT_ID = hexdefn(GEN_H, "HC_CFG_LAYOUT_ID")
 VERSION = defn(CFG_H, "HC_CFG_VERSION")
 SIZE = defn(CFG_H, "HC_CFG_SIZE")
+MAIN = defn(CFG_H, "HC_CFG_MAIN")        # the contiguous part; the extension follows
+PAYLOAD = SIZE                           # 4480 since 2026-11-03 (it was 4096)
+REC_LEN = 18 + SIZE + 6                  # header + CRC, payload, CRC + DONE
 
 
 def record(payload, gen):
@@ -131,7 +132,9 @@ def record(payload, gen):
 class Boot:
     """Boot one image and read what the configuration layer settled on."""
 
-    def __init__(self, img_bytes=None, steps=1_400_000):
+    # 3.0 M: a walk-back step is ~0.3 M instructions with the 4480-byte page
+    # (load + hc_validate); 1.4 M stopped four-deep walks half way (2026-11-04)
+    def __init__(self, img_bytes=None, steps=3_000_000):
         if img_bytes is None:
             path = PI.image()
         else:
@@ -173,8 +176,11 @@ class Boot:
         return out
 
     def addr(self, off):
-        return ((sym("hc_cfg") & 0xFFFF) + off if off < self.core
-                else self.extram + self.ramcfg + self.hdr + off)
+        if off < self.core:
+            return (sym("hc_cfg") & 0xFFFF) + off
+        if off >= MAIN:                  # the page extension, its own SRAM region
+            return self.extram + hexdefn(TGT / "hctarget.h", "TGT_RAM_CFGEXT") + off - MAIN
+        return self.extram + self.ramcfg + self.hdr + off
 
     def get8(self, off):
         return self.mem.r8(self.addr(off))
@@ -322,7 +328,7 @@ def main() -> int:
     # supply. A spare calibration byte carries a marker through the record
     # and out the other side; if it survives, the page really came from the
     # store rather than from seed_universal_defaults().
-    MARK_OFF = PAYLOAD - 3
+    MARK_OFF = MAIN - 3                  # the spare end of the contiguous part
     marked = bytearray(good)
     marked[MARK_OFF] = 0xA7
     marked = bytes(marked)

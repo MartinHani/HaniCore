@@ -332,7 +332,11 @@ void hckline_default_cfg(hckline_cfg_t HCKL_FAR *cfg)
     cfg->w1_us       = 60000uL; /* ISO 14230 W1 min                           */
     cfg->w2_us       = 5000uL;  /* ISO 14230 W2 min                           */
     cfg->w3_us       = 1000uL;  /* ISO 14230 W3 (0..20 ms); small             */
-    cfg->w4_us       = 50000uL; /* ISO 14230 W4 max window for the complement  */
+    /* ISO 14230 W4 is 50 ms at most, but the tester's clock is a Windows sleep
+       behind USB (2026-11-05, 018DC car: LibreTune's 70 came late, the ECU
+       restarted with 55 three entries in a row). Late is harmless: nothing
+       else can answer here, and a wrong byte still restarts at once. */
+    cfg->w4_us       = 200000uL;
     cfg->p2_us       = 50000uL; /* generous request->response ceiling         */
     cfg->p3_us       = 5000000uL;/* 5 s session inactivity -> idle             */
 

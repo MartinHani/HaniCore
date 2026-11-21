@@ -100,7 +100,9 @@ def check_all(lines, dbc) -> list[str]:
         ok(sig(dbc, M1, "Leergasinformation", d) == idle, "%s M1 idle bit" % sc)
         ok(abs(sig(dbc, M1, "Fahrpedalwert_oder_Drosselklapp", d) - ped) < 0.5,
            "%s M1 pedal" % sc)
-        ok(sig(dbc, M1, "Fehlerstatus_Brems_Momenteneing", d) == 1, "%s M1 statbr" % sc)
+        # B_statbr follows HCCAN_F_BR_NA (set in A, clear in B) - 2026-11-05
+        ok(sig(dbc, M1, "Fehlerstatus_Brems_Momenteneing", d) == (sc == "A"),
+           "%s M1 statbr" % sc)
         ok(sig(dbc, M1, "Fehlerstatus_Getriebe_Momentene", d) == 1, "%s M1 statgec" % sc)
     # torque: rl 120 % of the 230 Nm engine x 0.922 = 254.5 Nm = 63.6 % of 400
     tq = sig(dbc, M1, "inneres_Motor_Moment", fr[("B", "M1")])

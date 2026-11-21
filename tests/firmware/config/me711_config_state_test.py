@@ -257,6 +257,9 @@ def key_on(r, on=True):
     r.m.sfr[0xFFCC] = (v | 4) if on else (v & ~4)
     if _HB.IS_C4:
         r.m.w16((sym("adc_raw") & 0xFFFF) + 2 * 12, 900 if on else 0)
+    if _HB.IS_DC:       # the ME7.5 reads KL15 on P4.4 (hctarget.h)
+        v = r.m.sfr.get(0xFFC8, 0)
+        r.m.sfr[0xFFC8] = (v | 0x10) if on else (v & ~0x10)
 
 
 def boot():

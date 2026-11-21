@@ -44,10 +44,29 @@ void hccj110_init(hccj110_t *c)
     c->la = 1u;
     c->valid = 0u;
     c->lambda = 0u;
-    c->ua0 = 0u;
+    c->ua0 = HCCJ110_UA0_NOM;   /* until a plausible adjustment            */
     c->sum = 0u;
     c->n = 0u;
+    c->cal_ok = 0u;
+    c->ready = 0u;
+    c->rdy_ms = 0u;
+    c->wait_ms = 0u;
     enter(c, HCCJ110_ST_CAL_SETTLE);
+}
+
+void hccj110_recal(hccj110_t *c)
+{
+    if (c->st == HCCJ110_ST_FAULT) return;
+    c->la = 1u;
+    c->valid = 0u;
+    c->lambda = 0u;
+    enter(c, HCCJ110_ST_CAL_SETTLE);
+}
+
+static unsigned int sat_add(unsigned int a, unsigned int b)
+{
+    unsigned int t = a + b;
+    return (t < a) ? 0xFFFFu : t;
 }
 
 static void fault(hccj110_t *c, unsigned char f)
@@ -80,13 +99,16 @@ void hccj110_step(hccj110_t *c, unsigned int ua, unsigned char hot,
         c->sum = (unsigned int)(c->sum + (ua & 0x03FFu)); /* 8 x 1023 fits */
         c->n++;
         if (c->n >= HCCJ110_CAL_SAMPLES) {
-            c->ua0 = (unsigned int)(c->sum / HCCJ110_CAL_SAMPLES);
-            if (c->ua0 < HCCJ110_UA0_MIN || c->ua0 > HCCJ110_UA0_MAX) {
-                fault(c, HCCJ110_F_CAL);
-            } else {
-                c->la = 0u;
-                enter(c, HCCJ110_ST_MEASURE);
+            unsigned int u = (unsigned int)(c->sum / HCCJ110_CAL_SAMPLES);
+            /* GGLSU: the adjustment counts only while UA is plausible; an
+               implausible one (the chip's feed not up yet, ...) is no fault -
+               the zero it had stays (this key cycle's, else USABGL) */
+            if (u >= HCCJ110_UA0_MIN && u <= HCCJ110_UA0_MAX) {
+                c->ua0 = u;
+                c->cal_ok = 1u;
             }
+            c->la = 0u;
+            enter(c, HCCJ110_ST_MEASURE);
         }
         break;
 
@@ -104,15 +126,40 @@ void hccj110_step(hccj110_t *c, unsigned int ua, unsigned char hot,
         if (!hot) {
             c->valid = 0u;
             c->lambda = 0u;
+            c->rdy_ms = 0u;
+            c->wait_ms = 0u;
             break;
         }
         {
             /* the table is relative to the stock zero USABGL: shift the
                measured UA by (USABGL - UA0) */
-            unsigned int corr;
+            unsigned int corr, l;
             if (ua + HCCJ110_UA0_NOM <= c->ua0) corr = 0u;
             else corr = (unsigned int)(ua + HCCJ110_UA0_NOM - c->ua0);
-            c->lambda = hccj110_lambda_x1000(corr);
+            l = hccj110_lambda_x1000(corr);
+            if (!c->ready) {
+                /* GGLSU readiness: a cold or missing LSU reads exactly
+                   lambda 1 here - it is a measurement only once lambda has
+                   been away from 1 by SDLAB for TSTBB */
+                if (l > 1000u + HCCJ110_SDLAB_X1000
+                    || l < 1000u - HCCJ110_SDLAB_X1000) {
+                    c->rdy_ms = sat_add(c->rdy_ms, dt_ms);
+                    if (c->rdy_ms >= HCCJ110_TSTBB_MS) c->ready = 1u;
+                } else {
+                    c->rdy_ms = 0u;
+                }
+                if (!c->ready) {
+                    c->wait_ms = sat_add(c->wait_ms, dt_ms);
+                    if (c->wait_ms >= HCCJ110_NOSIG_MS) {
+                        fault(c, HCCJ110_F_NOSIG);
+                        break;
+                    }
+                    c->valid = 0u;
+                    c->lambda = 0u;
+                    break;
+                }
+            }
+            c->lambda = l;
             c->valid = 1u;
         }
         break;

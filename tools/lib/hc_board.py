@@ -13,7 +13,7 @@ inactive branch exactly as the compiler does for that one macro.
 
 me711_image.py takes its default stem from this, so
 `set HANICORE_BOARD=vag_me71_c4` points the image locator - and every gate
-built on it - at bins/hanicore/HaniCore_ME71_27T_v102_dev.bin.
+built on it - at bins/hanicore/HaniCore_ME71_27T_dev.bin.
 """
 from __future__ import annotations
 
@@ -39,14 +39,14 @@ IS_C4 = BOARD in ("vag_me71_c4", "vag_me75_dc", "vag_me75_bfb")
 # the 4F (2026-10-27) is Porsche code on its own boot region: IS_C4 False,
 # every Porsche branch applies; only its image name and boot region differ
 IS_4F = BOARD == "audi_4f_v8"
-STEM = {"porsche_me711": None, "vag_me71_c4": "HaniCore_ME71_27T_v102_dev",
-        "audi_4f_v8": "HaniCore_ME711_4F_v102_dev",
-        "vag_me75_dc": "HaniCore_ME75_DC_v102_dev",
-        "vag_me75_bfb": "HaniCore_ME75_BFB_v102_dev"}[BOARD]
+STEM = {"porsche_me711": None, "vag_me71_c4": "HaniCore_ME71_27T_dev",
+        "audi_4f_v8": "HaniCore_ME711_4F_dev",
+        "vag_me75_dc": "HaniCore_ME75_DC_dev",
+        "vag_me75_bfb": "HaniCore_ME75_BFB_dev"}[BOARD]
 # the image whose TunerStudio files this board uses: the 4F has the
 # Porsche's layout and signature, so it shares the Porsche's file family
 # (a second hanicore_me711_* family made the forensic lookup ambiguous)
-INI_STEM = "HaniCore_ME711_v102_dev" if IS_4F else STEM
+INI_STEM = "HaniCore_ME711_dev" if IS_4F else STEM
 INI = {"porsche_me711": "hanicore_me711.ini", "audi_4f_v8": "hanicore_me711.ini",
        "vag_me71_c4": "hanicore_me71_27t.ini",
        "vag_me75_dc": "hanicore_me75_dc.ini",

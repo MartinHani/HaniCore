@@ -39,6 +39,7 @@
 #include "hcaux711.h"        /* the rail pressure sensor */
 #include "hcxfn711.h"        /* 2026-11-03 functions (fade, lambda, spark) */
 #include "hcvss711.h"        /* 2026-11-04 vehicle speed (launch condition) */
+#include "hccan711.h"        /* 2026-11-05 the ESP's MSR request */
 
 #define T1_PER_MS  ((unsigned int)(TGT_TICKS_PER_MS_X10 / 10uL))   /* 1250 */
 /* 32/16 unsigned division, quotient bounded to 16 bits by every caller. */
@@ -326,7 +327,14 @@ unsigned int eng_calib_grab(unsigned char what)
        same pair of facts hcbench.c requires before it drives a pin. A
        calibration captured while something is turning is a calibration of a
        moment. */
-    if (trg_rpm != 0u || trg_state != TRG_NO_SIGNAL) {
+    /* ONLY A THROTTLE GRAB (2026-11-04, 018DC car: the pedal Grab buttons
+       "did nothing"): a plate must rest for its endpoint, a pedal is read
+       as it is - rotation changes nothing about two pedal tracks (rusEFI
+       calibrates the pedal at any time). Lone noise edges on the crank
+       input at standstill (c167sim) kept every grab refused as "not
+       stopped". */
+    if ((what == ENG_GRAB_TPS_CLOSED || what == ENG_GRAB_TPS_OPEN)
+        && (trg_rpm != 0u || trg_state != TRG_NO_SIGNAL)) {
         v = ENG_GRAB_RPM;
     } else {
         switch (what) {
@@ -453,6 +461,8 @@ static void dfco_update(unsigned int rpm)
         allowed = 0u;
     } else if (hc_trans.as_pm != 0u) {
         allowed = 0u;                /* Speeduino: not during after-start */
+    } else if (hc_can_msr()) {
+        allowed = 0u;                /* the ESP's drag-torque request (MSR) */
     }
     if (allowed && rpm > cut_rpm) {
         E.dfco_cond = 1u;

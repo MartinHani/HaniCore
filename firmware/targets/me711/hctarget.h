@@ -157,9 +157,9 @@
    version string does not contain the version in its own output stem, so
    this cannot silently lag a build again. */
 #if !TGT_BOARD_VAG_ME71_C4
-#define TGT_VERSIONTXT        "HaniCore V102 (v1.1) / Bosch ME7.1.1"
+#define TGT_VERSIONTXT        "HaniCore V1.1.1 / Bosch ME7.1.1"
 #else
-#define TGT_VERSIONTXT        "HaniCore V102 (v1.1) / Bosch ME7.1 C4"
+#define TGT_VERSIONTXT        "HaniCore V1.1.1 / Bosch ME7.1 C4"
 #endif
 #ifdef TGT_BOARD_AUDI_4F
 /* the Audi 4F 4.2 V8 (Porsche code on the 4F's own boot region, every
@@ -167,7 +167,7 @@
    the 64-byte 'V' reply (hcts.c send_text): "(outputs inert)" did not, and
    the build id arrived cut to 5 characters. */
 #undef TGT_VERSIONTXT
-#define TGT_VERSIONTXT        "HaniCore V102 (v1.1) / Bosch ME7.1.1 4F"
+#define TGT_VERSIONTXT        "HaniCore V1.1.1 / Bosch ME7.1.1 4F"
 #endif
 /* + " build XXXXXXXX" (TGT_BUILD_SUFFIX): the source hash of THIS image,
    written by tools/build/build_hanicore_me711.py before every compile, so
@@ -190,45 +190,7 @@
 #define HC_PIN_MEM huge
 /* Deliberate release identity, not a claim about a Git commit. The release
    manifest separately records the source-build and packaging commits. */
-#define TGT_RELEASE_ID        0x446Eu    /* V102 = 17416 + 102. V100 was 0x446C,
-                                          V98 0x446A, V97 0x4469. V81..V93 all
-                                          shipped V80's 0x4458 (found by the
-                                          V93 Tier 2 identity_proof).
-                                          Deterministic development ID.
-                                          V44 = 0x4434, V48 = 17464, V49 =
-                                          0x4439, V50 = 0x443A, V51 = 0x443B,
-                                          V52 = 0x443C, V53 = 0x443D: the
-                                          series is 17416 + the version
-                                          number, so V59 = 17475.
-
-                                          V55 IS NOT REUSED. It was
-                                          flashed and it is what found the
-                                          cam-absent Burn block; that
-                                          binary stays as the evidence of
-                                          the failure.
-
-                                          V54 IS NOT REUSED. The binary
-                                          physically qualified on 2026-09-14 -
-                                          80 Burns, 2 reclaims, zero resets -
-                                          is D4B9A272..., kept in
-                                          release/Porsche_ME711_V54_FLASH_FAULT_EXIT.
-                                          V55 restores the crank-angle
-                                          scheduler and the DBW controller that
-                                          V47..V54 compiled out, and makes the
-                                          trigger decoder read its wheel from
-                                          the page, so it is a different image
-                                          and it says so.
-
-                                          V53 IS NOT REUSED. The binary that
-                                          was physically qualified on
-                                          2026-09-13 - 88 Burns, 3 reclaims,
-                                          zero resets - is A90D17DE..., kept
-                                          in release/Porsche_ME711_V53_ROTATION.
-                                          Two firmware fixes have landed since
-                                          (retry_target's wild cell read, and
-                                          the writer returning into a busy
-                                          device), so this is a different
-                                          image and it says so. */
+#define TGT_RELEASE_ID        0x0101u    /* major << 8 | minor of TGT_VERSIONTXT */
 /* THE ENGINE RUNTIME: hcsched_dry.c's planner and hc_dbw.c's controller.
    The shared code keeps the switch (host builds compile it out). */
 #define TGT_ENGINE_RUNTIME 1
@@ -847,6 +809,10 @@ typedef char tgt_plan_cap_pow2[((TGT_PLAN_CAP_N & (TGT_PLAN_CAP_N - 1u)) == 0u) 
    tick (one level fewer in the nest - see TGT_ILVL_CAM) */
 #define TGT_ILVL_SERIAL_TX    8
 #define TGT_GLVL_SERIAL_TX    1
+/* TGT_TX_PEC (hcserial711.c): S0TBIC at 15/1 selects PEC channel 5 - the reply
+   bytes move by PEC; the block-end interrupt runs at 15 (C167CR UM 5.x) */
+#define TGT_ILVL_SERIAL_TXPEC 15
+#define TGT_GLVL_SERIAL_TXPEC 1
 
 /* How many received bytes may wait for the main loop. A TunerStudio request is
    11 bytes, so 64 gives the loop 11 ms of slack at 57600 baud. Must be a power
@@ -1382,6 +1348,19 @@ unsigned char hc_tlog_byte(unsigned int i);
 /* FREE (2026-10-28): the V49 live-Burn forensic record's 344 bytes. */
 #define TGT_RAM_SPARE_B       0x6900uL
 #define TGT_RAM_SPARE_B_LIMIT 0x0158uL
+/* THE K-LINE RECEIVE ACCOUNTS (2026-11-06, OBD on the 018DC: in the car the
+   ECU went deaf after a KWP entry and no counter said where the tester's
+   bytes went). Words, served big-endian at extended-window offset 332
+   (hcprofile711.c), zeroed at boot (hc_kwp_init):
+     0 bytes the tick took from PEC6      1 of them dropped as our echo
+     2 bytes the KWP core / a 5-baud byte took (hcts never parsed them)
+     3 echo debts the tick forgave         4 longest transmit job, ms
+     5 fast-init windows opened            6 (the running job's ms)
+   Above the updater's control block (hcupd711.h, SPARE_B + 0x10..). */
+#define TGT_RAM_KLSTAT        (TGT_RAM_SPARE_B + 0x0140uL)
+#define TGT_KLSTAT_EXPORT     12u
+#define HC_KLSTAT(i)  (((unsigned int volatile huge *)                                                 (TGT_EXTRAM_BASE + TGT_RAM_KLSTAT))[i])
+#define HC_KLSTAT_INC(i) do { if (HC_KLSTAT(i) != 0xFFFFu) HC_KLSTAT(i)++; } while (0)
 /* The phase offsets in force for the four cursor kinds (the close kind is
    unused): hc_deadline_plan_offset() holds a live timing change back while
    the next event is inside the publication horizon. */
@@ -2357,13 +2336,26 @@ extern volatile unsigned char hc_probe_sink;
 #ifndef TGT_BOARD_VAG_ME75_DC
 #define TGT_BOARD_VAG_ME75_DC 0
 #endif
+/* K-LINE REPLIES THROUGH PEC5 (2026-11-06, hcserial711.c): simulator-proven,
+   NEVER ON HARDWARE - off unless a build asks for it (TGT_TX_PEC=1). */
+#ifndef TGT_TX_PEC
+#define TGT_TX_PEC 0
+#endif
+/* THE 2026-10-22 KWP SESSION RULES (hckwp_me711.c, 2026-11-06 night): 1 takes
+   back the three session changes made since OBD held on 21-22.10 (rate pin
+   held during the ECU's own reply, a 5-baud restarting an open session, the
+   pinned rate restored after an unused fast-init window). A car-test option,
+   default 0 = today's rules. */
+#ifndef TGT_KWP_1022
+#define TGT_KWP_1022 0
+#endif
 #if TGT_BOARD_VAG_ME75_DC
 #undef  TGT_ID
 #define TGT_ID                0x0750      /* ME7.5 DC, 4B0906018DC / 0261207636 */
 #undef  TGT_SIGNATURE
 #define TGT_SIGNATURE         "HaniCore ME75DC BBDC7743"
 #undef  TGT_VERSIONTXT
-#define TGT_VERSIONTXT        "HaniCore V102 (v1.1) / Bosch ME7.5 DC"
+#define TGT_VERSIONTXT        "HaniCore V1.1.1 / Bosch ME7.5 DC"
 /* the analog CJ110 wideband controller (30345): UA on AN6, LA through the
    CC650 (reg 0x46 bit 0) - hccj110.c; no SPI chip, no Ri */
 #define TGT_HAS_CJ110         1
@@ -2495,7 +2487,7 @@ extern volatile unsigned char hc_probe_sink;
 #undef  TGT_SIGNATURE
 #define TGT_SIGNATURE         "HaniCore ME75BFB BBDC7743"
 #undef  TGT_VERSIONTXT
-#define TGT_VERSIONTXT        "HaniCore V102 (v1.1) / Bosch ME7.5 BFB"
+#define TGT_VERSIONTXT        "HaniCore V1.1.1 / Bosch ME7.5 BFB"
 
 /* THIS ECU RUNS AT 32 MHz, NOT THE 18T's 24 MHz (found on the bench
  * 2026-11-02). Evidence: the stock BFB read writes S0BG = 0x5F beside

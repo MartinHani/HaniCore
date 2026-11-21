@@ -19,6 +19,9 @@ LINKED image in c167sim with the tester modelled by me711_kwp_entry_proof.
   F3  a 60 ms low is not a wake-up: StartCommunication after it is ignored
   F4  a 25 ms low while bytes stream in (the ECU's own 0x00-rich reply,
       echoed) is not a wake-up: the locked rate stays
+  F5  a 25 ms low inside a pinned, locked session: the unused wake-up
+      window ends back at the pinned rate, LOCKED (17E64ACD, the 2026-11-04
+      018DC car image, hunts from the boot rate unlocked)
   P1  GOFAST 115200 with no request at 115200 for 2.5 s -> back at 10400
   P3  that 10400 is PINNED: bad bursts (the cluster's traffic) get no reply
       and do not move it (487AC54F, the 2026-10-15 car image, moves it to
@@ -215,6 +218,20 @@ def main() -> int:
     check("P2 ... still pinned after 1 s of silence: evidence does not move it",
           T.rate() == FAST, "rate %s" % T.rate())
     check("P2 ... and the tester's next request is answered",
+          bool(T.ask(G.OCH8, FAST)), "rate %s" % T.rate())
+    # F5 (2026-11-04, 018DC car: LibreTune over OBD re-entered every ~5 s;
+    # bench: ONE 25 ms low inside the session lost it). The wake-up window
+    # opens (a real tester's fast init must still work - P2 above re-enters
+    # that way), but when it closes unused (300 ms, no StartCommunication)
+    # the pinned rate comes back LOCKED. 17E64ACD (the car image) hunts from
+    # the boot rate instead, unlocked.
+    T.pin(0); T.run_ms(25); T.pin(1); T.run_ms(25)
+    T.run_ms(400)
+    locked = T.rig.mem.r8(HB.sym("hc_link_locked") & 0xFFFF)
+    check("F5 a 25 ms low inside a pinned session: back at %d, LOCKED, after "
+          "the unused window" % FAST, T.rate() == FAST and locked == 1,
+          "rate %s, locked %s" % (T.rate(), locked))
+    check("F5 ... and the tester's next request is answered",
           bool(T.ask(G.OCH8, FAST)), "rate %s" % T.rate())
     # ... until the tester has been silent 1.5 s (the KKL moved to the direct
     # cable): then evidence moves the rate again, as on a direct link

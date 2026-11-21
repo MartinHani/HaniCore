@@ -93,8 +93,9 @@ INDEX_FAMILIES = [
         5: "REFUSED: the two ends are too close - check the wiring",
         6: "REFUSED: no such endpoint",
         7: "PASS - both tracks in the page, correlation SAME",
+        8: "REFUSED: the throttle motor is on - turn electronic throttle off",
     }, ("IDLE", "PASS", "RPM", "NOCHANNEL", "RAIL", "SPAN", "WHAT",
-        "PASS_SAME")),
+        "PASS_SAME", "MOTOR")),
     # V90: the automatic ETB endpoint calibration ('!C1') and V92 autotune
     # ('!C2'); V93: hcetbcal.c, commission '!C3', SHORT primary texts (the
     # car showed sentence-long indicator strings unreadable). The long
@@ -259,9 +260,10 @@ INDEX_FAMILIES = [
         6: "GROUND LINE VM", 7: "CONTROLLER NOT ANSWERING", 8: "CALIBRATION",
         9: "DID NOT HEAT 60s", 10: "OVERHEAT", 11: "UNDERHEAT",
         12: "NO Ri SIGNAL", 13: "UR STAYED RAILED",
+        14: "NO SIGNAL (STAYS AT 1)",
     }, ("NONE", "HEATER_GND", "HEATER_OPEN", "HEATER_UB", "LINE_IAIP",
         "LINE_UN", "LINE_VM", "CHIP", "CAL", "NO_HEAT", "OVERHEAT",
-        "UNDERHEAT", "NO_RI", "OPEN_CELL")),
+        "UNDERHEAT", "NO_RI", "OPEN_CELL", "NO_SIGNAL")),
     ("hcLamHeaterList", HCP.find("hcwb.h"), "HCWB_ST_", {
         0: "OFF", 1: "WAIT", 2: "PREHEAT", 3: "RAMP", 4: "CLOSED LOOP",
         5: "READY", 6: "FAULT",

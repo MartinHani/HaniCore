@@ -320,9 +320,13 @@ def add(M) -> None:
            "accelerate it. Above this rate the cut / retard below act. "
            "Motorsport bit 4. 0 = off.")
     f("TC_RETARD", "u8", 1, "tcRetard", "Traction: retard", R,
-      units="deg", hi=30)
+      units="deg", hi=30,
+      note="Also what the ECU does while the car's ESP asks for less torque "
+           "over CAN (Bremse_1 received). Retard and cut both 0 = the ESP is "
+           "told its requests cannot be served.")
     f("TC_CUT", "u8", 1, "tcCut", "Traction: spark cut", R, units="%",
-      hi=90)
+      hi=90,
+      note="Also used for the ESP's torque requests over CAN (see retard).")
     # A shift light is a programmable output (I/O > Programmable outputs:
     # source rpm, threshold) - no second mechanism here.
 
@@ -392,7 +396,9 @@ def add(M) -> None:
     ], "Where the vehicle speed comes from")
     M.ALL_ENUMS.append(vss_src)
     f("CAN_RX_MASK", "u8", 1, "canRxMask", "Receive", C,
-      note="One bit per message: 1 Bremse_1 (ABS speed, brake, ESP off), 2 "
+      note="One bit per message: 1 Bremse_1 (ABS speed, brake, ESP off, "
+           "the ESP's torque requests - without it the ECU tells the ESP it "
+           "cannot serve them and the ESP lamp stays on), 2 "
            "Bremse_3 (wheel speeds), 4 Getriebe_1 (gear, gearbox requests), "
            "8 Kombi_1 (cluster speed, fuel level), 16 Kombi_2 (oil and "
            "outside temperature), 32 Airbag_1 (crash), 64 Klima_1 (A/C). "

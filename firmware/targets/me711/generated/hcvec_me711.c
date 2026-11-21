@@ -112,7 +112,7 @@ void hc_s0r_isr(void) interrupt TGT_TRAP_S0RINT
 /* trap 0x2E is claimed by the firmware: SSCRINT - hc_ssc_rx_isr in hcasic.c (PEC4 block end = frame done) */
 /* trap 0x2F is claimed by the firmware: SSCEINT - hc_ssc_err_isr in hcasic.c (SSC error, recovery) */
 /* trap 0x30 is claimed by the firmware: CC16INT - hc_cc16_isr in hctrig_me711.c (knock window MF) */
-/* trap 0x39 is claimed by the firmware: CC25INT - deadline terminal ISR (V102) */
+/* trap 0x39 is claimed by the firmware: CC25INT - deadline terminal ISR */
 /* trap 0x3A is claimed by the firmware: CC26INT - hc_plan_isr in hcsched_dry.c (software-triggered planner) */
 /* trap 0x3E is claimed by the firmware: T8INT  - hc_tick_isr in hcmain_me711.c (the 1 ms system tick) */
 /* trap 0x47 is claimed by the firmware: S0TBINT - hc_s0tb_isr in comms/hcserial711.c (reply transmit) */

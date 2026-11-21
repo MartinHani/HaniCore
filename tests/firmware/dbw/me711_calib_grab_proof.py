@@ -292,6 +292,15 @@ def main() -> int:
     g.stopped()
     check("and with both facts true it proceeds",
           g.grab(W["TPS_OPEN"]) == V["PASS"])
+    # 2026-11-04 (018DC car): a PEDAL grab does not need a stopped engine -
+    # lone noise edges at standstill refused every one as "not stopped"
+    g.raw("PEDAL1", 200)
+    g.raw("PEDAL2", 100)
+    g.turning(800)
+    v = g.grab(W["APP_REST"])
+    check("a PEDAL grab while the decoder sees edges proceeds", v == V["PASS"],
+          "verdict %d" % v)
+    g.stopped()
 
     # ------------------------------------------------------------------ 9 --
     # THE PEDAL PAIR, same rules, different slots.

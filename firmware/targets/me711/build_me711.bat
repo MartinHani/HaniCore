@@ -175,6 +175,9 @@ if errorlevel 1 goto :fail
 if errorlevel 1 goto :fail
 "%KEIL_BIN%\C166.EXE" nvm\hcnvm.c MOD167 SMALL OBJECT(%HC_BLD%\hcnvm.obj) PRINT(%HC_BLD%\hcnvm.lst) INCDIR(%INC%)
 if errorlevel 1 goto :fail
+rem 2026-11-04: the relocated flash routines, FAR (hcnvm.c with HCNV_RT_ONLY)
+"%KEIL_BIN%\C166.EXE" nvm\hcnvm_rt711.c MOD167 MEDIUM OBJECT(%HC_BLD%\hcnvm_rt711.obj) PRINT(%HC_BLD%\hcnvm_rt711.lst) INCDIR(%INC%)
+if errorlevel 1 goto :fail
 if errorlevel 1 goto :fail
 
 if errorlevel 1 goto :fail

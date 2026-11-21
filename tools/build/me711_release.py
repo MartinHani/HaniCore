@@ -76,9 +76,8 @@ def main(argv) -> int:
     # The identity check the V29 package failed: its binary reported
     # "HaniCore V28 TRIGGER COMM" while its filename said v29, so a real
     # hardware log recorded the wrong build against a real result.
-    tag = re.search(r"_v(\d+)", PI.STEM, re.I)
-    if not tag or ("V%s" % tag.group(1)) not in ver.upper():
-        raise SystemExit("the image is called %s but reports %r - refusing"
+    if not re.match(r"HaniCore V\d+\.\d+", ver):
+        raise SystemExit("the image %s reports %r, no version - refusing"
                          % (PI.STEM, ver))
 
     if not INI.exists():

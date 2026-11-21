@@ -21,4 +21,4 @@ if old_map.exists():
     else:raise AssertionError('NCODE guard failed to reject original image')
 else:
     print('SKIP control: %s not present (raw evidence store)' % old_map)
-B.check_ncode_reserve((H.ROOT/'bins/hanicore/HaniCore_ME711_v102_dev.M66').read_text())
+B.check_ncode_reserve((H.ROOT/'bins/hanicore/HaniCore_ME711_dev.M66').read_text())

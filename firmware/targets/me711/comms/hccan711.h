@@ -13,5 +13,9 @@ unsigned char far hc_can_crash(void);        /* airbag crash, latched to boot */
 /* lambda from a wideband controller on the bus (canWbFormat), x1000;
    0 = none / older than 100 ms (2026-11-04: lambda source 3) */
 unsigned int  far hc_can_lambda(unsigned char bank);
+/* the ESP's torque requests (Bremse_1, 2026-11-05): ASR = reduce now,
+   MSR = no overrun fuel cut */
+unsigned char far hc_can_asr(void);
+unsigned char far hc_can_msr(void);
 
 #endif

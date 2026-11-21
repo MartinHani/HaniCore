@@ -15,6 +15,15 @@
  *   EXACT TARGET BINARY  4B0906018DC: ULSUAMN/ULSUAMX/USABGL = 287/328/307
  *     counts at 0x813A68; LALIUS (UA -> lambda, 22 points) at 0x813A08.
  *     SULSUMX 985 counts and TVCJLSU 2.0 s from the same lineage (X505P).
+ *   EXACT TARGET VEHICLE DOCUMENT  1.8T ME7.5 Funktionsrahmen GGLSU 5.30
+ *     (funktionsrahmen/Audi_R4-5V_T_132kW_ME7.pdf p441): the
+ *     adjustment runs only while UA is plausible (ULSUAMN..ULSUAMX) - an
+ *     implausible UA is no fault, the stored correction stays; it runs at
+ *     key-on and again after start (TABGS). A cold or MISSING sensor reads
+ *     lambda = 1 after the adjustment; readiness is set only once lambda
+ *     has left 1 by SDLAB for TSTBB, with the heater active (2026-11-05:
+ *     a DC with no LSU fitted read a valid lambda 1.00).
+ *     X505P values: SDLAB 0.010, TSTBB 0.20 s, TABGS 5.0 s.
  */
 #ifndef HCCJ110_H
 #define HCCJ110_H
@@ -27,8 +36,11 @@
 
 /* latched faults */
 #define HCCJ110_F_NONE         0u
-#define HCCJ110_F_CAL          1u   /* UA0 outside ULSUAMN..ULSUAMX          */
+#define HCCJ110_F_CAL          1u   /* not raised since 2026-11-05 (GGLSU:
+                                       an implausible UA0 only skips it)    */
 #define HCCJ110_F_CHIP         2u   /* UA at the chip-diagnosis level (2 s)  */
+#define HCCJ110_F_NOSIG        3u   /* hot for HCCJ110_NOSIG_MS and lambda
+                                       never left 1: no sensor / no signal  */
 
 /* stock constants, 10-bit counts at 5 V (= the C167 ADC's own units) */
 #define HCCJ110_UA0_MIN        287u /* ULSUAMN 1.4014 V                      */
@@ -38,6 +50,9 @@
 #define HCCJ110_DIAG_MS       2000u /* TVCJLSU 2.0 s                         */
 #define HCCJ110_SETTLE_MS      200u
 #define HCCJ110_CAL_SAMPLES      8u
+#define HCCJ110_SDLAB_X1000     10u /* SDLAB 0.010                           */
+#define HCCJ110_TSTBB_MS       200u /* TSTBB 0.20 s                          */
+#define HCCJ110_NOSIG_MS     60000u /* judgement: a minute hot, never ready  */
 
 typedef struct {
     unsigned char st;       /* HCCJ110_ST_*                                  */
@@ -49,10 +64,18 @@ typedef struct {
     unsigned int  t_ms;     /* time in the current state / diagnosis timer   */
     unsigned int  sum;      /* calibration accumulator                       */
     unsigned char n;        /* calibration samples taken                     */
+    unsigned char cal_ok;   /* a plausible adjustment this key cycle         */
+    unsigned char ready;    /* readiness (B_sbblsu): lambda has left 1       */
+    unsigned int  rdy_ms;   /* time away from 1 (TSTBB)                      */
+    unsigned int  wait_ms;  /* time hot and not ready (NOSIG)                */
 } hccj110_t;
 
 /* key-on: start in calibration (LA high). */
 void hccj110_init(hccj110_t *c);
+
+/* the adjustment again (after start, TABGS): LA high for one calibration,
+   then back to measuring; readiness is kept. Ignored while faulted. */
+void hccj110_recal(hccj110_t *c);
 
 /* One step. ua = AN6 counts (0..1023); hot = the heater model says the
    sensor is at temperature; dt_ms = time since the previous step. */

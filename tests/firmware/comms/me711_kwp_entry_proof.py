@@ -134,7 +134,7 @@ class Tester:
         self.run(int(ms * self.ms))
 
     def rate(self):
-        return BG_RATE.get(self.rig.mem.r16(S0BG) & 0x1FFF)
+        return BG_RATE.get(self.rig.mem.sfr.get(S0BG, 0) & 0x1FFF)
 
     def five_baud(self, addr):
         bits = [0] + [(addr >> i) & 1 for i in range(8)] + [1]
@@ -313,7 +313,7 @@ def main() -> int:
     # G: 5-baud 0x01, no complement
     T.run_ms(400)
     T.five_baud(0x01)
-    T.run_ms(400)                   # W4 50 ms, one retry, W4 again, idle
+    T.run_ms(700)                   # W4 200 ms, one retry, W4 again, idle
     check("G  no complement: one retry, then back to the hunt at 57600",
           T.rate() == 57600, "rate %s" % T.rate())
     got = T.ask(OCH8, 57600)

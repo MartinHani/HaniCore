@@ -114,7 +114,7 @@ int main(int argc, char **argv)
     e.iat_dc = (unsigned int)((30 + 1000) * 10); e.pedal_x10 = 0u;
     e.tps_x10 = 26u; e.rl_x10 = 180u; e.idle_rpm = 850u; e.vss_x10 = 0u;
     e.fan_pct = 0u;
-    e.flags = HCCAN_F_IDLE | HCCAN_F_RUNNING;
+    e.flags = HCCAN_F_IDLE | HCCAN_F_RUNNING | HCCAN_F_BR_NA;
     scenario("A", &e, &id);
 
     /* B: 4250 rpm, half pedal, MIL + EPC + hot, fan 50 % */

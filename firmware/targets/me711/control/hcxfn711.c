@@ -317,6 +317,10 @@ static void traction_step(unsigned int ms)
         && r != 0u && !eng_cranking
         && X.rpm_rate > (int)(u8v(CFG_U_TC_RATE) * 100u)) {
         X.tc_ms = 300u;                     /* held, then released */
+    } else if (r != 0u && !eng_cranking && hc_can_asr()) {
+        /* the ESP asks (hccan711.c): the same retard / cut, released
+           50 ms after its request ends */
+        X.tc_ms = 50u;
     } else if (X.tc_ms > ms) {
         X.tc_ms = (unsigned int)(X.tc_ms - ms);
     } else {

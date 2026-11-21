@@ -24,8 +24,15 @@ MUTANTS = {
     # lambda published while the sensor is cold
     "cold_valid": ("if (!hot) {", "if (0) {"),
     # the calibration window not enforced
-    "no_window": ("if (c->ua0 < HCCJ110_UA0_MIN || c->ua0 > HCCJ110_UA0_MAX) {",
-                  "if (0) {"),
+    "no_window": ("if (u >= HCCJ110_UA0_MIN && u <= HCCJ110_UA0_MAX) {",
+                  "if (1) {"),
+    # a missing sensor (lambda stays 1) published as a measurement
+    "no_readiness": ("if (l > 1000u + HCCJ110_SDLAB_X1000", "if (1"),
+    # readiness on one sample instead of TSTBB
+    "no_tstbb": ("if (c->rdy_ms >= HCCJ110_TSTBB_MS) c->ready = 1u;",
+                 "c->ready = 1u;"),
+    # never the NO SIGNAL fault
+    "no_nosig": ("fault(c, HCCJ110_F_NOSIG);", "c->wait_ms = 0u;"),
     # chip diagnosis latched at once instead of after TVCJLSU
     "diag_at_once": ("if (c->t_ms >= HCCJ110_DIAG_MS) fault(c, HCCJ110_F_CHIP);",
                      "fault(c, HCCJ110_F_CHIP);"),

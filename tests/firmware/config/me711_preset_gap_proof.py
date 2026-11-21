@@ -57,7 +57,9 @@ def run(pre: list[bytes], expect: int, label: str) -> bool:
     for frame in pre + [b"W" + sel.to_bytes(2, "big") + bytes([PRESET]), b"!E"]:
         rig.queue_rx(at, env(frame))
         at += 400_000
-    rig.run(at - t0 + 2_600_000)
+    # 5.0 M after the last frame: the 2.7T's preset 6 needs 3.25 M (~2.2 s
+    # simulated, the Porsche's 0.6 s; 2026-11-04: 2.6 M read PENDING)
+    rig.run(at - t0 + 5_000_000)
     e = list(rig.entries[base:])
     gaps = [s1 - s0 for (_, s0), (_, s1) in zip(e, e[1:])]
     worst = max(gaps) / HB.STEPS_PER_MS if gaps else 0.0

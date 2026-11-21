@@ -821,6 +821,19 @@ void hc_cal_set_u8(unsigned int off, unsigned char v)
 
 unsigned int hc_cal_u16(unsigned int off)
 {
+    /* ONE RANGE TEST FOR BOTH BYTES when the word lies inside one part
+       (2026-11-04, issue 05): every table axis and 16-bit field read
+       was two calls of hc_cal_u8() - a sixth of the 2.7T's main loop at
+       6500 rpm. A word that straddles a part boundary (or leaves the page)
+       still takes the byte path, so every value is the same. */
+    if (off < HC_CFG_CORE - 1u) {
+        return (unsigned int)(((unsigned int)hc_cfg[off] << 8) | hc_cfg[off + 1u]);
+    }
+    if (off >= HC_CFG_CORE && off < HC_CFG_MAIN - 1u) {
+        /* a 16-bit index: the page sits inside one SRAM segment */
+        unsigned int o = (unsigned int)(HC_CFG_HDR_LEN + off);
+        return (unsigned int)(((unsigned int)RAM[o] << 8) | RAM[o + 1u]);
+    }
     return (unsigned int)(((unsigned int)hc_cal_u8(off) << 8)
                           | hc_cal_u8((unsigned int)(off + 1)));
 }

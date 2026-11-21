@@ -63,6 +63,14 @@ static void test_calibration_and_lambda(void)
     assert(c.st == HCCJ110_ST_MEASURE && c.la == 0u && c.ua0 == 312u);
     assert(c.valid == 0u && c.lambda == 0u);            /* cold: no lambda */
     run(&c, &m, 1u, 20u);
+    assert(c.valid == 0u && c.lambda == 0u);            /* hot, at 1: not ready */
+    m.ua_meas = 393u;                                   /* lambda 1.20     */
+    run(&c, &m, 1u, 150u);
+    assert(c.valid == 0u);                              /* < TSTBB         */
+    run(&c, &m, 1u, 60u);
+    assert(c.valid == 1u && c.lambda == 1200u && c.ready);
+    m.ua_meas = 305u;
+    run(&c, &m, 1u, 20u);
     assert(c.valid == 1u && c.lambda == 1000u);         /* offset removed  */
     for (i = 0u; i < sizeof pts_ua / sizeof pts_ua[0]; i++) {
         m.ua_meas = pts_ua[i];
@@ -72,7 +80,8 @@ static void test_calibration_and_lambda(void)
     run(&c, &m, 0u, 20u);
     assert(c.valid == 0u && c.lambda == 0u);            /* cooled: withdrawn */
     printf("  calibration: LA high 200 ms + 8 samples, UA0 312, LA low; "
-           "lambda only when hot, offset-corrected: OK\n");
+           "lambda only when hot and once away from 1 for 200 ms, "
+           "offset-corrected: OK\n");
 }
 
 static void test_cal_out_of_window(void)
@@ -81,13 +90,27 @@ static void test_cal_out_of_window(void)
     m.zero = 340u; m.ua_meas = 307u; m.diag = 0u;       /* > ULSUAMX 328  */
     hccj110_init(&c);
     run(&c, &m, 1u, 1000u);
-    assert(c.st == HCCJ110_ST_FAULT && c.fcode == HCCJ110_F_CAL);
-    assert(c.la == 0u && c.valid == 0u && c.lambda == 0u);
+    /* GGLSU: implausible = not adjusted, no fault, the stock zero stays */
+    assert(c.st == HCCJ110_ST_MEASURE && c.fcode == HCCJ110_F_NONE);
+    assert(c.ua0 == HCCJ110_UA0_NOM && c.cal_ok == 0u && c.la == 0u);
     m.zero = 280u;                                      /* < ULSUAMN 287  */
     hccj110_init(&c);
     run(&c, &m, 1u, 1000u);
-    assert(c.fcode == HCCJ110_F_CAL);
-    printf("  calibration window 287..328 enforced both ways: OK\n");
+    assert(c.fcode == HCCJ110_F_NONE && c.ua0 == HCCJ110_UA0_NOM);
+    /* after start the adjustment runs again: now plausible -> taken, and
+       readiness already reached is kept */
+    m.ua_meas = 393u;
+    run(&c, &m, 1u, 300u);
+    assert(c.ready && c.valid);
+    m.zero = 312u;
+    hccj110_recal(&c);
+    assert(c.la == 1u && c.valid == 0u);
+    run(&c, &m, 1u, 350u);
+    assert(c.st == HCCJ110_ST_MEASURE && c.ua0 == 312u && c.cal_ok == 1u);
+    run(&c, &m, 1u, 20u);
+    assert(c.valid == 1u && c.lambda == 1200u);
+    printf("  calibration window 287..328 both ways: implausible = no "
+           "fault, stock zero kept; recal after start takes a good one: OK\n");
 }
 
 static void test_chip_diagnosis(void)
@@ -112,6 +135,31 @@ static void test_chip_diagnosis(void)
     printf("  chip diagnosis: lambda withdrawn at once, latched after 2 s: OK\n");
 }
 
+static void test_no_sensor(void)
+{
+    hccj110_t c; chip_t m;
+    m.zero = 307u; m.ua_meas = 307u; m.diag = 0u;       /* no LSU: Ip 0   */
+    hccj110_init(&c);
+    run(&c, &m, 0u, 400u);
+    run(&c, &m, 1u, 59000u);
+    assert(c.valid == 0u && c.lambda == 0u && c.st == HCCJ110_ST_MEASURE);
+    m.ua_meas = 312u;                                   /* 1.010: not > SDLAB */
+    run(&c, &m, 1u, 500u);
+    assert(c.valid == 0u);
+    m.ua_meas = 307u;
+    run(&c, &m, 1u, 600u);
+    assert(c.st == HCCJ110_ST_FAULT && c.fcode == HCCJ110_F_NOSIG);
+    assert(c.valid == 0u && c.lambda == 0u && c.la == 0u);
+    /* a 150 ms excursion alone does not make a sensor ready */
+    hccj110_init(&c);
+    run(&c, &m, 0u, 400u);
+    m.ua_meas = 393u; run(&c, &m, 1u, 150u);
+    m.ua_meas = 307u; run(&c, &m, 1u, 1000u);
+    assert(c.valid == 0u && c.ready == 0u);
+    printf("  missing sensor (lambda stays 1): never valid, NO SIGNAL "
+           "after 60 s hot: OK\n");
+}
+
 int main(void)
 {
     printf("hccj110 host tests\n");
@@ -119,6 +167,7 @@ int main(void)
     test_calibration_and_lambda();
     test_cal_out_of_window();
     test_chip_diagnosis();
+    test_no_sensor();
     printf("all hccj110 tests passed\n");
     return 0;
 }

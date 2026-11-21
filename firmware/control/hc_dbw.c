@@ -19,6 +19,7 @@
  */
 #include "hctarget.h"
 #include "hcconfig.h"
+#include "hc_config_manager.h"
 #include "hc_config_generated.h"
 #include "hchal.h"
 #include "hc_dbw.h"
@@ -363,6 +364,7 @@ void hc_dbw_shutdown(unsigned int fault_bits)
     if (fault_bits) {
         D.flt |= fault_bits;
         D.st = DBW_FAULT;
+        D.flt_rev = hc_cfg_desired_rev;
     }
 }
 
@@ -497,6 +499,7 @@ void hc_dbw_init(void)
     D.pend = 0u; D.pend_since = 0u; D.ovr = 0xFFFFu; D.clears = 0u; D.requested = 0u;
     D.busy = 0u; D.align_pending = 0u; D.align_since = 0u;
     D.key = 1u;        /* a boot is not a key-on edge: nothing to clear */
+    D.flt_rev = 0u; D.en_last = 0u;
     /* FORCE ONE UNCONDITIONAL RELEASE. D is in external SRAM with no ?C_INIT,
        so `held` starts at whatever the last power cycle left; claiming it here
        makes the release below happen whatever that byte says. */
@@ -587,8 +590,34 @@ static void dbw_step(unsigned int now_ms, unsigned int rpm, unsigned char armed)
     }
 #endif
 
-    /* A LATCHED FAULT IS FINAL until hc_dbw_init(). Checked first so no later
-       path can talk itself out of it. */
+    /* THE TUNER'S WAY OUT, ENGINE STOPPED ONLY (2026-11-05, testers + the owner's
+       car: dbwEnable on with an uncalibrated pedal or stale TPS endpoints latched
+       a fault, and the calibration that fixed it left the plate dead with
+       nothing on the screen saying why, until a key cycle). Both are the key-on
+       rule (hc_dbw_key()): a real sensor fault latches again after its confirm
+       time, and DBW_INIT still wants its clean passes first.
+       - dbwEnable switched ON is a new attempt: every latch goes.
+       - The page moved since a pedal/TPS fault latched: it was judged against a
+         calibration that no longer exists. Those bits go, nothing else. */
+    if (rpm == 0u) {
+        ok1 = (unsigned char)(hc_cal_u8(CAL_DBW_ENABLE) == 1u);
+        if (ok1 && !D.en_last && D.st == DBW_FAULT) {
+            hc_dbw_clear_faults();
+        }
+        D.en_last = ok1;
+        if (D.st == DBW_FAULT && hc_cfg_desired_rev != D.flt_rev) {
+            D.flt_rev = hc_cfg_desired_rev;
+            D.flt &= (unsigned int)~(DBW_F_APP_PAIR | DBW_F_APP_RANGE
+                                     | DBW_F_TPS_RANGE | DBW_F_TPS_PAIR);
+            if (!(D.flt & (unsigned int)~DBW_F_CFG)) {
+                D.st = DBW_OFF;
+                D.settle = 0u;
+            }
+        }
+    }
+
+    /* A LATCHED FAULT IS FINAL until one of those, a key-on or a DTC clear.
+       Checked first so no later path can talk itself out of it. */
     if (D.st == DBW_FAULT) {
         if (D.ovr != 0xFFFFu
             && !(D.flt & (unsigned int)~(DBW_F_APP_PAIR | DBW_F_APP_RANGE))) {

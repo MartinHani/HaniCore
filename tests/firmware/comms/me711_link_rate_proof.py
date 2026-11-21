@@ -74,7 +74,7 @@ class Link:
         self.rig.run(PI.BOOT_STEPS + 750_000)
 
     def ecu_rate(self):
-        return RATE.get(self.rig.mem.r16(S0BG) & 0x1FFF)
+        return RATE.get(self.rig.mem.sfr.get(S0BG, 0) & 0x1FFF)
 
     def sym8(self, name):
         try:
@@ -94,7 +94,7 @@ class Link:
             self.rig.queue_rx(self.rig.cpu.steps + 1, raw)
         else:
             dec = UW.receive(raw, UW.host_baud(host_rate),
-                             UW.ecu_baud(self.rig.mem.r16(S0BG) & 0x1FFF))
+                             UW.ecu_baud(self.rig.mem.sfr.get(S0BG, 0) & 0x1FFF))
             if dec:
                 self.rig.queue_rx(self.rig.cpu.steps + 1,
                                   bytes(b for b, _fe in dec))
@@ -270,6 +270,29 @@ def main() -> int:
     lost1 = L.rig.mem.r16(HB.sym("rx_echo_lost"))
     check("E  rxEchoLost did not move with the echo present",
           lost1 == lost0, "%d -> %d" % (lost0, lost1))
+
+    # E2 (2026-11-06): a reply of the size LibreTune asks for over OBD (256 B).
+    # On an image with replies through PEC5 (TGT_TX_PEC: S0TBIC left at ILVL 15
+    # GLVL 1) the simulator must have moved its bytes by PEC - not by the
+    # per-byte interrupt - and they still leave back to back, CRC-valid.
+    pec0 = getattr(L.rig.cpu, "pec5_moved", 0)
+    got = L.ask(b"O" + (0).to_bytes(2, "big") + (256).to_bytes(2, "big"),
+                rate, steps=3_000_000)
+    pec1 = getattr(L.rig.cpu, "pec5_moved", 0)
+    check("E2 a 256-byte block is CRC-valid",
+          bool(got) and len(got[-1]) == 257, "%s" % [len(g) for g in got])
+    st = L.rig.tx_wire_steps[-(257 + 6):]
+    gaps = sorted(st[i + 1] - st[i] for i in range(len(st) - 1))
+    med = gaps[len(gaps) // 2] if gaps else 0
+    ratio = med / byte_steps if byte_steps else 0.0
+    check("E2 ... its bytes leave back to back", 0 < ratio <= 1.05, "x%.3f" % ratio)
+    pec_image = (L.rig.mem.esfr.get(0xF19C, 0) & 0x3F) == 0x3D
+    check("E2 ... through PEC5 on a TGT_TX_PEC image (%s)"
+          % ("PEC image" if pec_image else "per-byte image"),
+          (pec1 - pec0 >= 263) if pec_image else (pec1 == pec0),
+          "PEC5 moved %d bytes" % (pec1 - pec0))
+    got2 = L.ask(OCH8, rate)
+    check("E2 ... and the next request is answered", bool(got2))
 
     N = Link(echo=False)
     got = N.ask(OCH8, 57600)

@@ -40,7 +40,7 @@ sys.path.insert(0, str(ROOT / "tools" / "lib"))
 import hcpaths  # noqa: F401,E402
 import c167sim as S  # noqa: E402
 
-IMAGE = ROOT / "bins/hanicore/HaniCore_ME71_27T_v102_dev.bin"
+IMAGE = ROOT / "bins/hanicore/HaniCore_ME71_27T_dev.bin"
 MANIFEST = IMAGE.with_suffix(".json")
 ROM = ROOT / "bins/oem/CPU.BIN"
 WDTCON_AT_RESET = 0x0002

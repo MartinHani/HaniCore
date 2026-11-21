@@ -26,6 +26,8 @@ static hckline_cfg_t HC_C4FAR kw_cfg;
 static unsigned char kw_on;           /* a KWP session owns the K-line */
 static unsigned long kw_us;           /* microseconds, advanced by addition */
 static unsigned int  kw_last_ms;
+static unsigned char kw_back;         /* S0BG to restore after an unused
+                                         fast-init window (0: hunt)    */
 
 /* THE 5-BAUD DECODER RUNS IN THE 1 MS TICK (2026-10-14 evening, car).
    It sampled from the MAIN LOOP until then and threw the byte away when one
@@ -245,6 +247,7 @@ static void fb_reset(void)
 
 void far hc_kwp_init(void)
 {
+    unsigned char b;
     hckline_default_cfg(&kw_cfg);
     kw_cfg.sig = KW_SIG;
     kw_cfg.sig_len = (unsigned char)(sizeof(KW_SIG) - 1u);
@@ -252,6 +255,7 @@ void far hc_kwp_init(void)
     kw_on = 0u;
     kw_us = 0uL;
     kw_last_ms = 0u;
+    kw_back = 0u;
     fb_reset();
     fb_t0 = 0u;
     fb_n = 0u; fb_hi = 0u; fb_i = 0u; fb_byte = 0u;
@@ -262,6 +266,9 @@ void far hc_kwp_init(void)
     KC.st = 0u;
     KC.trig = 0u;
     KL.run_t = 0u; KL.rxp = 0u; KL.t_pv = 0u;
+    for (b = 0u; b < 7u; b++) {
+        HC_KLSTAT(b) = 0u;                  /* the receive accounts */
+    }
 }
 
 unsigned char far hc_kwp_active(void)
@@ -279,10 +286,15 @@ unsigned char far hc_kwp_rx_take(unsigned char b)
 {
     if (kw_on) {
         hckline_on_rx(&kw, b, kw_us);
+        HC_KLSTAT_INC(2);
         return 1u;
     }
     /* inside a qualified 5-baud byte the UART sees break garbage */
-    return (unsigned char)(fb_st >= 3u);
+    if (fb_st >= 3u) {
+        HC_KLSTAT_INC(2);
+        return 1u;
+    }
+    return 0u;
 }
 
 /* The fast-init wake-up: a finished low run of 20..30 ms, fresh. Taken once.
@@ -327,16 +339,66 @@ void far hc_kwp_service(unsigned int ms)
         } else if (KC.good) {
             KC.good = 0u;           /* the tester is still there */
             KL.t_pv = ms;
+#if !TGT_KWP_1022
+        } else if (hc_tx_busy()) {
+            /* (2026-11-05, 018DC car) a tester being answered is no silent
+               tester: a 1714-byte block at 10400 is 1.65 s on the wire, and
+               the pin ran out inside our own reply - and never came back */
+            KL.t_pv = ms;
+#endif
         } else if ((unsigned int)(ms - KL.t_pv) >= KL_IDLE_MS) {
             KL.st &= KL_PV_CLR;     /* gone: evidence may move the rate */
         }
     }
+#if !TGT_KWP_1022
+    if (kw_on && fb_st == 4u) {
+        /* A FRESH 5-BAUD ADDRESS RESTARTS AN OPEN SESSION (hckline.c promises
+           it; 2026-11-05, 018DC car). Until now a byte decoded while kw_on was
+           ignored until the session's 5 s P3 ran out, so a tester that lost
+           its session had to wait: LibreTune's 2.5 s between entries. */
+        b = fb_byte;
+        fb_reset();
+        hckline_on_slow_init(&kw, b, kw_us);
+        if (kw.state == HCKLINE_ST_SYNC) {
+            kw_back = 0u;
+            hcts_link_force(TGT_S0BG_10400, 1u);
+        }
+    }
+#endif
     if (!kw_on) {
         if (kl_wakeup(ms) && fb_st < 3u) {
+            /* A WAKE-UP INSIDE A PINNED SESSION KEEPS ITS WAY BACK (2026-11-04,
+               018DC car: LibreTune over OBD re-entered every ~5 s). One
+               20..30 ms low on the shared line - the bench reproduces it
+               with a single pulse - forced 10400 mid-session; when no
+               StartCommunication followed, the window's end HUNTED from the
+               boot rate, unlocked, and the cluster's noise moved it. Now a
+               window that closes unused puts the pinned rate back, locked
+               and pinned: a spurious low costs one reply, not the session,
+               and a real tester's fast init still opens it. */
+            kw_back = 0u;
+#if !TGT_KWP_1022
+            if ((KL.st & KL_PV) && hc_link_locked) {
+                /* the rate by its INDEX (hcts_link_state bits 0..1), never
+                   by reading S0BG: a READ returns the running baud TIMER,
+                   only a write sets the reload (C167 UM; c167sim reads the
+                   reload back - the bench restored nothing, the gate passed) */
+                code = (unsigned char)(hcts_link_state() & 3u);
+                kw_back = (code == 0u) ? TGT_S0BG
+#ifdef TGT_S0BG_ALT
+                        : (code == 1u) ? TGT_S0BG_ALT
+#endif
+#if TGT_LINK_RATES > 2u
+                        : (code == 2u) ? TGT_S0BG_ALT2
+#endif
+                        : TGT_S0BG_10400;       /* 3: the pinned 10400 */
+            }
+#endif
             /* ISO 14230 FAST INIT: 10400 now - the tester's StartCommunication
                follows the 25 ms high phase - and the core's window opens */
             hcts_link_force(TGT_S0BG_10400, 1u);
             hckline_on_fast_init(&kw, kw_us);
+            HC_KLSTAT_INC(5);
             kw_on = 1u;
             KL.st &= KL_PV_CLR;
             fb_reset();
@@ -366,6 +428,12 @@ void far hc_kwp_service(unsigned int ms)
             sent++;
         }
         if (sent) {
+            /* re-test the wiring on every reply, as hcts.c does (2026-11-05,
+               reproduced on the 018DC): one echo lost in a TS reply left
+               echo_seen 0, no KWP reply re-armed it, so the ECU read its own
+               8F as the tester's complement and sent 55 again - no entry
+               worked until a power cycle */
+            echo_seen = 1u;
             (void)hc_tx_start(HC_TXK_PLAIN, 0u, 0u, (unsigned int)sent,
                               (const unsigned char *)0);
         }
@@ -403,8 +471,18 @@ void far hc_kwp_service(unsigned int ms)
     } else if (kw.state == HCKLINE_ST_IDLE) {
         kw_on = 0u;                             /* failed / timed out */
         KL.st &= KL_PV_CLR;
-        hcts_link_hunt();
+        if (kw_back != 0u) {
+            /* an unused wake-up window inside a pinned session: back */
+            hcts_link_force(kw_back, 1u);
+            KL.st |= KL_PV;
+            KL.t_pv = ms;
+            kw_back = 0u;
+        } else {
+            hcts_link_hunt();
+        }
         fb_reset();
+    } else if (kw.state != HCKLINE_ST_FAST) {
+        kw_back = 0u;           /* a real tester took the window: no way back */
     }
 }
 

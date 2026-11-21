@@ -440,14 +440,14 @@ static void seed_universal_defaults(void)
        still reads as absent rather than one that reads as valid and is half
        written. Same discipline a flash commit marker will need. */
     hc_cal_set_u16(CFG_U_GENERATION, 0u);
-    hc_cfg_v102_defaults();
+    hc_cfg_append_defaults();
     hc_cal_set_u16(CFG_U_CRC, 0u);
     hc_cal_set_u16(CFG_U_SCHEMA, HC_UNIVERSAL_SCHEMA);
     hc_cal_set_u16(CFG_U_MAGIC, HC_UNIVERSAL_MAGIC);
 }
 
 /* V101 migration changes only newly owned bytes and schema identity. */
-void hc_cfg_v102_defaults(void)
+void hc_cfg_append_defaults(void)
 {
     unsigned int i;
     static const unsigned int huge defaults[13] = {1013u,50u,250u,3600u,100u,2000u,200u,2500u,200u,600u,100u,300u,1000u};
@@ -528,7 +528,7 @@ unsigned char hc_cfg_page_known(void)
 unsigned char hc_cfg_migrate_v101(void)
 {
     if(hc_cal_u16(CFG_U_MAGIC)!=HC_UNIVERSAL_MAGIC || hc_cal_u16(CFG_U_SCHEMA)!=HC_V101_SCHEMA) return 0u;
-    hc_cfg_v102_defaults();
+    hc_cfg_append_defaults();
     /* V101 never persisted physical sensor role. Migration cannot infer an
        installation from its cavity number. Legacy arithmetic is unchanged;
        commission an explicit role before selecting a new pressure model. */

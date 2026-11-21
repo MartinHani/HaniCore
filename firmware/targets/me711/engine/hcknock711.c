@@ -569,6 +569,13 @@ void far hc_knock_service(unsigned int now_ms)
     if (mode > KN_MODE_ACTIVE) {
         mode = KN_MODE_OFF;
     }
+#if TGT_BOARD_VAG_ME75_DC
+    /* NOT ON THE ME7.5 (2026-11-06): these are the Porsche's knock pins
+       (P3.1..P3.7, band/gain select). On the 018DC P3.7 is the fuel pump
+       relay and P3.5 the 68HC05 monitor's FPW stop line, and its knock band
+       sits in the CC650 (not driven yet) - whatever the page says. */
+    mode = KN_MODE_OFF;
+#endif
     /* ...and when the scheduler's geometry arrived after the load
        (2026-10-29): it is built on the FIRST TOOTH, while this runs from
        boot, so a load with no geometry (SRAM lost: first start after a

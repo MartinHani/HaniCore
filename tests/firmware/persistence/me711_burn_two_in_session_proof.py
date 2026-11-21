@@ -295,6 +295,22 @@ def main():
         return {n: int.from_bytes(body[och[n] - lo:och[n] - lo + 2], "big")
                 for n in OCH_NAMES}
 
+    def och_settled(pred, limit_ms=600):
+        """Read the status words until the publication shows pred, bounded.
+
+        2026-11-04: since the fast block took every 3rd publication slice
+        (2026-11-03) one cycle is longer than the 60 ms this gate waited, so
+        it read the state the slices had not reached yet (v1.1 fails the same
+        way). The record is checked in flash at once; this only waits for the
+        PUBLICATION, at most limit_ms, and the last read is what is judged.
+        """
+        t0 = rig.cpu.steps
+        while True:
+            rig.run(ms(20))
+            r = och_read()
+            if r is None or pred(r) or rig.cpu.steps - t0 >= ms(limit_ms):
+                return r
+
     def version_text():
         # the image's own 'V' text (TGT_VERSIONTXT + " build <id>" since
         # 2026-10-11), as its build manifest records it
@@ -384,8 +400,8 @@ def main():
     # 40 ms (hcdiag711.c hc_diag_publish_step, 13 slices): read them one
     # cycle after the Burn, not in the same breath as its reply. The
     # record itself is checked in flash above, at once.
-    rig.run(ms(60))
-    after = och_read()
+    after = och_settled(lambda r: r["nvmGeneration"] == 1
+                        and (r["nvmState"] & 0xFF) == HCNV_ST_DONE)
     p = page_read()
     check("the burned byte reads back from the live page",
           p is not None and p[1] == 0x11,
@@ -460,8 +476,7 @@ def main():
     check("the second burned byte reads back live",
           p is not None and p[1] == 0x5A,
           f"0x{p[1]:02X}" if p else "no reply")
-    rig.run(ms(60))                # one publication cycle (see above)
-    final = och_read()
+    final = och_settled(lambda r: r["nvmGeneration"] == 2)
     if final:
         check("the published generation is 2 after the second Burn",
               final["nvmGeneration"] == 2, f"{final['nvmGeneration']}")

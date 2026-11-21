@@ -46,8 +46,9 @@ def sym(n):
 
 
 def body_of(name):
-    return SRC[SRC.index(f"void far {name}(void)"):
-               SRC.index(f"void far {name}_end(void)")]
+    # rindex: the definitions, not the prototypes fl_prepare_sel() needs above them
+    return SRC[SRC.rindex(f"void far {name}(void)"):
+               SRC.rindex(f"void far {name}_end(void)")]
 
 
 def main():

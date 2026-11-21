@@ -57,6 +57,8 @@ typedef struct {
 #define HCCAN_F_NO_DBW     0x1000u  /* cable throttle                     */
 #define HCCAN_F_DTC_STORED 0x2000u
 #define HCCAN_F_BRAKE      0x4000u
+#define HCCAN_F_BR_NA      0x8000u  /* brake (ASR/MSR) torque requests
+                                       cannot be served: Motor_1 B_statbr */
 
 /* the stock identity (Motor_2 / Motor_5 multiplex) */
 typedef struct {

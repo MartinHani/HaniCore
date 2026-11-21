@@ -205,6 +205,11 @@ unsigned char HC_COLD hc_och_ext_byte(unsigned int offset)
         else if (offset < TGT_ASICBAD_EXPORT + (unsigned int)TGT_RAM_PASSREC_LIMIT)
             w = ((unsigned int volatile far *)(TGT_EXTRAM_BASE + TGT_RAM_PASSREC))
                     [(offset - TGT_ASICBAD_EXPORT) >> 1];
+        else if (offset < TGT_ASICBAD_EXPORT + (unsigned int)TGT_RAM_PASSREC_LIMIT
+                          + TGT_KLSTAT_EXPORT)
+            /* 332..343 the K-line receive accounts (hctarget.h, 2026-11-06) */
+            w = HC_KLSTAT((offset - TGT_ASICBAD_EXPORT
+                           - (unsigned int)TGT_RAM_PASSREC_LIMIT) >> 1);
         else
             return 0u;
         return (unsigned char)((offset & 1u) ? (w & 0xFFu) : (w >> 8));

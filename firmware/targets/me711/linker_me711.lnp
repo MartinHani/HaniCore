@@ -54,6 +54,7 @@
 "build\hccan711.obj",
 "build\hcvss711.obj",
 "build\hcnvm.obj",
+"build\hcnvm_rt711.obj",
 "build\hcengine.obj",
 "build\hcmainrelay.obj",
 "build\hcfuelpump.obj",

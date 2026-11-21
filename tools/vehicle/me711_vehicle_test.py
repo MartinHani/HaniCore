@@ -254,6 +254,34 @@ def decode_klcap(b: bytes) -> dict:
     return out
 
 
+# 2026-11-06: THE K-LINE RECEIVE ACCOUNTS (hctarget.h TGT_RAM_KLSTAT), six
+# big-endian words at extended-window offset 332 - where every byte the ECU
+# received went. An image without them reads 0.
+EXT_KLSTAT = 332
+KLSTAT_NAMES = ("received", "as_echo", "kwp_took", "echo_forgiven",
+                "longest_reply_ms", "fast_init_windows")
+
+
+def kline_accounts(ecu, sess, tag, last=None):
+    """Read the accounts; say them, and what moved since `last`."""
+    body, _err, _ = ecu.link.och(ecu.block + EXT_KLSTAT, 12)
+    if not body or len(body) < 12:
+        return last
+    v = dict(zip(KLSTAT_NAMES, (int.from_bytes(body[i:i + 2], "big")
+                                 for i in range(0, 12, 2))))
+    d = ""
+    if last:
+        d = " | since the last look: " + ", ".join(
+            "%s +%d" % (k, (v[k] - last[k]) & 0xFFFF) for k in KLSTAT_NAMES
+            if k != "longest_reply_ms")
+    sess.say("ECU K-LINE ACCOUNTS (%s): %s%s" % (
+        tag, ", ".join("%s %d" % kv for kv in v.items()), d))
+    sess.meta.setdefault("ecu_kline_accounts", []).append(
+        {"t": sess.t(), "tag": tag, **v})
+    sess.save_meta()
+    return v
+
+
 def kline_forensics(ecu, sess) -> dict:
     """What the ECU itself recorded about the K-line since boot: link and
     KWP counters (OCH 842..849) and the capture. Read after every connect -
@@ -294,6 +322,7 @@ def kline_forensics(ecu, sess) -> dict:
                              else "LOW")) if "five_baud" in k else ""))
         if k["samples"]:
             sess.say("  line (ms): " + k["runs"][:200])
+    out["accounts"] = kline_accounts(ecu, sess, "session start")
     return out
 
 # ======================================================= V100: the groups ==
@@ -474,6 +503,23 @@ ENGINE = {0: "STOPPED", 1: "CRANKING", 2: "RUNNING"}
 
 def bits(v, table):
     return ", ".join(n for b, n in table.items() if v & b) or "none"
+
+
+def dbw_why(st, flt):
+    """dbwState + dbwFaults in words, with WHY a not-running throttle is
+    held (bits 10..12 since 2026-11-04; older images read 'unknown')."""
+    s = "%s, faults %s" % (DBW_STATE.get(st & 0xFF, st & 0xFF), bits(flt, DBW_FAULT))
+    if st & 0x1C00 == 0 and st & 0xFF != 2:
+        return s + " (this image does not say why)"
+    why = []
+    if not st & 0x0400:
+        why.append("the ECU RUNS with electronic throttle OFF (the tuner may "
+                   "show the edited page, not what runs)")
+    if not st & 0x0800:
+        why.append("no throttle permission (page / ASIC link / key)")
+    if st & 0x1000:
+        why.append("an ETB procedure or a Burn holds the throttle")
+    return s + ((" - " + "; ".join(why)) if why else "")
 
 
 def utc():
@@ -675,6 +721,13 @@ class Link:
         self.p.write(req)
         buf = bytearray()
         end = t0 + timeout
+        # THE PLUGIN'S ReplyWatch (2.3.0, what made OBD stable on the Porsche):
+        # the ECU answers within ~30 ms, so a read with no reply byte after
+        # 300 ms never reached it - the caller may send it again at once,
+        # never a Burn or a '!' command, whose replies are deferred
+        first = t0 + 0.3 + len(req) * 10.0 / float(self.p.baud or 57600)
+        watch = payload[:1] in (b"S", b"Q", b"V", b"F", b"C", b"I", b"f", b"O",
+                                b"A", b"P", b"R", b"p")
         need = None
         body, err = None, None
         while time.perf_counter() < end:
@@ -682,6 +735,9 @@ class Link:
             if part:
                 buf.extend(part)
             data = bytes(buf)
+            if watch and len(data) <= len(req) and req.startswith(data)                     and time.perf_counter() >= first:
+                end = 0.0                     # no byte from the ECU: lost
+                continue
             if data.startswith(req):
                 data = data[len(req):]
             elif len(data) < len(req) and req.startswith(data):
@@ -732,7 +788,30 @@ class Link:
             return None
         return body.split(b"\0")[0].decode("latin1", "replace").strip()
 
+    def read_cap(self):
+        """THE LONGEST REPLY A READ MAY ASK FOR THROUGH THE OBD SOCKET: ~25 ms
+        on the wire, TunerStudio's own longest (OCH windows 2..256 B at 115200,
+        car logs 11..14.10). On the 018DC car (A4 B5, 2026-11-05) the line
+        through the instrument cluster was cut 3.0 s after every 1714-byte
+        reply at 10400 (0.75 s at 57600) and stayed cut until a new 5-baud
+        entry; shorter replies ran for seconds. None on the ECU-pin cable."""
+        if self.path != "OBD":
+            return None
+        return max(16, min(256, int(self.p.baud or 57600) * 25 // 10000 // 16 * 16))
+
     def och(self, off, cnt, retries=1):
+        cap = self.read_cap()
+        if cap is not None and cnt > cap:
+            out = bytearray()
+            ms = 0.0
+            for o in range(off, off + cnt, cap):
+                n = min(cap, off + cnt - o)
+                body, err, m = self.och(o, n, retries)
+                ms += m
+                if body is None:
+                    return None, err, ms
+                out.extend(body)
+            return bytes(out), None, ms
         body, err, ms = self.request(b"O" + off.to_bytes(2, "big")
                                      + cnt.to_bytes(2, "big"),
                                      0.3 + cnt / 5000.0, retries)
@@ -744,6 +823,9 @@ class Link:
 
     def page(self, size=None, chunk=256):
         size = size or self.page_size
+        cap = self.read_cap()
+        if cap is not None:
+            chunk = min(chunk, cap)
         out = bytearray()
         for off in range(0, size, chunk):
             n = min(chunk, size - off)
@@ -856,7 +938,7 @@ class Kline:
     # on the line goes to kline_bytes.csv.
     ENTRIES = (("5-baud", "5baud", 0.3), ("5-baud (2 s idle)", "5baud", 2.0),
                ("fast init", "fast", 0.3))
-    FAST_RATES = (115200, 124800, 57600)
+    FAST_RATES = (115200, 124800, 57600)   # 115200 ran OBD on the Porsche; a board without it (24 MHz) takes the nearest
 
     def raw(self, link, stage, tx, rx):
         self.s.row("kline_bytes", ["t", "path", "stage", "baud", "tx", "rx"],
@@ -952,6 +1034,10 @@ class Kline:
         if not d or d[0] != 0xF1:
             return "GOFAST FAILED", "GOFAST %d reply %r" % (
                 rate, d.hex() if d is not None else None), None
+        # the ECU switches once its reply has left the wire (the plugin's
+        # idle(20)): a fast laptop's first request beat it in the car and cost
+        # a full timeout per entry
+        time.sleep(0.02)
         link.p.set_baud(rate)
         link.stage = "after GOFAST %d" % rate
         sig = self.proven(link)
@@ -975,9 +1061,14 @@ class Kline:
     def kwp(self, link, rate):
         """One entry (5-baud, else fast init) and GOFAST `rate` (the direct
         path and the key-cycle test). -> (stage, why, r)"""
-        stage, why, r = self.enter(link, "5baud", 0.0)
+        obd = link.path == "OBD"
+        stage, why, r = self.enter(link, "5baud", 0.3 if obd else 0.0)
         if stage == "NO INIT RESPONSE":
-            stage, why, r = self.enter(link, "fast", 0.0)
+            # OVER OBD THE SECOND TRY IS A 5-BAUD AFTER 2.5 s OF QUIET - what
+            # LibreTune does, and what got back in after every 06.11 car cut;
+            # this logger's fast init there never got an answer in 70 s
+            stage, why, r = (self.enter(link, "5baud", 2.5) if obd
+                             else self.enter(link, "fast", 0.0))
         if stage != "IDENTIFIED":
             return stage, why, r
         stage, why, used = self.gofast(link, rate, r)
@@ -1013,14 +1104,20 @@ class Kline:
                     continue
                 # the entry works: the rate is the question now
                 fell_back = False
+                refused = False
                 for i, rate in enumerate(self.FAST_RATES):
-                    if i:
+                    # a REFUSED rate (7F B1: the 24 MHz boards and the DC
+                    # have no 115200) leaves the session open at 10400, and
+                    # an open session ignores a 5-baud address - ask the
+                    # next rate in it (car 2026-11-04: every OBD try failed)
+                    if i and not refused:
                         stage, why, r = self.enter(link, kind, 0.5)
                         if stage != "IDENTIFIED":
                             tries.append({"rate": rate, "stage": stage,
                                           "detail": why})
                             continue
                     stage, why, used = self.gofast(link, rate, r)
+                    refused = stage == "GOFAST FAILED" and "7fb1" in why
                     tries.append({"entry": label, "rate": rate,
                                   "stage": stage, "detail": why})
                     self.s.say("KLINE: OBD %s GOFAST %d: %s%s" % (
@@ -1080,9 +1177,22 @@ class Kline:
                 time.sleep(0.4)
             port.close()
             return None, res
-        # THE OBD PATH: no TunerStudio probes first - through the instrument
-        # cluster the car's 115200 probes only ever arrived as framing errors
-        # (5 sessions) - straight to the vehicle entry, as a VAG tester does.
+        # THE OBD PATH: DIRECT FIRST, THE PLUGIN'S ORDER (2026-11-06 night).
+        # Plugin 2.3.0's AUTO tried DIRECT before the 5-baud entry and never
+        # sent a 5-baud once DIRECT had answered - and it held OBD on the AWT
+        # car. Every car session that died (Porsche 15.10, 018DC 04..06.11,
+        # every tool) had been entered by 5-baud. The entry only if DIRECT
+        # gets no answer at all; 10400 has no direct path.
+        if self.baud != 10400:
+            for rate in dict.fromkeys((self.baud, 57600)):
+                port.set_baud(rate)
+                n, sig = self.direct_probe(link)
+                if n:
+                    self.s.say("KLINE: OBD path DIRECT at %d baud (no 5-baud "
+                               "sent)" % rate)
+                    res.update(stage="OK", how="direct %d baud" % rate,
+                               attempts=n, signature=sig)
+                    return link, res
         stage, why, r, tries = self.sweep(link)
         res.update(kwp=r, stage=stage, detail=why, sweep=tries)
         if stage == "OK":
@@ -1110,9 +1220,15 @@ class Kline:
         st0 = dict(link.stats)
         t0 = time.perf_counter()
         good = 0
+        bad_run = 0
         for _ in range(100):
             body, err, ms = link.och(off, cnt, retries=0)
             good += body is not None
+            # a dead link is not soaked for 30 s (06.11 car: 41 s of requests
+            # into a silent ECU before the reconnect even started)
+            bad_run = 0 if body is not None else bad_run + 1
+            if bad_run >= 3:
+                break
         el = time.perf_counter() - t0
         q["soak"] = {"reads": 100, "good": good, "rows_per_s": round(good / el, 1),
                      "bytes_per_read": cnt,
@@ -2231,13 +2347,42 @@ class Runtime:
         # 2.5 s; a direct cable keeps the old 5 s
         obd = link.path == "OBD"
         t_kwp = t0 + (1.0 if obd else 5.0)
+        # The session's rate, read ONCE: an entry leaves the port at 10400,
+        # and asking for "the port's rate" on the next try fell to 10400 for
+        # good (car 2026-11-05: a 1714-byte block then takes 1.65 s).
+        rate = link.p.baud
         while not self._stopped():
-            body, err, ms = link.exchange(b"S", 0.4)
+            if obd:
+                # THE PLUGIN WENT QUIET after its two re-sends (TunerStudio
+                # waited its 8 s) - and over OBD a 5-baud right after traffic
+                # failed nearly every time (car 2026-11-05)
+                t_q = time.monotonic() + 2.5
+                while time.monotonic() < t_q and not self._stopped():
+                    time.sleep(0.05)
+            # THE PLUGIN'S ORDER (2026-11-06): then the direct way back - an
+            # S at the session's rate, then at the boot rate - for ~3 s; the
+            # ECU answers a CRC-valid request at any time
+            body = None
+            # DIRECT FIRST ON OBD TOO (2026-11-06 night, the plugin's AUTO):
+            # the session rate, then the boot rate; a 5-baud only if neither
+            # answers (every 5-baud-entered car session died)
+            for r_try in dict.fromkeys((rate, 57600)):
+                link.p.set_baud(r_try)
+                t_d = time.monotonic() + (2.0 if r_try == rate else 1.0)
+                while body is None and time.monotonic() < t_d                         and not self._stopped():
+                    body, err, ms = link.exchange(b"S", 0.4)
+                if body is not None:
+                    rate = r_try
+                    break
+            if self._stopped():
+                return False
+            if body is None and obd and self.kwp:
+                t_kwp = time.monotonic()        # the quiet above was its W5
             if body is None and self.kwp and time.monotonic() >= t_kwp:
                 # an ECU that restarted behind an OBD path that needs the
                 # VAG/KWP entry
                 t_kwp = time.monotonic() + (2.5 if obd else 5.0)
-                stage, why, _r = self.kwp(link, link.p.baud)
+                stage, why, _r = self.kwp(link, rate)
                 self.s.say("KLINE: reconnect via KWP: %s %s" % (stage, why))
                 if stage == "OK":
                     body = b"ok"
@@ -2254,6 +2399,11 @@ class Runtime:
                 # V100 §3: a reconnect may be an ECU power cycle, so the
                 # configuration and the counters are re-read, not assumed.
                 self.keyoff_link_back(self.snapshot("reconnect"))
+                try:
+                    self.klacc = kline_accounts(self.e, self.s, "reconnect",
+                                                getattr(self, "klacc", None))
+                except Exception:
+                    pass
                 return True
             time.sleep(0.2)
         return False
@@ -2320,7 +2470,7 @@ class Runtime:
             row, err = fast.read()
             if row is None:
                 fails += 1
-                if fails >= 3:
+                if fails >= 2:          # 4 sends, ~1.2 s: then leave the line alone
                     if not self.reconnect():
                         break
                     fails = 0
@@ -2978,13 +3128,21 @@ class Guided:
         body, err, _ms = self.link.request(b"B", 12.0, 0)
         t_end = time.monotonic() + max(0.3, 4.0 * self.scale)
         c1 = c0
+        st = None
         while time.monotonic() < t_end:
             c1 = self.e.scalar("nvmCommits")
             if c0 is None or c1 != c0:
                 break
             time.sleep(min(0.2, self.scale))
+        # A PASSED AutoCal has already saved itself: this Burn finds the same
+        # page in flash and commits nothing, so an unmoved counter is not a
+        # failure (bench 2026-11-05, gen moved, page in flash, "FAILED"). The
+        # store's own verdict decides: idle or done = in flash.
+        st = self.e.scalar("nvmState")
+        stored = (c0 is None or c1 != c0
+                  or (st is not None and (int(st) & 0xFF) in (0, 5)))
         after = self.e.link.page()
-        ok = (body is not None and (c0 is None or c1 != c0)
+        ok = (body is not None and stored
               and before is not None and after == before)
         self.s.row("burns", ["t", "phase", "why", "reply", "commits_before",
                              "commits_after", "page_equal", "ok"],
@@ -3102,12 +3260,36 @@ class Guided:
                      c.get("injStrategy"), c.get("ignStrategy"),
                      c.get("syncMode"), c.get("injFlowCcMin"),
                      c.get("trigAngleX10")))
+        r0 = self.now()
         rows, _ev = self.record("preflight", 10.0, enter_stops=False)
         r = self.now()
         rows.append(r)
+        # 2026-11-04 (018DC car): with the engine STOPPED the crank input must
+        # be silent. Noise edges make the ECU believe it turns: every Grab is
+        # refused ("not stopped"), RPM_ZERO edits (dbwEnable, endpoints) wait,
+        # a Burn is owed - c167sim reproduces all three with lone edges.
+        e0, e1 = r0.get("crankEdges"), r.get("crankEdges")
+        if e0 is not None and e1 is not None:
+            n = (int(e1) - int(e0)) & 0xFFFF
+            rpm_seen = max(int(_v(x, "rpm", "RPMValue") or 0) for x in rows + [r0])
+            sync_seen = max(int(x.get("syncState") or 0) for x in rows + [r0])
+            self.verdict("Crank input, engine stopped",
+                         "PASS" if n == 0 and rpm_seen == 0 else "FAIL",
+                         "%d crank edges in the 10 s engine-off window, rpm max "
+                         "%d, sync max %d%s" % (n, rpm_seen, sync_seen,
+                         "" if n == 0 else " - NOISE on the crank sensor "
+                         "input: the ECU thinks the engine turns (Grab refused, "
+                         "settings that apply at 0 rpm wait)"))
         vb = float(_v(r, "VBatt", "battDv") or 0)
         self.verdict("Battery", "PASS" if 11.8 <= vb <= 15.0 else (
             "WARN" if vb >= 11.0 else "FAIL"), "%.1f V (engine off)" % vb)
+        # 2026-11-04 (018DC car): "DBW on", the plate never followed, until
+        # enable off -> on. Read before anything touches it.
+        st = int(r.get("dbwState") or 0)
+        en = self.cfg.get("dbwEnable")
+        self.verdict("Throttle at key-on", "PASS" if st & 0xFF == 2 else (
+            "PASS" if str(en) in ("0", "Off") else "FAIL"),
+            "page dbwEnable %s; %s" % (en, dbw_why(st, int(r.get("dbwFaults") or 0))))
         for name, ch in (("Coolant sensor", "coolant"), ("Intake air sensor",
                                                          "intake")):
             v = r.get(ch)
@@ -3465,10 +3647,10 @@ class Guided:
         r = self.now()
         if int(r.get("dbwState") or 0) & 0xFF != 2:
             self.verdict("Throttle, driving", "FAIL", "the electronic throttle "
-                         "is NOT running (state %s, faults %s) - nothing to "
-                         "drive; the pedal does nothing"
-                         % (int(r.get("dbwState") or 0) & 0xFF,
-                            bits(int(r.get("dbwFaults") or 0), DBW_FAULT)))
+                         "is NOT running (%s) - nothing to drive; the pedal "
+                         "does nothing"
+                         % dbw_why(int(r.get("dbwState") or 0),
+                                   int(r.get("dbwFaults") or 0)))
             return
         steps = [("slow_ramp", "SLOWLY raise to ~3000 rpm and back to idle "
                   "(about 10 s)", 20.0)]

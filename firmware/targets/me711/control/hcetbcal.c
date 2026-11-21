@@ -1109,6 +1109,7 @@ void far hc_etbcal_dbw_init(void)
     D.pend = 0u; D.pend_since = 0u; D.ovr = 0xFFFFu; D.clears = 0u; D.requested = 0u;
     D.busy = 0u; D.align_pending = 0u; D.align_since = 0u;
     D.key = 1u;        /* a boot is not a key-on edge: nothing to clear */
+    D.flt_rev = 0u; D.en_last = 0u;
     /* FORCE ONE UNCONDITIONAL RELEASE: `held` starts at whatever the last
        power cycle left; claiming it makes the release happen. */
     D.held = 1u;
@@ -1175,11 +1176,18 @@ unsigned char far hc_etbcal_service(unsigned int now_ms, unsigned int rpm,
                 hc_dbw_calibration_begin(now_ms);
                 E.res = ETB_RES_RUN; E.why = 0u; E.ready = 0u;
                 E.t0 = now_ms; E.step = now_ms; phase(ETB_CAL_SWEEP, now_ms);
-            } else if (dbw_running) {
+            } else if (dbw_running && rpm != 0u) {
                 E.res = ETB_RES_FAIL;
                 E.why = ETB_WHY_RUNNING;
             } else {
                 E.sweep.inhibit = 0u;
+                /* Measuring new endpoints is what fixes a TPS range/pair fault
+                   (stale endpoints): engine stopped, those two do not refuse
+                   it (2026-11-05). The PID tune needs good endpoints and a
+                   bridge/deviation fault refuses every procedure, as before. */
+                if (q != 2u && rpm == 0u) {
+                    D.flt &= (unsigned int)~(DBW_F_TPS_RANGE | DBW_F_TPS_PAIR);
+                }
                 start((unsigned char)(q == 2u), now_ms);
             }
         }

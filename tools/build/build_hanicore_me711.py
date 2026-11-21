@@ -75,7 +75,7 @@ BOARDS = {
     },
     "vag_me71_c4": {
         "bld": "build_me71c4", "pindesc": "hc_pin_desc_vag_me71_c4",
-        "stem": "HaniCore_ME71_27T_v102_dev",
+        "stem": "HaniCore_ME71_27T_dev",
         "ini": "hanicore_me71_27t.ini",
         "target": "Bosch ME7.1 C4, Audi 2.7T (0261206xxx/0261207xxx, 24 MHz)",
         "boot": "donor",
@@ -97,7 +97,7 @@ BOARDS = {
     # the maintainer's design notes.
     "audi_4f_v8": {
         "bld": "build_4f", "pindesc": "hc_pin_desc_bosch_me711",
-        "stem": "HaniCore_ME711_4F_v102_dev",
+        "stem": "HaniCore_ME711_4F_dev",
         "ini": "hanicore_me711.ini",
         "target": "Bosch ME7.1.1, Audi 4F 4.2 V8 (0261208363 / 1037377030)",
         "boot": "donor",
@@ -117,7 +117,7 @@ BOARDS = {
     # evidence: .scratch/me75-reverse/ (PORT_SPEC.md, IO_MAP.md).
     "vag_me75_dc": {
         "bld": "build_me75dc", "pindesc": "hc_pin_desc_me75_4b0906018dc",
-        "stem": "HaniCore_ME75_DC_v102_dev",
+        "stem": "HaniCore_ME75_DC_dev",
         "ini": "hanicore_me75_dc.ini",
         "target": "Bosch ME7.5, VAG 1.8T DC (4B0906018DC / 0261207636, 24 MHz)",
         "boot": "donor",
@@ -135,7 +135,7 @@ BOARDS = {
     # mask ROM's checking scheme for variant 0x5C02 is NOT proven.
     "vag_me75_bfb": {
         "bld": "build_me75bfb", "pindesc": "hc_pin_desc_me75_4b0906018dc",
-        "stem": "HaniCore_ME75_BFB_v102_dev",
+        "stem": "HaniCore_ME75_BFB_dev",
         "ini": "hanicore_me75_bfb.ini",
         "target": "Bosch ME7.5, Audi A4 B7 1.8T BFB (8E0909518AQ / 0261208524)",
         "boot": "donor",
@@ -161,7 +161,7 @@ def _arg(name, default=None):
 # (tools/lib/hc_board.py). 2026-10-25: it defaulted to the Porsche while the
 # OUTPUT NAME followed HANICORE_BOARD, so a gate that reran the build under the
 # 2.7T environment (me711_build_integrity_proof) wrote a PORSCHE image over
-# HaniCore_ME71_27T_v102_dev.bin - and every 2.7T gate after it tested the
+# HaniCore_ME71_27T_dev.bin - and every 2.7T gate after it tested the
 # Porsche. A --board that contradicts HANICORE_BOARD is refused for the same
 # reason: the image name and the code would describe different boards.
 _ENV_BOARD = __import__("os").environ.get("HANICORE_BOARD")
@@ -681,6 +681,7 @@ LINK_WARNING_ALLOWED = re.compile(
     r"|hcserial711\.obj\s*\(HCSERIAL711\)"
     r"|hcdeadline_plan711\.obj\s*\(HCDEADLINE_PLAN711\)"
     r"|hcroutes711\.obj\s*\(HCROUTES711\)"
+    r"|hcnvm_rt711\.obj\s*\(HCNVM_RT711\)"   # 2026-11-04: relocated flash routines
     r"|hcload711\.obj\s*\(HCLOAD711\)"
     # V94: the VAG/KWP vehicle entry
     r"|hckline\.obj\s*\(HCKLINE\)"
@@ -736,7 +737,7 @@ LINK_WARNING_ALLOWED = re.compile(
 
 
 MEDIUM_MODULES = ("HCVEC_ME711", "HCIO711", "HC_VALIDATION",
-                  "HC_CONFIG_MANAGER", "HC_ROUTE", "HCBENCH", "HCETBCAL", "HCDIAG711", "HCDBWMOTOR711", "HCFRESH711", "HCDEFAULTS711", "HCPROFILE711", "HCRTMON711", "HCSERIAL711", "HCDEADLINE_PLAN711", "HCROUTES711", "HCLOAD711",
+                  "HC_CONFIG_MANAGER", "HC_ROUTE", "HCBENCH", "HCETBCAL", "HCDIAG711", "HCDBWMOTOR711", "HCFRESH711", "HCDEFAULTS711", "HCPROFILE711", "HCRTMON711", "HCSERIAL711", "HCDEADLINE_PLAN711", "HCROUTES711", "HCNVM_RT711", "HCLOAD711",
                   "HCKLINE", "HCKWP_ME711", "HCWB", "HCCAM", "HCLDR",
                   "HCBOOST711", "HCIDLE", "HCIDLE711", "HCAUX711", "HCDTC",
                   "HCDTC711", "HCLIMP", "HCLIMP711", "HCXFN711", "HCCAN711", "HCVSS711", "HCASICFRAME", "HCFUELPUMP",
@@ -845,7 +846,7 @@ BUILD_ID = None
 def write_build_id() -> str:
     """THE IMAGE SAYS WHICH BUILD IT IS (owner, 2026-10-11).
 
-    The ECU's 'V' reply was the same text for every V102 build, so after a
+    The ECU's 'V' reply was the same text for every build, so after a
     flash nothing on the K-line could tell 323FFF9F from 050CC11E - only the
     flasher's exit code said the write happened. The build id is the first
     32 bits of a SHA-256 over every compiled input (each search-path .c/.h/
@@ -1073,12 +1074,12 @@ def main() -> int:
                 "Regenerate it: py tools/tuning/gen_ts_ini_me711.py")
     # The identity has to name the build. V29 shipped saying "V28 TRIGGER COMM"
     # and a real hardware log recorded the wrong build against a real result.
-    _want = re.search(r"[vV](\d+)", OUT_BIN.stem)
-    if _want and ("v" + _want.group(1)) not in _ver.lower().replace(" ", ""):
+    # Since v1.2 the file name carries no version: the text must carry one,
+    # its build id says which build it is.
+    if not re.match(r"HaniCore V\d+\.\d+", _ver):
         raise SystemExit(
-            f"FATAL: this build writes {OUT_BIN.name} but TGT_VERSIONTXT is "
-            f"{_ver!r}. An ECU that misreports its own build turns every "
-            f"bench log about it into evidence for something else.")
+            f"FATAL: TGT_VERSIONTXT {_ver!r} does not start with "
+            f"'HaniCore V<major>.<minor>'.")
     # AND THE SIGNATURE HAS TO CARRY THE PAGE LAYOUT.
     #
     # TunerStudio's ONLY guard against an .ini that describes a different page
@@ -1540,7 +1541,7 @@ def main() -> int:
         # its own manifest, and the "not typed" print at the end of main()
         # faithfully read it back, so the build announced the wrong identity
         # through the one line that exists to stop that.
-        "build": ("V102_ME75_BFB_DEV" if IS_BFB else "V102_ME75_DC_DEV" if IS_DC else "V102_ME71_27T_DEV" if IS_C4 else "V102_ME711_4F_DEV"
+        "build": ("ME75_BFB_DEV" if IS_BFB else "ME75_DC_DEV" if IS_DC else "ME71_27T_DEV" if IS_C4 else "ME711_4F_DEV"
                   if IS_4F else _IMG.EXPECTED_BUILD),
         # READ FROM hctarget.h, NEVER RETYPED. This line held the literal
         # "HaniCore V28 TRIGGER COMM" while the header had moved on, and TWO
@@ -1857,11 +1858,11 @@ def main() -> int:
                                   "exchanges.",
         },
         "current_scoped_qualification": {
-            "candidate": "V102 hardware deadlines, pulse ownership, load policies and deliberate V101 migration; preserved V101 DBW/lambda",
+            "candidate": "hardware deadlines, pulse ownership, load policies; preserved DBW/lambda",
             "software_evidence": "docs/STATUS.md",
             "physical_status": "PHYSICAL QUALIFICATION PENDING",
             "outputs": "DBW bridge and external LSU heater paths are linked; historical BENCH_SAFE/counting-only notes are lineage, not current output authority",
-            "open_boundary": "Physical edges and sustained high-RPM planning remain unqualified; see V102 evidence. Accepted ASIC transport does not establish exact-board ADC completion or mode-to-analog settling",
+            "open_boundary": "Physical edges and sustained high-RPM planning remain unqualified. Accepted ASIC transport does not establish exact-board ADC completion or mode-to-analog settling",
         },
         "flashed": False,
         "hardware_tested": False,

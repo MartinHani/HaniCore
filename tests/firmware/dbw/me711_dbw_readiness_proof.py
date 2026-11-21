@@ -59,11 +59,18 @@ _AWT_PAGE = None
 
 def rig(tps2_bad=False):
     global _AWT_PAGE
+    import hc_board
     if _AWT_PAGE is None:
-        _AWT_PAGE = R.build_board_page()
+        _AWT_PAGE = R.build_engine_page()      # the DC: its own 1.8T page
     s = R.Stress(_AWT_PAGE, ts=False)
     s.dbw_plant = True
     s.pedal = 0.25
+    if hc_board.IS_DC:
+        # 2026-11-04: the ME7.5 DC reads KL15 on P4.4 (the rig's key is
+        # P6.2) and its CJ220 SF on P2.9 - without them every check here
+        # read "key off" on the DC (state 0) and proved nothing
+        s.mem.pin_hi[0xFFC8] = s.mem.pin_hi.get(0xFFC8, 0) | 0x0010
+        s.mem.pin_hi[0xFFC0] = s.mem.pin_hi.get(0xFFC0, 0) | 0x0200
     if tps2_bad:
         base = s.adc_value
 
@@ -174,7 +181,7 @@ def main():
         t_st, drove = run(s, 1600, hold_adc=True)
         a, f = st(s)
         import hc_board
-        if hc_board.IS_C4:
+        if hc_board.IS_C4 and not hc_board.IS_DC:
             # the C4 board reads KL15 FROM the main ADC (AN12, TGT_KL15_ON):
             # a silent ADC reads as key OFF, so the throttle stays OFF - no
             # STALE to latch, and the bridge must never be enabled
@@ -185,9 +192,14 @@ def main():
             res.append(("R3 ADC silent 1.6 s: STALE latched at %s ms (window 1000 ms), EGENFR driven: %s"
                         % (t_st, drove), t_st is not None and t_st >= 900 and a == 3
                         and (f & F_STALE) and not drove))
-            s.mem.sfr[P6] = s.mem.sfr.get(P6, 0) & ~0x0004
-            run(s, 30)
-            s.mem.sfr[P6] = s.mem.sfr.get(P6, 0) | 0x0004
+            if hc_board.IS_DC:          # the DC's KL15 input is P4.4
+                s.mem.pin_hi[0xFFC8] = s.mem.pin_hi.get(0xFFC8, 0) & ~0x0010
+                run(s, 30)
+                s.mem.pin_hi[0xFFC8] = s.mem.pin_hi.get(0xFFC8, 0) | 0x0010
+            else:
+                s.mem.sfr[P6] = s.mem.sfr.get(P6, 0) & ~0x0004
+                run(s, 30)
+                s.mem.sfr[P6] = s.mem.sfr.get(P6, 0) | 0x0004
             run(s, 600)
         a, f = st(s)
         res.append(("R4 key cycle with the ADC back: state %d, faults 0x%04X" % (a, f), a == 2 and f == 0))

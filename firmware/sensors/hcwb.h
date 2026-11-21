@@ -61,6 +61,8 @@
                                   possible cause, not a proven diagnosis.
                                   Actual H+ and heater current are not inputs;
                                   missing physical heating can look the same. */
+#define HCWB_F_NO_SIGNAL  14u   /* (CJ110, ME7.5 DC) hot for 60 s and lambda
+                                  never left 1 by 1 %: no sensor / no signal */
 
 /* WHY lambda is not a measurement right now (OCH 1010, low byte bank 1,
    high byte bank 2). Not latched - recomputed every step - so a log row says

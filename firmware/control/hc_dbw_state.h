@@ -66,6 +66,10 @@ typedef struct {
     /* the real ms since the previous control step, 5..20 (the DLR
        timers count it; hc_dbw.c dbw_step()) */
     unsigned int  step_dt;
+    /* the page revision a sensor fault was latched against, and the ACTIVE
+       dbwEnable as last seen (hc_dbw.c dbw_step(), the tuner's way out). */
+    unsigned int  flt_rev;
+    unsigned char en_last;
 } hc_dbw_state_t;
 /* The linked runtime rig observes this counter independently of tick time. */
 typedef char hc_dbw_steps_layout[(offsetof(hc_dbw_state_t,steps)==44u)?1:-1];

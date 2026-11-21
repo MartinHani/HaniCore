@@ -55,6 +55,7 @@ hcidle_t     hc_idl;
 unsigned int hc_idle_floor_x10;
 unsigned int hc_idle_target_rpm;
 static unsigned int acc_ms;
+static unsigned int tim_run_ms;     /* running since start, for idle spark */
 /* THE MAIN LOOP PASSES tick_ms - THE UPTIME, not an elapsed time (every
    service here takes now_ms, like hc_fuelpump_service()). V97 first passed
    it as elapsed ms: the controllers stepped on every pass with a huge dt,
@@ -156,6 +157,7 @@ void far hc_idle_init(void)
     hc_idle_floor_x10 = 0u;
     hc_idle_target_rpm = 0u;
     acc_ms = 0u;
+    tim_run_ms = 0u;
     have_ms = 0u;
     hc_aux_init();
 }
@@ -236,22 +238,37 @@ void far hc_idle_service(unsigned int now_ms)
     hc_idle_floor_x10 = (unsigned int)(hc_idle_floor_x10 + hc_aux_idle_up_x10());
     valve_service(hc_idle_floor_x10);
 
-    /* idle ignition timing, only while the loop above is CLOSED */
+    /* IDLE IGNITION TIMING WHILE THE ENGINE IS IDLING (2026-11-05, a DC
+       tester: "idle advance does nothing"). With closed-loop idle air on,
+       idling = that loop is CLOSED, as before. With it off, rusEFI's own
+       idling phase (IdleController::determinePhase - the timing PID does
+       not depend on the air loop): running past the start wait, pedal
+       released, below target + band. Until now the spark only moved with
+       the air loop enabled AND closed. */
+    if (in.rpm == 0u || in.cranking) {
+        tim_run_ms = 0u;
+    } else if (tim_run_ms < 0xF000u) {
+        tim_run_ms = (unsigned int)(tim_run_ms + ms);
+    }
     {
         hcidle_tcfg_t tc;
+        unsigned char idling = c.enabled
+            ? (unsigned char)((hc_idl.state & HCIDLE_S_CLOSED) != 0u)
+            : (unsigned char)(in.rpm != 0u && !in.cranking
+                              && tim_run_ms >= c.start_ms
+                              && in.pedal_x10 <= c.pedal_x10
+                              && (unsigned long)in.rpm
+                                 < (unsigned long)in.target_rpm + c.band_rpm);
         tc.enabled = (unsigned char)(hc_cal_u8(CFG_U_IDLE_TIM_EN) == 1u);
         tc.kp_x10 = hc_cal_u16(CFG_U_IDLE_TIM_KP);
         tc.min_x10 = (int)hc_cal_u16(CFG_U_IDLE_TIM_MIN);
         tc.max_x10 = (int)hc_cal_u16(CFG_U_IDLE_TIM_MAX);
         tc.soft_ms = hc_cal_u16(CFG_U_IDLE_TIM_SOFT_MS);
-        (void)hcidle_timing_step(&IGNIDLE, &tc,
-                                 (unsigned char)(hc_idl.state & HCIDLE_S_CLOSED),
+        (void)hcidle_timing_step(&IGNIDLE, &tc, idling,
                                  in.rpm, in.target_rpm, ms);
         /* ignition first: + the integral, faded out on release */
         IDLE711.out_x = tc.enabled
-            ? hc_x_idle_timing(IGNIDLE.out_x10,
-                               (unsigned char)((hc_idl.state & HCIDLE_S_CLOSED) != 0u),
-                               in.target_rpm, ms)
+            ? hc_x_idle_timing(IGNIDLE.out_x10, idling, in.target_rpm, ms)
             : 0;
     }
 }

@@ -520,6 +520,18 @@ class Updater:
         self.k.retry(b"!u", 0)
         self.erase_seq = st["seq"]
         self.erase_t0 = time.monotonic()
+        # read the verdict now: the next command ('!b') overwrites it, and a
+        # refusal (engine running) would then report "REFUSED: NONE"
+        t_end = time.monotonic() + 0.5
+        while time.monotonic() < t_end:
+            try:
+                s = self.k.status()
+            except LinkError:
+                continue
+            if s["seq"] != st["seq"] and s["cmd"] == "u":
+                if s["rc"] != 0:
+                    raise SystemExit("ECU REFUSED STAGE_BEGIN: %s" % ERR_NAME[s["rc"]])
+                break
 
     def go_fast(self, baud: int = 250000) -> bool:
         """'!b': the ECU moves to 250 kbaud once the reply has left the wire

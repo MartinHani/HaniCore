@@ -72,6 +72,16 @@ unsigned char rx_tick_ok;
 unsigned int  rx_ticks;
 unsigned char rx_irq_mode;
 unsigned char echo_seen;
+#if TGT_TX_PEC
+/* the K-line reply job's PEC5 buffer and state (hcserial711.c TGT_TX_PEC):
+   here because this module's near data is on-chip XRAM - segment 0, which
+   PEC can address - and hcserial711.c's is the full IRAM class */
+unsigned char volatile hc_txp_buf[2u * 16u];
+unsigned char volatile hc_txp_pk[2];
+unsigned char volatile hc_txp_cur, hc_txp_on, hc_txp_run, hc_txp_fin,
+                       hc_txp_drained, hc_txp_filling;
+unsigned int volatile hc_txp_fin_t;
+#endif
 #ifdef TGT_S0BG_ALT
 unsigned char hc_link_rate;            /* see "THE LINK RATE" below */
 unsigned char hc_link_locked;

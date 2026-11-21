@@ -52,14 +52,20 @@ BINS = Path(os.environ.get("HANICORE_ME711_BINS", str(ROOT / "bins/hanicore")))
 # 2.7T image the default; HANICORE_ME711_STEM still wins over both.
 import hc_board as _BOARD  # noqa: E402
 STEM = os.environ.get("HANICORE_ME711_STEM",
-                      _BOARD.STEM or "HaniCore_ME711_v102_dev")
+                      _BOARD.STEM or "HaniCore_ME711_dev")
+# a frozen control folder (HANICORE_ME711_BINS) holds the name from before v1.2
+_OLD_STEM = STEM.replace("_dev", "_v102_dev")
+if ("HANICORE_ME711_BINS" in os.environ
+        and not (BINS / f"{STEM}.bin").exists()
+        and (BINS / f"{_OLD_STEM}.bin").exists()):
+    STEM = _OLD_STEM
 # the image's own generated TunerStudio file (gen_ts_ini_me711 OUT_VERSIONED):
-# tuning/hanicore_me711_v102_dev.ini, hanicore_me71_27t_v102_dev.ini
+# tuning/hanicore_me711_dev.ini, hanicore_me71_27t_dev.ini
 # (the board's own image may share another's file: the 4F uses the Porsche's,
 # also when a gate names that image through HANICORE_ME711_STEM)
 INI = ROOT / "tuning" / ((_BOARD.INI_STEM
-                               if STEM == (_BOARD.STEM or "HaniCore_ME711_v102_dev")
-                               and _BOARD.INI_STEM else STEM).lower() + ".ini")
+                               if STEM == (_BOARD.STEM or "HaniCore_ME711_dev")
+                               and _BOARD.INI_STEM else STEM).lower().replace("_v102_dev", "_dev") + ".ini")
 
 # STEM -> the build name its manifest carries.
 #
@@ -311,18 +317,24 @@ EXPECTED_BUILD = {
     # V100_CHANGES.md. V99 dev is its control.
     "HaniCore_ME711_v100_dev": "V100_DEV",
     "HaniCore_ME711_v101_dev": "V101_DEV",
-    "HaniCore_ME711_v102_dev": "V102_DEV",
+    "HaniCore_ME711_dev": "ME711_DEV",
     # 2026-10-24: the second board of the family - the Audi 2.7T ME7.1 C4
     # (build_hanicore_me711.py --board vag_me71_c4). Point a gate at it with
-    # HANICORE_ME711_STEM=HaniCore_ME71_27T_v102_dev.
-    "HaniCore_ME71_27T_v102_dev": "V102_ME71_27T_DEV",
+    # HANICORE_ME711_STEM=HaniCore_ME71_27T_dev.
+    "HaniCore_ME71_27T_dev": "ME71_27T_DEV",
     # 2026-10-27: the Audi 4F 4.2 V8 ME7.1.1 - Porsche code, its own boot
     # region (build_hanicore_me711.py --board audi_4f_v8)
-    "HaniCore_ME711_4F_v102_dev": "V102_ME711_4F_DEV",
+    "HaniCore_ME711_4F_dev": "ME711_4F_DEV",
     # 2026-10-28: the VAG 1.8T ME7.5 DC (--board vag_me75_dc), the 2.7T
     # branch with the CC650 + monitor service
-    "HaniCore_ME75_DC_v102_dev": "V102_ME75_DC_DEV",
+    "HaniCore_ME75_DC_dev": "ME75_DC_DEV",
     # 2026-11-02: the Audi A4 B7 1.8T BFB ME7.5 (--board vag_me75_bfb), the DC's code
+    "HaniCore_ME75_BFB_dev": "ME75_BFB_DEV",
+    # the names before v1.2: frozen control images keep them
+    "HaniCore_ME711_v102_dev": "V102_DEV",
+    "HaniCore_ME71_27T_v102_dev": "V102_ME71_27T_DEV",
+    "HaniCore_ME711_4F_v102_dev": "V102_ME711_4F_DEV",
+    "HaniCore_ME75_DC_v102_dev": "V102_ME75_DC_DEV",
     "HaniCore_ME75_BFB_v102_dev": "V102_ME75_BFB_DEV",
 }.get(__import__("re").sub(
     r"(_ownboot|_boschboot)?(_p0test|_p0srst)?(_updater)?$", "", STEM))

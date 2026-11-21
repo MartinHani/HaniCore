@@ -1291,8 +1291,14 @@ ipanel("hcPanelBenchAbort", 1, None)
 ipanel("hcPanelDbwFaults", 2, None)
 
 ipanel("hcPanelThrottleState", 1, [
-    IND("dbwState == 2", "{ DBW: bitStringValue(hcDbwStateList, dbwState)}",
+    IND("cfgValidation != 0 && cfgFirstBadSlot < 1024",
+        "Configuration accepted",
+        "{ REFUSED: bitStringValue(hcCfgFieldList, cfgFirstBadSlot)}", RED),
+    IND("dbwStateLo == 2", "{ DBW: bitStringValue(hcDbwStateList, dbwStateLo)}",
         "Throttle closed loop", YELLOW),
+    # 2026-11-04: what the ECU RUNS on - a tuner shows the edited page
+    IND("dbwEnActive", "ECU: throttle enable OFF", "ECU: throttle enable ON",
+        YELLOW),
     IND("tpsPairError", "TPS tracks agree", "TPS MISMATCH", RED),
     IND("appPairError", "Pedal tracks agree", "PEDAL MISMATCH", RED),
     IND("tps1Error", "TPS1 OK", "TPS1 FAULT", RED),

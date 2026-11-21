@@ -34,7 +34,7 @@ import me711_vehicle_capture as V      # noqa: E402
 # V1.2: the CURRENT image's .ini - the session checks need its channels
 # (toothCorrections, cycleSync*, toothLogState).
 import me711_image as _PI    # noqa: E402
-INI = _PI.INI  # both boards: <stem>.ini (hanicore_me711_v102_dev / hanicore_me71_27t_v102_dev)
+INI = _PI.INI  # both boards: <stem>.ini (hanicore_me711_dev / hanicore_me71_27t_dev)
 # V87: run the same cases against another image's .ini / version text, e.g.
 #   set HC_CAPTURE_INI=tuning\history\hanicore_me711_v87_preset_apply.ini
 #   set HC_CAPTURE_VER=HaniCore V87 PRESET APPLY / Bosch ME7.1.1
@@ -430,14 +430,14 @@ def main() -> int:
     # ------------------------------------------ 6. wire budget
     # AUX runs to the END of the block since V1.1 - price the LARGEST block
     # of any generated .ini, not a number typed here.
-    blocks = [V.Ini(pp).block for pp in V.TS_DIR.glob("hanicore_me711_v*.ini")
+    blocks = [V.Ini(pp).block for pp in V.TS_DIR.glob("hanicore_me711_dev*.ini")
               if not pp.stem.endswith(("_forensic", "_fallback"))]
     # V1.7: price EVERY read of one cycle through the logger's own window
     # functions (until V1.6 this modelled FAST + one AUX third and never
     # counted FAST2 (V1.5) or the lambda window (V1.6)). Each read = its
     # bytes + 7 request + 11 envelope. The honest rate at 57600 is ~8 Hz
     # since V1.5; the link runs 115200 with the plugin.
-    big = max((V.Ini(pp) for pp in V.TS_DIR.glob("hanicore_me711_v*.ini")
+    big = max((V.Ini(pp) for pp in V.TS_DIR.glob("hanicore_me711_dev*.ini")
                if not pp.stem.endswith(("_forensic", "_fallback"))),
               key=lambda i: i.block)
     reads = [V.FAST[1], V.fast2_window(big)[1], V.fast3_window(big)[1],

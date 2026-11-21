@@ -103,6 +103,13 @@ class Bench:
                             ("CAL_PEDAL1_MIN", 150), ("CAL_PEDAL1_MAX", 849),
                             ("CAL_PEDAL2_MIN", 75), ("CAL_PEDAL2_MAX", 424)):
                 AP.set_active(r, AP.off(name), v, 2)
+        if hc_board.IS_DC:
+            # TEST-ONLY: the base tune leaves authority 0 and the correlations
+            # to AutoCal / Grab; this rig's body and pedal track the same way
+            AP.set_active(r, AP.off("CFG_U_DBW_MAX_DUTY_X10"), 800, 2)
+            AP.set_active(r, AP.off("CFG_U_TPS_CORR"), 1, 1)
+            AP.set_active(r, AP.off("CFG_U_APP_CORR"), 1, 1)
+        self.is_dc = hc_board.IS_DC
         r("hc_hal_init", steps=5_000_000)
         r("hc_route_service", steps=5_000_000)
         r("hc_dbw_init", steps=2_000_000)
@@ -110,6 +117,8 @@ class Bench:
         T.key_on(r)
         r.m.sfr[P3] = r.m.sfr.get(P3, 0) | 0x8000 if isinstance(r.m.sfr, dict) \
             else (r.m.sfr[P3] | 0x8000)
+        if self.is_dc:
+            self.sf(False)
         self.adc = T.sym("adc_raw") & 0xFFFF
         self.ipv_force = None
         self.stale_ch = None
@@ -135,6 +144,10 @@ class Bench:
         self.seen = {}                  # OCH offset -> set of values
 
     def sf(self, asserted):
+        if self.is_dc:      # CJ220 SF on P2.9; the firmware writes P2, so a pin level
+            hi = self.r.m.pin_hi.get(0xFFC0, 0)
+            self.r.m.pin_hi[0xFFC0] = (hi & ~0x200) if asserted else (hi | 0x200)
+            return
         v = self.r.m.sfr[P3]
         self.r.m.sfr[P3] = (v & ~0x8000) if asserted else (v | 0x8000)
 

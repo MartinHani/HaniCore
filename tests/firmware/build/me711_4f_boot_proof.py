@@ -32,7 +32,7 @@ sys.path.insert(0, str(ROOT / "tools" / "lib"))
 import hcpaths  # noqa: F401,E402
 import me71_c4_boot_proof as B  # noqa: E402  (boots(): the ROM runner)
 
-IMAGE = ROOT / "bins/hanicore/HaniCore_ME711_4F_v102_dev.bin"
+IMAGE = ROOT / "bins/hanicore/HaniCore_ME711_4F_dev.bin"
 STOCK = ROOT / "bins/4f_v8/4F0910560.bin"
 
 

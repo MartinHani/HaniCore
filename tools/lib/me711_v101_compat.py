@@ -38,7 +38,7 @@ def migrate_v101(page):
     defaults=[int(n) for n in re.findall(r'(\d+)u',match.group(1))]
     assert len(defaults)==13
     for i,n in enumerate(defaults):p[reference+2*i:reference+2*i+2]=n.to_bytes(2,'big')
-    # the throttle words appended after that block (hc_cfg_v102_defaults)
+    # the throttle words appended after that block (hc_cfg_append_defaults)
     p[value('CFG_U_DBW_PWM_HZ'):value('CFG_U_DBW_PWM_HZ')+2]=(2000).to_bytes(2,'big')
     p[value('CFG_U_DBW_FRICTION_X10'):value('CFG_U_DBW_FRICTION_X10')+2]=b'\0\0'
     # the auxiliary functions' block (hc_cfg_aux_defaults, 2026-10-14): a V101

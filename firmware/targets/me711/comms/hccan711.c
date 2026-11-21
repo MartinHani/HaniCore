@@ -150,6 +150,7 @@ typedef struct {
     unsigned char abs_emu;        /* ABS emulation configured               */
     unsigned char abs_susp;       /* ... suspended: a real Bremse_1 seen    */
     unsigned char b1_ctr;
+    unsigned char m1_tq;          /* the Motor_1 torque byte last sent      */
     unsigned char hx_mode;        /* Haldex mode at boot                    */
     unsigned char wb_fmt;         /* wideband format at boot                */
     unsigned int  wb_lam[2];      /* lambda x1000, 0 = none                 */
@@ -368,6 +369,33 @@ static unsigned int vss_now(unsigned int ms)
 }
 
 unsigned int far hc_can_vss_x10(void) { return CS.on ? CS.vss : 0xFFFFu; }
+
+/* THE ESP's TORQUE REQUESTS (2026-11-05, Bremse_1 - FR CAN 51.570, Ignitron
+   "Enable Traction Control System"). ASR: the request bit with a torque
+   below the one Motor_1 reports - hcxfn711.c applies the traction retard /
+   spark cut while it lasts. MSR: the request bit - no overrun fuel cut
+   (hcengctl711.c), the engine keeps pulling so the wheels do not lock. A
+   stale Bremse_1 serves nothing. */
+static unsigned char b1_req(hccan_bremse1_t *b)
+{
+    unsigned char d[8];
+    if (!CS.on || !rx_fresh(RXI_BREMSE1, hc_tick_ms)) return 0u;
+    rx_copy(RXI_BREMSE1, d);
+    hccan_rx_bremse1(d, b);
+    return 1u;
+}
+
+unsigned char far hc_can_asr(void)
+{
+    hccan_bremse1_t b;
+    return (unsigned char)(b1_req(&b) && b.asr_req && b.asr_slow < CS.m1_tq);
+}
+
+unsigned char far hc_can_msr(void)
+{
+    hccan_bremse1_t b;
+    return (unsigned char)(b1_req(&b) && b.msr_req);
+}
 unsigned char far hc_can_crash(void) { return CS.crash; }
 
 /* lambda from a wideband controller on the bus, x1000; 0 = none / stale
@@ -581,6 +609,14 @@ static void eng_state(hccan_eng_t *e)
     if (eng_fuelcut != 0u)                                   f |= HCCAN_F_CUT;
     if (err & (ENG_ERR_MAP | ENG_ERR_TPS1 | ENG_ERR_TPS_DIFF)) f |= HCCAN_F_TQ_BAD;
     if (!dbw)                                                f |= HCCAN_F_NO_DBW;
+    /* B_statbr (2026-11-05): the ESP's requests are served (hc_can_asr /
+       hc_can_msr) while running, outside limp, with a torque model, a
+       traction retard or cut to apply and Bremse_1 received; otherwise say
+       so, as the stock ECU does during start and on a fault */
+    if (!(f & HCCAN_F_RUNNING) || (f & HCCAN_F_TQ_BAD) || hc_x_limp_why() != 0u
+        || (u8v(CFG_U_TC_RETARD) == 0u && u8v(CFG_U_TC_CUT) == 0u)
+        || !rx_fresh(RXI_BREMSE1, hc_tick_ms))
+        f |= HCCAN_F_BR_NA;
     e->flags = f;
 }
 
@@ -984,6 +1020,7 @@ void far hc_can_service(unsigned int ms)
                 e.rpm = fix ? fix : 2500u;
             }
             hccan_motor1(&e, &id, d);  mo_send(CS.mo[MOI_M1], d);
+            CS.m1_tq = d[1];
             e.rpm = trg_rpm;
             vload(&v);
             hccan_motor2(&v, &e, &id, d);  mo_send(CS.mo[MOI_M2], d);

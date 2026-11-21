@@ -8,7 +8,7 @@ whole preset as one transaction, and a Porsche-board preset cannot.
 
 The same path the Porsche gate me711_preset_apply_proof drives: a 'W' of
 enginePreset, then '!E' through hcts_target_cmd, then the main-loop service
-hc_preset_cmd_service() - executed out of HaniCore_ME71_27T_v102_dev.bin in c167sim.
+hc_preset_cmd_service() - executed out of HaniCore_ME71_27T_dev.bin in c167sim.
 
 WHY IT CANNOT PASS VACUOUSLY. The starting page is a different valid engine
 (the Porsche gate's 6-cylinder 36-1 page with NO CLT/IAT/MAP), so every

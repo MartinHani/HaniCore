@@ -741,6 +741,12 @@ static const unsigned int crc_tab[16] = {
     0x8108u, 0x9129u, 0xA14Au, 0xB16Bu, 0xC18Cu, 0xD1ADu, 0xE1CEu, 0xF1EFu
 };
 
+#ifndef HCNV_RT_ONLY
+#define HCNV_RT_ONLY 0
+#endif
+void far hc_nvm_eraser(void);
+void far hc_nvm_eraser_end(void);
+#if !HCNV_RT_ONLY
 static unsigned int crc_step(unsigned int crc, unsigned char b)
 {
     crc = (unsigned int)((crc << 4)
@@ -1111,10 +1117,12 @@ static void stage_finish(void)
  * module and KEPT ONLY THE FIRST ARM, so the second sector was unreachable
  * and the A/B alternation had silently become A-only. There is no ternary
  * here to mis-inline. */
+#endif /* !HCNV_RT_ONLY */
 #define CELL_SEG(i)     ((unsigned int)(TGT_FLASH_CFG_SEG + ((i) >> 3)))
 #define CELL_PAGEOFF(i) ((unsigned int)(((i) & 7u) << 13))
 #define CELL_ADDR(i)    (((unsigned long)CELL_SEG(i) << 16)                          + (unsigned long)CELL_PAGEOFF(i) + TGT_FLASH_CELL_OFF)
 #define CELL_PTR(i)     SRAMB(CELL_ADDR(i))
+#if !HCNV_RT_ONLY
 
 /* The base of the erase sector a cell lives in, and the first cell of it. */
 #define CELL_SECTOR_BASE(i) (((unsigned long)CELL_SEG(i)) << 16)
@@ -1525,6 +1533,13 @@ static unsigned int active_index(void)
  * NOR is explicitly returned to read-array mode before the far return makes
  * ordinary flash code executable again.
  */
+#endif /* !HCNV_RT_ONLY */
+/* THE RELOCATED FLASH ROUTINES (writer, eraser, staging writer) are only
+   ever COPIED into the battery SRAM and run there, so where they are linked
+   is free: since 2026-11-04 nvm/hcnvm_rt711.c compiles this file a second
+   time, MEDIUM, with HCNV_RT_ONLY - just these routines, into FCODE
+   (1860 B of NCODE). They call nothing and read no module data. */
+#if HCNV_RT_ONLY
 void far hc_nvm_payload(void)
 {
     unsigned int volatile huge *unl1 = FLW(TGT_FLASH_UNLOCK1);
@@ -1929,6 +1944,8 @@ void far hc_nvm_eraser(void)
 void far hc_nvm_eraser_end(void)
 {
 }
+#endif /* HCNV_RT_ONLY */
+#if !HCNV_RT_ONLY
 
 /* --------------------------------------------------------- the relocation -- */
 /* WHICH payload goes into the one relocation slot. Re-preparing is a
@@ -1946,25 +1963,24 @@ static void fl_prepare_sel(unsigned char which)
     unsigned int end;
     unsigned int target;
     unsigned char op;
+    void (far *fb)(void);
+    void (far *fe)(void);
 
-    /* A near function pointer is an offset inside the one code segment, so the
-       huge address is TGT_CODE_BASE plus that offset.
-
-       A FIXED length rather than a measured one: copying more than the
+    /* A FIXED length rather than a measured one: copying more than the
        function is harmless - the extra bytes are never executed - and it
        removes any dependence on how the linker ordered the module.
        me711_flash_busy_proof asserts the function is smaller than this. */
     if (which == (unsigned char)HCNV_PAY_ERASER) {
-        begin = (unsigned int)&hc_nvm_eraser;
-        end = (unsigned int)&hc_nvm_eraser_end;
+        fb = hc_nvm_eraser;
+        fe = hc_nvm_eraser_end;
 #if HC_UPDATER
     } else if (which == (unsigned char)HCNV_PAY_STAGE) {
-        begin = (unsigned int)&hc_nvm_stage_payload;
-        end = (unsigned int)&hc_nvm_stage_payload_end;
+        fb = hc_nvm_stage_payload;
+        fe = hc_nvm_stage_payload_end;
 #endif
     } else {
-        begin = (unsigned int)&hc_nvm_payload;
-        end = (unsigned int)&hc_nvm_payload_end;
+        fb = hc_nvm_payload;
+        fe = hc_nvm_payload_end;
     }
     /* WHICH ROUTINE IS IN THE SLOT IS A FACT THAT MUST SURVIVE A RESET.
        The slot lives in the battery-backed SRAM, so after a reset it still
@@ -1973,7 +1989,12 @@ static void fl_prepare_sel(unsigned char which)
        resumed after a reset that interrupted a reclaim would therefore have
        CALLED THE ERASER. Recording it here is what lets both paths check. */
     SRAMB(NVM_ER)[ER_LOADED] = which;
-    code = SRAMB(TGT_CODE_BASE + (unsigned long)begin);
+    /* THE ROUTINES ARE FAR CODE (hcnvm_rt711.c, 2026-11-04): a far function
+       pointer is segment:offset, i.e. the linear address. begin/end keep the
+       in-segment offsets the JMPA rebasing below compares against. */
+    code = SRAMB((unsigned long)fb);
+    begin = (unsigned int)(unsigned long)fb;
+    end = (unsigned int)(unsigned long)fe;
     /* THE SLOT IS THE WHOLE RESERVATION, 2048 BYTES, because the writer and
        the eraser SHARE it - only one is ever loaded. Copying more than the
        routine is harmless; the extra bytes are never executed. */
@@ -3916,6 +3937,7 @@ void hc_nvm_service(unsigned int now_ms, unsigned int rpm,
     cb_seal();
 }
 
+#endif /* !HCNV_RT_ONLY */
 #if HC_UPDATER
 /* ==========================================================================
  * P3: THE APP-SIDE OBD UPDATER (hcupd711.h).
@@ -3943,6 +3965,7 @@ void hc_nvm_service(unsigned int now_ms, unsigned int rpm,
  * DQ5 honoured only while DQ7 disagrees, a bounded poll, and no return into
  * flash without read-array mode (FL_RESET on any doubt, retry next pass). It
  * reads every operand from SRAM so the relocated copy is self-contained. */
+#if HCNV_RT_ONLY   /* hcnvm_rt711.c: FCODE */
 void far hc_nvm_stage_payload(void)
 {
     unsigned int volatile huge *unl1 = FLW(TGT_FLASH_UNLOCK1);
@@ -4036,6 +4059,8 @@ void far hc_nvm_stage_payload(void)
 void far hc_nvm_stage_payload_end(void)
 {
 }
+#endif /* HCNV_RT_ONLY */
+#if !HCNV_RT_ONLY
 
 /* ---- NCODE flash primitives for the FCODE updater driver (hcdiag711.c) ----
  * The driver owns the state machine, the CRC and the host commands; the code
@@ -4161,7 +4186,9 @@ unsigned int hc_nvm_stage_op(unsigned int op, unsigned int now_ms,
     return (pos >= nw) ? (unsigned int)HC_SOP_DONE : (unsigned int)HC_SOP_OK;
 }
 
+#endif /* !HCNV_RT_ONLY */
 #endif /* HC_UPDATER */
+#if !HCNV_RT_ONLY
 
 /* ================================================== what TunerStudio reads ==
  *
@@ -4397,3 +4424,5 @@ unsigned int hc_nvm_erase_status(void)
 {
     return hc_ram_bad ? 0u : be16(ERB, ER_LASTDQ);
 }
+
+#endif /* !HCNV_RT_ONLY */

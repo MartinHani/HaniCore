@@ -251,11 +251,20 @@ unsigned char asic_start_transfer(unsigned char n)
        Direction first here, because the pin is already an output from the
        startup and re-stating the latch before the direction would be a
        no-op that costs an edge. */
+    /* ENABLED BEFORE THE SELECT, NOT AFTER IT (2026-11-04). Every bad
+       runtime reply captured on the bench 2.7T (21 of 21, v1.1 and later)
+       is the good frame shifted LEFT by one bit - each word = word << 1 |
+       the next word's MSB, calc - received = 9 every time: the S5500 was
+       clocked once before our first bit. Enabling the SSC inside the
+       CS-low window can move SCLK to its idle level there, and an engine
+       interrupt between the select and the enable (a CC25 entry is ~1400
+       instructions at 24 MHz) lets the ASIC arm first. Enabled while
+       deselected, any such edge is ignored; no transfer starts before the
+       SSCTIC kick below. */
+    SSCCON |= 0x8000u;
     ASIC_CS_DIR = 1;
     ASIC_CS_LATCH = 1;
     ASIC_CS_LATCH = 0;
-
-    SSCCON |= 0x8000u;                   /* ... and only NOW enable it      */
 
     /* ------------------------------------------------ THE ARMING WINDOW --
      * The ASIC's SSC is DISARMED between frames. Its teardown clears SSCEN

@@ -319,9 +319,18 @@ static void pub_runtime(void)
     /* --- the closed-loop throttle -------------------------------------
      * The whole chain, so a bench can see WHY a duty is what it is rather
      * than only what it came out as. */
+    /* bits 10..12 (2026-11-04, 018DC car: "DBW on" in the tuner, the plate
+       never followed, no fault - until enable off -> on): what the
+       controller ACTUALLY runs on - the ACTIVE dbwEnable (a tuner shows
+       DESIRED), the throttle permission, and an ETB procedure / Burn owning
+       the raster. A state 0 then says which gate holds it. */
     put16(400, (unsigned int)((unsigned int)hc_dbw_state()
                               | ((unsigned int)hc_dbw_bridge_on() << 8)
-                              | ((unsigned int)hc_dbw_dir() << 9)));
+                              | ((unsigned int)hc_dbw_dir() << 9)
+                              | ((hc_cal_u8(CAL_DBW_ENABLE) == 1u) ? 0x0400u : 0u)
+                              | (hc_dbw_allowed ? 0x0800u : 0u)
+                              | (((hc_etbcal_status() & 0x00F0u) != 0u
+                                  || hc_etbcal_burn_hold()) ? 0x1000u : 0u)));
     put16(402, (unsigned int)(hc_dbw_faults()
                               | (hc_etbcal_dlr_ska() ? DBW_F_RANGE : 0u)));
     put16(404, hc_dbw_pedal_x10());
@@ -1336,9 +1345,15 @@ void far hc_target_cmd_cold(unsigned char *p, unsigned int n)
            bytes of the calibration page; it is not a bench command and it does
            not go through hcbench.c. */
         if (n >= 3) {
-            unsigned int v = (hc_dbw_bridge_on()
-                || (hc_etbcal_status() & 0x00F0u) != 0u
-                || hcb_state == HCB_RUNNING) ? ENG_GRAB_RPM : eng_calib_grab(p[2]);
+            /* ONLY A THROTTLE GRAB NEEDS THE MOTOR OFF (2026-11-04, car):
+               the plate must rest on its own. A pedal grab reads two
+               inputs nothing drives - with DBW on it was refused as "engine
+               not stopped" and the Grab buttons looked dead. */
+            unsigned int v = (p[2] <= ENG_GRAB_TPS_OPEN
+                && (hc_dbw_bridge_on()
+                    || (hc_etbcal_status() & 0x00F0u) != 0u
+                    || hcb_state == HCB_RUNNING)) ? ENG_GRAB_MOTOR
+                                                  : eng_calib_grab(p[2]);
 
             /* THE GRAB REACHES THE PAGE TUNERSTUDIO READS. Until V90
                eng_calib_grab() wrote ACTIVE only (hc_cal_set_u16). A page

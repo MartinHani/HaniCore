@@ -319,9 +319,9 @@ def pick_ini(signature: str, version: str, override: str | None) -> Path:
     if override:
         return Path(override)
     cands = []
-    # every board: hanicore_me711_v* (Porsche, 4F), hanicore_me71_27t_v*
-    # (2.7T) and hanicore_me75_dc_v* (ME7.5 DC)
-    for p in TS_DIR.glob("hanicore_me7*_v*.ini"):
+    # every board: hanicore_me711_dev (Porsche, 4F), hanicore_me71_27t_dev
+    # (2.7T), hanicore_me75_dc_dev (ME7.5 DC)
+    for p in TS_DIR.glob("hanicore_me7*_dev*.ini"):
         if p.stem.endswith(("_forensic", "_fallback")):
             continue
         try:
@@ -353,9 +353,9 @@ def build_manifest(version: str):
     if not version:
         return None
     hits = []
-    # every board: HaniCore_ME711_v* (Porsche), _ME711_4F_v*, _ME71_27T_v*
-    # (2.7T) and _ME75_DC_v* (ME7.5 DC)
-    for j in sorted((ROOT / "bins/hanicore").glob("HaniCore_ME7*_v*.json")):
+    # every board: HaniCore_ME711_dev (Porsche), _ME711_4F_dev, _ME71_27T_dev
+    # (2.7T), _ME75_DC_dev (ME7.5 DC)
+    for j in sorted((ROOT / "bins/hanicore").glob("HaniCore_ME7*_dev*.json")):
         try:
             d = json.loads(j.read_text())
         except Exception:

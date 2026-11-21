@@ -95,6 +95,7 @@
 #include "hcconfig.h"
 #include "hc_config_generated.h"
 #include "hcio711.h"
+#include "hcfresh711.h"   /* hc_fresh_ain: far, callable from this far module */
 #include "hccan711.h"
 #include "hcengctl711.h"
 #include "hcdeadline711.h"
@@ -138,6 +139,8 @@ static unsigned int cj110_last_ms;
 #define CJ110_RAMP_TO     120u     /* ... to 12.0 V at 0.4 V/s (rusEFI's    */
 #define CJ110_RAMP_DV_S   4u       /*  open-loop envelope - no Ri here)     */
 #define CJ110_HOT_AFTER_MS 5000u   /* lambda only 5 s after the ramp's end  */
+#define CJ110_RECAL_MS     5000u   /* TABGS: the adjustment again after start */
+static unsigned int cj110_run_ms;  /* running time since this start          */
 #endif
 #if TGT_BOARD_VAG_ME75_DC
 /* set here, applied by asic/hcasicstart_dc.inc through the CC650 shadows:
@@ -365,6 +368,7 @@ void far hc_io_init(void)
     hccj110_init(&cj110);
     cj110_heat_ms = 0u;
     cj110_last_ms = 0u;
+    cj110_run_ms = 0u;
 #endif
 }
 
@@ -902,6 +906,18 @@ void far hc_io_lambda_service(unsigned int ms, unsigned int ua1,
             d = (v_dv && vbatt_dv) ? (unsigned int)((v_dv * 1000u) / vbatt_dv) : 0u;
             if (d > 1000u) d = 1000u;
             hc_io_duty(HC_IO_LSH1VK, d);
+            /* THE ADJUSTMENT AGAIN AFTER START (GGLSU TABGS, 2026-11-05):
+               a key-on UA0 outside the window is no fault any more (a DC
+               tester's car latched CALIBRATION at every key-on and read
+               lambda only after a trouble-code clear) - hccj110 keeps the
+               stock zero and the adjustment runs again CJ110_RECAL_MS
+               into every start, with the chip fed and the sensor hot. */
+            if (!running) {
+                cj110_run_ms = 0u;
+            } else if (cj110_run_ms < CJ110_RECAL_MS) {
+                cj110_run_ms = (unsigned int)(cj110_run_ms + dt);
+                if (cj110_run_ms >= CJ110_RECAL_MS) hccj110_recal(&cj110);
+            }
             hccj110_step(&cj110, (unsigned int)(ua1 & 0x03FFu),
                          (unsigned char)(allow && cj110_heat_ms >=
                              (unsigned int)(CJ110_PREHEAT_MS
@@ -912,7 +928,7 @@ void far hc_io_lambda_service(unsigned int ms, unsigned int ua1,
             hc_dc_la = cj110.la;
             wb[0].valid = cj110.valid;
             wb[0].lambda = cj110.lambda;
-            wb[0].fcode = (unsigned char)(cj110.fcode == HCCJ110_F_CAL ? HCWB_F_CAL
+            wb[0].fcode = (unsigned char)(cj110.fcode == HCCJ110_F_NOSIG ? HCWB_F_NO_SIGNAL
                           : cj110.fcode == HCCJ110_F_CHIP ? HCWB_F_CHIP : HCWB_F_NONE);
             lam_status = (unsigned int)((lam_status & ~1u) | (cj110.valid ? 1u : 0u));
             wb_ur_raw[b] = ur1;
@@ -1129,7 +1145,9 @@ static unsigned int sat(unsigned int v, unsigned int top)
 static void och16(unsigned int at, unsigned int v)
 {
     unsigned char huge *p = at < 1024u ? IO_OCH + at
-        : (unsigned char huge *)(TGT_EXTRAM_BASE + TGT_RAM_OCH2 + at - 1024u);
+        : at < TGT_OCH_SPLIT2
+        ? (unsigned char huge *)(TGT_EXTRAM_BASE + TGT_RAM_OCH2 + at - 1024u)
+        : (unsigned char huge *)(TGT_EXTRAM_BASE + TGT_RAM_OCH3 + at - TGT_OCH_SPLIT2);
     p[0] = (unsigned char)(v >> 8);
     p[1] = (unsigned char)(v & 0xFFu);
 }
@@ -1273,6 +1291,13 @@ void far hc_io_publish(unsigned int boost_req_x10, unsigned char part)
         och16(1018u, a > b ? a : b);
         och16(1020u, lam_acq_flags);
         och16(1022u, (unsigned int)((cj_reg1[0] & 0xFFu) | ((cj_reg1[1] & 0xFFu) << 8)));
+        /* 1688..1695: the throttle and pedal tracks as the ROUTED inputs read
+           them (2026-11-21, BlackT: "TPS1/TPS2 raw" were fixed AN1/AN3, so a
+           re-routed or refused pin looked like the wrong wire). */
+        och16(1688u, hc_fresh_ain(HC_AIN_TPS1));
+        och16(1690u, hc_fresh_ain(HC_AIN_TPS2));
+        och16(1692u, hc_fresh_ain(HC_AIN_APP1));
+        och16(1694u, hc_fresh_ain(HC_AIN_APP2));
         hc_ec_publish(boost_req_x10);  /* the fast block + engine control */
         return;
     }

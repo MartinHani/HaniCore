@@ -73,7 +73,7 @@ FIRST, LAST = 0x01, 0x7F
 # unreachable on this ECU family. See hctarget.h.
 CLAIMED_BOSCH = {
     0x30: "CC16INT - hc_cc16_isr in hctrig_me711.c (knock window MF)",
-    0x39: "CC25INT - deadline terminal ISR (V102)",
+    0x39: "CC25INT - deadline terminal ISR",
     0x3A: "CC26INT - hc_plan_isr in hcsched_dry.c (software-triggered planner)",
     0x02: "NMI - hc_nmi_isr in hcmain_me711.c (trap and time into the reset log)",
     0x3E: "T8INT  - hc_tick_isr in hcmain_me711.c (the 1 ms system tick)",

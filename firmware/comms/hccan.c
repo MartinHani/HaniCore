@@ -92,7 +92,11 @@ void HCCAN_FAR hccan_motor1(const hccan_eng_t *e, const hccan_vag_id_t *id,
     if (e->pedal_x10 >= 950u && !(f & HCCAN_F_PEDAL_BAD))
         b |= 0x04u;                           /* kickdown above 95 %       */
     /* bit 3 clutch, bit 4 brake-message timeout: 0 (not received)        */
-    b |= 0x20u;    /* B_statbr: brake (ASR/MSR) torque requests not served */
+    /* B_statbr: the ESP's (ASR/MSR) torque requests cannot be served.
+       2026-11-05: a flag - until then always 1, and the stock ECU sets it
+       only during start or with a fault (FR CAN 51.570), so the ESP of a
+       tester's car kept its lamp on ("check DTC of ECU") */
+    if (f & HCCAN_F_BR_NA)     b |= 0x20u;
     b |= 0x40u;    /* B_statgec: gearbox torque requests not served        */
     if (f & HCCAN_F_TQ_BAD)    b |= 0x80u;    /* B_statmdc                 */
     d[0] = b;

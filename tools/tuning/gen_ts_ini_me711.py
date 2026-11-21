@@ -410,7 +410,10 @@ CH += [
     # ---- the closed-loop throttle --------------------------------------
     (400,"dbwState","U16","","low byte 0 OFF 1 INIT 2 RUN 3 FAULT; bit 8 the "
                              "EGENFR bridge enable as commanded; bit 9 the "
-                             "direction leg"),
+                             "direction leg; bit 10 the ECU's ACTIVE "
+                             "dbwEnable is on; bit 11 throttle permission; "
+                             "bit 12 an ETB procedure or a Burn owns the "
+                             "throttle"),
     (402,"dbwFaults","U16","","latched: 1 calibration, 2 pedal pair, "
                               "4 throttle pair, 8 pedal out of range, "
                               "16 throttle out of range, 32 bridge fault pin, "
@@ -497,7 +500,9 @@ CH += [
                                "an open input reads a clean, stable, wrong "
                                "number, 5 the two ends are too close together "
                                "(check the wiring), 6 no such endpoint, 7 PASS "
-                               "- both tracks in the page, correlation SAME "
+                               "- both tracks in the page, correlation SAME, "
+                               "8 a throttle grab while the throttle motor is "
+                               "on "
                                "(V90). High "
                                "byte: which endpoint was asked for"),
     (452,"grabCount","U16","","grabs attempted since power-up"),
@@ -627,7 +632,7 @@ CH += [
                              "short GND 2 heater open / no sensor 3 heater "
                              "short UB 4 IA/IP 5 UN 6 VM 7 chip 8 calibration "
                              "9 did not heat 10 overheat 11 underheat 12 no "
-                             "Ri signal"),
+                             "Ri signal 14 no signal (DC: stays at 1)"),
     (864,"lam1UrRaw","U16","","V96 bank 1 UR live (ASIC AN12), raw; 65535 = "
                               "the ADC did not tag the slot"),
     (866,"lam2UrRaw","U16","","V96 bank 2 UR live (ASIC AN13), raw"),
@@ -912,7 +917,7 @@ CH += [
     (476,"releaseId","U16","","deterministic firmware release ID 0x%04X (%s),"
      " not a Git commit identifier"
      % (d(tgt, "TGT_RELEASE_ID"),
-        next((w for w in VERSIONTXT.split() if re.fullmatch(r"V\d+", w)),
+        next((w for w in VERSIONTXT.split() if re.match(r"V\d+\.\d+", w)),
              "unversioned"))),
     (398,"powerNl","U16","","bit 0: this CPU is driving NLEN_FR (P3.12) HIGH. "
                             "bits 4 and 8: what the S5600 74ACT00 turns that "
@@ -1330,7 +1335,12 @@ CH += [(1664, "vehicleSpeed", "U16", "km/h", "Vehicle speed: the speed input (Ro
        (1680, "haldexWant", "U16", "%", "Haldex: wanted lock"),
        (1682, "haldexActual", "U16", "%", "Haldex: lock it reports (Allrad_1)"),
        (1684, "haldexOffset", "U16", "km/h", "Haldex: emulated rear axle slower by"),
-       (1686, "canObjects", "U16", "", "CAN message objects in use (of 15)")]
+       (1686, "canObjects", "U16", "", "CAN message objects in use (of 15)"),
+       # 2026-11-21: the tracks as the ROUTED inputs read them (hcio711.c)
+       (1688, "tps1RawRouted", "U16", "cnt", "Throttle track 1 raw, from the pin Throttle track 1 is routed to"),
+       (1690, "tps2RawRouted", "U16", "cnt", "Throttle track 2 raw, from the pin Throttle track 2 is routed to"),
+       (1692, "app1RawRouted", "U16", "cnt", "Pedal track 1 raw, from the pin Pedal track 1 is routed to"),
+       (1694, "app2RawRouted", "U16", "cnt", "Pedal track 2 raw, from the pin Pedal track 2 is routed to")]
 SCALE.update({1664: 0.1, 1668: 0.01, 1672: 0.001, 1674: 0.001, 1680: 0.1, 1682: 0.1,
               1684: 0.1})
 
@@ -1434,6 +1444,14 @@ DERIVED_CH = [
      "where this boot's calibration came from - HCNV_SRC_*"),
     ("nvmClass", "{ (nvmSource >> 8) & 255 }", "",
      "persistence class - HC_PERSIST_*. 2 means it survives loss of power"),
+    ("dbwStateLo", "{ dbwState & 255 }", "",
+     "the throttle controller state alone - hcDbwStateList"),
+    ("dbwEnActive", "{ (dbwState >> 10) & 1 }", "",
+     "1: the ECU RUNS with electronic throttle on (a tuner shows the edited page)"),
+    ("dbwPermit", "{ (dbwState >> 11) & 1 }", "",
+     "1: the throttle may be driven (page valid, ASIC link, key on)"),
+    ("dbwOwned", "{ (dbwState >> 12) & 1 }", "",
+     "1: an ETB procedure or a Burn holds the throttle"),
     ("grabVerdict", "{ grabResult & 255 }", "",
      "the endpoint grab's verdict - the low byte, ENG_GRAB_*"),
     ("grabWhat", "{ (grabResult >> 8) & 255 }", "",
@@ -1540,7 +1558,7 @@ DERIVED_CH = [
     ("heater2State", "{ (lambdaStatus >> 5) & 7 }", "", "V96: 0 off 1 wait 2 preheat 3 ramp 4 closed loop 5 ready 6 fault"),
     ("lambda1State", "{ (lambdaStatus & 1) ? 4 : ((((lambdaStatus >> 2) & 7) == 6) ? 5 : ((((lambdaStatus >> 2) & 7) >= 4) ? 3 : ((((lambdaStatus >> 2) & 7) >= 2) ? 2 : ((lambdaStatus & 256) ? 1 : 0)))) }", "", "V96: 0 OFF (source not internal / not polled) 1 INITIALIZING (CJ120 verified, calibrating or heater waiting - engine not running) 2 HEATING (preheat or ramp) 3 WARMING (closed loop on Ri, not yet stable) 4 READY (lambda is a measurement) 5 FAULT (lam1Fault says which)"),
     ("lambda2State", "{ (lambdaStatus & 2) ? 4 : ((((lambdaStatus >> 5) & 7) == 6) ? 5 : ((((lambdaStatus >> 5) & 7) >= 4) ? 3 : ((((lambdaStatus >> 5) & 7) >= 2) ? 2 : ((lambdaStatus & 512) ? 1 : 0)))) }", "", "V96 bank 2: as lambda1State"),
-    ("lam1Fault", "{ lamFault & 255 }", "", "V96 bank 1 latched fault: 0 none 1 heater short GND 2 heater open / no sensor 3 heater short UB 4 IA/IP 5 UN 6 VM 7 chip 8 calibration 9 did not heat 10 overheat 11 underheat 12 no Ri signal"),
+    ("lam1Fault", "{ lamFault & 255 }", "", "V96 bank 1 latched fault: 0 none 1 heater short GND 2 heater open / no sensor 3 heater short UB 4 IA/IP 5 UN 6 VM 7 chip 8 calibration 9 did not heat 10 overheat 11 underheat 12 no Ri signal 14 no signal (DC: stays at lambda 1)"),
     ("lam2Fault", "{ (lamFault >> 8) & 255 }", "", "V96 bank 2 latched fault, as lam1Fault"),
     ("vvt1Fault", "{ (vvt1State >> 8) & 127 }", "", "V97 cam 1 VVT fault (hcVvtFaultList)"),
     ("vvt2Fault", "{ (vvt2State >> 8) & 127 }", "", "V97 cam 2 VVT fault"),
@@ -1644,14 +1662,14 @@ DERIVED_CH = [
      "active ASIC startup+runtime frames completed"),
     ("asicBadFrames", "{ asicCsumErr + asicTimeouts + asicSscErr }", "",
      "active checksum, timeout and SSC failures"),
-    ("tps1Raw", "{ adc01_TPS1 & 1023 }", "cnt", "MAIN AN1 TPS track 1 raw"),
-    ("tps1Voltage", "{ tps1Raw * 0.0048828125 }", "V", "MAIN AN1 TPS track 1 voltage"),
-    ("tps2Raw", "{ adc03_TPS2 & 1023 }", "cnt", "MAIN AN3 TPS track 2 raw"),
-    ("tps2Voltage", "{ tps2Raw * 0.0048828125 }", "V", "MAIN AN3 TPS track 2 voltage"),
-    ("app1Raw", "{ adc08_PEDAL1 & 1023 }", "cnt", "MAIN AN8 pedal track 1 raw"),
-    ("app1Voltage", "{ app1Raw * 0.0048828125 }", "V", "MAIN AN8 pedal track 1 voltage"),
-    ("app2Raw", "{ adc09_PEDAL2 & 1023 }", "cnt", "MAIN AN9 pedal track 2 raw"),
-    ("app2Voltage", "{ app2Raw * 0.0048828125 }", "V", "MAIN AN9 pedal track 2 voltage"),
+    ("tps1Raw", "{ tps1RawRouted & 1023 }", "cnt", "TPS track 1 raw (its routed pin)"),
+    ("tps1Voltage", "{ tps1Raw * 0.0048828125 }", "V", "TPS track 1 voltage (its routed pin)"),
+    ("tps2Raw", "{ tps2RawRouted & 1023 }", "cnt", "TPS track 2 raw (its routed pin)"),
+    ("tps2Voltage", "{ tps2Raw * 0.0048828125 }", "V", "TPS track 2 voltage (its routed pin)"),
+    ("app1Raw", "{ app1RawRouted & 1023 }", "cnt", "pedal track 1 raw (its routed pin)"),
+    ("app1Voltage", "{ app1Raw * 0.0048828125 }", "V", "pedal track 1 voltage (its routed pin)"),
+    ("app2Raw", "{ app2RawRouted & 1023 }", "cnt", "pedal track 2 raw (its routed pin)"),
+    ("app2Voltage", "{ app2Raw * 0.0048828125 }", "V", "pedal track 2 voltage (its routed pin)"),
     ("noSync", "{ syncState == 0 }", "",
      "expected on the stationary BENCH_SAFE image"),
     # V98: the engine-control layer, decoded (hcengctl711.h EC_F_*)
@@ -3704,7 +3722,7 @@ def main() -> int:
             ("nvmPhase", "hcNvmPhaseList", 0, "No commit in progress"),
         ],
         "hcDiagThrottle": [
-            ("dbwState", "hcDbwStateList", 2, "Throttle closed loop"),
+            ("dbwStateLo", "hcDbwStateList", 2, "Throttle closed loop"),
             ("fuelPumpState", "hcPumpStateList", 3, "Fuel pump running"),
             ("mainRelayMode", "hcRelayStateList", 2, "Main relay running"),
         ],

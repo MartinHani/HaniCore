@@ -154,6 +154,11 @@ extern int           eng_ign_corr_x10; /* V97 (ME7.1.1): CLT+IAT timing correcti
 /* V90, ME7.1.1 '!G': PASS, both tracks written to DESIRED (the page
    TunerStudio reads) and the pair's correlation set SAME. */
 #define ENG_GRAB_PASS_SAME    7u
+/* 2026-11-04 (car): a THROTTLE grab while the throttle motor holds the
+   plate (DBW running, AutoCal, a bench test) - the plate is not resting.
+   The PEDAL grabs never needed the motor off; until then they were refused
+   too, reported as ENG_GRAB_RPM ("engine not stopped"). */
+#define ENG_GRAB_MOTOR        8u
 
 /* Perform one grab and RETURN the ENG_GRAB_* verdict.
  *

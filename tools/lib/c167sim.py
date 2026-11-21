@@ -169,6 +169,7 @@ CC_CHAN = {
     1:  (0xFE82, 0xFF7A, "T0"),    # P2.1  coil B, ZUE2I
     2:  (0xFE84, 0xFF7C, "T0"),    # P2.2  coil C, ZUE3I
     3:  (0xFE86, 0xFF7E, "T0"),    # P2.3  coil D, ZUE4I
+    4:  (0xFE88, 0xFF80, "T0"),    # P2.4  coil E (2026-11-04, hardware compare)
     5:  (0xFE8A, 0xFF82, "T0"),    # P2.5  UMKOM
     6:  (0xFE8C, 0xFF84, "T0"),    # P2.6  bench crank generator
     7:  (0xFE8E, 0xFF86, "T0"),    # P2.7  serial drain tick, compare only
@@ -177,10 +178,18 @@ CC_CHAN = {
     # arithmetic.
     25: (0xFE72, 0xF172, "T7"), # CC25, verified against the compiled reg167.h
     16: (0xFE60, 0xF160, "T7"),    # P8.0  V97 knock window MF (compare)
-    23: (0xFEAE, 0xF18C, "T7"),    # P8.7  injector EV4
-    28: (0xFEB8, 0xF192, "T7"),    # P7.4  injector EV3
-    29: (0xFEBA, 0xF194, "T7"),    # P7.5  injector EV2
-    30: (0xFEBC, 0xF196, "T7"),    # P7.6  injector EV1
+    # CC19..CC23 and CC28..CC31: the register and IC addresses from Keil's
+    # reg167.h (2026-11-04). The rows for 23/28/29/30 named 0xFEAE.. and
+    # 0xF18C.. - other registers - and their CCM rows CCM6/0xFF2A instead of
+    # CCM5/CCM7; harmless while no image ran those channels in a compare mode.
+    19: (0xFE66, 0xF166, "T7"),    # P8.3  injector EV8
+    20: (0xFE68, 0xF168, "T7"),    # P8.4  injector EV7
+    21: (0xFE6A, 0xF16A, "T7"),    # P8.5  injector EV6
+    22: (0xFE6C, 0xF16C, "T7"),    # P8.6  injector EV5
+    23: (0xFE6E, 0xF16E, "T7"),    # P8.7  injector EV4
+    28: (0xFE78, 0xF178, "T7"),    # P7.4  injector EV3 (the tick body's request today)
+    29: (0xFE7A, 0xF184, "T7"),    # P7.5  injector EV2
+    30: (0xFE7C, 0xF18C, "T7"),    # P7.6  injector EV1
     8:  (0xFE90, 0xFF88, "T0"),    # P2.8  cam,   NWDG
     9:  (0xFE92, 0xFF8A, "T0"),    # P2.9  cam 2, NWDG2
     13: (0xFE9A, 0xFF92, "T0"),    # P2.13 tacho TN (compare mode 1, 2026-10-11)
@@ -405,6 +414,13 @@ class Mem:
                 return 0x00
             if a & ~1 == 0xFF1E:
                 return 0xFF
+            # S0BG (0xFEB4) READS THE RUNNING BAUD TIMER, not the reload a
+            # write set (C167 UM, ASC0). Modelled as 0: a firmware path that
+            # reads S0BG back to learn its rate gets nothing usable, as on
+            # silicon (2026-11-04: the bench DC restored nothing while this
+            # model handed the reload back). The reload: sfr[0xFEB4].
+            if a & ~1 == 0xFEB4:
+                return 0x00
             return ((self.sfr.get(a & ~1, 0) | self.pin_hi.get(a & ~1, 0))
                     >> (8 * (a & 1))) & 0xFF
         if XRAM_LO <= a <= XRAM_HI:
@@ -661,6 +677,7 @@ class CPU:
         self.captures_refused = 0    # edges dropped: channel not configured
         self.pec6_moved = 0          # ASC0 bytes PEC6 stored (2026-10-06)
         self.pec6_lost = 0           # ... arriving with PECC6 COUNT at zero
+        self.pec5_moved = 0          # ASC0 reply bytes PEC5 sent (2026-11-06)
         self.compares_hit = 0        # compare matches raised
         self.cc_toggles = []         # (channel, steps) compare-mode-1 pin toggles
         # irq_log IS CAPPED AT 4000 ENTRIES, so it is a sample and not a
@@ -748,9 +765,15 @@ class CPU:
             # and 2 leave the pin alone; mode 3 (set on match, clear on
             # overflow) is not used by any image and not modelled. CAPCOM1
             # channel n is P2.n. Each toggle is logged for gates.
-            if mode == 5 and ch < 16:
-                self._sset(0xFFC0, self._sget(0xFFC0) ^ (1 << ch))
-                self.cc_toggles.append((ch, self.steps))
+            if mode == 5:
+                self.cc_toggle(ch)
+            elif mode == 4 and (8 <= ch <= 15 or 24 <= ch <= 31):
+                # DOUBLE-REGISTER COMPARE (C167CR UM 15-19): a bank-2 register
+                # in compare mode 0 whose bank-1 partner (ch - 8) is in mode 1
+                # toggles the PARTNER's pin on its own match too.
+                preg, pshift = self.CCM_OF.get(ch - 8, (None, 0))
+                if preg is not None and ((self._sget(preg) >> pshift) & 0x07) == 5:
+                    self.cc_toggle(ch - 8)
             if self._sget(ccic) & 0x80:
                 continue                  # request already standing
             self._sset(ccic, self._sget(ccic) | 0x80)
@@ -764,13 +787,29 @@ class CPU:
     # produces no teeth at all on hardware, and a simulator that ignores CCM
     # reports a happy capture and hides the bug.
     CCM_OF = {0: (0xFF52, 0), 1: (0xFF52, 4), 2: (0xFF52, 8), 3: (0xFF52, 12),
-              5: (0xFF54, 4), 6: (0xFF54, 8), 7: (0xFF54, 12),
+              4: (0xFF54, 0), 5: (0xFF54, 4), 6: (0xFF54, 8), 7: (0xFF54, 12),
               25: (0xFF26, 4),
-              16: (0xFF22, 0),
-              23: (0xFF26, 12), 28: (0xFF2A, 0), 29: (0xFF2A, 4),
-              30: (0xFF2A, 8),
+              16: (0xFF22, 0), 19: (0xFF22, 12),
+              20: (0xFF24, 0), 21: (0xFF24, 4), 22: (0xFF24, 8),
+              23: (0xFF24, 12), 28: (0xFF28, 0), 29: (0xFF28, 4),
+              30: (0xFF28, 8),
               8: (0xFF56, 0), 9: (0xFF56, 4), 13: (0xFF58, 4), 14: (0xFF58, 8),
               15: (0xFF58, 12)}
+
+    # Compare mode 1 toggles the channel's own output latch: CAPCOM1 CCn is
+    # P2.n, CC16..CC23 are P8.0..P8.7, CC28..CC31 are P7.4..P7.7; CC24..CC27
+    # have no pin (C167CR UM 15-16). Each toggle is logged for gates.
+    CC_PIN = dict([(n, (0xFFC0, n)) for n in range(16)]
+                  + [(n, (0xFFD4, n - 16)) for n in range(16, 24)]
+                  + [(n, (0xFFD0, n - 24)) for n in range(28, 32)])
+
+    def cc_toggle(self, ch):
+        pin = self.CC_PIN.get(ch)
+        if pin is None:
+            return
+        port, bit = pin
+        self._sset(port, self._sget(port) ^ (1 << bit))
+        self.cc_toggles.append((ch, self.steps))
 
     def cc_timebase(self, channel, declared):
         """Which timer this channel is actually running against.
@@ -865,6 +904,43 @@ class CPU:
                     if cnt != 0xFF:
                         self._sset(0xFECC, (pecc & 0xFF00) | (cnt - 1))
                     self.pec6_moved += 1
+        # PEC CHANNEL 5 ON ASC0 TRANSMIT (2026-11-06, the 018DC reply job,
+        # hcserial711.c TGT_TX_PEC). S0TBIC = IE | ILVL 15 | GLVL 1 routes the
+        # buffer-empty request to PEC5 (C167CR UM 5.x, Table 5-5): with COUNT
+        # non-zero one byte moves from [SRCP5] to [DSTP5] (S0TBUF, through
+        # Mem.w8 so the harness's transmitter sees an ordinary write), SRCP5
+        # increments (INC 10b) and COUNT decrements; the request is cleared,
+        # except when COUNT went 01 -> 00 - it stays set and is delivered as the
+        # S0TBINT interrupt below. With COUNT already 0 the request is the
+        # interrupt. One transfer per check, as one request is one transfer.
+        tbic = self.m.esfr.get(0xF19C, 0)
+        if (tbic & 0xFF) == 0xFD:
+            psw = self._sget(0xFF10)
+            if (psw & 0x0800) and (psw >> 12) < 15:
+                pecc = self._sget(0xFECA)
+                cnt = pecc & 0xFF
+                if cnt != 0:
+                    s = self.m.r16(0xFCF4)
+                    dst = self.m.r16(0xFCF6)
+                    # the transfer services (clears) this request FIRST: the
+                    # write below may raise the next one (S0TBUF moving on)
+                    self.m.esfr[0xF19C] = self.m.esfr.get(0xF19C, 0) & ~0x80
+                    self.m.w8(dst, self.m.r8(s))
+                    inc = (pecc >> 9) & 3
+                    if inc == 2:
+                        self.m.w16(0xFCF4, (s + 1) & 0xFFFF)
+                    elif inc == 1:
+                        self.m.w16(0xFCF6, (dst + 1) & 0xFFFF)
+                    if cnt != 0xFF:
+                        cnt -= 1
+                        self._sset(0xFECA, (pecc & 0xFF00) | cnt)
+                    if cnt == 0:          # 01 -> 00: the request stays set
+                        self.m.esfr[0xF19C] = self.m.esfr.get(0xF19C, 0) | 0x80
+                    self.pec5_moved += 1
+                    # one request, one service: a request the move itself
+                    # raised (or the one 01 -> 00 leaves set) is decided by
+                    # the NEXT check - PEC while COUNT > 0, else the interrupt
+                    return
         # S0TBIR is raised by the HARNESS's transmitter model (a byte moved
         # into the shift register), straight into the ESFR dictionary, so it
         # never passes through the firmware-write epoch below. Enabled, it is a

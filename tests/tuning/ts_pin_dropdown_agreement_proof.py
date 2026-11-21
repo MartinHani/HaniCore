@@ -108,7 +108,7 @@ def ini_path():
     The fallback sorts last and is a different file for a different
     TunerStudio version; testing it instead of the real one is how a gate
     quietly stops describing what an operator loads."""
-    c = sorted(f for f in (ROOT / "tuning").glob("hanicore_me711_v*.ini")
+    c = sorted(f for f in (ROOT / "tuning").glob("hanicore_me711_dev*.ini")
                if "fallback" not in f.name and "forensic" not in f.name)
     if not c:
         raise SystemExit("no generated .ini in tuning/")
